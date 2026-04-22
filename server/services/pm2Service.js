@@ -15,6 +15,19 @@ const runPM2 = async (args) => {
     return stdout || stderr;
 };
 
+/**
+ * Persist the current PM2 process list so it survives reboots.
+ * Errors are silenced — a failed save should never break the caller.
+ */
+const pm2Save = async () => {
+    try {
+        await execAsync("pm2 save --no-color");
+    } catch {
+        // non-critical — log but don't throw
+        console.warn("[PM2] pm2 save failed (non-critical)");
+    }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Process Control
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,16 +48,20 @@ const startBot = async (pm2Name, botPath, startScript = "index.js", maxMemory = 
     const list = await getProcessList();
     const existing = list.find((p) => p.name === pm2Name);
 
+    let result;
     if (existing) {
         // Already registered — restart and apply/update memory limit
-        return runPM2(`restart "${pm2Name}"${memFlag}`);
+        result = await runPM2(`restart "${pm2Name}"${memFlag}`);
+    } else {
+        // New process: register and start
+        const scriptPath = `${botPath}/${startScript}`;
+        result = await runPM2(
+            `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}`,
+        );
     }
 
-    // New process: register and start
-    const scriptPath = `${botPath}/${startScript}`;
-    return runPM2(
-        `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}`,
-    );
+    await pm2Save();
+    return result;
 };
 
 /**
@@ -56,17 +73,23 @@ const startBot = async (pm2Name, botPath, startScript = "index.js", maxMemory = 
  */
 const setMemoryLimit = async (pm2Name, maxMemory) => {
     const memFlag = maxMemory ? ` --max-memory-restart ${maxMemory}` : "";
-    return runPM2(`restart "${pm2Name}"${memFlag}`);
+    const result = await runPM2(`restart "${pm2Name}"${memFlag}`);
+    await pm2Save();
+    return result;
 };
 
 /** Stop a running bot (keeps it in PM2 list) */
 const stopBot = async (pm2Name) => {
-    return runPM2(`stop "${pm2Name}"`);
+    const result = await runPM2(`stop "${pm2Name}"`);
+    await pm2Save();
+    return result;
 };
 
 /** Restart a bot */
 const restartBot = async (pm2Name) => {
-    return runPM2(`restart "${pm2Name}"`);
+    const result = await runPM2(`restart "${pm2Name}"`);
+    await pm2Save();
+    return result;
 };
 
 /**
@@ -75,7 +98,9 @@ const restartBot = async (pm2Name) => {
  */
 const deleteBot = async (pm2Name) => {
     try {
-        return await runPM2(`delete "${pm2Name}"`);
+        const result = await runPM2(`delete "${pm2Name}"`);
+        await pm2Save();
+        return result;
     } catch {
         // Process doesn't exist in PM2 — that's fine
     }

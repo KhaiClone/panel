@@ -22,6 +22,23 @@ const fmt = (bytes) => {
 
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleString() : '—';
 
+/**
+ * Convert a UTC timestamp (ms) to "YYYY-MM-DDTHH:MM" in LOCAL time
+ * so that <input type="datetime-local"> shows the correct local datetime
+ * without any timezone drift on repeated saves.
+ */
+const toLocalDatetimeInputValue = (tsMs) => {
+  const d = new Date(tsMs);
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    d.getFullYear() + '-' +
+    pad(d.getMonth() + 1) + '-' +
+    pad(d.getDate()) + 'T' +
+    pad(d.getHours()) + ':' +
+    pad(d.getMinutes())
+  );
+};
+
 const formatTimeLeft = (ms) => {
   if (ms <= 0) return '🚨 Expired';
   const d = Math.floor(ms / 86_400_000);
@@ -68,7 +85,7 @@ export default function BotDetail() {
       setEditMaxMemory(data.maxMemory || '');
       setEditExpiry(
         data.expiresAt
-          ? new Date(data.expiresAt).toISOString().slice(0, 16)
+          ? toLocalDatetimeInputValue(data.expiresAt)
           : ''
       );
     } catch {
