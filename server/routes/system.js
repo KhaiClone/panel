@@ -23,10 +23,12 @@ router.get("/stats", async (req, res, next) => {
             },
             memory: {
                 totalBytes: mem.total,
-                usedBytes: mem.used,
-                freeBytes: mem.free,
+                // mem.active = total - free - buffers - cached,
+                // which matches what btop / neofetch / free -h report as "used".
+                usedBytes: mem.active,
+                freeBytes: mem.available,
                 usedPercent: parseFloat(
-                    ((mem.used / mem.total) * 100).toFixed(2),
+                    ((mem.active / mem.total) * 100).toFixed(2),
                 ),
             },
         });
