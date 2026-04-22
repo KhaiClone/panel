@@ -1,11 +1,11 @@
-const QuickDBExtension = require('./QuickDB');
-const path = require('path');
-const fs = require('fs');
+const QuickDBExtension = require("./QuickDB");
+const path = require("path");
+const fs = require("fs");
 
 // Ensure the data directory exists before initializing the DB
-const dataDir = path.join(__dirname, '../../data');
+const dataDir = path.join(__dirname, "../../data");
 if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+    fs.mkdirSync(dataDir, { recursive: true });
 }
 
 /**
@@ -16,7 +16,7 @@ if (!fs.existsSync(dataDir)) {
  *  - 'bots'  → array of bot records (see routes/bots.js for schema)
  */
 const db = new QuickDBExtension({
-  filePath: path.join(dataDir, 'panel.sqlite'),
+    filePath: path.join(dataDir, "panel.sqlite"),
 });
 
 module.exports = db;
