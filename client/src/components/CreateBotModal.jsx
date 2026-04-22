@@ -1,23 +1,46 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import api from "../api/client";
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
 const defaultForm = {
+    // common
+    source: "git",       // "git" | "local"
     buyerID: "",
     botID: "",
     name: "",
-    repoUrl: "",
-    branch: "main",
     startScript: "index.js",
     expiresAt: "",
+    groupId: "",
+    maxMemory: "",
+    // git-only
+    repoUrl: "",
+    branch: "main",
+    // local-only
+    localPath: "",
+    installDeps: true,
 };
+
+const MEM_HINT = 'e.g. "300M", "1G" — leave blank for no limit';
 
 export default function CreateBotModal({ onClose, onCreated }) {
     const [form, setForm] = useState(defaultForm);
+    const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
-    const set = (field) => (e) =>
-        setForm((f) => ({ ...f, [field]: e.target.value }));
+    // Fetch groups for the dropdown
+    useEffect(() => {
+        api.get("/groups")
+            .then((r) => setGroups(r.data))
+            .catch(() => {});
+    }, []);
+
+    const set = (field) => (e) => {
+        const val =
+            e.target.type === "checkbox" ? e.target.checked : e.target.value;
+        setForm((f) => ({ ...f, [field]: val }));
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -25,14 +48,39 @@ export default function CreateBotModal({ onClose, onCreated }) {
         setLoading(true);
 
         try {
-            const payload = {
-                ...form,
-                // Convert local datetime string to ISO — empty string becomes null
-                expiresAt: form.expiresAt
-                    ? new Date(form.expiresAt).toISOString()
-                    : null,
-            };
-            const { data } = await api.post("/bots", payload);
+            const endpoint =
+                form.source === "local" ? "/bots/import-local" : "/bots";
+
+            const payload =
+                form.source === "git"
+                    ? {
+                          buyerID: form.buyerID,
+                          botID: form.botID,
+                          name: form.name,
+                          repoUrl: form.repoUrl,
+                          branch: form.branch || "main",
+                          startScript: form.startScript || "index.js",
+                          expiresAt: form.expiresAt
+                              ? new Date(form.expiresAt).toISOString()
+                              : null,
+                          groupId: form.groupId || null,
+                          maxMemory: form.maxMemory || null,
+                      }
+                    : {
+                          buyerID: form.buyerID,
+                          botID: form.botID,
+                          name: form.name,
+                          localPath: form.localPath,
+                          startScript: form.startScript || "index.js",
+                          installDeps: form.installDeps,
+                          expiresAt: form.expiresAt
+                              ? new Date(form.expiresAt).toISOString()
+                              : null,
+                          groupId: form.groupId || null,
+                          maxMemory: form.maxMemory || null,
+                      };
+
+            const { data } = await api.post(endpoint, payload);
             onCreated(data);
             onClose();
         } catch (err) {
@@ -42,14 +90,16 @@ export default function CreateBotModal({ onClose, onCreated }) {
         }
     };
 
+    const isGit = form.source === "git";
+
     return (
-        // Backdrop
+        /* Backdrop */
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-            <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
                     <h2 className="text-lg font-semibold text-slate-100">
-                        ➕ Create New Bot
+                        ➕ Add Bot
                     </h2>
                     <button
                         onClick={onClose}
@@ -59,9 +109,33 @@ export default function CreateBotModal({ onClose, onCreated }) {
                     </button>
                 </div>
 
-                {/* Form */}
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    {/* Row 1 */}
+                    {/* ── Source Type Toggle ─────────────────────────────── */}
+                    <div>
+                        <label className="label">Source</label>
+                        <div className="flex gap-2 mt-1">
+                            {["git", "local"].map((s) => (
+                                <button
+                                    key={s}
+                                    type="button"
+                                    onClick={() =>
+                                        setForm((f) => ({ ...f, source: s }))
+                                    }
+                                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                                        form.source === s
+                                            ? "bg-indigo-600 border-indigo-500 text-white"
+                                            : "bg-slate-700 border-slate-600 text-slate-400 hover:text-slate-200"
+                                    }`}
+                                >
+                                    {s === "git"
+                                        ? "🔗 GitHub / Git URL"
+                                        : "📂 Local Folder"}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* ── Common Fields ──────────────────────────────────── */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="label">Buyer Discord ID *</label>
@@ -74,9 +148,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                             />
                         </div>
                         <div>
-                            <label className="label">
-                                Bot Slug (unique ID) *
-                            </label>
+                            <label className="label">Bot Slug *</label>
                             <input
                                 className="input"
                                 placeholder="my-bot"
@@ -89,7 +161,6 @@ export default function CreateBotModal({ onClose, onCreated }) {
                         </div>
                     </div>
 
-                    {/* Display name */}
                     <div>
                         <label className="label">Display Name *</label>
                         <input
@@ -101,37 +172,123 @@ export default function CreateBotModal({ onClose, onCreated }) {
                         />
                     </div>
 
-                    {/* Repo */}
-                    <div>
-                        <label className="label">Git Repository URL *</label>
-                        <input
-                            className="input"
-                            placeholder="https://github.com/user/repo.git"
-                            value={form.repoUrl}
-                            onChange={set("repoUrl")}
-                            required
-                        />
-                    </div>
+                    {/* ── Git-only Fields ────────────────────────────────── */}
+                    {isGit && (
+                        <>
+                            <div>
+                                <label className="label">
+                                    Git Repository URL *
+                                </label>
+                                <input
+                                    className="input"
+                                    placeholder="https://github.com/user/repo.git"
+                                    value={form.repoUrl}
+                                    onChange={set("repoUrl")}
+                                    required={isGit}
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="label">Branch</label>
+                                    <input
+                                        className="input"
+                                        placeholder="main"
+                                        value={form.branch}
+                                        onChange={set("branch")}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="label">
+                                        Start Script
+                                    </label>
+                                    <input
+                                        className="input"
+                                        placeholder="index.js"
+                                        value={form.startScript}
+                                        onChange={set("startScript")}
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    )}
 
-                    {/* Row 2 */}
+                    {/* ── Local-only Fields ──────────────────────────────── */}
+                    {!isGit && (
+                        <>
+                            <div>
+                                <label className="label">
+                                    Absolute Path on Server *
+                                </label>
+                                <input
+                                    className="input font-mono text-sm"
+                                    placeholder="/root/bots/my-project"
+                                    value={form.localPath}
+                                    onChange={set("localPath")}
+                                    required={!isGit}
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Must be an existing directory on the server.
+                                </p>
+                            </div>
+                            <div>
+                                <label className="label">Start Script</label>
+                                <input
+                                    className="input"
+                                    placeholder="index.js"
+                                    value={form.startScript}
+                                    onChange={set("startScript")}
+                                />
+                            </div>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="w-4 h-4 accent-indigo-500"
+                                    checked={form.installDeps}
+                                    onChange={set("installDeps")}
+                                />
+                                <span className="text-sm text-slate-300">
+                                    Run{" "}
+                                    <code className="text-indigo-400">
+                                        npm install
+                                    </code>{" "}
+                                    before registering
+                                </span>
+                            </label>
+                        </>
+                    )}
+
+                    {/* ── Shared Optional Fields ─────────────────────────── */}
                     <div className="grid grid-cols-2 gap-4">
+                        {/* Group */}
                         <div>
-                            <label className="label">Branch</label>
-                            <input
+                            <label className="label">Group</label>
+                            <select
                                 className="input"
-                                placeholder="main"
-                                value={form.branch}
-                                onChange={set("branch")}
-                            />
+                                value={form.groupId}
+                                onChange={set("groupId")}
+                            >
+                                <option value="">— No group —</option>
+                                {groups.map((g) => (
+                                    <option key={g._id} value={g._id}>
+                                        {g.name}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
+                        {/* Max Memory */}
                         <div>
-                            <label className="label">Start Script</label>
+                            <label className="label">Max Memory</label>
                             <input
-                                className="input"
-                                placeholder="index.js"
-                                value={form.startScript}
-                                onChange={set("startScript")}
+                                className="input font-mono"
+                                placeholder="300M"
+                                value={form.maxMemory}
+                                onChange={set("maxMemory")}
+                                pattern="^\d+[KMG]?$"
+                                title={MEM_HINT}
                             />
+                            <p className="text-xs text-slate-500 mt-1">
+                                {MEM_HINT}
+                            </p>
                         </div>
                     </div>
 
@@ -156,11 +313,11 @@ export default function CreateBotModal({ onClose, onCreated }) {
                         </div>
                     )}
 
-                    {/* Note: git clone + npm install can take a moment */}
                     {loading && (
                         <div className="bg-indigo-900/40 border border-indigo-700 text-indigo-300 text-sm rounded-lg px-3 py-2">
-                            ⏳ Cloning repo and installing dependencies — this
-                            may take a moment…
+                            {isGit
+                                ? "⏳ Cloning repo and installing dependencies — this may take a moment…"
+                                : "⏳ Registering bot…"}
                         </div>
                     )}
 
@@ -179,7 +336,11 @@ export default function CreateBotModal({ onClose, onCreated }) {
                             className="btn-primary"
                             disabled={loading}
                         >
-                            {loading ? "Creating…" : "Create Bot"}
+                            {loading
+                                ? "Adding…"
+                                : isGit
+                                  ? "🔗 Clone & Add"
+                                  : "📂 Import Bot"}
                         </button>
                     </div>
                 </form>

@@ -8,6 +8,7 @@ const authRoutes = require("./routes/auth");
 const botRoutes = require("./routes/bots");
 const logRoutes = require("./routes/logs");
 const systemRoutes = require("./routes/system");
+const groupRoutes = require("./routes/groups");
 const { authMiddleware } = require("./middleware/auth");
 const errorHandler = require("./middleware/errorHandler");
 const expiryService = require("./services/expiryService");
@@ -55,6 +56,7 @@ app.use(express.json({ limit: "2mb" })); // env files could be a bit large
 // ─────────────────────────────────────────────────────────────────────────────
 app.use("/api/auth", authRoutes);
 app.use("/api/bots", authMiddleware, botRoutes);
+app.use("/api/groups", authMiddleware, groupRoutes);
 app.use("/api/logs", logRoutes); // Auth handled per-route (SSE needs query-param token)
 app.use("/api/system", authMiddleware, systemRoutes);
 

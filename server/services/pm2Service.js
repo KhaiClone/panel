@@ -23,25 +23,40 @@ const runPM2 = async (args) => {
  * Start a bot with PM2.
  * If the process already exists in PM2, it will be restarted instead.
  *
- * @param {string} pm2Name    - Unique PM2 name, e.g. "buyer123-mybot"
- * @param {string} botPath    - Absolute path to the bot's directory
+ * @param {string} pm2Name     - Unique PM2 name, e.g. "buyer123-mybot"
+ * @param {string} botPath     - Absolute path to the bot's directory
  * @param {string} startScript - Entry file relative to botPath (default: index.js)
+ * @param {string|null} maxMemory - Memory limit e.g. "300M", "1G" (optional)
  */
-const startBot = async (pm2Name, botPath, startScript = "index.js") => {
+const startBot = async (pm2Name, botPath, startScript = "index.js", maxMemory = null) => {
+    const memFlag = maxMemory ? ` --max-memory-restart ${maxMemory}` : "";
+
     // Check if process already exists in PM2 list
     const list = await getProcessList();
     const existing = list.find((p) => p.name === pm2Name);
 
     if (existing) {
-        // Already registered — just restart it
-        return runPM2(`restart "${pm2Name}"`);
+        // Already registered — restart and apply/update memory limit
+        return runPM2(`restart "${pm2Name}"${memFlag}`);
     }
 
     // New process: register and start
     const scriptPath = `${botPath}/${startScript}`;
     return runPM2(
-        `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"`,
+        `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}`,
     );
+};
+
+/**
+ * Apply or remove a memory restart limit on an already-registered PM2 process.
+ * Call this when the admin changes maxMemory on a running bot.
+ *
+ * @param {string} pm2Name  - PM2 process name
+ * @param {string|null} maxMemory - New limit e.g. "512M" or null to remove
+ */
+const setMemoryLimit = async (pm2Name, maxMemory) => {
+    const memFlag = maxMemory ? ` --max-memory-restart ${maxMemory}` : "";
+    return runPM2(`restart "${pm2Name}"${memFlag}`);
 };
 
 /** Stop a running bot (keeps it in PM2 list) */
@@ -153,6 +168,7 @@ module.exports = {
     stopBot,
     restartBot,
     deleteBot,
+    setMemoryLimit,
     getBotStatus,
     getBotLogs,
     streamBotLogs,

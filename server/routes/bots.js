@@ -14,8 +14,15 @@ const BOTS_ROOT = () => process.env.BOTS_ROOT_DIR;
 //  Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Resolve absolute path of a bot's directory */
-const botDir = (buyerID, botID) => path.join(BOTS_ROOT(), buyerID, botID);
+/**
+ * Resolve the working directory of a bot.
+ * - source === "local"  → use the stored localPath directly
+ * - source === "git"    → construct from BOTS_ROOT/buyerID/botID (default)
+ */
+const botDir = (bot) => {
+    if (bot.source === "local" && bot.localPath) return bot.localPath;
+    return path.join(BOTS_ROOT(), bot.buyerID, bot.botID);
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  List & Read
@@ -60,7 +67,7 @@ router.get("/:id", async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Create Bot
+//  Create Bot — clone from GitHub
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -74,7 +81,9 @@ router.get("/:id", async (req, res, next) => {
  *   repoUrl     string  — Git repository URL
  *   branch      string  — Git branch (default: "main")
  *   startScript string  — Entry file (default: "index.js")
- *   expiresAt   string  — ISO date string or ms timestamp (optional)
+ *   expiresAt   string  — ISO date string (optional)
+ *   groupId     string  — Group _id to assign (optional)
+ *   maxMemory   string  — PM2 memory limit e.g. "300M", "1G" (optional)
  * }
  */
 router.post("/", async (req, res, next) => {
@@ -87,6 +96,8 @@ router.post("/", async (req, res, next) => {
             branch = "main",
             startScript = "index.js",
             expiresAt,
+            groupId = null,
+            maxMemory = null,
         } = req.body;
 
         // Validate required fields
@@ -104,7 +115,7 @@ router.post("/", async (req, res, next) => {
             });
         }
 
-        const dir = botDir(buyerID, botID);
+        const dir = path.join(BOTS_ROOT(), buyerID, botID);
 
         // Ensure buyer directory exists
         fs.mkdirSync(path.join(BOTS_ROOT(), buyerID), { recursive: true });
@@ -117,7 +128,7 @@ router.post("/", async (req, res, next) => {
         console.log(`[Bots] Installing deps for ${botID}`);
         await gitService.installDeps(dir);
 
-        // 3. Save to DB — pm2Name is "buyerID-botID" to avoid collisions
+        // 3. Save to DB
         const pm2Name = `${buyerID}-${botID}`;
         const botRecord = await db.create("bots", {
             buyerID,
@@ -127,6 +138,10 @@ router.post("/", async (req, res, next) => {
             branch,
             startScript,
             pm2Name,
+            source: "git",
+            localPath: null,
+            groupId,
+            maxMemory,
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
             createdAt: Date.now(),
         });
@@ -139,22 +154,129 @@ router.post("/", async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Import Local Folder
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/bots/import-local
+ * Register a bot from an existing folder on the server (no git clone).
+ * The folder may still be a git repo — git pull on update will work normally.
+ *
+ * Body: {
+ *   buyerID     string  — Discord user ID of the buyer
+ *   botID       string  — Short unique slug
+ *   name        string  — Display name
+ *   localPath   string  — Absolute path to the folder on the server
+ *   startScript string  — Entry file (default: "index.js")
+ *   installDeps boolean — Run npm install before starting (default: true)
+ *   expiresAt   string  — ISO date string (optional)
+ *   groupId     string  — Group _id (optional)
+ *   maxMemory   string  — PM2 memory limit (optional)
+ * }
+ */
+router.post("/import-local", async (req, res, next) => {
+    try {
+        const {
+            buyerID,
+            botID,
+            name,
+            localPath,
+            startScript = "index.js",
+            installDeps = true,
+            expiresAt,
+            groupId = null,
+            maxMemory = null,
+        } = req.body;
+
+        if (!buyerID || !botID || !name || !localPath) {
+            return res.status(400).json({
+                error: "buyerID, botID, name, and localPath are required",
+            });
+        }
+
+        // Validate the path exists on disk
+        if (!fs.existsSync(localPath) || !fs.statSync(localPath).isDirectory()) {
+            return res.status(400).json({
+                error: `Path "${localPath}" does not exist or is not a directory`,
+            });
+        }
+
+        // Prevent duplicate botID under same buyer
+        const existing = await db.findOne("bots", { buyerID, botID });
+        if (existing) {
+            return res.status(409).json({
+                error: `Bot "${botID}" already exists for buyer "${buyerID}"`,
+            });
+        }
+
+        // Optionally install / refresh dependencies
+        if (installDeps && fs.existsSync(path.join(localPath, "package.json"))) {
+            console.log(`[Bots] Installing deps for local bot ${botID}`);
+            await gitService.installDeps(localPath);
+        }
+
+        // Check if it's a git repo (for informational field)
+        let repoUrl = null;
+        let branch = null;
+        try {
+            const { stdout: remoteOut } = await require("util").promisify(require("child_process").exec)(
+                `git -C "${localPath}" remote get-url origin`,
+            );
+            repoUrl = remoteOut.trim();
+            const { stdout: branchOut } = await require("util").promisify(require("child_process").exec)(
+                `git -C "${localPath}" rev-parse --abbrev-ref HEAD`,
+            );
+            branch = branchOut.trim();
+        } catch {
+            // Not a git repo — that's fine
+        }
+
+        const pm2Name = `${buyerID}-${botID}`;
+        const botRecord = await db.create("bots", {
+            buyerID,
+            botID,
+            name,
+            repoUrl,
+            branch,
+            startScript,
+            pm2Name,
+            source: "local",
+            localPath,
+            groupId,
+            maxMemory,
+            expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
+            createdAt: Date.now(),
+        });
+
+        console.log(`[Bots] Imported local bot "${name}" (${pm2Name}) from ${localPath}`);
+        res.status(201).json(botRecord);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Update Metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * PUT /api/bots/:id
- * Update editable metadata fields (name, expiresAt, startScript).
+ * Update editable metadata fields.
  *
- * Body: { name?, expiresAt?, startScript? }
+ * Body: { name?, expiresAt?, startScript?, groupId?, maxMemory? }
  */
 router.put("/:id", async (req, res, next) => {
     try {
-        const { name, expiresAt, startScript } = req.body;
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const { name, expiresAt, startScript, groupId, maxMemory } = req.body;
 
         const updates = {};
         if (name !== undefined) updates.name = name;
         if (startScript !== undefined) updates.startScript = startScript;
+        if (groupId !== undefined) updates.groupId = groupId;
+        if (maxMemory !== undefined) updates.maxMemory = maxMemory || null;
         if (expiresAt !== undefined) {
             updates.expiresAt = expiresAt
                 ? new Date(expiresAt).getTime()
@@ -166,7 +288,14 @@ router.put("/:id", async (req, res, next) => {
             { _id: req.params.id },
             updates,
         );
-        if (!updated) return res.status(404).json({ error: "Bot not found" });
+
+        // If maxMemory changed and the bot is running, apply the new limit live
+        if (maxMemory !== undefined) {
+            const live = await pm2Service.getBotStatus(bot.pm2Name);
+            if (live.status === "online") {
+                await pm2Service.setMemoryLimit(bot.pm2Name, maxMemory || null);
+            }
+        }
 
         res.json(updated);
     } catch (err) {
@@ -180,7 +309,8 @@ router.put("/:id", async (req, res, next) => {
 
 /**
  * DELETE /api/bots/:id
- * Stop the bot, remove from PM2, delete source directory, and DB record.
+ * Stop the bot, remove from PM2, optionally delete source directory, remove DB record.
+ * NOTE: local-sourced bots are NOT deleted from disk.
  */
 router.delete("/:id", async (req, res, next) => {
     try {
@@ -190,10 +320,12 @@ router.delete("/:id", async (req, res, next) => {
         // Stop & unregister from PM2
         await pm2Service.deleteBot(bot.pm2Name);
 
-        // Delete source directory
-        const dir = botDir(bot.buyerID, bot.botID);
-        if (fs.existsSync(dir)) {
-            fs.rmSync(dir, { recursive: true, force: true });
+        // Only delete source files for git-managed bots
+        if (bot.source !== "local") {
+            const dir = botDir(bot);
+            if (fs.existsSync(dir)) {
+                fs.rmSync(dir, { recursive: true, force: true });
+            }
         }
 
         // Remove from DB
@@ -216,11 +348,12 @@ router.post("/:id/start", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const dir = botDir(bot.buyerID, bot.botID);
+        const dir = botDir(bot);
         const output = await pm2Service.startBot(
             bot.pm2Name,
             dir,
             bot.startScript,
+            bot.maxMemory || null,
         );
         res.json({ message: "Bot started", output });
     } catch (err) {
@@ -261,15 +394,24 @@ router.post("/:id/restart", async (req, res, next) => {
 /**
  * POST /api/bots/:id/update
  * Pull latest git changes, reinstall deps, and restart the bot.
+ * For local bots that are also git repos, git pull still works.
+ * For local bots with no remote, only npm install + restart is performed.
  */
 router.post("/:id/update", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const dir = botDir(bot.buyerID, bot.botID);
+        const dir = botDir(bot);
+        let pullOutput = "(skipped — no git remote)";
 
-        const pullOutput = await gitService.pullRepo(dir);
+        // Attempt git pull; silently skip if not a git repo
+        try {
+            pullOutput = await gitService.pullRepo(dir);
+        } catch {
+            // Not a git repo or no remote configured — skip
+        }
+
         await gitService.installDeps(dir);
         const restartOutput = await pm2Service.restartBot(bot.pm2Name);
 
@@ -297,7 +439,7 @@ router.get("/:id/env", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const envPath = path.join(botDir(bot.buyerID, bot.botID), ".env");
+        const envPath = path.join(botDir(bot), ".env");
         const content = fs.existsSync(envPath)
             ? fs.readFileSync(envPath, "utf8")
             : "";
@@ -311,7 +453,7 @@ router.get("/:id/env", async (req, res, next) => {
  * PUT /api/bots/:id/env
  * Overwrite the .env file with new content.
  *
- * Body: { content: string }   e.g. "TOKEN=abc\nPREFIX=!"
+ * Body: { content: string }
  */
 router.put("/:id/env", async (req, res, next) => {
     try {
@@ -322,7 +464,7 @@ router.put("/:id/env", async (req, res, next) => {
         if (content === undefined)
             return res.status(400).json({ error: "content is required" });
 
-        const envPath = path.join(botDir(bot.buyerID, bot.botID), ".env");
+        const envPath = path.join(botDir(bot), ".env");
         fs.writeFileSync(envPath, content, "utf8");
 
         res.json({ message: ".env saved successfully" });
