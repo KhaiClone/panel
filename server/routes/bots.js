@@ -353,6 +353,10 @@ router.post("/:id/start", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
+        if (bot.expiresAt && bot.expiresAt <= Date.now()) {
+            return res.status(403).json({ error: "Bot is expired. Please extend to start." });
+        }
+
         const dir = botDir(bot);
         const output = await pm2Service.startBot(
             bot.pm2Name,
@@ -385,6 +389,10 @@ router.post("/:id/restart", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
+        if (bot.expiresAt && bot.expiresAt <= Date.now()) {
+            return res.status(403).json({ error: "Bot is expired. Please extend to start." });
+        }
+
         const output = await pm2Service.restartBot(bot.pm2Name);
         res.json({ message: "Bot restarted", output });
     } catch (err) {
@@ -406,6 +414,10 @@ router.post("/:id/update", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        if (bot.expiresAt && bot.expiresAt <= Date.now()) {
+            return res.status(403).json({ error: "Bot is expired. Please extend to start." });
+        }
 
         const dir = botDir(bot);
         let pullOutput = "(skipped — no git remote)";

@@ -46,6 +46,10 @@ router.post("/bots/:id/action", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
+        if ((action === "start" || action === "restart") && bot.expiresAt && bot.expiresAt <= Date.now()) {
+            return res.status(403).json({ error: "Bot is expired. Please extend to start." });
+        }
+
         let output;
         if (action === "start") {
             const path = require("path");

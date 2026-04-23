@@ -2,8 +2,8 @@ const cron = require("node-cron");
 const path = require("path");
 const fs = require("fs");
 const db = require("../db");
-const { deleteBot } = require("./pm2Service");
-const { sendExpiryWarning, sendExpiryRemoval } = require("./discordService");
+const { deleteBot, stopBot, getBotStatus } = require("./pm2Service");
+const { sendExpiryWarning, sendExpiryRemoval, sendExpirySuspended } = require("./discordService");
 
 // Days before expiry to send a warning notification
 // e.g. warn at 7 days left, again at 3, again at 1
@@ -16,7 +16,8 @@ const WARNING_DAYS = [7, 3, 1];
 /**
  * Run a full expiry check across all bots.
  *
- *  - If a bot's expiresAt timestamp is in the past → remove it
+ *  - If a bot's expiresAt timestamp is > 7 days in the past → remove it
+ *  - If a bot's expiresAt timestamp is in the past → stop it and notify
  *  - If days left matches a WARNING_DAYS threshold → send Discord alert
  */
 const checkExpiry = async () => {
@@ -33,10 +34,10 @@ const checkExpiry = async () => {
             const msLeft = bot.expiresAt - now;
             const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
 
-            if (msLeft <= 0) {
-                // ── EXPIRED: remove everything ─────────────────────────────────────
+            if (msLeft <= -7 * 24 * 60 * 60 * 1000) {
+                // ── EXPIRED 7 DAYS AGO: remove everything ────────────────────────
                 console.log(
-                    `[Expiry] Bot "${bot.botID}" (buyer: ${bot.buyerID}) expired. Removing...`,
+                    `[Expiry] Bot "${bot.botID}" (buyer: ${bot.buyerID}) expired 7 days ago. Removing...`,
                 );
 
                 // 1. Stop & unregister from PM2
@@ -58,6 +59,16 @@ const checkExpiry = async () => {
 
                 // 4. Notify Discord
                 await sendExpiryRemoval(bot);
+            } else if (msLeft <= 0) {
+                // ── JUST EXPIRED: stop bot but keep data ─────────────────────────
+                const live = await getBotStatus(bot.pm2Name);
+                if (live.status === "online" || live.status === "launching") {
+                    console.log(
+                        `[Expiry] Bot "${bot.botID}" (buyer: ${bot.buyerID}) expired. Stopping...`,
+                    );
+                    await stopBot(bot.pm2Name);
+                    await sendExpirySuspended(bot);
+                }
             } else if (WARNING_DAYS.includes(daysLeft)) {
                 // ── WARNING: notify but keep bot running ───────────────────────────
                 console.log(

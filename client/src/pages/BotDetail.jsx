@@ -40,13 +40,38 @@ const toLocalDatetimeInputValue = (tsMs) => {
 };
 
 const formatTimeLeft = (ms) => {
-  if (ms <= 0) return '🚨 Expired';
+  if (ms <= 0) return '🚨 Suspended (Expired)';
   const d = Math.floor(ms / 86_400_000);
   const h = Math.floor((ms % 86_400_000) / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
   if (d > 0) return `${d}d ${h}h ${m}m`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+};
+
+const formatUptime = (pmUptime) => {
+  if (!pmUptime) return '—';
+  const ms = Date.now() - pmUptime;
+  if (ms <= 0) return '—';
+  const d = Math.floor(ms / 86_400_000);
+  const h = Math.floor((ms % 86_400_000) / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
+
+const getMemoryPercent = (usedBytes, maxMemStr) => {
+  if (!usedBytes || !maxMemStr) return null;
+  const match = maxMemStr.match(/^(\d+)([KMG]?)$/i);
+  if (!match) return null;
+  let val = parseInt(match[1], 10);
+  const unit = match[2].toUpperCase();
+  if (unit === 'K') val *= 1024;
+  else if (unit === 'M') val *= 1024 * 1024;
+  else if (unit === 'G') val *= 1024 * 1024 * 1024;
+  if (val <= 0) return null;
+  return ((usedBytes / val) * 100).toFixed(1) + '%';
 };
 
 const TABS = ['Controls', 'Logs', 'Environment', 'Settings'];
@@ -209,23 +234,31 @@ export default function BotDetail() {
           </span>
         </div>
 
-        {/* ── Quick-info strip ────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* ── System Resources ────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {[
             { label: 'CPU',      value: `${bot.live?.cpu ?? 0}%` },
-            { label: 'RAM',      value: fmt(bot.live?.memory) },
+            { 
+              label: 'RAM',      
+              value: fmt(bot.live?.memory),
+              subtext: getMemoryPercent(bot.live?.memory, bot.maxMemory) ? `${getMemoryPercent(bot.live?.memory, bot.maxMemory)} of max` : null
+            },
+            { label: 'Uptime',   value: isOnline ? formatUptime(bot.live?.uptime) : '—' },
             { label: 'Restarts', value: bot.live?.restarts ?? 0 },
             {
               label: 'Expires',
               value: msLeft !== null ? formatTimeLeft(msLeft) : '♾️ Never',
               highlight: msLeft !== null && msLeft < 3 * 86_400_000,
             },
-          ].map(({ label, value, highlight }) => (
+          ].map(({ label, value, subtext, highlight }) => (
             <div key={label} className="card py-3">
               <p className="text-xs text-slate-500 uppercase tracking-wider">{label}</p>
-              <p className={`text-lg font-bold mt-0.5 ${highlight ? 'text-amber-400' : 'text-slate-100'}`}>
-                {value}
-              </p>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <p className={`text-lg font-bold ${highlight ? 'text-amber-400' : 'text-slate-100'}`}>
+                  {value}
+                </p>
+                {subtext && <span className="text-xs text-slate-400">{subtext}</span>}
+              </div>
             </div>
           ))}
         </div>

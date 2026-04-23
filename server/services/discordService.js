@@ -111,6 +111,41 @@ const sendExpiryRemoval = async (bot) => {
     });
 };
 
+/**
+ * Send a notification that a bot was suspended due to expiry.
+ *
+ * @param {Object} bot - Bot record from DB
+ */
+const sendExpirySuspended = async (bot) => {
+    const webhookUrl = process.env.DISCORD_ALERT_WEBHOOK;
+
+    await sendWebhook(webhookUrl, {
+        content: `<@${bot.buyerID}>`,
+        embeds: [
+            {
+                title: "🛑 Bot Expired & Suspended",
+                color: 0xff0000,
+                description: "**Your bot has expired and has been stopped.** Please extend the expiry within 7 days to avoid permanent deletion.",
+                fields: [
+                    { name: "🤖 Bot Name", value: bot.name, inline: true },
+                    { name: "🆔 Bot ID", value: `\`${bot.botID}\``, inline: true },
+                    {
+                        name: "📅 Expired At",
+                        value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
+                        inline: true,
+                    },
+                    {
+                        name: "🔗 Extend This Bot",
+                        value: `<#1480431381808152586> or create ticket at <#1246028759597846650> for a support.`,
+                        inline: false,
+                    },
+                ],
+                timestamp: new Date().toISOString(),
+            },
+        ],
+    });
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Backup
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,5 +209,6 @@ module.exports = {
     sendWebhook,
     sendExpiryWarning,
     sendExpiryRemoval,
+    sendExpirySuspended,
     sendBackup,
 };
