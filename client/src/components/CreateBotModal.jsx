@@ -13,6 +13,7 @@ const defaultForm = {
     expiresAt: "",
     groupId: "",
     maxMemory: "",
+    currentPrice: "",
     // git-only
     repoUrl: "",
     branch: "main",
@@ -65,6 +66,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                               : null,
                           groupId: form.groupId || null,
                           maxMemory: form.maxMemory || null,
+                          currentPrice: form.currentPrice ? Number(form.currentPrice) : null,
                       }
                     : {
                           buyerID: form.buyerID,
@@ -78,6 +80,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                               : null,
                           groupId: form.groupId || null,
                           maxMemory: form.maxMemory || null,
+                          currentPrice: form.currentPrice ? Number(form.currentPrice) : null,
                       };
 
             const { data } = await api.post(endpoint, payload);
@@ -258,7 +261,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                     )}
 
                     {/* ── Shared Optional Fields ─────────────────────────── */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {/* Group */}
                         <div>
                             <label className="label">Group</label>
@@ -288,6 +291,22 @@ export default function CreateBotModal({ onClose, onCreated }) {
                             />
                             <p className="text-xs text-slate-500 mt-1">
                                 {MEM_HINT}
+                            </p>
+                        </div>
+                        {/* Current Price */}
+                        <div>
+                            <label className="label">Current Price</label>
+                            <input
+                                type="number"
+                                className="input font-mono disabled:opacity-50"
+                                placeholder="Optional"
+                                value={form.currentPrice}
+                                onChange={set("currentPrice")}
+                                disabled={!form.maxMemory}
+                                title="Only available when Max Memory is set"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">
+                                Optional override price.
                             </p>
                         </div>
                     </div>

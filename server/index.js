@@ -9,7 +9,9 @@ const botRoutes = require("./routes/bots");
 const logRoutes = require("./routes/logs");
 const systemRoutes = require("./routes/system");
 const groupRoutes = require("./routes/groups");
+const externalRoutes = require("./routes/external");
 const { authMiddleware } = require("./middleware/auth");
+const { apiKeyMiddleware } = require("./middleware/apiKey");
 const errorHandler = require("./middleware/errorHandler");
 const expiryService = require("./services/expiryService");
 const backupService = require("./services/backupService");
@@ -59,6 +61,7 @@ app.use("/api/bots", authMiddleware, botRoutes);
 app.use("/api/groups", authMiddleware, groupRoutes);
 app.use("/api/logs", logRoutes); // Auth handled per-route (SSE needs query-param token)
 app.use("/api/system", authMiddleware, systemRoutes);
+app.use("/api/external", apiKeyMiddleware, externalRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production

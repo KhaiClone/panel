@@ -98,6 +98,7 @@ router.post("/", async (req, res, next) => {
             expiresAt,
             groupId = null,
             maxMemory = null,
+            currentPrice = null,
         } = req.body;
 
         // Validate required fields
@@ -142,6 +143,7 @@ router.post("/", async (req, res, next) => {
             localPath: null,
             groupId,
             maxMemory,
+            currentPrice,
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
             createdAt: Date.now(),
         });
@@ -186,6 +188,7 @@ router.post("/import-local", async (req, res, next) => {
             expiresAt,
             groupId = null,
             maxMemory = null,
+            currentPrice = null,
         } = req.body;
 
         if (!buyerID || !botID || !name || !localPath) {
@@ -244,6 +247,7 @@ router.post("/import-local", async (req, res, next) => {
             localPath,
             groupId,
             maxMemory,
+            currentPrice,
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
             createdAt: Date.now(),
         });
@@ -270,13 +274,14 @@ router.put("/:id", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const { name, expiresAt, startScript, groupId, maxMemory } = req.body;
+        const { name, expiresAt, startScript, groupId, maxMemory, currentPrice } = req.body;
 
         const updates = {};
         if (name !== undefined) updates.name = name;
         if (startScript !== undefined) updates.startScript = startScript;
         if (groupId !== undefined) updates.groupId = groupId;
         if (maxMemory !== undefined) updates.maxMemory = maxMemory || null;
+        if (currentPrice !== undefined) updates.currentPrice = currentPrice || null;
         if (expiresAt !== undefined) {
             updates.expiresAt = expiresAt
                 ? new Date(expiresAt).getTime()

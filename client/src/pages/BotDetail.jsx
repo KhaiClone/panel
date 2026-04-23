@@ -72,6 +72,7 @@ export default function BotDetail() {
   const [editScript,    setEditScript]    = useState('');
   const [editGroupId,   setEditGroupId]   = useState('');
   const [editMaxMemory, setEditMaxMemory] = useState('');
+  const [editPrice,     setEditPrice]     = useState('');
   const [savingMeta,    setSavingMeta]    = useState(false);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ export default function BotDetail() {
       setEditScript(data.startScript || 'index.js');
       setEditGroupId(data.groupId || '');
       setEditMaxMemory(data.maxMemory || '');
+      setEditPrice(data.currentPrice || '');
       setEditExpiry(
         data.expiresAt
           ? toLocalDatetimeInputValue(data.expiresAt)
@@ -137,6 +139,7 @@ export default function BotDetail() {
         startScript: editScript,
         groupId:     editGroupId || null,
         maxMemory:   editMaxMemory || null,
+        currentPrice: editPrice ? Number(editPrice) : null,
         expiresAt:   editExpiry ? new Date(editExpiry).toISOString() : null,
       };
       await api.put(`/bots/${id}`, payload);
@@ -334,8 +337,7 @@ export default function BotDetail() {
               <input className="input font-mono" value={editScript} onChange={(e) => setEditScript(e.target.value)} />
             </div>
 
-            {/* Group + Max Memory side by side */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="label">Group</label>
                 <select className="input" value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}>
@@ -356,6 +358,19 @@ export default function BotDetail() {
                   title={MEM_HINT}
                 />
                 <p className="text-xs text-slate-500 mt-1">{MEM_HINT}</p>
+              </div>
+              <div>
+                <label className="label">Current Price (VND/m)</label>
+                <input
+                  type="number"
+                  className="input font-mono disabled:opacity-50"
+                  placeholder="Optional"
+                  value={editPrice}
+                  onChange={(e) => setEditPrice(e.target.value)}
+                  disabled={!editMaxMemory}
+                  title="Only available when Max Memory is set"
+                />
+                <p className="text-xs text-slate-500 mt-1">Optional override price.</p>
               </div>
             </div>
 
