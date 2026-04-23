@@ -40,17 +40,17 @@ const sendExpiryWarning = async (bot, daysLeft) => {
         daysLeft <= 1 ? 0xff4444 : daysLeft <= 3 ? 0xff8c00 : 0xffd700;
 
     await sendWebhook(webhookUrl, {
+        content: `<@${bot.buyerID}>`,
         embeds: [
             {
                 title: "⚠️ Bot Expiry Warning",
                 color,
-                description: `<@${bot.buyerID}> — your bot is expiring soon!`,
+                description: "**Bot is expiring soon!**",
                 fields: [
                     { name: "🤖 Bot Name", value: bot.name, inline: true },
-                    { name: "🆔 Bot ID", value: bot.botID, inline: true },
                     {
-                        name: "👤 Buyer ID",
-                        value: `\`${bot.buyerID}\``,
+                        name: "🆔 Bot ID",
+                        value: `\`${bot.botID}\``,
                         inline: true,
                     },
                     {
@@ -61,6 +61,11 @@ const sendExpiryWarning = async (bot, daysLeft) => {
                     {
                         name: "📅 Expires At",
                         value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
+                        inline: true,
+                    },
+                    {
+                        name: "🔗 Extend This Bot",
+                        value: `<#1480431381808152586> or create ticket at <#1246028759597846650> for a support.`,
                         inline: false,
                     },
                 ],
