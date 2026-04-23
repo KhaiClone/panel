@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import LogViewer from '../components/LogViewer';
-import EnvEditor from '../components/EnvEditor';
 import ConfirmModal from '../components/ConfirmModal';
+import FileEditor from '../components/FileEditor';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ const getMemoryPercent = (usedBytes, maxMemStr) => {
   return ((usedBytes / val) * 100).toFixed(1) + '%';
 };
 
-const TABS = ['Controls', 'Logs', 'Environment', 'Settings'];
+const TABS = ['Controls', 'Logs', 'Environment', 'Files', 'Settings'];
 const MEM_HINT = 'e.g. "300M", "1G" — blank for no limit';
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -351,6 +351,11 @@ export default function BotDetail() {
         {/* ── Tab: Environment ────────────────────────────────────────────── */}
         {tab === 'Environment' && (
           <div className="card"><EnvEditor botId={id} /></div>
+        )}
+
+        {/* ── Tab: Files ──────────────────────────────────────────────────── */}
+        {tab === 'Files' && (
+          <div className="card"><FileEditor botId={id} /></div>
         )}
 
         {/* ── Tab: Settings ───────────────────────────────────────────────── */}

@@ -490,4 +490,128 @@ router.put("/:id/env", async (req, res, next) => {
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  File Manager
+// ─────────────────────────────────────────────────────────────────────────────
+
+const resolveSafePath = (baseDir, reqPath) => {
+    // Normalize requested path to remove ../ etc.
+    const target = path.normalize(path.join(baseDir, reqPath || ""));
+    // Ensure the target is still inside baseDir
+    if (!target.startsWith(path.normalize(baseDir))) {
+        throw new Error("Invalid path");
+    }
+    return target;
+};
+
+/**
+ * GET /api/bots/:id/fs/list?path=...
+ * Lists directories and files for a given path relative to the bot's root folder.
+ */
+router.get("/:id/fs/list", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const baseDir = botDir(bot);
+        if (!fs.existsSync(baseDir)) return res.json({ files: [] });
+
+        let targetDir;
+        try {
+            targetDir = resolveSafePath(baseDir, req.query.path);
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+            return res.status(400).json({ error: "Directory not found" });
+        }
+
+        const items = fs.readdirSync(targetDir).map(name => {
+            const fullPath = path.join(targetDir, name);
+            const stat = fs.statSync(fullPath);
+            return {
+                name,
+                isDir: stat.isDirectory(),
+                size: stat.size,
+                mtime: stat.mtimeMs
+            };
+        });
+
+        // Sort directories first, then alphabetically
+        items.sort((a, b) => {
+            if (a.isDir && !b.isDir) return -1;
+            if (!a.isDir && b.isDir) return 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        res.json({ files: items });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /api/bots/:id/fs/read?path=...
+ * Returns the contents of a specific file. Max 1MB.
+ */
+router.get("/:id/fs/read", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const baseDir = botDir(bot);
+        let targetFile;
+        try {
+            targetFile = resolveSafePath(baseDir, req.query.path);
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
+            return res.status(404).json({ error: "File not found" });
+        }
+
+        const stat = fs.statSync(targetFile);
+        if (stat.size > 1024 * 1024) {
+            return res.status(400).json({ error: "File too large to edit (max 1MB)" });
+        }
+
+        const content = fs.readFileSync(targetFile, "utf8");
+        res.json({ content });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * PUT /api/bots/:id/fs/write
+ * Writes updated content to a specific file.
+ * Body: { path: string, content: string }
+ */
+router.put("/:id/fs/write", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const { path: reqPath, content } = req.body;
+        if (content === undefined || !reqPath) {
+            return res.status(400).json({ error: "path and content are required" });
+        }
+
+        const baseDir = botDir(bot);
+        let targetFile;
+        try {
+            targetFile = resolveSafePath(baseDir, reqPath);
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        fs.writeFileSync(targetFile, content, "utf8");
+        res.json({ message: "File saved successfully" });
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;
