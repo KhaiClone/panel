@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import LogViewer from '../components/LogViewer';
+import EnvEditor from '../components/EnvEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import FileEditor from '../components/FileEditor';
 
