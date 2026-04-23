@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import api from "../api/client";
 
 export default function FileEditor({ botId }) {
@@ -11,6 +11,8 @@ export default function FileEditor({ botId }) {
     const [loadingFile, setLoadingFile] = useState(false);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState(null);
+
+    const fileInputRef = useRef(null);
 
     const loadDirectory = async (path = "") => {
         setLoadingDir(true);
@@ -60,13 +62,85 @@ export default function FileEditor({ botId }) {
         }
     };
 
+    const handleCreate = async (type) => {
+        const name = window.prompt(`Enter new ${type} name:`);
+        if (!name) return;
+        
+        const newPath = currentPath ? `${currentPath}/${name}` : name;
+        try {
+            await api.post(`/bots/${botId}/fs/create`, { path: newPath, type });
+            loadDirectory(currentPath);
+            setMsg({ type: "success", text: `✅ Created ${name}` });
+        } catch (err) {
+            setMsg({ type: "error", text: err.response?.data?.error || "Failed to create" });
+        }
+    };
+
+    const handleDelete = async (e, f) => {
+        e.stopPropagation();
+        const pathToDelete = currentPath ? `${currentPath}/${f.name}` : f.name;
+        if (!window.confirm(`Are you sure you want to delete ${f.name}?`)) return;
+
+        try {
+            await api.delete(`/bots/${botId}/fs/delete`, { data: { path: pathToDelete } });
+            if (selectedFile === pathToDelete) {
+                setSelectedFile(null);
+                setContent("");
+                setOriginal("");
+            }
+            loadDirectory(currentPath);
+            setMsg({ type: "success", text: `✅ Deleted ${f.name}` });
+        } catch (err) {
+            setMsg({ type: "error", text: err.response?.data?.error || "Failed to delete" });
+        }
+    };
+
+    const handleRename = async (e, f) => {
+        e.stopPropagation();
+        const oldPath = currentPath ? `${currentPath}/${f.name}` : f.name;
+        const newName = window.prompt("Enter new name:", f.name);
+        if (!newName || newName === f.name) return;
+        
+        const newPath = currentPath ? `${currentPath}/${newName}` : newName;
+        try {
+            await api.put(`/bots/${botId}/fs/rename`, { oldPath, newPath });
+            if (selectedFile === oldPath) {
+                setSelectedFile(newPath);
+            }
+            loadDirectory(currentPath);
+            setMsg({ type: "success", text: `✅ Renamed to ${newName}` });
+        } catch (err) {
+            setMsg({ type: "error", text: err.response?.data?.error || "Failed to rename" });
+        }
+    };
+
+    const handleUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("path", currentPath);
+        formData.append("file", file);
+
+        setMsg(null);
+        try {
+            await api.post(`/bots/${botId}/fs/upload`, formData, {
+                headers: { "Content-Type": "multipart/form-data" }
+            });
+            loadDirectory(currentPath);
+            setMsg({ type: "success", text: `✅ Uploaded ${file.name}` });
+        } catch (err) {
+            setMsg({ type: "error", text: err.response?.data?.error || "Upload failed" });
+        } finally {
+            e.target.value = ""; // Reset input
+        }
+    };
+
     useEffect(() => {
         loadDirectory("");
     }, [botId]);
 
     const isDirty = content !== original;
-
-    // Breadcrumb parsing
     const parts = currentPath ? currentPath.split(/[\/\\]/).filter(Boolean) : [];
     
     const handleNavigateUp = () => {
@@ -84,7 +158,19 @@ export default function FileEditor({ botId }) {
         <div className="flex flex-col md:flex-row gap-4 h-[600px]">
             {/* File Browser (Left) */}
             <div className="w-full md:w-1/3 flex flex-col border border-slate-700 rounded bg-slate-800/50 overflow-hidden">
-                <div className="p-2 border-b border-slate-700 bg-slate-800 flex items-center gap-1 text-xs font-mono overflow-x-auto whitespace-nowrap scrollbar-thin">
+                {/* Actions Toolbar */}
+                <div className="p-2 border-b border-slate-700 bg-slate-800 flex items-center justify-between gap-2 text-xs">
+                    <div className="flex gap-2">
+                        <button className="text-slate-300 hover:text-emerald-400" onClick={() => handleCreate('file')} title="New File">📄+</button>
+                        <button className="text-slate-300 hover:text-emerald-400" onClick={() => handleCreate('dir')} title="New Folder">📁+</button>
+                        <button className="text-slate-300 hover:text-indigo-400" onClick={() => fileInputRef.current?.click()} title="Upload File">⬆️ Upload</button>
+                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleUpload} />
+                    </div>
+                    <button className="text-slate-400 hover:text-slate-200" onClick={() => loadDirectory(currentPath)} title="Refresh">🔄</button>
+                </div>
+
+                {/* Breadcrumbs */}
+                <div className="px-2 py-1.5 border-b border-slate-700 bg-slate-800/80 flex items-center gap-1 text-xs font-mono overflow-x-auto whitespace-nowrap scrollbar-thin">
                     <button 
                         className="text-indigo-400 hover:text-indigo-300 shrink-0" 
                         onClick={() => loadDirectory("")}
@@ -104,6 +190,7 @@ export default function FileEditor({ botId }) {
                     ))}
                 </div>
                 
+                {/* File List */}
                 <div className="flex-1 overflow-y-auto p-2 space-y-0.5 scrollbar-thin">
                     {loadingDir ? (
                         <div className="text-center text-slate-500 py-4 text-xs animate-pulse">Loading...</div>
@@ -124,9 +211,9 @@ export default function FileEditor({ botId }) {
                                 const fullPath = currentPath ? `${currentPath}/${f.name}` : f.name;
                                 const isSelected = selectedFile === fullPath;
                                 return (
-                                    <button
+                                    <div
                                         key={f.name}
-                                        className={`w-full text-left px-2 py-1.5 text-xs rounded flex items-center gap-2 truncate ${
+                                        className={`group w-full text-left px-2 py-1.5 text-xs rounded flex items-center justify-between gap-2 cursor-pointer ${
                                             isSelected ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-700'
                                         }`}
                                         onClick={() => {
@@ -137,9 +224,27 @@ export default function FileEditor({ botId }) {
                                             }
                                         }}
                                     >
-                                        <span className="shrink-0">{f.isDir ? '📁' : '📄'}</span>
-                                        <span className="truncate">{f.name}</span>
-                                    </button>
+                                        <div className="flex items-center gap-2 truncate">
+                                            <span className="shrink-0">{f.isDir ? '📁' : '📄'}</span>
+                                            <span className="truncate">{f.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button 
+                                                className="hover:text-amber-300" 
+                                                onClick={(e) => handleRename(e, f)}
+                                                title="Rename"
+                                            >
+                                                ✏️
+                                            </button>
+                                            <button 
+                                                className="hover:text-red-400" 
+                                                onClick={(e) => handleDelete(e, f)}
+                                                title="Delete"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </div>
                                 );
                             })}
                         </>

@@ -614,4 +614,166 @@ router.put("/:id/fs/write", async (req, res, next) => {
     }
 });
 
+const multer = require("multer");
+
+const storage = multer.diskStorage({
+    destination: async (req, file, cb) => {
+        try {
+            const bot = await db.findOne("bots", { _id: req.params.id });
+            if (!bot) return cb(new Error("Bot not found"));
+            
+            const baseDir = botDir(bot);
+            const targetDir = resolveSafePath(baseDir, req.body.path || "");
+            
+            if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+                return cb(new Error("Directory not found"));
+            }
+            cb(null, targetDir);
+        } catch (e) {
+            cb(e);
+        }
+    },
+    filename: (req, file, cb) => {
+        cb(null, file.originalname);
+    }
+});
+
+const upload = multer({ storage });
+
+/**
+ * POST /api/bots/:id/fs/create
+ * Creates a file or directory.
+ * Body: { path: string, type: 'file' | 'dir' }
+ */
+router.post("/:id/fs/create", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const { path: reqPath, type } = req.body;
+        if (!reqPath || !type) {
+            return res.status(400).json({ error: "path and type are required" });
+        }
+
+        const baseDir = botDir(bot);
+        let targetPath;
+        try {
+            targetPath = resolveSafePath(baseDir, reqPath);
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        if (fs.existsSync(targetPath)) {
+            return res.status(400).json({ error: "Path already exists" });
+        }
+
+        if (type === "dir") {
+            fs.mkdirSync(targetPath, { recursive: true });
+        } else {
+            fs.writeFileSync(targetPath, "", "utf8");
+        }
+
+        res.json({ message: `${type === 'dir' ? 'Directory' : 'File'} created successfully` });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * DELETE /api/bots/:id/fs/delete
+ * Deletes a file or directory.
+ * Body: { path: string }
+ */
+router.delete("/:id/fs/delete", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const { path: reqPath } = req.body;
+        if (!reqPath) {
+            return res.status(400).json({ error: "path is required" });
+        }
+
+        const baseDir = botDir(bot);
+        let targetPath;
+        try {
+            targetPath = resolveSafePath(baseDir, reqPath);
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        if (!fs.existsSync(targetPath)) {
+            return res.status(404).json({ error: "Path not found" });
+        }
+
+        if (targetPath === baseDir || targetPath === path.normalize(baseDir)) {
+            return res.status(400).json({ error: "Cannot delete the root directory" });
+        }
+
+        fs.rmSync(targetPath, { recursive: true, force: true });
+        res.json({ message: "Deleted successfully" });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * PUT /api/bots/:id/fs/rename
+ * Renames a file or directory.
+ * Body: { oldPath: string, newPath: string }
+ */
+router.put("/:id/fs/rename", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const { oldPath, newPath } = req.body;
+        if (!oldPath || !newPath) {
+            return res.status(400).json({ error: "oldPath and newPath are required" });
+        }
+
+        const baseDir = botDir(bot);
+        let targetOldPath, targetNewPath;
+        try {
+            targetOldPath = resolveSafePath(baseDir, oldPath);
+            targetNewPath = resolveSafePath(baseDir, newPath);
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        if (!fs.existsSync(targetOldPath)) {
+            return res.status(404).json({ error: "Original path not found" });
+        }
+
+        if (fs.existsSync(targetNewPath)) {
+            return res.status(400).json({ error: "Destination path already exists" });
+        }
+
+        if (targetOldPath === baseDir || targetOldPath === path.normalize(baseDir)) {
+            return res.status(400).json({ error: "Cannot rename the root directory" });
+        }
+
+        fs.renameSync(targetOldPath, targetNewPath);
+        res.json({ message: "Renamed successfully" });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/bots/:id/fs/upload
+ * Uploads a file to the specified directory.
+ * Form Data: path (string), file (File)
+ */
+router.post("/:id/fs/upload", upload.single("file"), async (req, res, next) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded" });
+        }
+        res.json({ message: "File uploaded successfully", file: req.file.originalname });
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;
