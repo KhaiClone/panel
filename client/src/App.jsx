@@ -3,10 +3,11 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import BotDetail from "./pages/BotDetail";
+import GroupsPage from "./pages/GroupsPage";
+import SystemPage from "./pages/SystemPage";
 import Layout from "./components/Layout";
 
 // ── Auth Guard ─────────────────────────────────────────────────────────────
-// Wraps any route that requires the admin to be logged in.
 function PrivateRoute({ children }) {
     const { user, loading } = useAuth();
 
@@ -38,19 +39,15 @@ export default function App() {
                             </PrivateRoute>
                         }
                     >
-                        <Route
-                            index
-                            element={<Navigate to="/dashboard" replace />}
-                        />
+                        <Route index element={<Navigate to="/dashboard" replace />} />
                         <Route path="dashboard" element={<Dashboard />} />
-                        <Route path="bots/:id" element={<BotDetail />} />
+                        <Route path="bots/:id"   element={<BotDetail />} />
+                        <Route path="groups"     element={<GroupsPage />} />
+                        <Route path="system"     element={<SystemPage />} />
                     </Route>
 
                     {/* Fallback */}
-                    <Route
-                        path="*"
-                        element={<Navigate to="/dashboard" replace />}
-                    />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
             </BrowserRouter>
         </AuthProvider>

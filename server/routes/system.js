@@ -10,27 +10,44 @@ const router = express.Router();
  */
 router.get("/stats", async (req, res, next) => {
     try {
-        const [cpuLoad, mem, temp] = await Promise.all([
+        const [cpuLoad, mem, fsData, temp] = await Promise.all([
             si.currentLoad(),
             si.mem(),
+            si.fsSize().catch(() => []),
             si.cpuTemperature().catch(() => ({ main: null })),
         ]);
+
+        // Pick the root filesystem or the largest one as the "main" disk
+        const mainFs =
+            fsData.find((f) => f.mount === "/") ||
+            fsData.sort((a, b) => b.size - a.size)[0] ||
+            null;
 
         res.json({
             cpu: {
                 usagePercent: parseFloat(cpuLoad.currentLoad.toFixed(2)),
-                temperature: temp.main ?? null, // null if not supported
+                temperature: temp.main ?? null,
             },
             memory: {
                 totalBytes: mem.total,
-                // mem.active = total - free - buffers - cached,
-                // which matches what btop / neofetch / free -h report as "used".
                 usedBytes: mem.active,
                 freeBytes: mem.available,
                 usedPercent: parseFloat(
                     ((mem.active / mem.total) * 100).toFixed(2),
                 ),
             },
+            disk: mainFs
+                ? {
+                      totalBytes: mainFs.size,
+                      usedBytes: mainFs.used,
+                      freeBytes: mainFs.size - mainFs.used,
+                      usedPercent: parseFloat(
+                          ((mainFs.used / mainFs.size) * 100).toFixed(2),
+                      ),
+                      mount: mainFs.mount,
+                      fs: mainFs.type,
+                  }
+                : null,
         });
     } catch (err) {
         next(err);

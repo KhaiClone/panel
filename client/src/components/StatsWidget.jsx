@@ -11,34 +11,16 @@ function Ring({ percent, color, label, sub }) {
         <div className="flex flex-col items-center gap-2">
             <div className="relative w-24 h-24">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 88 88">
-                    {/* Track */}
+                    <circle cx="44" cy="44" r={r} fill="none" stroke="#334155" strokeWidth="8" />
                     <circle
-                        cx="44"
-                        cy="44"
-                        r={r}
-                        fill="none"
-                        stroke="#334155"
-                        strokeWidth="8"
-                    />
-                    {/* Fill */}
-                    <circle
-                        cx="44"
-                        cy="44"
-                        r={r}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth="8"
-                        strokeLinecap="round"
-                        strokeDasharray={circ}
-                        strokeDashoffset={offset}
+                        cx="44" cy="44" r={r} fill="none"
+                        stroke={color} strokeWidth="8" strokeLinecap="round"
+                        strokeDasharray={circ} strokeDashoffset={offset}
                         style={{ transition: "stroke-dashoffset 0.6s ease" }}
                     />
                 </svg>
-                {/* Center text */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-lg font-bold text-slate-100">
-                        {percent}%
-                    </span>
+                    <span className="text-lg font-bold text-slate-100">{percent}%</span>
                 </div>
             </div>
             <div className="text-center">
@@ -49,10 +31,8 @@ function Ring({ percent, color, label, sub }) {
     );
 }
 
-// ── Bytes → human-readable ──────────────────────────────────────────────────
 const fmt = (bytes) => {
-    if (bytes >= 1_073_741_824)
-        return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+    if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
     if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
     return `${bytes} B`;
 };
@@ -61,14 +41,11 @@ export default function StatsWidget() {
     const [stats, setStats] = useState(null);
 
     const fetchStats = () => {
-        api.get("/system/stats")
-            .then((r) => setStats(r.data))
-            .catch(() => {}); // silently fail — server may be briefly busy
+        api.get("/system/stats").then((r) => setStats(r.data)).catch(() => {});
     };
 
     useEffect(() => {
         fetchStats();
-        // Poll every 4 seconds
         const interval = setInterval(fetchStats, 4_000);
         return () => clearInterval(interval);
     }, []);
@@ -81,19 +58,14 @@ export default function StatsWidget() {
         );
     }
 
-    const cpuColor =
-        stats.cpu.usagePercent > 80
-            ? "#f87171"
-            : stats.cpu.usagePercent > 50
-              ? "#fb923c"
-              : "#34d399";
-    const ramColor =
-        stats.memory.usedPercent > 80
-            ? "#f87171"
-            : stats.memory.usedPercent > 50
-              ? "#fb923c"
-              : "#818cf8";
+    const cpuColor = stats.cpu.usagePercent > 80 ? "#f87171" : stats.cpu.usagePercent > 50 ? "#fb923c" : "#34d399";
+    const ramColor = stats.memory.usedPercent > 80 ? "#f87171" : stats.memory.usedPercent > 50 ? "#fb923c" : "#818cf8";
+    const diskColor = stats.disk
+        ? stats.disk.usedPercent > 85 ? "#f87171" : stats.disk.usedPercent > 65 ? "#fb923c" : "#38bdf8"
+        : "#64748b";
+
     const ramSub = `${fmt(stats.memory.usedBytes)} / ${fmt(stats.memory.totalBytes)}`;
+    const diskSub = stats.disk ? `${fmt(stats.disk.usedBytes)} / ${fmt(stats.disk.totalBytes)}` : null;
 
     return (
         <div className="card">
@@ -105,18 +77,19 @@ export default function StatsWidget() {
                     percent={stats.cpu.usagePercent}
                     color={cpuColor}
                     label="CPU"
-                    sub={
-                        stats.cpu.temperature
-                            ? `${stats.cpu.temperature}°C`
-                            : "Load"
-                    }
+                    sub={stats.cpu.temperature ? `${stats.cpu.temperature}°C` : "Load"}
                 />
-                <Ring
-                    percent={stats.memory.usedPercent}
-                    color={ramColor}
-                    label="RAM"
-                    sub={ramSub}
-                />
+                <Ring percent={stats.memory.usedPercent} color={ramColor} label="RAM" sub={ramSub} />
+                {stats.disk ? (
+                    <Ring percent={stats.disk.usedPercent} color={diskColor} label="Disk" sub={diskSub} />
+                ) : (
+                    <div className="flex flex-col items-center gap-2 opacity-40">
+                        <div className="w-24 h-24 rounded-full border-4 border-slate-700 flex items-center justify-center">
+                            <span className="text-slate-500 text-xs">N/A</span>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-500">Disk</p>
+                    </div>
+                )}
             </div>
         </div>
     );

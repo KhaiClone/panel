@@ -8,11 +8,11 @@ import FileEditor from '../components/FileEditor';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const STATUS_STYLES = {
-  online:    'text-emerald-400',
-  stopped:   'text-red-400',
-  errored:   'text-orange-400',
-  launching: 'text-yellow-400',
+const STATUS_CONFIG = {
+  online:    { dot: 'bg-emerald-400', glow: 'shadow-emerald-500/50', badge: 'bg-emerald-900/40 border-emerald-600 text-emerald-300', label: 'Online',    pulse: true },
+  stopped:   { dot: 'bg-red-400',     glow: 'shadow-red-500/50',     badge: 'bg-red-900/40 border-red-700 text-red-300',             label: 'Stopped',   pulse: false },
+  errored:   { dot: 'bg-orange-400',  glow: 'shadow-orange-500/50',  badge: 'bg-orange-900/40 border-orange-600 text-orange-300',    label: 'Errored',   pulse: true },
+  launching: { dot: 'bg-yellow-400',  glow: 'shadow-yellow-500/50',  badge: 'bg-yellow-900/40 border-yellow-600 text-yellow-300',   label: 'Launching', pulse: true },
 };
 
 const fmt = (bytes) => {
@@ -23,20 +23,12 @@ const fmt = (bytes) => {
 
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleString() : '—';
 
-/**
- * Convert a UTC timestamp (ms) to "YYYY-MM-DDTHH:MM" in LOCAL time
- * so that <input type="datetime-local"> shows the correct local datetime
- * without any timezone drift on repeated saves.
- */
 const toLocalDatetimeInputValue = (tsMs) => {
   const d = new Date(tsMs);
   const pad = (n) => String(n).padStart(2, '0');
   return (
-    d.getFullYear() + '-' +
-    pad(d.getMonth() + 1) + '-' +
-    pad(d.getDate()) + 'T' +
-    pad(d.getHours()) + ':' +
-    pad(d.getMinutes())
+    d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' +
+    pad(d.getHours()) + ':' + pad(d.getMinutes())
   );
 };
 
@@ -62,8 +54,9 @@ const formatUptime = (pmUptime) => {
   return `${m}m`;
 };
 
-const getMemoryPercent = (usedBytes, maxMemStr) => {
-  if (!usedBytes || !maxMemStr) return null;
+// Parse a memory limit string like "300M", "1G" → bytes
+const parseMemLimit = (maxMemStr) => {
+  if (!maxMemStr) return null;
   const match = maxMemStr.match(/^(\d+)([KMG]?)$/i);
   if (!match) return null;
   let val = parseInt(match[1], 10);
@@ -71,11 +64,68 @@ const getMemoryPercent = (usedBytes, maxMemStr) => {
   if (unit === 'K') val *= 1024;
   else if (unit === 'M') val *= 1024 * 1024;
   else if (unit === 'G') val *= 1024 * 1024 * 1024;
-  if (val <= 0) return null;
-  return ((usedBytes / val) * 100).toFixed(1) + '%';
+  return val > 0 ? val : null;
 };
 
-const TABS = ['Controls', 'Logs', 'Environment', 'Files', 'Settings'];
+const getMemoryPercent = (usedBytes, maxMemStr) => {
+  const limit = parseMemLimit(maxMemStr);
+  if (!usedBytes || !limit) return null;
+  return parseFloat(((usedBytes / limit) * 100).toFixed(1));
+};
+
+// ── Status Badge ───────────────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  const cfg = STATUS_CONFIG[status] ?? {
+    dot: 'bg-slate-400', glow: '', badge: 'bg-slate-800 border-slate-600 text-slate-300', label: status ?? 'Unknown', pulse: false,
+  };
+  return (
+    <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-sm font-semibold shadow-lg ${cfg.badge}`}>
+      <span className="relative flex h-2.5 w-2.5">
+        {cfg.pulse && (
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.dot}`} />
+        )}
+        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${cfg.dot}`} />
+      </span>
+      {cfg.label}
+    </span>
+  );
+}
+
+// ── Circular ring for resources ────────────────────────────────────────────
+function ResourceRing({ percent, color, label, sub, size = 'md' }) {
+  const dim = size === 'lg' ? { w: 140, cx: 70, r: 56, sw: 10, fs: 'text-2xl' } : { w: 96, cx: 44, r: 36, sw: 8, fs: 'text-lg' };
+  const circ = 2 * Math.PI * dim.r;
+  const offset = circ - ((Math.min(percent, 100)) / 100) * circ;
+
+  const pct = Math.min(percent, 100);
+  const autoColor = color ?? (pct > 85 ? '#f87171' : pct > 60 ? '#fb923c' : '#818cf8');
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div className="relative" style={{ width: dim.w, height: dim.w }}>
+        <svg className="w-full h-full -rotate-90" viewBox={`0 0 ${dim.w * 2 / (size === 'lg' ? 2 : 1)} ${dim.w * 2 / (size === 'lg' ? 2 : 1)}`}
+          style={{ width: dim.w, height: dim.w }}>
+          <circle cx={dim.cx} cy={dim.cx} r={dim.r} fill="none" stroke="#1e293b" strokeWidth={dim.sw} />
+          <circle
+            cx={dim.cx} cy={dim.cx} r={dim.r} fill="none"
+            stroke={autoColor} strokeWidth={dim.sw} strokeLinecap="round"
+            strokeDasharray={circ} strokeDashoffset={offset}
+            style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)', filter: `drop-shadow(0 0 6px ${autoColor}88)` }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={`font-bold text-slate-100 ${dim.fs}`}>{pct}%</span>
+        </div>
+      </div>
+      <div className="text-center">
+        <p className={`font-semibold text-slate-200 ${size === 'lg' ? 'text-base' : 'text-sm'}`}>{label}</p>
+        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+const TABS = ['Controls', 'Resources', 'Logs', 'Environment', 'Files', 'Settings'];
 const MEM_HINT = 'e.g. "300M", "1G" — blank for no limit';
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -111,11 +161,7 @@ export default function BotDetail() {
       setEditGroupId(data.groupId || '');
       setEditMaxMemory(data.maxMemory || '');
       setEditPrice(data.currentPrice || '');
-      setEditExpiry(
-        data.expiresAt
-          ? toLocalDatetimeInputValue(data.expiresAt)
-          : ''
-      );
+      setEditExpiry(data.expiresAt ? toLocalDatetimeInputValue(data.expiresAt) : '');
     } catch {
       navigate('/dashboard');
     } finally {
@@ -187,28 +233,30 @@ export default function BotDetail() {
     );
   }
 
-  const statusColor = STATUS_STYLES[bot.live?.status] ?? 'text-slate-400';
-  const isOnline    = bot.live?.status === 'online';
-  const isStopped   = !isOnline;
-  const isLocal     = bot.source === 'local';
-  const msLeft      = bot.expiresAt ? bot.expiresAt - Date.now() : null;
-
-  // Find current group
+  const isOnline  = bot.live?.status === 'online';
+  const isStopped = !isOnline;
+  const isLocal   = bot.source === 'local';
+  const msLeft    = bot.expiresAt ? bot.expiresAt - Date.now() : null;
   const currentGroup = groups.find((g) => g._id === bot.groupId);
+
+  // Memory ring data
+  const memPercent   = getMemoryPercent(bot.live?.memory, bot.maxMemory);
+  const memLimitBytes = parseMemLimit(bot.maxMemory);
+  const cpuPct = parseFloat((bot.live?.cpu ?? 0).toFixed(1));
 
   return (
     <>
       <div className="p-6 max-w-5xl mx-auto space-y-6">
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <button
-            className="text-slate-500 hover:text-slate-300 transition-colors"
+            className="text-slate-500 hover:text-slate-300 transition-colors mt-1"
             onClick={() => navigate('/dashboard')}
           >
             ← Back
           </button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold text-slate-100 truncate">{bot.name}</h1>
               {isLocal && (
                 <span className="text-xs bg-violet-900/50 border border-violet-700 text-violet-300 px-2 py-0.5 rounded-full shrink-0">
@@ -228,21 +276,22 @@ export default function BotDetail() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500 font-mono">{bot.buyerID} / {bot.botID}</p>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">{bot.buyerID} / {bot.botID}</p>
           </div>
-          <span className={`text-sm font-semibold ${statusColor}`}>
-            {bot.live?.status ?? 'unknown'}
-          </span>
+          {/* Beautiful status badge */}
+          <div className="shrink-0 mt-1">
+            <StatusBadge status={bot.live?.status} />
+          </div>
         </div>
 
-        {/* ── System Resources ────────────────────────────────────────────── */}
+        {/* ── Summary cards ───────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {[
             { label: 'CPU',      value: `${bot.live?.cpu ?? 0}%` },
-            { 
-              label: 'RAM',      
+            {
+              label: 'RAM',
               value: fmt(bot.live?.memory),
-              subtext: getMemoryPercent(bot.live?.memory, bot.maxMemory) ? `${getMemoryPercent(bot.live?.memory, bot.maxMemory)} of max` : null
+              subtext: memPercent !== null ? `${memPercent}% of max` : null,
             },
             { label: 'Uptime',   value: isOnline ? formatUptime(bot.live?.uptime) : '—' },
             { label: 'Restarts', value: bot.live?.restarts ?? 0 },
@@ -276,11 +325,11 @@ export default function BotDetail() {
         )}
 
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
-        <div className="flex border-b border-slate-700 gap-1">
+        <div className="flex border-b border-slate-700 gap-1 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
                 tab === t
                   ? 'border-indigo-500 text-indigo-400'
                   : 'border-transparent text-slate-500 hover:text-slate-300'
@@ -340,6 +389,81 @@ export default function BotDetail() {
                   <span className="text-slate-200 font-mono text-xs break-all">{value}</span>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Tab: Resources ──────────────────────────────────────────────── */}
+        {tab === 'Resources' && (
+          <div className="space-y-4">
+            {/* Status hero */}
+            <div className="card flex items-center gap-4">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Current Status</p>
+                <StatusBadge status={bot.live?.status} />
+              </div>
+              <div className="border-l border-slate-700 pl-4 ml-2">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Uptime</p>
+                <p className="text-lg font-bold text-slate-100">{isOnline ? formatUptime(bot.live?.uptime) : '—'}</p>
+              </div>
+              <div className="border-l border-slate-700 pl-4">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Restarts</p>
+                <p className="text-lg font-bold text-slate-100">{bot.live?.restarts ?? 0}</p>
+              </div>
+            </div>
+
+            {/* Resource rings */}
+            <div className="card">
+              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-6">
+                Process Resource Usage
+              </h2>
+              <div className="flex flex-wrap items-center justify-around gap-8 py-4">
+                {/* CPU ring */}
+                <ResourceRing
+                  percent={cpuPct}
+                  color={cpuPct > 80 ? '#f87171' : cpuPct > 50 ? '#fb923c' : '#34d399'}
+                  label="CPU Usage"
+                  sub={`${cpuPct}% of core`}
+                  size="lg"
+                />
+
+                {/* RAM ring — with limit % if available, else raw bytes */}
+                {memPercent !== null ? (
+                  <ResourceRing
+                    percent={memPercent}
+                    label="Memory Usage"
+                    sub={`${fmt(bot.live?.memory)} / ${fmt(memLimitBytes)}`}
+                    size="lg"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <div
+                      className="w-36 h-36 rounded-full flex items-center justify-center"
+                      style={{
+                        background: 'conic-gradient(#818cf8 0%, #1e293b 0%)',
+                        boxShadow: '0 0 24px #818cf844',
+                        border: '10px solid #1e293b',
+                      }}
+                    >
+                      <div className="flex flex-col items-center justify-center">
+                        <span className="text-2xl font-bold text-slate-100">{fmt(bot.live?.memory)}</span>
+                        <span className="text-xs text-slate-400 mt-1">no limit set</span>
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-base font-semibold text-slate-200">Memory Usage</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Set a limit in Settings to see %</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Warning if memory is high */}
+              {memPercent !== null && memPercent >= 80 && (
+                <div className="mt-4 bg-amber-900/30 border border-amber-700 text-amber-300 rounded-lg px-4 py-2.5 text-sm">
+                  ⚠️ Memory usage is at <strong>{memPercent}%</strong> of the configured limit ({bot.maxMemory}). PM2 will automatically restart this bot when it hits 100%.
+                </div>
+              )}
             </div>
           </div>
         )}
