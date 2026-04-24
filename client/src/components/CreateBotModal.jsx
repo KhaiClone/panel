@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import api from "../api/client";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const defaultForm = {
     // common
-    source: "git",       // "git" | "local"
+    source: "git", // "git" | "local"
     buyerID: "",
     botID: "",
     name: "",
@@ -66,7 +67,9 @@ export default function CreateBotModal({ onClose, onCreated }) {
                               : null,
                           groupId: form.groupId || null,
                           maxMemory: form.maxMemory || null,
-                          currentPrice: form.currentPrice ? Number(form.currentPrice) : null,
+                          currentPrice: form.currentPrice
+                              ? Number(form.currentPrice)
+                              : null,
                       }
                     : {
                           buyerID: form.buyerID,
@@ -80,7 +83,9 @@ export default function CreateBotModal({ onClose, onCreated }) {
                               : null,
                           groupId: form.groupId || null,
                           maxMemory: form.maxMemory || null,
-                          currentPrice: form.currentPrice ? Number(form.currentPrice) : null,
+                          currentPrice: form.currentPrice
+                              ? Number(form.currentPrice)
+                              : null,
                       };
 
             const { data } = await api.post(endpoint, payload);
@@ -95,7 +100,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
 
     const isGit = form.source === "git";
 
-    return (
+    return createPortal(
         /* Backdrop */
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
             <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -364,6 +369,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                     </div>
                 </form>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }

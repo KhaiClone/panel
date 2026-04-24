@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+
 // client/src/components/TrendModal.jsx
 export default function TrendModal({ title, color, data, valueKey, onClose }) {
     // data = array of stat snapshots; valueKey = 'cpu' | 'mem'
@@ -219,7 +221,7 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
 }
 
 function Overlay({ children, onClose }) {
-    return (
+    return createPortal(
         <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
             onClick={(e) => {
@@ -233,6 +235,7 @@ function Overlay({ children, onClose }) {
             >
                 {children}
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }

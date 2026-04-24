@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import api from "../api/client";
 
 // ── Color presets ──────────────────────────────────────────────────────────
@@ -71,7 +72,10 @@ export default function GroupManager({ onClose, onChanged }) {
         setCreating(true);
         setError("");
         try {
-            await api.post("/groups", { name: newName.trim(), color: newColor });
+            await api.post("/groups", {
+                name: newName.trim(),
+                color: newColor,
+            });
             setNewName("");
             await load();
             onChanged?.();
@@ -117,7 +121,7 @@ export default function GroupManager({ onClose, onChanged }) {
         }
     };
 
-    return (
+    return createPortal(
         /* Backdrop */
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
             <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
@@ -247,9 +251,7 @@ export default function GroupManager({ onClose, onChanged }) {
                             onChange={(e) => setNewName(e.target.value)}
                         />
                         <div>
-                            <p className="text-xs text-slate-500 mb-1">
-                                Color
-                            </p>
+                            <p className="text-xs text-slate-500 mb-1">Color</p>
                             <ColorPicker
                                 value={newColor}
                                 onChange={setNewColor}
@@ -265,6 +267,7 @@ export default function GroupManager({ onClose, onChanged }) {
                     </form>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }
