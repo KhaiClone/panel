@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 // client/src/components/TrendModal.jsx
 export default function TrendModal({ title, color, data, valueKey, onClose }) {
     // data = array of stat snapshots; valueKey = 'cpu' | 'mem'
