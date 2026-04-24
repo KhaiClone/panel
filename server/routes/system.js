@@ -10,11 +10,12 @@ const router = express.Router();
  */
 router.get("/stats", async (req, res, next) => {
     try {
-        const [cpuLoad, mem, fsData, temp] = await Promise.all([
+        const [cpuLoad, mem, fsData, temp, cpuInfo] = await Promise.all([
             si.currentLoad(),
             si.mem(),
             si.fsSize().catch(() => []),
             si.cpuTemperature().catch(() => ({ main: null })),
+            si.cpu().catch(() => ({ brand: null, manufacturer: null })),
         ]);
 
         // Pick the root filesystem or the largest one as the "main" disk
@@ -27,7 +28,11 @@ router.get("/stats", async (req, res, next) => {
             cpu: {
                 usagePercent: parseFloat(cpuLoad.currentLoad.toFixed(2)),
                 temperature: temp.main ?? null,
+                model: cpuInfo.brand // e.g. "Core i7-12700K"
+                    ? `${cpuInfo.manufacturer} ${cpuInfo.brand}`.trim()
+                    : null,
             },
+
             memory: {
                 totalBytes: mem.total,
                 usedBytes: mem.active,
