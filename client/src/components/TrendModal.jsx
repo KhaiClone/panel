@@ -221,7 +221,7 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
 function Overlay({ children, onClose }) {
     return (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
             onClick={(e) => {
                 e.stopPropagation();
                 onClose();

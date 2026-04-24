@@ -119,7 +119,7 @@ export default function GroupManager({ onClose, onChanged }) {
 
     return (
         /* Backdrop */
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
             <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">

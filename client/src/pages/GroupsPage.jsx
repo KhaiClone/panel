@@ -176,7 +176,7 @@ export default function GroupsPage() {
 
       {/* Delete confirm */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4">
           <div className="card w-full max-w-sm space-y-4">
             <h2 className="text-lg font-bold text-slate-100">Delete "{deleteTarget.name}"?</h2>
             <p className="text-sm text-slate-400">Bots in this group will become ungrouped. This cannot be undone.</p>
