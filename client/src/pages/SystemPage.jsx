@@ -9,7 +9,7 @@ function Ring({ percent, color, label, sub }) {
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="relative w-36 h-36">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+        <svg className="w-full h-full -rotate-90 overflow-visible" viewBox="0 0 120 120">
           <circle cx="60" cy="60" r={r} fill="none" stroke="#1e293b" strokeWidth="12" />
           <circle
             cx="60" cy="60" r={r} fill="none"
