@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../api/client";
 import TrendModal from "../components/TrendModal";
-const [trendModal, setTrendModal] = useState(null);
 
 // ── Reusable ring ──────────────────────────────────────────────────────────
 function Ring({ percent, color, label, sub }) {
@@ -80,6 +79,7 @@ const fmt = (bytes) => {
 
 export default function SystemPage() {
     const [stats, setStats] = useState(null);
+    const [trendModal, setTrendModal] = useState(null);
     const [history, setHistory] = useState(() => {
         try {
             const saved = localStorage.getItem("bp_sys_history");
@@ -266,25 +266,25 @@ export default function SystemPage() {
                                 <p className="text-xs text-slate-600 text-center mt-1">
                                     CPU trend (last {history.length} samples)
                                 </p>
+                                {trendModal === "cpu" && (
+                                    <TrendModal
+                                        title="CPU"
+                                        color="#34d399"
+                                        data={history}
+                                        valueKey="cpu"
+                                        onClose={() => setTrendModal(null)}
+                                    />
+                                )}
+                                {trendModal === "mem" && (
+                                    <TrendModal
+                                        title="RAM"
+                                        color="#818cf8"
+                                        data={history}
+                                        valueKey="mem"
+                                        onClose={() => setTrendModal(null)}
+                                    />
+                                )}
                             </div>
-                            {trendModal === "cpu" && (
-                                <TrendModal
-                                    title="CPU"
-                                    color="#34d399"
-                                    data={history}
-                                    valueKey="cpu"
-                                    onClose={() => setTrendModal(null)}
-                                />
-                            )}
-                            {trendModal === "mem" && (
-                                <TrendModal
-                                    title="RAM"
-                                    color="#818cf8"
-                                    data={history}
-                                    valueKey="mem"
-                                    onClose={() => setTrendModal(null)}
-                                />
-                            )}
                         </button>
                     )}
                 </div>
@@ -322,25 +322,25 @@ export default function SystemPage() {
                                 <p className="text-xs text-slate-600 text-center mt-1">
                                     RAM trend (last {history.length} samples)
                                 </p>
+                                {trendModal === "cpu" && (
+                                    <TrendModal
+                                        title="CPU"
+                                        color="#34d399"
+                                        data={history}
+                                        valueKey="cpu"
+                                        onClose={() => setTrendModal(null)}
+                                    />
+                                )}
+                                {trendModal === "mem" && (
+                                    <TrendModal
+                                        title="RAM"
+                                        color="#818cf8"
+                                        data={history}
+                                        valueKey="mem"
+                                        onClose={() => setTrendModal(null)}
+                                    />
+                                )}
                             </div>
-                            {trendModal === "cpu" && (
-                                <TrendModal
-                                    title="CPU"
-                                    color="#34d399"
-                                    data={history}
-                                    valueKey="cpu"
-                                    onClose={() => setTrendModal(null)}
-                                />
-                            )}
-                            {trendModal === "mem" && (
-                                <TrendModal
-                                    title="RAM"
-                                    color="#818cf8"
-                                    data={history}
-                                    valueKey="mem"
-                                    onClose={() => setTrendModal(null)}
-                                />
-                            )}
                         </button>
                     )}
                 </div>
