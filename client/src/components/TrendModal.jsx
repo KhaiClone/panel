@@ -17,8 +17,9 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
     }
 
     const W = 560,
-        H = 180,
+        H = 200,
         PAD = 36;
+    const PAD_BOTTOM = 52; // extra room for time labels
     const max = Math.max(...values, 10);
     const pts = values.map((v, i) => {
         const x = PAD + (i / (values.length - 1)) * (W - PAD * 2);
@@ -40,7 +41,7 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
 
             {/* Chart */}
             <svg
-                viewBox={`0 0 ${W} ${H}`}
+                viewBox={`0 0 ${W} ${H + 16}`}
                 className="w-full rounded bg-slate-900/60 mb-4"
             >
                 {/* Grid lines */}
@@ -77,6 +78,49 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
                     strokeWidth="2"
                     strokeLinejoin="round"
                 />
+                {/* X-axis time labels — show ~5 evenly spaced */}
+                {(() => {
+                    const count = Math.min(5, data.length);
+                    const step =
+                        Math.floor((data.length - 1) / (count - 1)) || 1;
+                    const indices = Array.from({ length: count }, (_, i) =>
+                        Math.min(i * step, data.length - 1),
+                    );
+                    return indices.map((idx) => {
+                        const s = data[idx];
+                        const x =
+                            PAD + (idx / (data.length - 1)) * (W - PAD * 2);
+                        const label = s._ts
+                            ? new Date(s._ts).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                              })
+                            : "";
+                        return (
+                            <g key={idx}>
+                                {/* tick mark */}
+                                <line
+                                    x1={x}
+                                    y1={H - PAD_BOTTOM + 4}
+                                    x2={x}
+                                    y2={H - PAD_BOTTOM + 10}
+                                    stroke="#475569"
+                                    strokeWidth="1"
+                                />
+                                {/* time label */}
+                                <text
+                                    x={x}
+                                    y={H - PAD_BOTTOM + 22}
+                                    textAnchor="middle"
+                                    fontSize="9"
+                                    fill="#64748b"
+                                >
+                                    {label}
+                                </text>
+                            </g>
+                        );
+                    });
+                })()}
                 {/* Dots + labels */}
                 {pts.map((p, i) => (
                     <g key={i}>
@@ -172,7 +216,10 @@ function Overlay({ children, onClose }) {
     return (
         <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-            onClick={onClose}
+            onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+            }}
         >
             <div
                 className="card w-full max-w-xl space-y-2"
