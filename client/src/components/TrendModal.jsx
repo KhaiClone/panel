@@ -111,7 +111,13 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
                                 <text
                                     x={x}
                                     y={H - PAD_BOTTOM + 22}
-                                    textAnchor="middle"
+                                    textAnchor={
+                                        idx === 0
+                                            ? "start"
+                                            : idx === data.length - 1
+                                              ? "end"
+                                              : "middle"
+                                    }
                                     fontSize="9"
                                     fill="#64748b"
                                 >
