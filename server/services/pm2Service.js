@@ -11,10 +11,9 @@ const execAsync = util.promisify(exec);
  * --no-color strips ANSI codes from output.
  */
 const runPM2 = async (args) => {
-    const { PORT, ...cleanEnv } = process.env;
-    const { stdout, stderr } = await execAsync(`pm2 ${args} --no-color`, {
-        env: cleanEnv,
-    });
+    const { stdout, stderr } = await execAsync(
+        `env -u PORT pm2 ${args} --no-color`,
+    );
     return stdout || stderr;
 };
 
