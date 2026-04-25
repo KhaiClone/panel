@@ -11,7 +11,10 @@ const execAsync = util.promisify(exec);
  * --no-color strips ANSI codes from output.
  */
 const runPM2 = async (args) => {
-    const { stdout, stderr } = await execAsync(`pm2 ${args} --no-color`);
+    const { PORT, ...cleanEnv } = process.env;
+    const { stdout, stderr } = await execAsync(`pm2 ${args} --no-color`, {
+        env: cleanEnv,
+    });
     return stdout || stderr;
 };
 
@@ -41,7 +44,12 @@ const pm2Save = async () => {
  * @param {string} startScript - Entry file relative to botPath (default: index.js)
  * @param {string|null} maxMemory - Memory limit e.g. "300M", "1G" (optional)
  */
-const startBot = async (pm2Name, botPath, startScript = "index.js", maxMemory = null) => {
+const startBot = async (
+    pm2Name,
+    botPath,
+    startScript = "index.js",
+    maxMemory = null,
+) => {
     const memFlag = maxMemory ? ` --max-memory-restart ${maxMemory}` : "";
 
     // Check if process already exists in PM2 list
