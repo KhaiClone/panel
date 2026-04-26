@@ -1,5 +1,6 @@
 const axios = require("axios");
 const FormData = require("form-data");
+const fs = require("fs");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Core
@@ -151,19 +152,17 @@ const sendExpirySuspended = async (bot) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Send a JSON backup file to DISCORD_BACKUP_WEBHOOK.
- * Attaches the data as a downloadable .json file.
+ * Send the database file to DISCORD_BACKUP_WEBHOOK.
  *
- * @param {Object} backupData - Serializable object to back up
+ * @param {string} filePath - Path to the file to back up
  */
-const sendBackup = async (backupData) => {
+const sendBackup = async (filePath) => {
     const webhookUrl = process.env.DISCORD_BACKUP_WEBHOOK;
-    if (!webhookUrl) return;
+    if (!webhookUrl || !fs.existsSync(filePath)) return;
 
     const form = new FormData();
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `backup-${timestamp}.json`;
-    const content = JSON.stringify(backupData, null, 2);
+    const filename = `backup-${timestamp}.sqlite`;
 
     // Webhook body
     form.append(
@@ -174,11 +173,6 @@ const sendBackup = async (backupData) => {
                     title: "💾 Hourly Database Backup",
                     color: 0x5865f2,
                     fields: [
-                        {
-                            name: "📦 Bots backed up",
-                            value: String(backupData.bots?.length ?? 0),
-                            inline: true,
-                        },
                         {
                             name: "🕐 Timestamp",
                             value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
@@ -198,9 +192,9 @@ const sendBackup = async (backupData) => {
         contentType: "application/json",
     });
 
-    // Also attach as "sqlite.json" for convenience as requested
+    // Also attach as "panel.sqlite" for convenience as requested
     form.append("file2", Buffer.from(content), {
-        filename: "sqlite.json",
+        filename: "panel.sqlite",
         contentType: "application/json",
     });
 

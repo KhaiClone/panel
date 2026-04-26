@@ -1,25 +1,17 @@
 const cron = require("node-cron");
+const path = require("path");
 const db = require("../db");
 const { sendBackup } = require("./discordService");
 
 /**
- * Dump all database models and send as a JSON file to Discord.
- * Add more models here if you expand the DB in the future.
+ * Send the database file backup to Discord.
  */
 const performBackup = async () => {
     console.log("[Backup] Running database backup...");
     try {
-        const bots = await db.find("bots");
-        const fullDump = await db.all();
-
-        const backupData = {
-            timestamp: new Date().toISOString(),
-            bots,
-            fullDump,
-        };
-
-        await sendBackup(backupData);
-        console.log(`[Backup] Full database backup sent — ${bots.length} bot(s) saved`);
+        const dbPath = path.join(__dirname, "../../data/panel.sqlite");
+        await sendBackup(dbPath);
+        console.log(`[Backup] Database file backup sent`);
     } catch (err) {
         console.error(`[Backup] Backup failed: ${err.message}`);
     }
