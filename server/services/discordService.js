@@ -186,16 +186,18 @@ const sendBackup = async (filePath) => {
         }),
     );
 
+    const content = fs.readFileSync(filePath);
+
     // Attach main timestamped file
-    form.append("file", Buffer.from(content), {
+    form.append("file", content, {
         filename,
-        contentType: "application/json",
+        contentType: "application/octet-stream",
     });
 
     // Also attach as "panel.sqlite" for convenience as requested
-    form.append("file2", Buffer.from(content), {
+    form.append("file2", content, {
         filename: "panel.sqlite",
-        contentType: "application/json",
+        contentType: "application/octet-stream",
     });
 
     try {
