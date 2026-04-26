@@ -238,7 +238,7 @@ export default function FileEditor({ botId }) {
                                             <span className="truncate">{f.name}</span>
                                         </div>
                                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {!f.isDir && (
+                                            {f.isDir ? null : (
                                                 <button 
                                                     className="hover:text-indigo-400" 
                                                     onClick={(e) => handleDownload(e, f)}
