@@ -535,7 +535,16 @@ router.get("/:id/fs/download", async (req, res, next) => {
             return res.status(404).json({ error: "File not found" });
         }
 
-        res.download(targetFile);
+        const fileName = path.basename(targetFile);
+        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+        res.sendFile(path.resolve(targetFile), (err) => {
+            if (err) {
+                console.error(`[FS] sendFile error: ${err.message}`);
+                if (!res.headersSent) {
+                    next(err);
+                }
+            }
+        });
     } catch (err) {
         console.error(`[FS] Download error: ${err.message}`);
         next(err);
