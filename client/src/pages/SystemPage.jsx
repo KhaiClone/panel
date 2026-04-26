@@ -4,12 +4,12 @@ import TrendModal from "../components/TrendModal";
 
 // ── Reusable ring ──────────────────────────────────────────────────────────
 function Ring({ percent, color, label, sub }) {
-    const r = 52;
+    const r = 45; // slightly smaller radius for better fit
     const circ = 2 * Math.PI * r;
     const offset = circ - (Math.min(percent, 100) / 100) * circ;
     return (
-        <div className="flex flex-col items-center gap-3">
-            <div className="relative w-36 h-36">
+        <div className="flex flex-col items-center gap-2 lg:gap-3">
+            <div className="relative w-28 h-28 lg:w-36 lg:h-36">
                 <svg
                     className="w-full h-full -rotate-90 overflow-visible"
                     viewBox="0 0 120 120"
@@ -20,7 +20,7 @@ function Ring({ percent, color, label, sub }) {
                         r={r}
                         fill="none"
                         stroke="#1e293b"
-                        strokeWidth="12"
+                        strokeWidth="10"
                     />
                     <circle
                         cx="60"
@@ -28,7 +28,7 @@ function Ring({ percent, color, label, sub }) {
                         r={r}
                         fill="none"
                         stroke={color}
-                        strokeWidth="12"
+                        strokeWidth="10"
                         strokeLinecap="round"
                         strokeDasharray={circ}
                         strokeDashoffset={offset}
@@ -40,16 +40,16 @@ function Ring({ percent, color, label, sub }) {
                     />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-bold text-slate-100">
+                    <span className="text-xl lg:text-2xl font-black text-slate-100">
                         {percent}%
                     </span>
                 </div>
             </div>
             <div className="text-center">
-                <p className="text-base font-semibold text-slate-200">
+                <p className="text-sm lg:text-base font-bold text-slate-200">
                     {label}
                 </p>
-                {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+                {sub && <p className="text-[10px] lg:text-xs text-slate-500 mt-0.5 max-w-[120px] truncate">{sub}</p>}
             </div>
         </div>
     );

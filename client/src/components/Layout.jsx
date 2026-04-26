@@ -30,6 +30,13 @@ export default function Layout() {
     const navigate = useNavigate();
     const location = useLocation();
     const [open, setOpen] = useState(true);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+    useState(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 1024);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
 
     const handleLogout = () => {
         logout();
@@ -37,19 +44,35 @@ export default function Layout() {
     };
 
     return (
-        <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
+        <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden flex-col lg:flex-row">
             {/* Background Decoration */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-indigo-600/5 blur-[120px] animate-glow" />
                 <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] rounded-full bg-blue-600/5 blur-[120px] animate-glow" style={{ animationDelay: '-1.5s' }} />
             </div>
 
-            {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+            {/* ── Mobile Header ────────────────────────────────────────────────── */}
+            <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-slate-900/50 border-b border-slate-800/50 backdrop-blur-xl z-30">
+                <div className="flex items-center gap-2">
+                    <span className="text-xl">🤖</span>
+                    <p className="font-bold text-slate-100 text-sm tracking-tight">Bot Panel</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-bold shadow-lg shadow-indigo-600/30">
+                        {user?.username?.[0]?.toUpperCase()}
+                    </div>
+                    <button onClick={handleLogout} className="text-slate-400 hover:text-slate-100 text-lg">
+                        🚪
+                    </button>
+                </div>
+            </div>
+
+            {/* ── Sidebar (Desktop) ────────────────────────────────────────────── */}
             <motion.aside
                 initial={false}
                 animate={{ width: open ? 224 : 64 }}
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="shrink-0 flex flex-col bg-slate-900/50 border-r border-slate-800/50 backdrop-blur-xl z-20"
+                className="hidden lg:flex shrink-0 flex-col bg-slate-900/50 border-r border-slate-800/50 backdrop-blur-xl z-20"
             >
                 {/* Logo + toggle */}
                 <div className="px-3 py-4 border-b border-slate-800/50 flex items-center justify-between gap-2">
@@ -166,12 +189,30 @@ export default function Layout() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="h-full"
+                        className="h-full pb-20 lg:pb-0"
                     >
                         <Outlet />
                     </motion.div>
                 </AnimatePresence>
             </main>
+
+            {/* ── Mobile Nav (Bottom Bar) ─────────────────────────────────────── */}
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-slate-900/80 border-t border-slate-800/50 backdrop-blur-xl z-30 px-6 py-2 flex items-center justify-around">
+                {NAV_ITEMS.map(({ to, icon, label }) => (
+                    <NavLink
+                        key={to}
+                        to={to}
+                        className={({ isActive }) => 
+                            `flex flex-col items-center gap-1 p-2 transition-all duration-200 ${
+                                isActive ? "text-indigo-400 scale-110" : "text-slate-500"
+                            }`
+                        }
+                    >
+                        <span className="text-xl">{icon}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+                    </NavLink>
+                ))}
+            </div>
         </div>
     );
 }

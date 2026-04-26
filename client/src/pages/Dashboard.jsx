@@ -124,15 +124,15 @@ export default function Dashboard() {
             <motion.div 
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="flex items-center justify-between flex-wrap gap-4"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
                 <div>
-                    <h1 className="text-3xl font-black text-slate-100 tracking-tight">Dashboard</h1>
-                    <p className="text-sm text-slate-500 mt-1 font-medium">Monitoring <span className="text-indigo-400">{bots.length}</span> active instances</p>
+                    <h1 className="text-2xl lg:text-3xl font-black text-slate-100 tracking-tight">Dashboard</h1>
+                    <p className="text-xs lg:text-sm text-slate-500 mt-1 font-medium">Monitoring <span className="text-indigo-400">{bots.length}</span> active instances</p>
                 </div>
-                <div className="flex gap-3 flex-wrap">
-                    <button className="btn-ghost text-sm" onClick={() => setShowGroups(true)}>🗂️ Groups</button>
-                    <button className="btn-primary" onClick={() => setShowCreate(true)}>➕ New Bot</button>
+                <div className="flex gap-2 lg:gap-3 flex-wrap sm:flex-nowrap">
+                    <button className="btn-ghost text-xs lg:text-sm flex-1 sm:flex-none py-2" onClick={() => setShowGroups(true)}>🗂️ Groups</button>
+                    <button className="btn-primary flex-1 sm:flex-none py-2" onClick={() => setShowCreate(true)}>➕ New Bot</button>
                 </div>
             </motion.div>
 
@@ -141,7 +141,7 @@ export default function Dashboard() {
                 variants={containerVariants}
                 initial="hidden"
                 animate="show"
-                className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+                className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4"
             >
                 {[
                     { label: "Total Bots",    value: bots.length,   color: "text-indigo-400", glow: "shadow-indigo-500/10" },
@@ -149,9 +149,9 @@ export default function Dashboard() {
                     { label: "Errored",        value: errored,       color: "text-rose-400", glow: "shadow-rose-500/10" },
                     { label: "Expiring Soon",  value: expiringSoon,  color: "text-amber-400", glow: "shadow-amber-500/10" },
                 ].map(({ label, value, color, glow }) => (
-                    <motion.div key={label} variants={itemVariants} className={`card border-slate-800 shadow-xl ${glow}`}>
+                    <motion.div key={label} variants={itemVariants} className={`card border-slate-800 shadow-xl ${glow} !p-3 lg:!p-5`}>
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
-                        <p className={`text-3xl font-black mt-2 ${color}`}>{value}</p>
+                        <p className={`text-2xl lg:text-3xl font-black mt-2 ${color}`}>{value}</p>
                     </motion.div>
                 ))}
             </motion.div>
@@ -170,16 +170,16 @@ export default function Dashboard() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.5 }}
-                    className="flex items-center gap-4 flex-wrap bg-slate-900/40 p-4 rounded-xl border border-slate-800/50 backdrop-blur-sm"
+                    className="flex flex-col lg:flex-row lg:items-center gap-4 bg-slate-900/40 p-3 lg:p-4 rounded-xl border border-slate-800/50 backdrop-blur-sm"
                 >
-                    <div className="relative max-w-xs w-full">
+                    <div className="relative w-full lg:max-w-xs">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔍</span>
                         <input className="input pl-9" placeholder="Search by name, ID..." value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
-                    <div className="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50 gap-1">
+                    <div className="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50 gap-1 overflow-x-auto no-scrollbar whitespace-nowrap">
                         {["all", "online", "stopped"].map((f) => (
                             <button key={f}
-                                className={`relative px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all duration-200 overflow-hidden ${
+                                className={`relative px-4 py-1.5 rounded-md text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all duration-200 overflow-hidden ${
                                     filter === f ? "text-white" : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
                                 }`}
                                 onClick={() => setFilter(f)}>
@@ -194,7 +194,7 @@ export default function Dashboard() {
                             </button>
                         ))}
                     </div>
-                    <span className="text-xs font-mono text-slate-500 ml-auto">{visible.length} <span className="opacity-50">/</span> {bots.length} BOTS</span>
+                    <span className="text-[10px] font-mono text-slate-500 ml-auto hidden lg:inline">{visible.length} <span className="opacity-50">/</span> {bots.length} BOTS</span>
                 </motion.div>
 
                 {loading ? (
