@@ -237,7 +237,7 @@ export default function FileEditor({ botId }) {
                                             <span className="shrink-0">{f.isDir ? '📁' : '📄'}</span>
                                             <span className="truncate">{f.name}</span>
                                         </div>
-                                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className={`flex items-center gap-2 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                             {f.isDir ? null : (
                                                 <button 
                                                     className="hover:text-indigo-400" 
@@ -285,13 +285,26 @@ export default function FileEditor({ botId }) {
                                     </span>
                                 )}
                             </div>
-                            <button
-                                className="btn-primary text-xs py-1.5 shrink-0"
-                                onClick={saveFile}
-                                disabled={saving || !isDirty}
-                            >
-                                {saving ? "Saving…" : "💾 Save"}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    className="btn-ghost text-xs py-1.5 px-3"
+                                    onClick={() => {
+                                        const token = localStorage.getItem("token");
+                                        const url = `/api/bots/${botId}/fs/download?path=${encodeURIComponent(selectedFile)}&token=${token}`;
+                                        window.open(url, "_blank");
+                                    }}
+                                    title="Download File"
+                                >
+                                    ⬇️ Download
+                                </button>
+                                <button
+                                    className="btn-primary text-xs py-1.5 shrink-0"
+                                    onClick={saveFile}
+                                    disabled={saving || !isDirty}
+                                >
+                                    {saving ? "Saving…" : "💾 Save"}
+                                </button>
+                            </div>
                         </div>
 
                         {loadingFile ? (
