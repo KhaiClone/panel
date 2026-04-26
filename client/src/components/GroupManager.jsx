@@ -228,7 +228,7 @@ export default function GroupManager({ onClose, onChanged }) {
                                             className="text-red-500 hover:text-red-400 text-xs px-2"
                                             onClick={() => handleDelete(g)}
                                         >
-                                            🗑
+                                            🗑️
                                         </button>
                                     </li>
                                 ),

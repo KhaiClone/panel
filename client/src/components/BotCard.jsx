@@ -181,7 +181,7 @@ export default function BotCard({ bot, onRefresh }) {
                         onClick={() => setConfirm({ action: "delete", label: "Delete" })}
                         disabled={busy}
                     >
-                        🗑
+                        🗑️
                     </button>
                 </div>
             </div>
