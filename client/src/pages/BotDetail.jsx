@@ -292,6 +292,7 @@ export default function BotDetail() {
           <div className="shrink-0">
             <StatusBadge status={bot.live?.status} />
           </div>
+          </div>
         </div>
 
         {/* ── Summary cards ───────────────────────────────────────────────── */}
