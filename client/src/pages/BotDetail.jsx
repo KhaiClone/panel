@@ -335,6 +335,7 @@ export default function BotDetail() {
         <AnimatePresence>
             {actionMsg && (
             <motion.div 
+                key="action-feedback"
                 initial={{ opacity: 0, height: 0, y: -10 }}
                 animate={{ opacity: 1, height: 'auto', y: 0 }}
                 exit={{ opacity: 0, height: 0, y: -10 }}
@@ -487,6 +488,7 @@ export default function BotDetail() {
 
                     {memPercent !== null && memPercent >= 80 && (
                         <motion.div 
+                            key="memory-warning"
                             initial={{ scale: 0.95, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             className="mt-6 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl px-4 py-3 text-[11px] font-bold uppercase tracking-wider flex items-center gap-3"

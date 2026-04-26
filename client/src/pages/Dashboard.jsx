@@ -44,6 +44,7 @@ function GroupSection({ label, color, bots, onRefresh, defaultOpen = true }) {
             <AnimatePresence>
                 {open && (
                     <motion.div 
+                        key="group-content"
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
