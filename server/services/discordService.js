@@ -162,8 +162,7 @@ const sendBackup = async (filePath) => {
 
     const form = new FormData();
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `backup-${timestamp}.sqlite`;
-
+    
     // Webhook body
     form.append(
         "payload_json",
@@ -179,7 +178,7 @@ const sendBackup = async (filePath) => {
                             inline: true,
                         },
                     ],
-                    footer: { text: filename },
+                    footer: { text: "panel.sqlite" },
                     timestamp: new Date().toISOString(),
                 },
             ],
@@ -188,14 +187,8 @@ const sendBackup = async (filePath) => {
 
     const content = fs.readFileSync(filePath);
 
-    // Attach main timestamped file
+    // Attach as "panel.sqlite"
     form.append("file", content, {
-        filename,
-        contentType: "application/octet-stream",
-    });
-
-    // Also attach as "panel.sqlite" for convenience as requested
-    form.append("file2", content, {
         filename: "panel.sqlite",
         contentType: "application/octet-stream",
     });
