@@ -55,19 +55,23 @@ export default function Layout() {
                 <div className="px-3 py-4 border-b border-slate-800/50 flex items-center justify-between gap-2">
                     <AnimatePresence mode="wait">
                         {open && (
-                            <motion.div 
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -10 }}
+                            <NavLink 
+                                to="/dashboard" 
                                 className="flex items-center gap-2 min-w-0"
-                                onClick={() => navigate("/dashboard")}
                             >
-                                <span className="text-2xl shrink-0">🤖</span>
-                                <div className="min-w-0">
-                                    <p className="font-bold text-slate-100 leading-tight truncate">Bot Panel</p>
-                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">Admin Panel</p>
-                                </div>
-                            </motion.div>
+                                <motion.div 
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -10 }}
+                                    className="flex items-center gap-2 min-w-0"
+                                >
+                                    <span className="text-2xl shrink-0">🤖</span>
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-slate-100 leading-tight truncate">Bot Panel</p>
+                                        <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">Admin Panel</p>
+                                    </div>
+                                </motion.div>
+                            </NavLink>
                         )}
                     </AnimatePresence>
                     <button
