@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import api from "../api/client";
+import { useData } from "../context/DataContext";
 
 // ── Circular progress ring ─────────────────────────────────────────────────
 function Ring({ percent, color, label, sub }) {
@@ -38,17 +37,7 @@ const fmt = (bytes) => {
 };
 
 export default function StatsWidget() {
-    const [stats, setStats] = useState(null);
-
-    const fetchStats = () => {
-        api.get("/system/stats").then((r) => setStats(r.data)).catch(() => {});
-    };
-
-    useEffect(() => {
-        fetchStats();
-        const interval = setInterval(fetchStats, 4_000);
-        return () => clearInterval(interval);
-    }, []);
+    const { stats } = useData();
 
     if (!stats) {
         return (

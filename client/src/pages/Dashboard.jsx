@@ -179,7 +179,7 @@ export default function Dashboard() {
                     <span className="text-[10px] font-mono text-slate-500 ml-auto hidden lg:inline">{visible.length} <span className="opacity-50">/</span> {bots.length} BOTS</span>
                 </motion.div>
 
-                {loading ? (
+                {loading && bots.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-60 gap-4">
                         <div className="relative">
                             <div className="w-12 h-12 border-4 border-indigo-500/20 rounded-full" />
