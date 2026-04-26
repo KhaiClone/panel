@@ -537,7 +537,7 @@ router.get("/:id/fs/download", async (req, res, next) => {
 
         const fileName = path.basename(targetFile);
         res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-        res.sendFile(path.resolve(targetFile), (err) => {
+        res.sendFile(path.resolve(targetFile), { dotfiles: 'allow' }, (err) => {
             if (err) {
                 console.error(`[FS] sendFile error: ${err.message}`);
                 if (!res.headersSent) {
