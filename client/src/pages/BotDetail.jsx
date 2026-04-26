@@ -5,14 +5,15 @@ import LogViewer from '../components/LogViewer';
 import EnvEditor from '../components/EnvEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import FileEditor from '../components/FileEditor';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
-  online:    { dot: 'bg-emerald-400', glow: 'shadow-emerald-500/50', badge: 'bg-emerald-900/40 border-emerald-600 text-emerald-300', label: 'Online',    pulse: true },
-  stopped:   { dot: 'bg-red-400',     glow: 'shadow-red-500/50',     badge: 'bg-red-900/40 border-red-700 text-red-300',             label: 'Stopped',   pulse: false },
-  errored:   { dot: 'bg-orange-400',  glow: 'shadow-orange-500/50',  badge: 'bg-orange-900/40 border-orange-600 text-orange-300',    label: 'Errored',   pulse: true },
-  launching: { dot: 'bg-yellow-400',  glow: 'shadow-yellow-500/50',  badge: 'bg-yellow-900/40 border-yellow-600 text-yellow-300',   label: 'Launching', pulse: true },
+  online:    { dot: 'bg-emerald-400', glow: 'shadow-emerald-500/50', badge: 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400', label: 'Online',    pulse: true },
+  stopped:   { dot: 'bg-rose-400',     glow: 'shadow-rose-500/50',     badge: 'bg-rose-950/40 border-rose-500/30 text-rose-400',             label: 'Stopped',   pulse: false },
+  errored:   { dot: 'bg-orange-400',  glow: 'shadow-orange-500/50',  badge: 'bg-orange-950/40 border-orange-500/30 text-orange-400',    label: 'Errored',   pulse: true },
+  launching: { dot: 'bg-yellow-400',  glow: 'shadow-yellow-500/50',  badge: 'bg-yellow-950/40 border-yellow-500/30 text-yellow-400',   label: 'Launching', pulse: true },
 };
 
 const fmt = (bytes) => {
@@ -33,7 +34,7 @@ const toLocalDatetimeInputValue = (tsMs) => {
 };
 
 const formatTimeLeft = (ms) => {
-  if (ms <= 0) return '🚨 Suspended (Expired)';
+  if (ms <= 0) return '🚨 Expired';
   const d = Math.floor(ms / 86_400_000);
   const h = Math.floor((ms % 86_400_000) / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
@@ -54,7 +55,6 @@ const formatUptime = (pmUptime) => {
   return `${m}m`;
 };
 
-// Parse a memory limit string like "300M", "1G" → bytes
 const parseMemLimit = (maxMemStr) => {
   if (!maxMemStr) return null;
   const match = maxMemStr.match(/^(\d+)([KMG]?)$/i);
@@ -76,15 +76,15 @@ const getMemoryPercent = (usedBytes, maxMemStr) => {
 // ── Status Badge ───────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] ?? {
-    dot: 'bg-slate-400', glow: '', badge: 'bg-slate-800 border-slate-600 text-slate-300', label: status ?? 'Unknown', pulse: false,
+    dot: 'bg-slate-400', glow: '', badge: 'bg-slate-800 border-slate-700 text-slate-300', label: status ?? 'Unknown', pulse: false,
   };
   return (
-    <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-sm font-semibold shadow-lg ${cfg.badge}`}>
-      <span className="relative flex h-2.5 w-2.5">
+    <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-widest shadow-xl backdrop-blur-md ${cfg.badge}`}>
+      <span className="relative flex h-2 w-2">
         {cfg.pulse && (
           <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.dot}`} />
         )}
-        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${cfg.dot}`} />
+        <span className={`relative inline-flex rounded-full h-2 w-2 ${cfg.dot}`} />
       </span>
       {cfg.label}
     </span>
@@ -95,7 +95,14 @@ function StatusBadge({ status }) {
 function ResourceRing({ percent, color, label, sub, size = 'md' }) {
   const dim = size === 'lg' ? { w: 140, cx: 70, r: 56, sw: 10, fs: 'text-2xl' } : { w: 96, cx: 44, r: 36, sw: 8, fs: 'text-lg' };
   const circ = 2 * Math.PI * dim.r;
-  const offset = circ - ((Math.min(percent, 100)) / 100) * circ;
+  const [offset, setOffset] = useState(circ);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setOffset(circ - ((Math.min(percent, 100)) / 100) * circ);
+    }, 100);
+    return () => clearTimeout(timeout);
+  }, [percent, circ]);
 
   const pct = Math.min(percent, 100);
   const autoColor = color ?? (pct > 85 ? '#f87171' : pct > 60 ? '#fb923c' : '#818cf8');
@@ -103,23 +110,30 @@ function ResourceRing({ percent, color, label, sub, size = 'md' }) {
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="relative" style={{ width: dim.w, height: dim.w }}>
-        <svg className="w-full h-full -rotate-90" viewBox={`0 0 ${dim.w * 2 / (size === 'lg' ? 2 : 1)} ${dim.w * 2 / (size === 'lg' ? 2 : 1)}`}
-          style={{ width: dim.w, height: dim.w }}>
-          <circle cx={dim.cx} cy={dim.cx} r={dim.r} fill="none" stroke="#1e293b" strokeWidth={dim.sw} />
-          <circle
+        <svg className="w-full h-full -rotate-90" viewBox={`0 0 ${dim.cx * 2} ${dim.cx * 2}`}>
+          <circle cx={dim.cx} cy={dim.cx} r={dim.r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={dim.sw} />
+          <motion.circle
             cx={dim.cx} cy={dim.cx} r={dim.r} fill="none"
             stroke={autoColor} strokeWidth={dim.sw} strokeLinecap="round"
-            strokeDasharray={circ} strokeDashoffset={offset}
-            style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)', filter: `drop-shadow(0 0 6px ${autoColor}88)` }}
+            strokeDasharray={circ}
+            animate={{ strokeDashoffset: offset }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            style={{ filter: `drop-shadow(0 0 8px ${autoColor}66)` }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`font-bold text-slate-100 ${dim.fs}`}>{pct}%</span>
+          <motion.span 
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className={`font-black text-slate-100 ${dim.fs}`}
+          >
+            {pct}%
+          </motion.span>
         </div>
       </div>
       <div className="text-center">
-        <p className={`font-semibold text-slate-200 ${size === 'lg' ? 'text-base' : 'text-sm'}`}>{label}</p>
-        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+        <p className={`font-black uppercase tracking-widest text-slate-400 ${size === 'lg' ? 'text-xs' : 'text-[10px]'}`}>{label}</p>
+        {sub && <p className="text-[10px] font-mono text-slate-500 mt-1">{sub}</p>}
       </div>
     </div>
   );
@@ -127,8 +141,6 @@ function ResourceRing({ percent, color, label, sub, size = 'md' }) {
 
 const TABS = ['Controls', 'Resources', 'Logs', 'Environment', 'Files', 'Settings'];
 const MEM_HINT = 'e.g. "300M", "1G" — blank for no limit';
-
-// ── Component ──────────────────────────────────────────────────────────────
 
 export default function BotDetail() {
   const { id } = useParams();
@@ -142,7 +154,6 @@ export default function BotDetail() {
   const [confirm, setConfirm] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
 
-  // Settings edit state
   const [editName,      setEditName]      = useState('');
   const [editExpiry,    setEditExpiry]    = useState('');
   const [editScript,    setEditScript]    = useState('');
@@ -151,7 +162,6 @@ export default function BotDetail() {
   const [editPrice,     setEditPrice]     = useState('');
   const [savingMeta,    setSavingMeta]    = useState(false);
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchBot = async () => {
     try {
       const { data } = await api.get(`/bots/${id}`);
@@ -176,7 +186,6 @@ export default function BotDetail() {
     return () => clearInterval(interval);
   }, [id]);
 
-  // ── Actions ───────────────────────────────────────────────────────────────
   const runAction = async (name, endpoint, method = 'post') => {
     setBusy(name);
     setActionMsg(null);
@@ -224,11 +233,11 @@ export default function BotDetail() {
     }
   };
 
-  // ── Loading ───────────────────────────────────────────────────────────────
   if (loading || !bot) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full" />
+      <div className="flex flex-col h-full items-center justify-center gap-4">
+        <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">Syncing Instance...</p>
       </div>
     );
   }
@@ -238,37 +247,39 @@ export default function BotDetail() {
   const isLocal   = bot.source === 'local';
   const msLeft    = bot.expiresAt ? bot.expiresAt - Date.now() : null;
   const currentGroup = groups.find((g) => g._id === bot.groupId);
-
-  // Memory ring data
   const memPercent   = getMemoryPercent(bot.live?.memory, bot.maxMemory);
   const memLimitBytes = parseMemLimit(bot.maxMemory);
   const cpuPct = parseFloat((bot.live?.cpu ?? 0).toFixed(1));
 
   return (
-    <>
-      <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="p-6 max-w-5xl mx-auto space-y-8"
+    >
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-4">
           <button
-            className="text-slate-500 hover:text-slate-300 transition-colors mt-1"
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-100 hover:border-slate-700 transition-all active:scale-95 shadow-lg"
             onClick={() => navigate('/dashboard')}
+            title="Back to Dashboard"
           >
-            ← Back
+            ←
           </button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-slate-100 truncate">{bot.name}</h1>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-3xl font-black text-slate-100 tracking-tight truncate">{bot.name}</h1>
               {isLocal && (
-                <span className="text-xs bg-violet-900/50 border border-violet-700 text-violet-300 px-2 py-0.5 rounded-full shrink-0">
+                <span className="text-[10px] font-black uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded-full shrink-0">
                   📂 Local
                 </span>
               )}
               {currentGroup && (
                 <span
-                  className="text-xs px-2 py-0.5 rounded-full shrink-0 border"
+                  className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0 border"
                   style={{
-                    background: `${currentGroup.color}22`,
-                    borderColor: `${currentGroup.color}66`,
+                    background: `${currentGroup.color}11`,
+                    borderColor: `${currentGroup.color}33`,
                     color: currentGroup.color,
                   }}
                 >
@@ -276,63 +287,76 @@ export default function BotDetail() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500 font-mono mt-0.5">{bot.buyerID} / {bot.botID}</p>
+            <p className="text-[10px] text-slate-500 font-mono mt-1 opacity-75">{bot.buyerID} / {bot.botID}</p>
           </div>
-          {/* Beautiful status badge */}
-          <div className="shrink-0 mt-1">
+          <div className="shrink-0">
             <StatusBadge status={bot.live?.status} />
           </div>
         </div>
 
         {/* ── Summary cards ───────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
           {[
-            { label: 'CPU',      value: `${bot.live?.cpu ?? 0}%` },
+            { label: 'CPU Load',      value: `${bot.live?.cpu ?? 0}%`, color: 'text-indigo-400' },
             {
-              label: 'RAM',
+              label: 'Memory',
               value: fmt(bot.live?.memory),
-              subtext: memPercent !== null ? `${memPercent}% of max` : null,
+              subtext: memPercent !== null ? `${memPercent}%` : null,
+              color: 'text-blue-400'
             },
-            { label: 'Uptime',   value: isOnline ? formatUptime(bot.live?.uptime) : '—' },
-            { label: 'Restarts', value: bot.live?.restarts ?? 0 },
+            { label: 'Uptime',   value: isOnline ? formatUptime(bot.live?.uptime) : 'Offline', color: 'text-emerald-400' },
+            { label: 'Restarts', value: bot.live?.restarts ?? 0, color: 'text-orange-400' },
             {
-              label: 'Expires',
-              value: msLeft !== null ? formatTimeLeft(msLeft) : '♾️ Never',
+              label: 'Remaining',
+              value: msLeft !== null ? formatTimeLeft(msLeft) : 'Unlimited',
               highlight: msLeft !== null && msLeft < 3 * 86_400_000,
+              color: 'text-amber-400'
             },
-          ].map(({ label, value, subtext, highlight }) => (
-            <div key={label} className="card py-3">
-              <p className="text-xs text-slate-500 uppercase tracking-wider">{label}</p>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <p className={`text-lg font-bold ${highlight ? 'text-amber-400' : 'text-slate-100'}`}>
+          ].map(({ label, value, subtext, highlight, color }, i) => (
+            <motion.div 
+                key={label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="card py-4 bg-slate-900/40 border-slate-800/50 shadow-xl"
+            >
+              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{label}</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <p className={`text-xl font-black ${highlight ? 'text-rose-500' : color}`}>
                   {value}
                 </p>
-                {subtext && <span className="text-xs text-slate-400">{subtext}</span>}
+                {subtext && <span className="text-[10px] font-mono text-slate-500">{subtext}</span>}
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
 
         {/* ── Action feedback ──────────────────────────────────────────────── */}
-        {actionMsg && (
-          <div className={`text-sm rounded-lg px-4 py-2.5 border ${
-            actionMsg.type === 'success'
-              ? 'bg-emerald-900/40 border-emerald-700 text-emerald-400'
-              : 'bg-red-900/40 border-red-700 text-red-400'
-          }`}>
-            {actionMsg.text}
-          </div>
-        )}
+        <AnimatePresence>
+            {actionMsg && (
+            <motion.div 
+                initial={{ opacity: 0, height: 0, y: -10 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -10 }}
+                className={`text-xs font-bold uppercase tracking-wider rounded-xl px-4 py-3 border backdrop-blur-md shadow-2xl ${
+                actionMsg.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+            }`}>
+                {actionMsg.text}
+            </motion.div>
+            )}
+        </AnimatePresence>
 
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
-        <div className="flex border-b border-slate-700 gap-1 overflow-x-auto">
+        <div className="flex border-b border-slate-800/50 gap-1 overflow-x-auto no-scrollbar">
           {TABS.map((t) => (
             <button
               key={t}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
+              className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all -mb-px whitespace-nowrap ${
                 tab === t
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
+                  ? 'border-indigo-500 text-indigo-400 bg-indigo-500/5'
+                  : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
               }`}
               onClick={() => setTab(t)}
             >
@@ -341,256 +365,225 @@ export default function BotDetail() {
           ))}
         </div>
 
-        {/* ── Tab: Controls ───────────────────────────────────────────────── */}
-        {tab === 'Controls' && (
-          <div className="card space-y-5">
-            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-              Process Control
-            </h2>
-            <div className="flex flex-wrap gap-3">
-              {isStopped && (
-                <button className="btn-success" disabled={!!busy} onClick={() => runAction('start', 'start')}>
-                  {busy === 'start' ? '…' : '▶ Start'}
-                </button>
-              )}
-              {isOnline && (
-                <button className="btn-danger" disabled={!!busy} onClick={() => runAction('stop', 'stop')}>
-                  {busy === 'stop' ? '…' : '⏹ Stop'}
-                </button>
-              )}
-              <button className="btn-warning" disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
-                {busy === 'restart' ? '…' : '🔄 Restart'}
-              </button>
-              <button className="btn-primary" disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
-                {busy === 'update' ? '…' : isLocal ? '📦 Reinstall & Restart' : '⬆️ Pull & Update'}
-              </button>
-              <button className="btn-danger ml-auto" disabled={!!busy} onClick={() => setConfirm({ action: 'delete' })}>
-                🗑️ Delete Bot
-              </button>
-            </div>
+        {/* ── Tab Content ───────────────────────────────────────────────── */}
+        <AnimatePresence mode="wait">
+            <motion.div
+                key={tab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+            >
+                {tab === 'Controls' && (
+                <div className="card space-y-6 bg-slate-900/40 border-slate-800/50">
+                    <div className="flex items-center justify-between border-b border-slate-800/50 pb-4">
+                        <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        Runtime Controls
+                        </h2>
+                        <span className="text-[10px] font-mono text-slate-600">PM2 ID: {bot.pm2Name}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                    {isStopped && (
+                        <button className="btn-success flex-1 min-w-[120px] py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => runAction('start', 'start')}>
+                        {busy === 'start' ? 'Processing…' : '▶ Start Process'}
+                        </button>
+                    )}
+                    {isOnline && (
+                        <button className="btn-danger flex-1 min-w-[120px] py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => runAction('stop', 'stop')}>
+                        {busy === 'stop' ? 'Processing…' : '⏹ Stop Process'}
+                        </button>
+                    )}
+                    <button className="btn-warning flex-1 min-w-[120px] py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
+                        {busy === 'restart' ? 'Processing…' : '🔄 Hot Reload'}
+                    </button>
+                    <button className="btn-primary flex-1 min-w-[120px] py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
+                        {busy === 'update' ? 'Processing…' : isLocal ? '📦 Rebuild' : '⬆️ Pull Update'}
+                    </button>
+                    <button className="btn-danger bg-rose-600/10 text-rose-500 border-rose-500/20 hover:bg-rose-600/20 px-4 py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => setConfirm({ action: 'delete' })}>
+                        🗑️ Delete
+                    </button>
+                    </div>
 
-            {/* Bot info */}
-            <div className="border-t border-slate-700 pt-4 space-y-2 text-sm">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Bot Info</h3>
-              {[
-                { label: 'PM2 Name',    value: bot.pm2Name },
-                isLocal
-                  ? { label: 'Local Path',  value: bot.localPath }
-                  : { label: 'Repo URL',    value: bot.repoUrl },
-                { label: 'Branch',      value: bot.branch || '—' },
-                { label: 'Start Script',value: bot.startScript },
-                { label: 'Max Memory',  value: bot.maxMemory || 'No limit' },
-                { label: 'Group',       value: currentGroup?.name || 'None' },
-                { label: 'Created',     value: fmtDate(bot.createdAt) },
-                { label: 'Expires At',  value: bot.expiresAt ? fmtDate(bot.expiresAt) : 'Never' },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex gap-4">
-                  <span className="text-slate-500 w-28 shrink-0">{label}</span>
-                  <span className="text-slate-200 font-mono text-xs break-all">{value}</span>
+                    <div className="pt-2 space-y-3">
+                    <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800/50 pb-2 mb-4">Metadata Analysis</h3>
+                    {[
+                        { label: 'Source',      value: isLocal ? `Local: ${bot.localPath}` : bot.repoUrl },
+                        { label: 'Instance',    value: bot.branch || 'Production' },
+                        { label: 'Entry Point', value: bot.startScript },
+                        { label: 'Memory Limit',value: bot.maxMemory || 'Unrestricted' },
+                        { label: 'Collection',  value: currentGroup?.name || 'Ungrouped' },
+                        { label: 'Deployment',  value: fmtDate(bot.createdAt) },
+                        { label: 'Expiration',  value: bot.expiresAt ? fmtDate(bot.expiresAt) : 'Permanent' },
+                    ].map(({ label, value }) => (
+                        <div key={label} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 group">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 w-32 shrink-0">{label}</span>
+                        <span className="text-[11px] text-slate-300 font-mono break-all bg-slate-950/30 px-2 py-1 rounded group-hover:bg-slate-950/50 transition-colors">{value}</span>
+                        </div>
+                    ))}
+                    </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Tab: Resources ──────────────────────────────────────────────── */}
-        {tab === 'Resources' && (
-          <div className="space-y-4">
-            {/* Status hero */}
-            <div className="card flex items-center gap-4">
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Current Status</p>
-                <StatusBadge status={bot.live?.status} />
-              </div>
-              <div className="border-l border-slate-700 pl-4 ml-2">
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Uptime</p>
-                <p className="text-lg font-bold text-slate-100">{isOnline ? formatUptime(bot.live?.uptime) : '—'}</p>
-              </div>
-              <div className="border-l border-slate-700 pl-4">
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Restarts</p>
-                <p className="text-lg font-bold text-slate-100">{bot.live?.restarts ?? 0}</p>
-              </div>
-            </div>
-
-            {/* Resource rings */}
-            <div className="card">
-              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-6">
-                Process Resource Usage
-              </h2>
-              <div className="flex flex-wrap items-center justify-around gap-8 py-4">
-                {/* CPU ring */}
-                <ResourceRing
-                  percent={cpuPct}
-                  color={cpuPct > 80 ? '#f87171' : cpuPct > 50 ? '#fb923c' : '#34d399'}
-                  label="CPU Usage"
-                  sub={`${cpuPct}% of core`}
-                  size="lg"
-                />
-
-                {/* RAM ring — with limit % if available, else raw bytes */}
-                {memPercent !== null ? (
-                  <ResourceRing
-                    percent={memPercent}
-                    label="Memory Usage"
-                    sub={`${fmt(bot.live?.memory)} / ${fmt(memLimitBytes)}`}
-                    size="lg"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-3">
-                    <div
-                      className="w-36 h-36 rounded-full flex items-center justify-center"
-                      style={{
-                        background: 'conic-gradient(#818cf8 0%, #1e293b 0%)',
-                        boxShadow: '0 0 24px #818cf844',
-                        border: '10px solid #1e293b',
-                      }}
-                    >
-                      <div className="flex flex-col items-center justify-center">
-                        <span className="text-2xl font-bold text-slate-100">{fmt(bot.live?.memory)}</span>
-                        <span className="text-xs text-slate-400 mt-1">no limit set</span>
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-base font-semibold text-slate-200">Memory Usage</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Set a limit in Settings to see %</p>
-                    </div>
-                  </div>
                 )}
-              </div>
 
-              {/* Warning if memory is high */}
-              {memPercent !== null && memPercent >= 80 && (
-                <div className="mt-4 bg-amber-900/30 border border-amber-700 text-amber-300 rounded-lg px-4 py-2.5 text-sm">
-                  ⚠️ Memory usage is at <strong>{memPercent}%</strong> of the configured limit ({bot.maxMemory}). PM2 will automatically restart this bot when it hits 100%.
+                {tab === 'Resources' && (
+                <div className="space-y-6">
+                    <div className="card grid grid-cols-1 sm:grid-cols-3 gap-6 bg-slate-900/40 border-slate-800/50">
+                        <div className="space-y-1">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Availability</p>
+                            <StatusBadge status={bot.live?.status} />
+                        </div>
+                        <div className="border-l border-slate-800/50 pl-6 space-y-1">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Active Runtime</p>
+                            <p className="text-xl font-black text-indigo-400">{isOnline ? formatUptime(bot.live?.uptime) : '0m'}</p>
+                        </div>
+                        <div className="border-l border-slate-800/50 pl-6 space-y-1">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Crash Recovery</p>
+                            <p className="text-xl font-black text-rose-400">{bot.live?.restarts ?? 0} cycles</p>
+                        </div>
+                    </div>
+
+                    <div className="card bg-slate-900/40 border-slate-800/50">
+                    <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800/50 pb-4 mb-10">
+                        Live Resource Telemetry
+                    </h2>
+                    <div className="flex flex-wrap items-center justify-around gap-12 py-6">
+                        <ResourceRing
+                        percent={cpuPct}
+                        color={cpuPct > 80 ? '#f43f5e' : cpuPct > 50 ? '#f59e0b' : '#10b981'}
+                        label="Compute Load"
+                        sub={`${cpuPct}% utilization`}
+                        size="lg"
+                        />
+
+                        {memPercent !== null ? (
+                        <ResourceRing
+                            percent={memPercent}
+                            label="Memory Load"
+                            sub={`${fmt(bot.live?.memory)} / ${fmt(memLimitBytes)}`}
+                            size="lg"
+                        />
+                        ) : (
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="w-[140px] h-[140px] rounded-full flex items-center justify-center border-[10px] border-slate-800/30 relative">
+                                <div className="absolute inset-0 rounded-full bg-indigo-500/5 blur-xl animate-glow" />
+                                <div className="flex flex-col items-center justify-center relative z-10">
+                                    <span className="text-2xl font-black text-indigo-400">{fmt(bot.live?.memory)}</span>
+                                    <span className="text-[9px] font-black uppercase text-slate-600 mt-1">Unlimited</span>
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Memory Usage</p>
+                                <p className="text-[9px] text-slate-500 font-mono mt-1">Set limit in settings</p>
+                            </div>
+                        </div>
+                        )}
+                    </div>
+
+                    {memPercent !== null && memPercent >= 80 && (
+                        <motion.div 
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="mt-6 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl px-4 py-3 text-[11px] font-bold uppercase tracking-wider flex items-center gap-3"
+                        >
+                        <span className="text-lg">⚠️</span>
+                        <span>Memory critical: <strong>{memPercent}%</strong>. PM2 will restart process at 100%.</span>
+                        </motion.div>
+                    )}
+                    </div>
                 </div>
-              )}
-            </div>
-          </div>
+                )}
+
+                {tab === 'Logs' && (
+                <div className="card bg-slate-950 border-slate-800/50 p-0 overflow-hidden shadow-2xl"><LogViewer botId={id} /></div>
+                )}
+
+                {tab === 'Environment' && (
+                <div className="card bg-slate-900/40 border-slate-800/50"><EnvEditor botId={id} /></div>
+                )}
+
+                {tab === 'Files' && (
+                <div className="card bg-slate-900/40 border-slate-800/50"><FileEditor botId={id} /></div>
+                )}
+
+                {tab === 'Settings' && (
+                <div className="card space-y-6 bg-slate-900/40 border-slate-800/50 shadow-xl">
+                    <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800/50 pb-4">
+                    Instance Configuration
+                    </h2>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="label">Instance Alias</label>
+                                <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="label">Primary Runtime Script</label>
+                                <input className="input font-mono" value={editScript} onChange={(e) => setEditScript(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="label">Target Deployment Group</label>
+                                <select className="input" value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}>
+                                    <option value="">Ungrouped</option>
+                                    {groups.map((g) => (
+                                        <option key={g._id} value={g._id}>{g.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="label">Memory Threshold</label>
+                                    <input className="input font-mono" placeholder="300M" value={editMaxMemory} onChange={(e) => setEditMaxMemory(e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="label">Hosting Unit Price</label>
+                                    <input type="number" className="input font-mono" placeholder="VND/mo" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} disabled={!editMaxMemory} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="label">Subscription Expiry</label>
+                                <input type="datetime-local" className="input" value={editExpiry} onChange={(e) => setEditExpiry(e.target.value)} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 pt-4 border-t border-slate-800/50">
+                        <button className="btn-primary px-8 py-3 font-black uppercase tracking-widest text-[10px]" onClick={saveMeta} disabled={savingMeta}>
+                            {savingMeta ? 'Processing…' : '💾 Update Configuration'}
+                        </button>
+                        {isLocal && (
+                            <p className="text-[10px] text-indigo-400/60 font-bold uppercase tracking-wider italic">
+                                * Imported local directory — Source will persist on deletion.
+                            </p>
+                        )}
+                    </div>
+                </div>
+                )}
+            </motion.div>
+        </AnimatePresence>
+
+        {/* ── Modals ──────────────────────────────────────────────────────────── */}
+        {confirm?.action === 'update' && (
+            <ConfirmModal
+            title={isLocal ? 'Reinstall & Restart' : 'Synchronize Repository'}
+            message={isLocal ? 'Execute npm install and hot reload the instance.' : 'Pull latest remote changes, reinstall dependencies, and restart.'}
+            confirmText="Continue Update"
+            danger={false}
+            onConfirm={() => { setConfirm(null); runAction('update', 'update'); }}
+            onCancel={() => setConfirm(null)}
+            />
         )}
-
-        {/* ── Tab: Logs ───────────────────────────────────────────────────── */}
-        {tab === 'Logs' && (
-          <div className="card"><LogViewer botId={id} /></div>
+        {confirm?.action === 'delete' && (
+            <ConfirmModal
+            title={`Terminate "${bot.name}"?`}
+            message="This will immediately stop the process and wipe instance metadata. This action is irreversible."
+            confirmText="Terminate Now"
+            onConfirm={handleDelete}
+            onCancel={() => setConfirm(null)}
+            />
         )}
-
-        {/* ── Tab: Environment ────────────────────────────────────────────── */}
-        {tab === 'Environment' && (
-          <div className="card"><EnvEditor botId={id} /></div>
-        )}
-
-        {/* ── Tab: Files ──────────────────────────────────────────────────── */}
-        {tab === 'Files' && (
-          <div className="card"><FileEditor botId={id} /></div>
-        )}
-
-        {/* ── Tab: Settings ───────────────────────────────────────────────── */}
-        {tab === 'Settings' && (
-          <div className="card space-y-4">
-            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-              Edit Metadata
-            </h2>
-
-            <div>
-              <label className="label">Display Name</label>
-              <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} />
-            </div>
-
-            <div>
-              <label className="label">Start Script</label>
-              <input className="input font-mono" value={editScript} onChange={(e) => setEditScript(e.target.value)} />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="label">Group</label>
-                <select className="input" value={editGroupId} onChange={(e) => setEditGroupId(e.target.value)}>
-                  <option value="">— No group —</option>
-                  {groups.map((g) => (
-                    <option key={g._id} value={g._id}>{g.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="label">Max Memory Restart</label>
-                <input
-                  className="input font-mono"
-                  placeholder="300M"
-                  value={editMaxMemory}
-                  onChange={(e) => setEditMaxMemory(e.target.value)}
-                  pattern="^\d+[KMG]?$"
-                  title={MEM_HINT}
-                />
-                <p className="text-xs text-slate-500 mt-1">{MEM_HINT}</p>
-              </div>
-              <div>
-                <label className="label">Current Price (VND/m)</label>
-                <input
-                  type="number"
-                  className="input font-mono disabled:opacity-50"
-                  placeholder="Optional"
-                  value={editPrice}
-                  onChange={(e) => setEditPrice(e.target.value)}
-                  disabled={!editMaxMemory}
-                  title="Only available when Max Memory is set"
-                />
-                <p className="text-xs text-slate-500 mt-1">Optional override price.</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="label">Expiry Date</label>
-              <input
-                type="datetime-local"
-                className="input"
-                value={editExpiry}
-                onChange={(e) => setEditExpiry(e.target.value)}
-              />
-              <p className="text-xs text-slate-500 mt-1">Clear to remove expiry.</p>
-            </div>
-
-            {isLocal && (
-              <div className="bg-violet-900/20 border border-violet-800/50 rounded-lg px-4 py-3 text-xs text-violet-300">
-                📂 This bot was imported from a local folder. The source directory will <strong>not</strong> be deleted when you remove the bot.
-              </div>
-            )}
-
-            <button className="btn-primary" onClick={saveMeta} disabled={savingMeta}>
-              {savingMeta ? 'Saving…' : '💾 Save Settings'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Confirm: Update ──────────────────────────────────────────────────── */}
-      {confirm?.action === 'update' && (
-        <ConfirmModal
-          title={isLocal ? 'Reinstall & Restart' : 'Pull & Update Bot'}
-          message={
-            isLocal
-              ? 'This will run npm install and restart the bot. If the folder is a git repo, git pull will also run.'
-              : 'This will run git pull + npm install, then restart the bot. Local changes in the bot directory will be overwritten.'
-          }
-          confirmText={isLocal ? 'Reinstall & Restart' : 'Update & Restart'}
-          danger={false}
-          onConfirm={() => { setConfirm(null); runAction('update', 'update'); }}
-          onCancel={() => setConfirm(null)}
-        />
-      )}
-
-      {/* ── Confirm: Delete ──────────────────────────────────────────────────── */}
-      {confirm?.action === 'delete' && (
-        <ConfirmModal
-          title={`Delete "${bot.name}"?`}
-          message={
-            isLocal
-              ? 'This will stop the bot and remove it from PM2 and the database. The local folder on disk will NOT be deleted.'
-              : 'This will stop the bot, remove it from PM2, and permanently delete its source directory. This cannot be undone.'
-          }
-          confirmText="Delete Forever"
-          onConfirm={handleDelete}
-          onCancel={() => setConfirm(null)}
-        />
-      )}
-    </>
+    </motion.div>
   );
 }

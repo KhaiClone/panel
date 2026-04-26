@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import ConfirmModal from "./ConfirmModal";
+import { motion } from "framer-motion";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -11,7 +12,7 @@ const STATUS_STYLES = {
         text: "text-emerald-400",
         label: "Online",
     },
-    stopped: { dot: "bg-red-400", text: "text-red-400", label: "Stopped" },
+    stopped: { dot: "bg-rose-400", text: "text-rose-400", label: "Stopped" },
     errored: {
         dot: "bg-orange-400",
         text: "text-orange-400",
@@ -45,14 +46,13 @@ const formatTimeLeft = (ms) => {
 
 export default function BotCard({ bot, onRefresh }) {
     const navigate = useNavigate();
-    const [busy, setBusy] = useState(false); // action in-flight
-    const [confirm, setConfirm] = useState(null); // { action, label }
+    const [busy, setBusy] = useState(false);
+    const [confirm, setConfirm] = useState(null);
 
     const style = getStyle(bot.live?.status);
     const now = Date.now();
     const msLeft = bot.expiresAt ? bot.expiresAt - now : null;
 
-    // ── Action helpers ────────────────────────────────────────────────────────
     const action = async (endpoint) => {
         setBusy(true);
         try {
@@ -82,110 +82,103 @@ export default function BotCard({ bot, onRefresh }) {
     const isStopped = bot.live?.status === "stopped" || !bot.live?.status;
 
     return (
-        <>
+        <motion.div 
+            whileHover={{ y: -5 }}
+            className="group relative"
+        >
             {/* Card */}
-            <div className="card flex flex-col gap-4 hover:border-slate-600 transition-colors">
+            <div className="card flex flex-col gap-4 bg-slate-900/60 border-slate-800/80 hover:border-indigo-500/30 shadow-2xl">
                 {/* Top row: name + status */}
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                        <h3 className="font-semibold text-slate-100 truncate">
+                        <h3 className="font-bold text-slate-100 truncate group-hover:text-indigo-400 transition-colors">
                             {bot.name}
                         </h3>
-                        <p className="text-xs text-slate-500 font-mono truncate">
+                        <p className="text-[10px] text-slate-500 font-mono tracking-tight truncate mt-0.5">
                             {bot.buyerID} / {bot.botID}
                         </p>
                     </div>
                     {/* Status badge */}
-                    <div
-                        className={`flex items-center gap-1.5 shrink-0 text-xs font-medium ${style.text}`}
-                    >
-                        <span
-                            className={`w-2 h-2 rounded-full ${style.dot} ${isOnline ? "animate-pulse" : ""}`}
-                        />
+                    <div className={`flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-full bg-slate-800/50 border border-slate-700/50 text-[10px] font-black uppercase tracking-widest ${style.text}`}>
+                        <span className="relative flex h-2 w-2">
+                            {isOnline && (
+                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${style.dot}`}></span>
+                            )}
+                            <span className={`relative inline-flex rounded-full h-2 w-2 ${style.dot}`}></span>
+                        </span>
                         {style.label}
                     </div>
                 </div>
 
                 {/* Expiry */}
                 {msLeft !== null && (
-                    <div
-                        className={`text-xs px-2.5 py-1.5 rounded-lg w-fit ${
-                            msLeft <= 0
-                                ? "bg-red-900/40 text-red-400 border border-red-800"
-                                : msLeft < 3 * 86_400_000
-                                  ? "bg-amber-900/40 text-amber-400 border border-amber-800"
-                                  : "bg-slate-700 text-slate-400"
-                        }`}
-                    >
+                    <div className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-lg w-fit backdrop-blur-sm border ${
+                        msLeft <= 0
+                            ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                            : msLeft < 3 * 86_400_000
+                                ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                : "bg-slate-800/50 text-slate-400 border-slate-700/50"
+                    }`}>
                         ⏳ {formatTimeLeft(msLeft)}
                     </div>
                 )}
 
                 {/* Stats row */}
-                {bot.live?.status === "online" && (
-                    <div className="flex gap-4 text-xs text-slate-500">
-                        <span>
-                            CPU:{" "}
-                            <span className="text-slate-300">
-                                {bot.live.cpu ?? 0}%
-                            </span>
-                        </span>
-                        <span>
-                            RAM:{" "}
-                            <span className="text-slate-300">
-                                {bot.live.memory
-                                    ? `${(bot.live.memory / 1_048_576).toFixed(0)} MB`
-                                    : "—"}
-                            </span>
-                        </span>
-                        <span>
-                            ↺{" "}
-                            <span className="text-slate-300">
-                                {bot.live.restarts ?? 0}
-                            </span>
-                        </span>
+                {isOnline && (
+                    <div className="grid grid-cols-3 gap-2 bg-slate-950/40 p-2 rounded-lg border border-slate-800/50">
+                        <div className="text-center">
+                            <p className="text-[9px] text-slate-500 font-black uppercase">CPU</p>
+                            <p className="text-xs text-indigo-400 font-mono">{bot.live.cpu ?? 0}%</p>
+                        </div>
+                        <div className="text-center border-x border-slate-800/50">
+                            <p className="text-[9px] text-slate-500 font-black uppercase">RAM</p>
+                            <p className="text-xs text-indigo-400 font-mono">
+                                {bot.live.memory ? `${(bot.live.memory / 1_048_576).toFixed(0)}MB` : "—"}
+                            </p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-[9px] text-slate-500 font-black uppercase">Restarts</p>
+                            <p className="text-xs text-indigo-400 font-mono">{bot.live.restarts ?? 0}</p>
+                        </div>
                     </div>
                 )}
 
                 {/* Action buttons */}
-                <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-700">
-                    {isStopped && (
+                <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-800/50">
+                    {isStopped ? (
                         <button
-                            className="btn-success text-xs py-1.5 px-3"
+                            className="btn-success text-[10px] py-1.5 px-3 flex-1 font-black uppercase tracking-wider"
                             onClick={() => action("start")}
                             disabled={busy}
                         >
-                            ▶ Start
+                            Start
                         </button>
-                    )}
-                    {isOnline && (
+                    ) : (
                         <button
-                            className="btn-danger text-xs py-1.5 px-3"
+                            className="btn-danger text-[10px] py-1.5 px-3 flex-1 font-black uppercase tracking-wider"
                             onClick={() => action("stop")}
                             disabled={busy}
                         >
-                            ⏹ Stop
+                            Stop
                         </button>
                     )}
                     <button
-                        className="btn-warning text-xs py-1.5 px-3"
+                        className="btn-warning text-[10px] py-1.5 px-3 flex-1 font-black uppercase tracking-wider"
                         onClick={() => action("restart")}
                         disabled={busy}
                     >
-                        🔄 Restart
+                        Restart
                     </button>
                     <button
-                        className="btn-ghost text-xs py-1.5 px-3"
+                        className="btn-ghost text-[10px] py-1.5 px-3 font-black uppercase tracking-wider"
                         onClick={() => navigate(`/bots/${bot._id}`)}
                         disabled={busy}
                     >
-                        🔍 Details
+                        🔍
                     </button>
                     <button
-                        className="btn-danger text-xs py-1.5 px-3 ml-auto"
-                        onClick={() =>
-                            setConfirm({ action: "delete", label: "Delete" })
-                        }
+                        className="btn-danger bg-rose-600/10 hover:bg-rose-600/20 text-rose-500 border border-rose-500/20 text-[10px] py-1.5 px-3 ml-auto rounded-lg transition-all"
+                        onClick={() => setConfirm({ action: "delete", label: "Delete" })}
                         disabled={busy}
                     >
                         🗑
@@ -197,12 +190,12 @@ export default function BotCard({ bot, onRefresh }) {
             {confirm?.action === "delete" && (
                 <ConfirmModal
                     title={`Delete "${bot.name}"?`}
-                    message="This will stop the bot, remove it from PM2, and permanently delete its source folder. This cannot be undone."
-                    confirmText="Delete"
+                    message="This will stop the bot, remove it from PM2, and permanently delete its source folder."
+                    confirmText="Delete permanently"
                     onConfirm={handleDelete}
                     onCancel={() => setConfirm(null)}
                 />
             )}
-        </>
+        </motion.div>
     );
 }
