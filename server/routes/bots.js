@@ -587,6 +587,33 @@ router.get("/:id/fs/read", async (req, res, next) => {
 });
 
 /**
+ * GET /api/bots/:id/fs/download?path=...
+ * Downloads a specific file.
+ */
+router.get("/:id/fs/download", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const baseDir = botDir(bot);
+        let targetFile;
+        try {
+            targetFile = resolveSafePath(baseDir, req.query.path);
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
+            return res.status(404).json({ error: "File not found" });
+        }
+
+        res.download(targetFile);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * PUT /api/bots/:id/fs/write
  * Writes updated content to a specific file.
  * Body: { path: string, content: string }

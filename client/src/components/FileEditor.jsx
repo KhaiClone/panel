@@ -136,6 +136,15 @@ export default function FileEditor({ botId }) {
         }
     };
 
+    const handleDownload = (e, f) => {
+        e.stopPropagation();
+        const filePath = currentPath ? `${currentPath}/${f.name}` : f.name;
+        const token = localStorage.getItem("token");
+        // SSE/Download needs token in query param
+        const url = `/api/bots/${botId}/fs/download?path=${encodeURIComponent(filePath)}&token=${token}`;
+        window.open(url, "_blank");
+    };
+
     useEffect(() => {
         loadDirectory("");
     }, [botId]);
@@ -229,6 +238,15 @@ export default function FileEditor({ botId }) {
                                             <span className="truncate">{f.name}</span>
                                         </div>
                                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {!f.isDir && (
+                                                <button 
+                                                    className="hover:text-indigo-400" 
+                                                    onClick={(e) => handleDownload(e, f)}
+                                                    title="Download"
+                                                >
+                                                    ⬇️
+                                                </button>
+                                            )}
                                             <button 
                                                 className="hover:text-amber-300" 
                                                 onClick={(e) => handleRename(e, f)}
