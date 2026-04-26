@@ -401,7 +401,7 @@ export default function BotDetail() {
                         </button>
                     )}
                     <button className="btn-warning flex-1 min-w-[120px] py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
-                        {busy === 'restart' ? 'Processing…' : '🔄 Hot Reload'}
+                        {busy === 'restart' ? 'Processing…' : '🔄 Restart'}
                     </button>
                     <button className="btn-primary flex-1 min-w-[120px] py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
                         {busy === 'update' ? 'Processing…' : isLocal ? '📦 Rebuild' : '⬆️ Pull Update'}
@@ -575,7 +575,7 @@ export default function BotDetail() {
         {confirm?.action === 'update' && (
             <ConfirmModal
             title={isLocal ? 'Reinstall & Restart' : 'Synchronize Repository'}
-            message={isLocal ? 'Execute npm install and hot reload the instance.' : 'Pull latest remote changes, reinstall dependencies, and restart.'}
+            message={isLocal ? 'Execute npm install and restart the instance.' : 'Pull latest remote changes, reinstall dependencies, and restart.'}
             confirmText="Continue Update"
             danger={false}
             onConfirm={() => { setConfirm(null); runAction('update', 'update'); }}
