@@ -12,7 +12,7 @@ const containerVariants = {
     show: {
         opacity: 1,
         transition: {
-            staggerChildren: 0.1
+            staggerChildren: 0.05
         }
     }
 };
@@ -141,7 +141,6 @@ export default function Dashboard() {
             <motion.div
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4 }}
             >
                 <StatsWidget />
             </motion.div>
@@ -151,7 +150,6 @@ export default function Dashboard() {
                 <motion.div 
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ delay: 0.5 }}
                     className="flex flex-col lg:flex-row lg:items-center gap-4 bg-slate-900/40 p-3 lg:p-4 rounded-xl border border-slate-800/50 backdrop-blur-sm"
                 >
                     <div className="relative w-full lg:max-w-xs">
