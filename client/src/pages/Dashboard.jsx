@@ -12,7 +12,7 @@ const containerVariants = {
     show: {
         opacity: 1,
         transition: {
-            staggerChildren: 0.05
+            // removed stagger for instant feel
         }
     }
 };
