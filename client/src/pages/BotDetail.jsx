@@ -349,7 +349,7 @@ export default function BotDetail() {
         </AnimatePresence>
 
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
-        <div className="flex border-b border-slate-800/50 gap-1 overflow-x-auto no-scrollbar">
+        <div className="flex border-b border-slate-800/50 gap-1 overflow-x-auto overflow-y-hidden no-scrollbar">
           {TABS.map((t) => (
             <button
               key={t}
