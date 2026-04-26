@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
@@ -32,7 +32,7 @@ export default function Layout() {
     const [open, setOpen] = useState(true);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
-    useState(() => {
+    useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 1024);
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
@@ -189,9 +189,10 @@ export default function Layout() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="h-full pb-32 lg:pb-8"
+                        className="min-h-full pb-32 lg:pb-8"
                     >
                         <Outlet />
+                        <div className="h-20 lg:hidden" /> {/* Mobile bottom nav spacer */}
                     </motion.div>
                 </AnimatePresence>
             </main>
