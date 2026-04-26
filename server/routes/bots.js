@@ -35,11 +35,12 @@ const botDir = (bot) => {
 router.get("/", async (req, res, next) => {
     try {
         const bots = await db.find("bots");
+        const pm2List = await pm2Service.getProcessList();
 
-        // Fetch live PM2 status for each bot in parallel
+        // Fetch live PM2 status for each bot in parallel using the cached list
         const enriched = await Promise.all(
             bots.map(async (bot) => {
-                const live = await pm2Service.getBotStatus(bot.pm2Name);
+                const live = await pm2Service.getBotStatus(bot.pm2Name, pm2List);
                 return { ...bot, live };
             }),
         );
@@ -59,7 +60,8 @@ router.get("/:id", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const live = await pm2Service.getBotStatus(bot.pm2Name);
+        const pm2List = await pm2Service.getProcessList();
+        const live = await pm2Service.getBotStatus(bot.pm2Name, pm2List);
         res.json({ ...bot, live });
     } catch (err) {
         next(err);

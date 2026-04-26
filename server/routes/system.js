@@ -2,6 +2,10 @@ const express = require("express");
 const si = require("systeminformation");
 const router = express.Router();
 
+let cachedStats = null;
+let lastFetch = 0;
+const CACHE_TTL = 2000; // 2 seconds
+
 /**
  * GET /api/system/stats
  *
@@ -10,6 +14,11 @@ const router = express.Router();
  */
 router.get("/stats", async (req, res, next) => {
     try {
+        const now = Date.now();
+        if (cachedStats && now - lastFetch < CACHE_TTL) {
+            return res.json(cachedStats);
+        }
+
         const [cpuLoad, mem, fsData, temp, cpuInfo] = await Promise.all([
             si.currentLoad(),
             si.mem(),
@@ -24,7 +33,7 @@ router.get("/stats", async (req, res, next) => {
             fsData.sort((a, b) => b.size - a.size)[0] ||
             null;
 
-        res.json({
+        const response = {
             cpu: {
                 usagePercent: parseFloat(cpuLoad.currentLoad.toFixed(2)),
                 temperature: temp.main ?? null,
@@ -53,7 +62,11 @@ router.get("/stats", async (req, res, next) => {
                       fs: mainFs.type,
                   }
                 : null,
-        });
+        };
+
+        cachedStats = response;
+        lastFetch = Date.now();
+        res.json(response);
     } catch (err) {
         next(err);
     }

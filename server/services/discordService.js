@@ -192,9 +192,15 @@ const sendBackup = async (backupData) => {
         }),
     );
 
-    // Attach file
+    // Attach main timestamped file
     form.append("file", Buffer.from(content), {
         filename,
+        contentType: "application/json",
+    });
+
+    // Also attach as "sqlite.json" for convenience as requested
+    form.append("file2", Buffer.from(content), {
+        filename: "sqlite.json",
         contentType: "application/json",
     });
 

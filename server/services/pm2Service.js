@@ -135,8 +135,8 @@ const getProcessList = async () => {
  *
  * @returns {Object} { status, cpu, memory, restarts, uptime }
  */
-const getBotStatus = async (pm2Name) => {
-    const list = await getProcessList();
+const getBotStatus = async (pm2Name, cachedList = null) => {
+    const list = cachedList || (await getProcessList());
     const proc = list.find((p) => p.name === pm2Name);
 
     if (!proc)

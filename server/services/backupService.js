@@ -10,14 +10,16 @@ const performBackup = async () => {
     console.log("[Backup] Running database backup...");
     try {
         const bots = await db.find("bots");
+        const fullDump = await db.all();
 
         const backupData = {
             timestamp: new Date().toISOString(),
             bots,
+            fullDump,
         };
 
         await sendBackup(backupData);
-        console.log(`[Backup] Backup sent — ${bots.length} bot(s) saved`);
+        console.log(`[Backup] Full database backup sent — ${bots.length} bot(s) saved`);
     } catch (err) {
         console.error(`[Backup] Backup failed: ${err.message}`);
     }
