@@ -118,8 +118,8 @@ export default function SystemPage() {
 
     if (!stats) {
         return (
-            <div className="flex h-full items-center justify-center">
-                <div className="animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full mt-20" />
+            <div className="flex h-full justify-center pt-32">
+                <div className="animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full" />
             </div>
         );
     }

@@ -235,7 +235,7 @@ export default function BotDetail() {
 
   if (loading || !bot) {
     return (
-      <div className="flex flex-col h-full items-center justify-center gap-4">
+      <div className="flex flex-col h-full items-center pt-32 gap-4">
         <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
         <p className="text-slate-500 text-xs font-bold uppercase tracking-widest animate-pulse">Syncing Instance...</p>
       </div>

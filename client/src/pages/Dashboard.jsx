@@ -178,7 +178,7 @@ export default function Dashboard() {
                 </motion.div>
 
                 {loading && bots.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-60 gap-4">
+                    <div className="flex justify-center pt-32 h-60 gap-4">
                         <div className="relative">
                             <div className="w-12 h-12 border-4 border-indigo-500/20 rounded-full" />
                             <div className="absolute top-0 left-0 w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
