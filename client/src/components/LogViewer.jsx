@@ -76,7 +76,7 @@ export default function LogViewer({ botId }) {
     };
 
     return (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4 p-4">
             {/* Toolbar */}
             <div className="flex items-center gap-3">
                 <span className="text-sm font-semibold text-slate-200">
