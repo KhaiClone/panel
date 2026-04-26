@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { DataProvider } from "./context/DataContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import BotDetail from "./pages/BotDetail";
@@ -25,7 +26,8 @@ function PrivateRoute({ children }) {
 export default function App() {
     return (
         <AuthProvider>
-            <BrowserRouter>
+            <DataProvider>
+                <BrowserRouter>
                 <Routes>
                     {/* Public */}
                     <Route path="/login" element={<Login />} />

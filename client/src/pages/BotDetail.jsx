@@ -6,6 +6,7 @@ import EnvEditor from '../components/EnvEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import FileEditor from '../components/FileEditor';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useData } from '../context/DataContext';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -145,9 +146,9 @@ const MEM_HINT = 'e.g. "300M", "1G" — blank for no limit';
 export default function BotDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { groups } = useData();
 
   const [bot, setBot]         = useState(null);
-  const [groups, setGroups]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab]         = useState('Controls');
   const [busy, setBusy]       = useState(null);
@@ -181,7 +182,6 @@ export default function BotDetail() {
 
   useEffect(() => {
     fetchBot();
-    api.get('/groups').then((r) => setGroups(r.data)).catch(() => {});
     const interval = setInterval(fetchBot, 8_000);
     return () => clearInterval(interval);
   }, [id]);

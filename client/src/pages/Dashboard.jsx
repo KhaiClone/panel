@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useData } from "../context/DataContext";
 import api from "../api/client";
 import StatsWidget from "../components/StatsWidget";
 import BotCard from "../components/BotCard";
@@ -71,37 +72,17 @@ function GroupSection({ label, color, bots, onRefresh, defaultOpen = true }) {
 }
 
 export default function Dashboard() {
-    const [bots, setBots] = useState([]);
-    const [groups, setGroups] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const { bots, groups, loading, refresh: fetchAll } = useData();
     const [showCreate, setShowCreate] = useState(false);
     const [showGroups, setShowGroups] = useState(false);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
 
-    const fetchAll = useCallback(async () => {
-        try {
-            const [botsRes, groupsRes] = await Promise.all([
-                api.get("/bots"),
-                api.get("/groups"),
-            ]);
-            setBots(botsRes.data);
-            setGroups(groupsRes.data);
-        } catch { /* axios interceptor handles 401 */ }
-        finally { setLoading(false); }
-    }, []);
-
-    useEffect(() => {
-        fetchAll();
-        const interval = setInterval(fetchAll, 10_000);
-        return () => clearInterval(interval);
-    }, [fetchAll]);
-
     const online       = bots.filter((b) => b.live?.status === "online").length;
     const errored      = bots.filter((b) => b.live?.status === "errored").length;
     const expiringSoon = bots.filter((b) => {
         if (!b.expiresAt) return false;
-        return (b.expiresAt - Date.now()) / 86_400_000 <= 3;
+        return (new Date(b.expiresAt) - Date.now()) / 86_400_000 <= 3;
     }).length;
 
     const visible = bots.filter((b) => {
