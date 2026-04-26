@@ -44,7 +44,7 @@ export default function Layout() {
     };
 
     return (
-        <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden flex-col lg:flex-row">
+        <div className="flex h-[100dvh] bg-slate-950 text-slate-100 overflow-hidden flex-col lg:flex-row">
             {/* Background Decoration */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-indigo-600/5 blur-[120px] animate-glow" />
@@ -189,7 +189,7 @@ export default function Layout() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="h-full pb-20 lg:pb-0"
+                        className="h-full pb-32 lg:pb-8"
                     >
                         <Outlet />
                     </motion.div>
