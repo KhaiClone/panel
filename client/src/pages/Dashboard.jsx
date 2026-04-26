@@ -176,12 +176,21 @@ export default function Dashboard() {
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔍</span>
                         <input className="input pl-9" placeholder="Search by name, ID..." value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
-                    <div className="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
+                    <div className="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50 gap-1">
                         {["all", "online", "stopped"].map((f) => (
                             <button key={f}
-                                className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all duration-200 ${filter === f ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-500 hover:text-slate-300"}`}
+                                className={`relative px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all duration-200 overflow-hidden ${
+                                    filter === f ? "text-white" : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                }`}
                                 onClick={() => setFilter(f)}>
-                                {f}
+                                {filter === f && (
+                                    <motion.div 
+                                        layoutId="filterBackground"
+                                        className="absolute inset-0 bg-indigo-600 rounded-md shadow-lg shadow-indigo-600/20"
+                                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    />
+                                )}
+                                <span className="relative z-10">{f}</span>
                             </button>
                         ))}
                     </div>

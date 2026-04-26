@@ -129,10 +129,10 @@ export default function CreateBotModal({ onClose, onCreated }) {
                                     onClick={() =>
                                         setForm((f) => ({ ...f, source: s }))
                                     }
-                                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                                    className={`relative flex-1 py-2 rounded-lg text-sm font-medium border transition-all overflow-hidden ${
                                         form.source === s
-                                            ? "bg-indigo-600 border-indigo-500 text-white"
-                                            : "bg-slate-700 border-slate-600 text-slate-400 hover:text-slate-200"
+                                            ? "border-indigo-500/50 text-indigo-400 bg-indigo-500/10"
+                                            : "bg-slate-700/30 border-slate-700/50 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
                                     }`}
                                 >
                                     {s === "git"
