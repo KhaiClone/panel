@@ -507,6 +507,42 @@ const resolveSafePath = (baseDir, reqPath) => {
 };
 
 /**
+ * GET /api/bots/:id/fs/download?path=...
+ * Downloads a specific file.
+ */
+router.get("/:id/fs/download", async (req, res, next) => {
+    try {
+        console.log(`[FS] Incoming download: id=${req.params.id} path=${req.query.path}`);
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) {
+            console.error(`[FS] Bot not found: ${req.params.id}`);
+            return res.status(404).json({ error: "Bot not found" });
+        }
+
+        const baseDir = botDir(bot);
+        let targetFile;
+        try {
+            targetFile = resolveSafePath(baseDir, req.query.path);
+        } catch (e) {
+            console.error(`[FS] Path resolution failed: ${e.message}`);
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        console.log(`[FS] Verified download: bot=${bot.name} target=${targetFile}`);
+
+        if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
+            console.error(`[FS] File on disk not found: ${targetFile}`);
+            return res.status(404).json({ error: "File not found" });
+        }
+
+        res.download(targetFile);
+    } catch (err) {
+        console.error(`[FS] Download error: ${err.message}`);
+        next(err);
+    }
+});
+
+/**
  * GET /api/bots/:id/fs/list?path=...
  * Lists directories and files for a given path relative to the bot's root folder.
  */
@@ -590,28 +626,7 @@ router.get("/:id/fs/read", async (req, res, next) => {
  * GET /api/bots/:id/fs/download?path=...
  * Downloads a specific file.
  */
-router.get("/:id/fs/download", async (req, res, next) => {
-    try {
-        const bot = await db.findOne("bots", { _id: req.params.id });
-        if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const baseDir = botDir(bot);
-        let targetFile;
-        try {
-            targetFile = resolveSafePath(baseDir, req.query.path);
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
-            return res.status(404).json({ error: "File not found" });
-        }
-
-        res.download(targetFile);
-    } catch (err) {
-        next(err);
-    }
-});
 
 /**
  * PUT /api/bots/:id/fs/write
