@@ -60,6 +60,7 @@ export default function Layout() {
                                 animate={{ opacity: 1, x: 0 }}
                                 exit={{ opacity: 0, x: -10 }}
                                 className="flex items-center gap-2 min-w-0"
+                                onClick={() => navigate("/dashboard")}
                             >
                                 <span className="text-2xl shrink-0">🤖</span>
                                 <div className="min-w-0">
