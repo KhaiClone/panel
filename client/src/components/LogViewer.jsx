@@ -91,10 +91,8 @@ export default function LogViewer({ botId }) {
                         🔄 Refresh
                     </button>
                     <button
-                        className={`text-xs py-1.5 px-3 rounded-lg font-medium transition-colors ${
-                            live
-                                ? "bg-red-600 hover:bg-red-500 text-white"
-                                : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                        className={`text-[10px] py-1.5 px-3 font-black uppercase tracking-widest transition-all ${
+                            live ? "btn-danger" : "btn-success"
                         }`}
                         onClick={toggleLive}
                     >
