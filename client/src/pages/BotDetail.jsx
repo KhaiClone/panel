@@ -406,7 +406,7 @@ export default function BotDetail() {
                     <button className="btn-primary flex-1 min-w-[120px] py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
                         {busy === 'update' ? 'Processing…' : isLocal ? '📦 Rebuild' : '⬆️ Pull Update'}
                     </button>
-                    <button className="btn-danger bg-rose-600/10 text-rose-500 border-rose-500/20 hover:bg-rose-600/20 px-4 py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => setConfirm({ action: 'delete' })}>
+                    <button className="btn-danger px-4 py-2.5 font-black uppercase tracking-widest text-[10px]" disabled={!!busy} onClick={() => setConfirm({ action: 'delete' })}>
                         🗑️ Delete
                     </button>
                     </div>
