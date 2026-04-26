@@ -349,18 +349,25 @@ export default function BotDetail() {
         </AnimatePresence>
 
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
-        <div className="flex border-b border-slate-800/50 gap-1 overflow-x-auto overflow-y-hidden no-scrollbar">
+        <div className="flex bg-slate-950/40 p-1.5 rounded-2xl border border-slate-800/50 gap-1 overflow-x-auto overflow-y-hidden no-scrollbar backdrop-blur-sm">
           {TABS.map((t) => (
             <button
               key={t}
-              className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all -mb-px whitespace-nowrap ${
+              className={`relative px-6 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap rounded-xl group ${
                 tab === t
-                  ? 'border-indigo-500 text-indigo-400 bg-indigo-500/5'
-                  : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
+                  ? 'text-white'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
               }`}
               onClick={() => setTab(t)}
             >
-              {t}
+              {tab === t && (
+                <motion.div 
+                  layoutId="activeTabIndicator"
+                  className="absolute inset-0 bg-indigo-600 rounded-xl shadow-[0_0_20px_rgba(79,70,229,0.3)]"
+                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                />
+              )}
+              <span className="relative z-10">{t}</span>
             </button>
           ))}
         </div>
