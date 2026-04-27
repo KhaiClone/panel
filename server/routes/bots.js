@@ -624,7 +624,18 @@ router.get("/:id/fs/read", async (req, res, next) => {
             return res.status(400).json({ error: "File too large to edit (max 1MB)" });
         }
 
-        const content = fs.readFileSync(targetFile, "utf8");
+        const isBinary = req.query.binary === 'true';
+        let content;
+
+        if (isBinary) {
+            // Read as buffer and convert to base64 for binary files
+            const buffer = fs.readFileSync(targetFile);
+            content = buffer.toString('base64');
+        } else {
+            // Read as UTF-8 for text files
+            content = fs.readFileSync(targetFile, "utf8");
+        }
+
         res.json({ content });
     } catch (err) {
         next(err);
@@ -647,7 +658,7 @@ router.put("/:id/fs/write", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const { path: reqPath, content } = req.body;
+        const { path: reqPath, content, binary } = req.body;
         if (content === undefined || !reqPath) {
             return res.status(400).json({ error: "path and content are required" });
         }
@@ -660,7 +671,18 @@ router.put("/:id/fs/write", async (req, res, next) => {
             return res.status(400).json({ error: "Invalid path" });
         }
 
-        fs.writeFileSync(targetFile, content, "utf8");
+        // Check if this is a binary file based on extension or explicit binary flag
+        const isBinaryFile = binary === true || /\.(db|sqlite|sqlite3|wasm|bin|exe|dll|so|dylib)$/i.test(reqPath);
+
+        if (isBinaryFile && typeof content === 'string') {
+            // Convert base64 back to buffer for binary files
+            const buffer = Buffer.from(content, 'base64');
+            fs.writeFileSync(targetFile, buffer);
+        } else {
+            // Write as UTF-8 for text files
+            fs.writeFileSync(targetFile, content, "utf8");
+        }
+
         res.json({ message: "File saved successfully" });
     } catch (err) {
         next(err);

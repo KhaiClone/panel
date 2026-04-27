@@ -72,7 +72,12 @@ export default function FileEditor({ botId }) {
         setSaving(true);
         setMsg(null);
         try {
-            await api.put(`/bots/${botId}/fs/write`, { path: selectedFile, content });
+            const isSQLite = isSQLiteFile(selectedFile);
+            await api.put(`/bots/${botId}/fs/write`, {
+                path: selectedFile,
+                content,
+                binary: isSQLite
+            });
             setOriginal(content);
             setMsg({ type: "success", text: "✅ File saved successfully" });
         } catch (err) {

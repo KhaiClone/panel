@@ -40,11 +40,16 @@ export default function SQLiteViewer({ fileContent, fileName }) {
               uint8Array[i] = binaryString.charCodeAt(i);
             }
           } catch (e) {
-            // If not base64, treat as text (this won't work for real SQLite files)
-            throw new Error('Invalid SQLite file format');
+            // If not base64, check if it might be JSON or other text
+            if (fileContent.trim().startsWith('{') || fileContent.trim().startsWith('[')) {
+              throw new Error('File contains JSON data, not SQLite binary data');
+            }
+            throw new Error('Invalid SQLite file format - expected binary data');
           }
         } else if (fileContent instanceof Uint8Array) {
           uint8Array = fileContent;
+        } else if (fileContent instanceof ArrayBuffer) {
+          uint8Array = new Uint8Array(fileContent);
         } else {
           throw new Error('Unsupported file format');
         }
