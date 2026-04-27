@@ -9,9 +9,6 @@ export default function SQLiteViewer({ fileContent, fileName }) {
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [sqlQuery, setSqlQuery] = useState('');
-  const [queryResult, setQueryResult] = useState(null);
-  const [activeTab, setActiveTab] = useState('tables'); // 'tables' or 'query'
 
   const sqlJsRef = useRef(null);
 
@@ -112,17 +109,6 @@ export default function SQLiteViewer({ fileContent, fileName }) {
     loadTableData(db, tableName);
   };
 
-  const executeQuery = () => {
-    if (!db || !sqlQuery.trim()) return;
-
-    try {
-      const results = db.exec(sqlQuery);
-      setQueryResult(results);
-    } catch (err) {
-      setError(err.message || 'Query execution failed');
-    }
-  };
-
   const renderTable = (data, cols) => {
     if (!data || data.length === 0) {
       return <div className="text-center text-slate-500 py-8">No data available</div>;
@@ -152,23 +138,6 @@ export default function SQLiteViewer({ fileContent, fileName }) {
             ))}
           </tbody>
         </table>
-      </div>
-    );
-  };
-
-  const renderQueryResult = () => {
-    if (!queryResult || queryResult.length === 0) {
-      return <div className="text-center text-slate-500 py-8">No results</div>;
-    }
-
-    return (
-      <div className="space-y-4">
-        {queryResult.map((result, idx) => (
-          <div key={idx}>
-            <h4 className="text-xs font-semibold text-slate-400 mb-2">Result {idx + 1}</h4>
-            {renderTable(result.values, result.columns)}
-          </div>
-        ))}
       </div>
     );
   };
@@ -210,111 +179,53 @@ export default function SQLiteViewer({ fileContent, fileName }) {
             {tables.length} tables
           </span>
         </div>
-        <div className="flex gap-2">
-          <button
-            className={`text-xs px-3 py-1.5 rounded transition-colors ${
-              activeTab === 'tables'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-            }`}
-            onClick={() => setActiveTab('tables')}
-          >
-            Tables
-          </button>
-          <button
-            className={`text-xs px-3 py-1.5 rounded transition-colors ${
-              activeTab === 'query'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-            }`}
-            onClick={() => setActiveTab('query')}
-          >
-            SQL Query
-          </button>
-        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'tables' ? (
-          <div className="flex h-full gap-4">
-            {/* Table List */}
-            <div className="w-48 flex-shrink-0 border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
-              <div className="p-2 border-b border-slate-700 bg-slate-800">
-                <h3 className="text-xs font-semibold text-slate-400">Tables</h3>
-              </div>
-              <div className="overflow-y-auto max-h-full">
-                {tables.map(table => (
-                  <button
-                    key={table}
-                    className={`w-full text-left px-3 py-2 text-xs transition-colors ${
-                      selectedTable === table
-                        ? 'bg-indigo-600 text-white'
-                        : 'text-slate-400 hover:bg-slate-800'
-                    }`}
-                    onClick={() => handleTableSelect(table)}
-                  >
-                    📋 {table}
-                  </button>
-                ))}
-              </div>
+        <div className="flex h-full gap-4">
+          {/* Table List */}
+          <div className="w-48 flex-shrink-0 border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
+            <div className="p-2 border-b border-slate-700 bg-slate-800">
+              <h3 className="text-xs font-semibold text-slate-400">Tables</h3>
             </div>
-
-            {/* Table Data */}
-            <div className="flex-1 border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
-              {selectedTable ? (
-                <div className="h-full flex flex-col">
-                  <div className="p-2 border-b border-slate-700 bg-slate-800">
-                    <h3 className="text-xs font-semibold text-slate-400">
-                      📄 {selectedTable} ({tableData.length} rows)
-                    </h3>
-                  </div>
-                  <div className="flex-1 overflow-auto p-2">
-                    {renderTable(tableData, columns)}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-                  Select a table to view data
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="h-full flex flex-col gap-3">
-            {/* Query Input */}
-            <div className="border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
-              <div className="p-2 border-b border-slate-700 bg-slate-800">
-                <h3 className="text-xs font-semibold text-slate-400">SQL Query</h3>
-              </div>
-              <div className="p-2">
-                <textarea
-                  className="w-full h-24 bg-slate-950 border border-slate-700 rounded p-2 text-xs font-mono text-slate-300 resize-none focus:outline-none focus:border-indigo-500"
-                  value={sqlQuery}
-                  onChange={(e) => setSqlQuery(e.target.value)}
-                  placeholder="SELECT * FROM table_name WHERE condition..."
-                  spellCheck={false}
-                />
+            <div className="overflow-y-auto max-h-full">
+              {tables.map(table => (
                 <button
-                  className="mt-2 btn-primary text-xs py-1.5 px-4"
-                  onClick={executeQuery}
+                  key={table}
+                  className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+                    selectedTable === table
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                  onClick={() => handleTableSelect(table)}
                 >
-                  ▶ Execute Query
+                  📋 {table}
                 </button>
-              </div>
-            </div>
-
-            {/* Query Results */}
-            <div className="flex-1 border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
-              <div className="p-2 border-b border-slate-700 bg-slate-800">
-                <h3 className="text-xs font-semibold text-slate-400">Results</h3>
-              </div>
-              <div className="flex-1 overflow-auto p-2">
-                {renderQueryResult()}
-              </div>
+              ))}
             </div>
           </div>
-        )}
+
+          {/* Table Data */}
+          <div className="flex-1 border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
+            {selectedTable ? (
+              <div className="h-full flex flex-col">
+                <div className="p-2 border-b border-slate-700 bg-slate-800">
+                  <h3 className="text-xs font-semibold text-slate-400">
+                    📄 {selectedTable} ({tableData.length} rows)
+                  </h3>
+                </div>
+                <div className="flex-1 overflow-auto p-2">
+                  {renderTable(tableData, columns)}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-500 text-sm">
+                Select a table to view data
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
