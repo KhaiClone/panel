@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../api/client";
+import CodeMirrorEditor from "./CodeMirrorEditor";
 
 export default function FileEditor({ botId }) {
     const [currentPath, setCurrentPath] = useState("");
@@ -312,11 +313,10 @@ export default function FileEditor({ botId }) {
                                 <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
                             </div>
                         ) : (
-                            <textarea
-                                className="input font-mono text-xs leading-relaxed resize-none flex-1 w-full"
+                            <CodeMirrorEditor
                                 value={content}
-                                onChange={(e) => setContent(e.target.value)}
-                                spellCheck={false}
+                                onChange={setContent}
+                                fileName={selectedFile}
                             />
                         )}
                         <p className="text-xs text-slate-500">
