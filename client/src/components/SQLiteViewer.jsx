@@ -170,22 +170,22 @@ export default function SQLiteViewer({ fileContent, fileName }) {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full border-2 border-slate-700 rounded-lg bg-slate-900/80 shadow-lg">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-700 pb-3 mb-3">
+      <div className="flex items-center justify-between border-b border-slate-700 bg-slate-800/90 px-4 py-3 rounded-t-lg">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-200">📊 {fileName}</span>
-          <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">
+          <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-1 rounded border border-slate-600">
             {tables.length} tables
           </span>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden">
-        <div className="flex h-full gap-4">
+      <div className="flex-1 overflow-hidden p-3">
+        <div className="flex h-full gap-3">
           {/* Table List */}
-          <div className="w-48 flex-shrink-0 border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
+          <div className="w-48 flex-shrink-0 border border-slate-700 rounded-lg bg-slate-800/50 overflow-hidden">
             <div className="p-2 border-b border-slate-700 bg-slate-800">
               <h3 className="text-xs font-semibold text-slate-400">Tables</h3>
             </div>
@@ -196,7 +196,7 @@ export default function SQLiteViewer({ fileContent, fileName }) {
                   className={`w-full text-left px-3 py-2 text-xs transition-colors ${
                     selectedTable === table
                       ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:bg-slate-800'
+                      : 'text-slate-400 hover:bg-slate-700'
                   }`}
                   onClick={() => handleTableSelect(table)}
                 >
@@ -207,7 +207,7 @@ export default function SQLiteViewer({ fileContent, fileName }) {
           </div>
 
           {/* Table Data */}
-          <div className="flex-1 border border-slate-700 rounded bg-slate-900/50 overflow-hidden">
+          <div className="flex-1 border border-slate-700 rounded-lg bg-slate-800/50 overflow-hidden">
             {selectedTable ? (
               <div className="h-full flex flex-col">
                 <div className="p-2 border-b border-slate-700 bg-slate-800">
