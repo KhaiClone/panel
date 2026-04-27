@@ -9,6 +9,8 @@ export default function SQLiteViewer({ fileContent, fileName }) {
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedRow, setSelectedRow] = useState(null);
+  const [showRowDetail, setShowRowDetail] = useState(false);
 
   const sqlJsRef = useRef(null);
 
@@ -109,6 +111,52 @@ export default function SQLiteViewer({ fileContent, fileName }) {
     loadTableData(db, tableName);
   };
 
+  const handleRowClick = (rowData) => {
+    setSelectedRow(rowData);
+    setShowRowDetail(true);
+  };
+
+  const formatValue = (value, columnName) => {
+    if (value === null) return <span className="text-slate-500 italic">NULL</span>;
+    if (value === undefined) return <span className="text-slate-500 italic">undefined</span>;
+
+    // Try to detect and format JSON
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return (
+          <pre className="text-xs bg-slate-950 p-2 rounded overflow-x-auto">
+            {JSON.stringify(parsed, null, 2)}
+          </pre>
+        );
+      } catch (e) {
+        // Not JSON, return as-is
+        return <span className="text-slate-300">{String(value)}</span>;
+      }
+    }
+
+    // Handle numbers
+    if (typeof value === 'number') {
+      return <span className="text-emerald-400">{value}</span>;
+    }
+
+    // Handle booleans
+    if (typeof value === 'boolean') {
+      return <span className={value ? "text-emerald-400" : "text-rose-400"}>{String(value)}</span>;
+    }
+
+    // Handle objects (including arrays)
+    if (typeof value === 'object') {
+      return (
+        <pre className="text-xs bg-slate-950 p-2 rounded overflow-x-auto">
+          {JSON.stringify(value, null, 2)}
+        </pre>
+      );
+    }
+
+    return <span className="text-slate-300">{String(value)}</span>;
+  };
+
   const renderTable = (data, cols) => {
     if (!data || data.length === 0) {
       return <div className="text-center text-slate-500 py-8">No data available</div>;
@@ -128,16 +176,62 @@ export default function SQLiteViewer({ fileContent, fileName }) {
           </thead>
           <tbody>
             {data.map((row, rowIdx) => (
-              <tr key={rowIdx} className="border-b border-slate-800 hover:bg-slate-800/50">
+              <tr
+                key={rowIdx}
+                className="border-b border-slate-800 hover:bg-slate-700/50 cursor-pointer transition-colors"
+                onClick={() => handleRowClick(row)}
+              >
                 {row.map((cell, cellIdx) => (
                   <td key={cellIdx} className="px-3 py-2 text-slate-400 whitespace-nowrap">
-                    {cell === null ? <span className="text-slate-600 italic">NULL</span> : String(cell)}
+                    {cell === null ? (
+                      <span className="text-slate-600 italic">NULL</span>
+                    ) : (
+                      <span className="truncate max-w-[200px] block">
+                        {typeof cell === 'object' ? '[Object]' : String(cell).substring(0, 50)}
+                      </span>
+                    )}
                   </td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+    );
+  };
+
+  const renderRowDetail = () => {
+    if (!selectedRow || !columns) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+        <div className="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-800">
+            <h3 className="text-sm font-semibold text-slate-200">
+              Row Details - {selectedTable}
+            </h3>
+            <button
+              onClick={() => setShowRowDetail(false)}
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="p-4 overflow-y-auto max-h-[calc(80vh-60px)]">
+            <div className="space-y-3">
+              {columns.map((col, idx) => (
+                <div key={idx} className="border border-slate-700 rounded-lg p-3 bg-slate-800/50">
+                  <div className="text-xs font-semibold text-indigo-400 mb-2">
+                    {col}
+                  </div>
+                  <div className="text-sm">
+                    {formatValue(selectedRow[idx], col)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -210,10 +304,13 @@ export default function SQLiteViewer({ fileContent, fileName }) {
           <div className="flex-1 border border-slate-700 rounded-lg bg-slate-800/50 overflow-hidden">
             {selectedTable ? (
               <div className="h-full flex flex-col">
-                <div className="p-2 border-b border-slate-700 bg-slate-800">
+                <div className="p-2 border-b border-slate-700 bg-slate-800 flex items-center justify-between">
                   <h3 className="text-xs font-semibold text-slate-400">
                     📄 {selectedTable} ({tableData.length} rows)
                   </h3>
+                  <span className="text-xs text-slate-500">
+                    Click on any row to view full details
+                  </span>
                 </div>
                 <div className="flex-1 overflow-auto p-2">
                   {renderTable(tableData, columns)}
@@ -227,6 +324,9 @@ export default function SQLiteViewer({ fileContent, fileName }) {
           </div>
         </div>
       </div>
+
+      {/* Row Detail Modal */}
+      {showRowDetail && renderRowDetail()}
     </div>
   );
 }
