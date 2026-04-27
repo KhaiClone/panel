@@ -13,6 +13,7 @@ export default function FileEditor({ botId }) {
     const [loadingFile, setLoadingFile] = useState(false);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState(null);
+    const [fileSize, setFileSize] = useState(null);
 
     const fileInputRef = useRef(null);
 
@@ -23,6 +24,14 @@ export default function FileEditor({ botId }) {
         if (!fileName) return false;
         const ext = fileName.split('.').pop().toLowerCase();
         return ['db', 'sqlite', 'sqlite3'].includes(ext);
+    };
+
+    const formatFileSize = (bytes) => {
+        if (!bytes) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
     const loadDirectory = async (path = "") => {
@@ -49,6 +58,13 @@ export default function FileEditor({ botId }) {
         try {
             const isSQLite = isSQLiteFile(filePath);
             const { data } = await api.get(`/bots/${botId}/fs/read?path=${encodeURIComponent(filePath)}${isSQLite ? '&binary=true' : ''}`);
+
+            // Get file size from the files list
+            const file = files.find(f => {
+                const fullPath = currentPath ? `${currentPath}/${f.name}` : f.name;
+                return fullPath === filePath;
+            });
+            setFileSize(file ? file.size : null);
 
             if (isSQLite) {
                 // For SQLite files, keep the binary content
@@ -112,6 +128,7 @@ export default function FileEditor({ botId }) {
                 setSelectedFile(null);
                 setContent("");
                 setOriginal("");
+                setFileSize(null);
             }
             loadDirectory(currentPath);
             setMsg({ type: "success", text: `✅ Deleted ${f.name}` });
@@ -255,34 +272,41 @@ export default function FileEditor({ botId }) {
                                             }
                                         }}
                                     >
-                                        <div className="flex items-center gap-2 truncate">
+                                        <div className="flex items-center gap-2 truncate flex-1">
                                             <span className="shrink-0">{f.isDir ? '📁' : '📄'}</span>
                                             <span className="truncate">{f.name}</span>
                                         </div>
-                                        <div className={`flex items-center gap-2 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                            {f.isDir ? null : (
-                                                <button 
-                                                    className="hover:text-indigo-400" 
-                                                    onClick={(e) => handleDownload(e, f)}
-                                                    title="Download"
-                                                >
-                                                    ⬇️
-                                                </button>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {!f.isDir && (
+                                                <span className={`text-xs ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>
+                                                    {formatFileSize(f.size)}
+                                                </span>
                                             )}
-                                            <button 
-                                                className="hover:text-amber-300" 
-                                                onClick={(e) => handleRename(e, f)}
-                                                title="Rename"
-                                            >
-                                                ✏️
-                                            </button>
-                                            <button 
-                                                className="hover:text-red-400" 
-                                                onClick={(e) => handleDelete(e, f)}
-                                                title="Delete"
-                                            >
-                                                🗑️
-                                            </button>
+                                            <div className={`flex items-center gap-2 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                                {f.isDir ? null : (
+                                                    <button
+                                                        className="hover:text-indigo-400"
+                                                        onClick={(e) => handleDownload(e, f)}
+                                                        title="Download"
+                                                    >
+                                                        ⬇️
+                                                    </button>
+                                                )}
+                                                <button
+                                                    className="hover:text-amber-300"
+                                                    onClick={(e) => handleRename(e, f)}
+                                                    title="Rename"
+                                                >
+                                                    ✏️
+                                                </button>
+                                                <button
+                                                    className="hover:text-red-400"
+                                                    onClick={(e) => handleDelete(e, f)}
+                                                    title="Delete"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -301,6 +325,11 @@ export default function FileEditor({ botId }) {
                                 <span className="text-sm font-semibold text-slate-200 truncate">
                                     {selectedFile.split(/[\/\\]/).pop()}
                                 </span>
+                                {fileSize && (
+                                    <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded border border-slate-700">
+                                        {formatFileSize(fileSize)}
+                                    </span>
+                                )}
                                 {isDirty && (
                                     <span className="text-xs text-amber-400 bg-amber-900/30 border border-amber-800 px-2 py-0.5 rounded shrink-0">
                                         Unsaved
