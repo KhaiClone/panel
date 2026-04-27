@@ -115,5 +115,11 @@ export default function CodeMirrorEditor({ value, onChange, fileName, readOnly =
     }
   }, [value]);
 
-  return <div ref={editorRef} className="w-full h-full border border-slate-700 rounded bg-slate-900/50" />;
+  return (
+    <div
+      ref={editorRef}
+      className="w-full h-full border border-slate-700 rounded bg-slate-900/50 overflow-hidden"
+      style={{ minHeight: '300px' }}
+    />
+  );
 }

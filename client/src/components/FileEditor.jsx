@@ -313,11 +313,13 @@ export default function FileEditor({ botId }) {
                                 <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
                             </div>
                         ) : (
-                            <CodeMirrorEditor
-                                value={content}
-                                onChange={setContent}
-                                fileName={selectedFile}
-                            />
+                            <div className="flex-1 min-h-[300px] overflow-hidden border border-slate-700 rounded bg-slate-900/50">
+                                <CodeMirrorEditor
+                                    value={content}
+                                    onChange={setContent}
+                                    fileName={selectedFile}
+                                />
+                            </div>
                         )}
                         <p className="text-xs text-slate-500">
                             ⚠️ Restart the bot after saving for changes to take effect.
