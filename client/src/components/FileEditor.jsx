@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../api/client";
 import CodeMirrorEditor from "./CodeMirrorEditor";
+import SQLiteViewer from "./SQLiteViewer";
 
 export default function FileEditor({ botId }) {
     const [currentPath, setCurrentPath] = useState("");
@@ -14,6 +15,15 @@ export default function FileEditor({ botId }) {
     const [msg, setMsg] = useState(null);
 
     const fileInputRef = useRef(null);
+
+    const isDirty = content !== original;
+    const parts = currentPath ? currentPath.split(/[\/\\]/).filter(Boolean) : [];
+
+    const isSQLiteFile = (fileName) => {
+        if (!fileName) return false;
+        const ext = fileName.split('.').pop().toLowerCase();
+        return ['db', 'sqlite', 'sqlite3'].includes(ext);
+    };
 
     const loadDirectory = async (path = "") => {
         setLoadingDir(true);
@@ -37,8 +47,17 @@ export default function FileEditor({ botId }) {
         setLoadingFile(true);
         setMsg(null);
         try {
-            const { data } = await api.get(`/bots/${botId}/fs/read?path=${encodeURIComponent(filePath)}`);
-            setContent(data.content);
+            const isSQLite = isSQLiteFile(filePath);
+            const { data } = await api.get(`/bots/${botId}/fs/read?path=${encodeURIComponent(filePath)}${isSQLite ? '&binary=true' : ''}`);
+
+            if (isSQLite) {
+                // For SQLite files, keep the binary content
+                setContent(data.content);
+            } else {
+                // For text files, ensure content is a string
+                setContent(typeof data.content === 'string' ? data.content : String(data.content));
+            }
+
             setOriginal(data.content);
             setSelectedFile(filePath);
         } catch (err) {
@@ -150,9 +169,6 @@ export default function FileEditor({ botId }) {
         loadDirectory("");
     }, [botId]);
 
-    const isDirty = content !== original;
-    const parts = currentPath ? currentPath.split(/[\/\\]/).filter(Boolean) : [];
-    
     const handleNavigateUp = () => {
         if (parts.length === 0) return;
         parts.pop();
@@ -311,6 +327,13 @@ export default function FileEditor({ botId }) {
                         {loadingFile ? (
                             <div className="flex-1 flex items-center justify-center border border-slate-700 rounded bg-slate-900/50">
                                 <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
+                            </div>
+                        ) : isSQLiteFile(selectedFile) ? (
+                            <div className="flex-1 min-h-[300px] overflow-hidden border border-slate-700 rounded bg-slate-900/50">
+                                <SQLiteViewer
+                                    fileContent={content}
+                                    fileName={selectedFile.split(/[\/\\]/).pop()}
+                                />
                             </div>
                         ) : (
                             <div className="flex-1 min-h-[300px] overflow-hidden border border-slate-700 rounded bg-slate-900/50">
