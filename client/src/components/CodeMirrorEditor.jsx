@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { EditorView, basicSetup } from '@codemirror/view';
+import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
