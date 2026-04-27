@@ -23,9 +23,7 @@ export default function SQLiteViewer({ fileContent, fileName }) {
 
         // Initialize SQL.js
         if (!sqlJsRef.current) {
-          const SQL = await initSqlJs({
-            locateFile: file => `https://sql.js.org/dist/${file}`
-          });
+          const SQL = await initSqlJs();
           sqlJsRef.current = SQL;
         }
 
