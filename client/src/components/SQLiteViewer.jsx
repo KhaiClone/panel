@@ -24,7 +24,7 @@ export default function SQLiteViewer({ fileContent, fileName }) {
         // Initialize SQL.js
         if (!sqlJsRef.current) {
           const SQL = await initSqlJs({
-            locateFile: file => new URL(file, import.meta.url).href
+            locateFile: file => `/sql-wasm.wasm`
           });
           sqlJsRef.current = SQL;
         }
