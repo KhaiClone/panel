@@ -620,8 +620,8 @@ router.get("/:id/fs/read", async (req, res, next) => {
         }
 
         const stat = fs.statSync(targetFile);
-        if (stat.size > 1024 * 1024) {
-            return res.status(400).json({ error: "File too large to edit (max 1MB)" });
+        if (stat.size > 1024 * 1024 * 10) {
+            return res.status(400).json({ error: "File too large to edit (max 10MB)" });
         }
 
         const isBinary = req.query.binary === 'true';
