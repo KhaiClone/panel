@@ -5,9 +5,9 @@ const db = require("../db");
 const { deleteBot, stopBot, getBotStatus } = require("./pm2Service");
 const { sendExpiryWarning, sendExpiryRemoval, sendExpirySuspended } = require("./discordService");
 
-// Days before expiry to send a warning notification
-// e.g. warn at 7 days left, again at 3, again at 1
-const WARNING_DAYS = [7, 3, 1];
+// Hours before expiry to send a warning notification
+// e.g. warn at 72 hours, 47 hours, 24 hours left
+const WARNING_HOURS = [72, 47, 24];
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Core Check
@@ -32,7 +32,7 @@ const checkExpiry = async () => {
             if (!bot.expiresAt) continue;
 
             const msLeft = bot.expiresAt - now;
-            const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+            const hoursLeft = Math.ceil(msLeft / (1000 * 60 * 60));
 
             if (msLeft <= -7 * 24 * 60 * 60 * 1000) {
                 // ── EXPIRED 7 DAYS AGO: remove everything ────────────────────────
@@ -69,12 +69,12 @@ const checkExpiry = async () => {
                     await stopBot(bot.pm2Name);
                     await sendExpirySuspended(bot);
                 }
-            } else if (WARNING_DAYS.includes(daysLeft)) {
+            } else if (WARNING_HOURS.includes(hoursLeft)) {
                 // ── WARNING: notify but keep bot running ───────────────────────────
                 console.log(
-                    `[Expiry] Sending ${daysLeft}-day warning for bot "${bot.botID}"`,
+                    `[Expiry] Sending ${hoursLeft}h warning for bot "${bot.botID}"`,
                 );
-                await sendExpiryWarning(bot, daysLeft);
+                await sendExpiryWarning(bot, hoursLeft);
             }
         }
     } catch (err) {

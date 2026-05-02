@@ -30,15 +30,15 @@ const sendWebhook = async (webhookUrl, payload) => {
  * Send an expiry warning embed to DISCORD_ALERT_WEBHOOK.
  * Color scales from yellow → orange → red as expiry approaches.
  *
- * @param {Object} bot      - Bot record from DB
- * @param {number} daysLeft - Days remaining before expiry
+ * @param {Object} bot       - Bot record from DB
+ * @param {number} hoursLeft - Hours remaining before expiry
  */
-const sendExpiryWarning = async (bot, daysLeft) => {
+const sendExpiryWarning = async (bot, hoursLeft) => {
     const webhookUrl = process.env.DISCORD_ALERT_WEBHOOK;
 
-    // Color: red (<= 1d), orange (<= 3d), yellow (<= 7d)
+    // Color: red (<= 24h), orange (<= 72h), yellow (> 72h)
     const color =
-        daysLeft <= 1 ? 0xff4444 : daysLeft <= 3 ? 0xff8c00 : 0xffd700;
+        hoursLeft <= 24 ? 0xff4444 : hoursLeft <= 72 ? 0xff8c00 : 0xffd700;
 
     await sendWebhook(webhookUrl, {
         content: `<@${bot.buyerID}>`,
@@ -55,8 +55,8 @@ const sendExpiryWarning = async (bot, daysLeft) => {
                         inline: true,
                     },
                     {
-                        name: "⏳ Days Left",
-                        value: `**${daysLeft}** day(s)`,
+                        name: "⏳ Time Left",
+                        value: `**${hoursLeft}** hour(s)`,
                         inline: true,
                     },
                     {
