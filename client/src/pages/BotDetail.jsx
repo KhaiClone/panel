@@ -260,38 +260,38 @@ export default function BotDetail() {
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="flex items-center gap-3 lg:gap-4">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="w-9 h-9 lg:w-10 lg:h-10 flex items-center justify-center rounded-xl bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-100 hover:border-slate-700 transition-all active:scale-95 shadow-lg"
-          >
-            ←
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-3xl font-black text-slate-100 tracking-tight truncate">{bot.name}</h1>
-              {isLocal && (
-                <span className="text-[10px] font-black uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded-full shrink-0">
-                  📂 Local
-                </span>
-              )}
-              {currentGroup && (
-                <span
-                  className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0 border"
-                  style={{
-                    background: `${currentGroup.color}11`,
-                    borderColor: `${currentGroup.color}33`,
-                    color: currentGroup.color,
-                  }}
-                >
-                  {currentGroup.name}
-                </span>
-              )}
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="w-9 h-9 lg:w-10 lg:h-10 flex items-center justify-center rounded-xl bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-100 hover:border-slate-700 transition-all active:scale-95 shadow-lg"
+            >
+              ←
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-3xl font-black text-slate-100 tracking-tight truncate">{bot.name}</h1>
+                {isLocal && (
+                  <span className="text-[10px] font-black uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2.5 py-1 rounded-full shrink-0">
+                    📂 Local
+                  </span>
+                )}
+                {currentGroup && (
+                  <span
+                    className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0 border"
+                    style={{
+                      background: `${currentGroup.color}11`,
+                      borderColor: `${currentGroup.color}33`,
+                      color: currentGroup.color,
+                    }}
+                  >
+                    {currentGroup.name}
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-500 font-mono mt-1 opacity-75">{bot.buyerID} / {bot.botID}</p>
             </div>
-            <p className="text-[10px] text-slate-500 font-mono mt-1 opacity-75">{bot.buyerID} / {bot.botID}</p>
           </div>
-          <div className="shrink-0">
+          <div className="shrink-0 self-start lg:self-center">
             <StatusBadge status={bot.live?.status} />
-          </div>
           </div>
         </div>
 
