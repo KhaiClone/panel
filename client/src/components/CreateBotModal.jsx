@@ -216,6 +216,9 @@ export default function CreateBotModal({ onClose, onCreated }) {
                                         value={form.startScript}
                                         onChange={set("startScript")}
                                     />
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Supports sudo, e.g. "sudo java -jar Lavalink.jar"
+                                    </p>
                                 </div>
                             </div>
                             <div>
@@ -229,7 +232,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                                     onChange={set("installCommand")}
                                 />
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Leave empty to skip (e.g. Lavalink)
+                                    Leave empty to skip. Supports sudo if needed.
                                 </p>
                             </div>
                         </>
@@ -261,6 +264,9 @@ export default function CreateBotModal({ onClose, onCreated }) {
                                     value={form.startScript}
                                     onChange={set("startScript")}
                                 />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Supports sudo, e.g. "sudo java -jar Lavalink.jar"
+                                </p>
                             </div>
                             <div>
                                 <label className="label">Install Command</label>
@@ -271,7 +277,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                                     onChange={set("installCommand")}
                                 />
                                 <p className="text-xs text-slate-500 mt-1">
-                                    Leave empty to skip install step.
+                                    Leave empty to skip. Supports sudo if needed.
                                 </p>
                             </div>
                         </>

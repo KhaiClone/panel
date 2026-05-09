@@ -64,14 +64,15 @@ const startBot = async (
     } else {
         // New process: register and start
         const cmdStr = startCommand.trim();
+        const isWindows = process.platform === "win32";
         let scriptPath;
+        let interpreterFlag = "";
 
         // Simple script filename mode for backward compatibility
         if (!cmdStr.includes(" ") && (cmdStr.endsWith(".js") || cmdStr.endsWith(".ts") || cmdStr.endsWith(".py") || cmdStr.endsWith(".json"))) {
             scriptPath = `${botPath}/${cmdStr}`;
         } else {
             // Complex command mode: generate a wrapper script so PM2 executes it reliably
-            const isWindows = process.platform === "win32";
             const scriptName = isWindows ? ".noflex-start.bat" : ".noflex-start.sh";
             scriptPath = `${botPath}/${scriptName}`;
             
@@ -79,11 +80,12 @@ const startBot = async (
             fs.writeFileSync(scriptPath, scriptContent);
             if (!isWindows) {
                 try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}
+                interpreterFlag = " --interpreter bash";
             }
         }
 
         result = await runPM2(
-            `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}`,
+            `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}${interpreterFlag}`,
         );
     }
 

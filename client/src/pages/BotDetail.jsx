@@ -533,11 +533,12 @@ export default function BotDetail() {
                             <div>
                                 <label className="label">Start Command</label>
                                 <input className="input font-mono" value={editScript} onChange={(e) => setEditScript(e.target.value)} />
+                                <p className="text-xs text-slate-500 mt-1">Supports sudo, e.g. "sudo java -jar Lavalink.jar"</p>
                             </div>
                             <div>
                                 <label className="label">Install Command</label>
                                 <input className="input font-mono" placeholder="Leave empty to skip" value={editInstallCommand} onChange={(e) => setEditInstallCommand(e.target.value)} />
-                                <p className="text-xs text-slate-500 mt-1">Used during rebuild/update. Leave empty to skip install step.</p>
+                                <p className="text-xs text-slate-500 mt-1">Used during rebuild/update. Leave empty to skip. Supports sudo if needed.</p>
                             </div>
                             <div>
                                 <label className="label">Target Deployment Group</label>
