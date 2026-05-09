@@ -24,11 +24,12 @@ const itemVariants = {
 
 function GroupSection({ label, color, bots, onRefresh, defaultOpen = true }) {
     const [open, setOpen] = useState(defaultOpen);
+    const [animating, setAnimating] = useState(false);
     return (
         <motion.div layout className="space-y-3">
             <button
-                onClick={() => setOpen((v) => !v)}
-                className="flex items-center gap-2 w-full text-left group"
+                onClick={() => { setAnimating(true); setOpen((v) => !v); }}
+                className="flex items-center gap-2 w-full text-left group relative z-10"
             >
                 <span className="w-3 h-3 rounded-full shrink-0 shadow-sm" style={{ background: color || "#64748b", boxShadow: `0 0 10px ${color}44` }} />
                 <span className="text-sm font-bold text-slate-400 group-hover:text-slate-100 transition-colors uppercase tracking-wider">
@@ -49,13 +50,14 @@ function GroupSection({ label, color, bots, onRefresh, defaultOpen = true }) {
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="overflow-hidden"
+                        onAnimationComplete={() => setAnimating(false)}
+                        style={{ overflow: animating ? "hidden" : "visible" }}
                     >
                         <motion.div 
                             variants={containerVariants}
                             initial="hidden"
                             animate="show"
-                            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 pl-5 border-l border-slate-800/50" 
+                            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 pl-5 pt-2 border-l border-slate-800/50" 
                             style={{ borderLeftColor: color ? `${color}33` : "#1e293b" }}
                         >
                             {bots.map((bot) => (
