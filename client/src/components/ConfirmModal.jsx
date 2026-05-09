@@ -15,7 +15,7 @@ export default function ConfirmModal({
                 <h3 className="text-lg lg:text-xl font-black text-slate-100 mb-2 tracking-tight">
                     {title}
                 </h3>
-                <p className="text-xs lg:text-sm text-slate-500 mb-6 font-medium leading-relaxed">{message}</p>
+                <p className="text-xs lg:text-sm text-slate-500 mb-6 font-medium leading-relaxed whitespace-pre-line">{message}</p>
 
                 {/* Actions */}
                 <div className="flex flex-col sm:flex-row gap-2 lg:gap-3 justify-end">

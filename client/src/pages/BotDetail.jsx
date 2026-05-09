@@ -598,8 +598,12 @@ export default function BotDetail() {
         {confirm?.action === 'delete' && (
             <ConfirmModal
             title={`Terminate "${bot.name}"?`}
-            message="This will immediately stop the process and wipe instance metadata. This action is irreversible."
-            confirmText="Terminate Now"
+            message={
+              isLocal
+                ? "This will stop the PM2 process and remove the bot from the panel.\n\n📂 Your project folder will NOT be deleted — it stays safe on disk."
+                : "This will stop the PM2 process, remove the bot from the panel, and delete the project folder from disk.\n\n⚠️ This action is irreversible."
+            }
+            confirmText={isLocal ? "Remove from Panel" : "Delete Everything"}
             onConfirm={handleDelete}
             onCancel={() => setConfirm(null)}
             />
