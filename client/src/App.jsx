@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import BotDetail from "./pages/BotDetail";
 import GroupsPage from "./pages/GroupsPage";
+import MultiManage from "./pages/MultiManage";
 import SystemPage from "./pages/SystemPage";
 import Layout from "./components/Layout";
 
@@ -44,8 +45,9 @@ export default function App() {
                         <Route index element={<Navigate to="/dashboard" replace />} />
                         <Route path="dashboard" element={<Dashboard />} />
                         <Route path="bots/:id"   element={<BotDetail />} />
-                        <Route path="groups"     element={<GroupsPage />} />
-                        <Route path="system"     element={<SystemPage />} />
+                        <Route path="groups"       element={<GroupsPage />} />
+                        <Route path="multi-manage" element={<MultiManage />} />
+                        <Route path="system"       element={<SystemPage />} />
                     </Route>
 
                     {/* Fallback */}

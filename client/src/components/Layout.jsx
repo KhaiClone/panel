@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 
 // ── Nav items ──────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
-    { to: "/dashboard", icon: "📊", label: "Dashboard" },
-    { to: "/groups",    icon: "🗂️", label: "Groups" },
-    { to: "/system",   icon: "🖥️", label: "System" },
+    { to: "/dashboard",     icon: "📊", label: "Dashboard" },
+    { to: "/groups",        icon: "🗂️", label: "Groups" },
+    { to: "/multi-manage",  icon: "⚡", label: "Multi Manage" },
+    { to: "/system",        icon: "🖥️", label: "System" },
 ];
 
 // ── Nav link styles ────────────────────────────────────────────────────────
