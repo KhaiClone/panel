@@ -8,9 +8,7 @@
     "dev:server": "nodemon server/index.js",
     "dev:client": "cd client && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "build": "cd client && npm run build",
-    "bot": "node discord-bot/index.js",
-    "dev:bot": "nodemon discord-bot/index.js"
+    "build": "cd client && npm run build"
   },
   "dependencies": {
     "axios": "^1.6.0",

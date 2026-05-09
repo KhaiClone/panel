@@ -10,7 +10,7 @@ const defaultForm = {
     buyerID: "",
     botID: "",
     name: "",
-    startScript: "index.js",
+    startScript: "npm start",
     expiresAt: "",
     groupId: "",
     maxMemory: "",
@@ -20,7 +20,7 @@ const defaultForm = {
     branch: "main",
     // local-only
     localPath: "",
-    installDeps: true,
+    installCommand: "npm install --omit=dev",
 };
 
 const MEM_HINT = 'e.g. "300M", "1G" — leave blank for no limit';
@@ -61,7 +61,8 @@ export default function CreateBotModal({ onClose, onCreated }) {
                           name: form.name,
                           repoUrl: form.repoUrl,
                           branch: form.branch || "main",
-                          startScript: form.startScript || "index.js",
+                          startScript: form.startScript || "npm start",
+                          installCommand: form.installCommand || null,
                           expiresAt: form.expiresAt
                               ? new Date(form.expiresAt).toISOString()
                               : null,
@@ -76,8 +77,8 @@ export default function CreateBotModal({ onClose, onCreated }) {
                           botID: form.botID,
                           name: form.name,
                           localPath: form.localPath,
-                          startScript: form.startScript || "index.js",
-                          installDeps: form.installDeps,
+                          startScript: form.startScript || "npm start",
+                          installCommand: form.installCommand || null,
                           expiresAt: form.expiresAt
                               ? new Date(form.expiresAt).toISOString()
                               : null,
@@ -207,15 +208,29 @@ export default function CreateBotModal({ onClose, onCreated }) {
                                 </div>
                                 <div>
                                     <label className="label">
-                                        Start Script
+                                        Start Command
                                     </label>
                                     <input
                                         className="input"
-                                        placeholder="index.js"
+                                        placeholder="npm start"
                                         value={form.startScript}
                                         onChange={set("startScript")}
                                     />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="label">
+                                    Install Command
+                                </label>
+                                <input
+                                    className="input"
+                                    placeholder="npm install --omit=dev"
+                                    value={form.installCommand}
+                                    onChange={set("installCommand")}
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Leave empty to skip (e.g. Lavalink)
+                                </p>
                             </div>
                         </>
                     )}
@@ -239,29 +254,26 @@ export default function CreateBotModal({ onClose, onCreated }) {
                                 </p>
                             </div>
                             <div>
-                                <label className="label">Start Script</label>
+                                <label className="label">Start Command</label>
                                 <input
                                     className="input"
-                                    placeholder="index.js"
+                                    placeholder="npm start"
                                     value={form.startScript}
                                     onChange={set("startScript")}
                                 />
                             </div>
-                            <label className="flex items-center gap-2 cursor-pointer">
+                            <div>
+                                <label className="label">Install Command</label>
                                 <input
-                                    type="checkbox"
-                                    className="w-4 h-4 accent-indigo-500"
-                                    checked={form.installDeps}
-                                    onChange={set("installDeps")}
+                                    className="input"
+                                    placeholder="npm install --omit=dev"
+                                    value={form.installCommand}
+                                    onChange={set("installCommand")}
                                 />
-                                <span className="text-sm text-slate-300">
-                                    Run{" "}
-                                    <code className="text-indigo-400">
-                                        npm install
-                                    </code>{" "}
-                                    before registering
-                                </span>
-                            </label>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Leave empty to skip install step.
+                                </p>
+                            </div>
                         </>
                     )}
 

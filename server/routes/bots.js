@@ -82,7 +82,8 @@ router.get("/:id", async (req, res, next) => {
  *   name        string  — Display name
  *   repoUrl     string  — Git repository URL
  *   branch      string  — Git branch (default: "main")
- *   startScript string  — Entry file (default: "index.js")
+ *   startScript string  — Start command (default: "npm start")
+ *   installCommand string — Install command (optional, e.g. "npm install", "mvn install", empty to skip)
  *   expiresAt   string  — ISO date string (optional)
  *   groupId     string  — Group _id to assign (optional)
  *   maxMemory   string  — PM2 memory limit e.g. "300M", "1G" (optional)
@@ -96,7 +97,8 @@ router.post("/", async (req, res, next) => {
             name,
             repoUrl,
             branch = "main",
-            startScript = "index.js",
+            startScript = "npm start",
+            installCommand,
             expiresAt,
             groupId = null,
             maxMemory = null,
@@ -127,9 +129,9 @@ router.post("/", async (req, res, next) => {
         console.log(`[Bots] Cloning ${repoUrl} → ${dir}`);
         await gitService.cloneRepo(repoUrl, dir, branch);
 
-        // 2. Install npm dependencies
+        // 2. Install dependencies (if installCommand is provided or defaults to npm install)
         console.log(`[Bots] Installing deps for ${botID}`);
-        await gitService.installDeps(dir);
+        await gitService.installDeps(dir, installCommand);
 
         // 3. Save to DB
         const pm2Name = `${buyerID}-${botID}`;
@@ -140,6 +142,7 @@ router.post("/", async (req, res, next) => {
             repoUrl,
             branch,
             startScript,
+            installCommand: installCommand !== undefined ? installCommand : "npm install --omit=dev",
             pm2Name,
             source: "git",
             localPath: null,
@@ -171,8 +174,8 @@ router.post("/", async (req, res, next) => {
  *   botID       string  — Short unique slug
  *   name        string  — Display name
  *   localPath   string  — Absolute path to the folder on the server
- *   startScript string  — Entry file (default: "index.js")
- *   installDeps boolean — Run npm install before starting (default: true)
+ *   startScript string  — Start command (default: "npm start")
+ *   installCommand string — Install command (optional, empty to skip)
  *   expiresAt   string  — ISO date string (optional)
  *   groupId     string  — Group _id (optional)
  *   maxMemory   string  — PM2 memory limit (optional)
@@ -185,8 +188,8 @@ router.post("/import-local", async (req, res, next) => {
             botID,
             name,
             localPath,
-            startScript = "index.js",
-            installDeps = true,
+            startScript = "npm start",
+            installCommand,
             expiresAt,
             groupId = null,
             maxMemory = null,
@@ -214,10 +217,10 @@ router.post("/import-local", async (req, res, next) => {
             });
         }
 
-        // Optionally install / refresh dependencies
-        if (installDeps && fs.existsSync(path.join(localPath, "package.json"))) {
+        // Run install command if provided (skip if explicitly empty/null)
+        if (installCommand !== null && installCommand !== "") {
             console.log(`[Bots] Installing deps for local bot ${botID}`);
-            await gitService.installDeps(localPath);
+            await gitService.installDeps(localPath, installCommand);
         }
 
         // Check if it's a git repo (for informational field)
@@ -244,6 +247,7 @@ router.post("/import-local", async (req, res, next) => {
             repoUrl,
             branch,
             startScript,
+            installCommand: installCommand !== undefined ? installCommand : null,
             pm2Name,
             source: "local",
             localPath,
@@ -269,18 +273,19 @@ router.post("/import-local", async (req, res, next) => {
  * PUT /api/bots/:id
  * Update editable metadata fields.
  *
- * Body: { name?, expiresAt?, startScript?, groupId?, maxMemory? }
+ * Body: { name?, expiresAt?, startScript?, installCommand?, groupId?, maxMemory? }
  */
 router.put("/:id", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const { name, expiresAt, startScript, groupId, maxMemory, currentPrice } = req.body;
+        const { name, expiresAt, startScript, installCommand, groupId, maxMemory, currentPrice } = req.body;
 
         const updates = {};
         if (name !== undefined) updates.name = name;
         if (startScript !== undefined) updates.startScript = startScript;
+        if (installCommand !== undefined) updates.installCommand = installCommand || null;
         if (groupId !== undefined) updates.groupId = groupId;
         if (maxMemory !== undefined) updates.maxMemory = maxMemory || null;
         if (currentPrice !== undefined) updates.currentPrice = currentPrice || null;
@@ -408,9 +413,10 @@ router.post("/:id/restart", async (req, res, next) => {
 
 /**
  * POST /api/bots/:id/update
- * Pull latest git changes, reinstall deps, and restart the bot.
+ * Pull latest git changes, run install command, and restart the bot.
  * For local bots that are also git repos, git pull still works.
- * For local bots with no remote, only npm install + restart is performed.
+ * For local bots with no remote, only install + restart is performed.
+ * Skips install entirely if bot has no installCommand.
  */
 router.post("/:id/update", async (req, res, next) => {
     try {
@@ -431,7 +437,7 @@ router.post("/:id/update", async (req, res, next) => {
             // Not a git repo or no remote configured — skip
         }
 
-        await gitService.installDeps(dir);
+        await gitService.installDeps(dir, bot.installCommand);
         const restartOutput = await pm2Service.restartBot(bot.pm2Name);
 
         console.log(`[Bots] Updated bot "${bot.name}"`);

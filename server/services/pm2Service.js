@@ -34,19 +34,21 @@ const pm2Save = async () => {
 //  Process Control
 // ─────────────────────────────────────────────────────────────────────────────
 
+const fs = require("fs");
+
 /**
  * Start a bot with PM2.
  * If the process already exists in PM2, it will be restarted instead.
  *
  * @param {string} pm2Name     - Unique PM2 name, e.g. "buyer123-mybot"
  * @param {string} botPath     - Absolute path to the bot's directory
- * @param {string} startScript - Entry file relative to botPath (default: index.js)
+ * @param {string} startCommand - Command to execute (e.g., "npm start", "java -jar ...")
  * @param {string|null} maxMemory - Memory limit e.g. "300M", "1G" (optional)
  */
 const startBot = async (
     pm2Name,
     botPath,
-    startScript = "index.js",
+    startCommand = "npm start",
     maxMemory = null,
 ) => {
     const memFlag = maxMemory ? ` --max-memory-restart ${maxMemory}` : "";
@@ -61,7 +63,25 @@ const startBot = async (
         result = await runPM2(`restart "${pm2Name}"${memFlag}`);
     } else {
         // New process: register and start
-        const scriptPath = `${botPath}/${startScript}`;
+        const cmdStr = startCommand.trim();
+        let scriptPath;
+
+        // Simple script filename mode for backward compatibility
+        if (!cmdStr.includes(" ") && (cmdStr.endsWith(".js") || cmdStr.endsWith(".ts") || cmdStr.endsWith(".py") || cmdStr.endsWith(".json"))) {
+            scriptPath = `${botPath}/${cmdStr}`;
+        } else {
+            // Complex command mode: generate a wrapper script so PM2 executes it reliably
+            const isWindows = process.platform === "win32";
+            const scriptName = isWindows ? ".noflex-start.bat" : ".noflex-start.sh";
+            scriptPath = `${botPath}/${scriptName}`;
+            
+            const scriptContent = isWindows ? `@echo off\n${cmdStr}` : `#!/bin/bash\n${cmdStr}`;
+            fs.writeFileSync(scriptPath, scriptContent);
+            if (!isWindows) {
+                try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}
+            }
+        }
+
         result = await runPM2(
             `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}`,
         );

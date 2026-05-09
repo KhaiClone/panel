@@ -32,15 +32,26 @@ const pullRepo = async (botPath) => {
 };
 
 /**
- * Run `npm install` inside the bot directory.
- * Called after clone and after pull (in case package.json changed).
+ * Run a dependency install command inside the bot directory.
+ * Defaults to `npm install` if no custom command is provided.
+ * If installCommand is explicitly null or empty, the step is skipped entirely
+ * (useful for pre-built projects like Lavalink / Java JARs).
  *
- * @param {string} botPath - Absolute path to the bot's directory
+ * @param {string} botPath        - Absolute path to the bot's directory
+ * @param {string|null} installCommand - Custom install command, or null to skip
  */
-const installDeps = async (botPath) => {
+const installDeps = async (botPath, installCommand = undefined) => {
+    // Explicitly empty / null → skip
+    if (installCommand === null || installCommand === "") return "(skipped — no install command)";
+
+    // Use provided command or default to npm install
+    const cmd = installCommand && installCommand.trim()
+        ? installCommand.trim()
+        : `npm install --omit=dev`;
+
     const { stdout, stderr } = await execAsync(
-        `npm install --prefix "${botPath}" --omit=dev`,
-        { timeout: GIT_TIMEOUT },
+        cmd,
+        { cwd: botPath, timeout: GIT_TIMEOUT },
     );
     return stdout || stderr;
 };

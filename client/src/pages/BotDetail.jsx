@@ -155,20 +155,22 @@ export default function BotDetail() {
   const [confirm, setConfirm] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
 
-  const [editName,      setEditName]      = useState('');
-  const [editExpiry,    setEditExpiry]    = useState('');
-  const [editScript,    setEditScript]    = useState('');
-  const [editGroupId,   setEditGroupId]   = useState('');
-  const [editMaxMemory, setEditMaxMemory] = useState('');
-  const [editPrice,     setEditPrice]     = useState('');
-  const [savingMeta,    setSavingMeta]    = useState(false);
+  const [editName,           setEditName]           = useState('');
+  const [editExpiry,         setEditExpiry]         = useState('');
+  const [editScript,         setEditScript]         = useState('');
+  const [editInstallCommand, setEditInstallCommand] = useState('');
+  const [editGroupId,        setEditGroupId]        = useState('');
+  const [editMaxMemory,      setEditMaxMemory]      = useState('');
+  const [editPrice,          setEditPrice]          = useState('');
+  const [savingMeta,         setSavingMeta]         = useState(false);
 
   const fetchBot = async () => {
     try {
       const { data } = await api.get(`/bots/${id}`);
       setBot(data);
       setEditName(data.name);
-      setEditScript(data.startScript || 'index.js');
+      setEditScript(data.startScript || 'npm start');
+      setEditInstallCommand(data.installCommand || '');
       setEditGroupId(data.groupId || '');
       setEditMaxMemory(data.maxMemory || '');
       setEditPrice(data.currentPrice || '');
@@ -216,12 +218,13 @@ export default function BotDetail() {
     setSavingMeta(true);
     try {
       const payload = {
-        name:        editName,
-        startScript: editScript,
-        groupId:     editGroupId || null,
-        maxMemory:   editMaxMemory || null,
-        currentPrice: editPrice ? Number(editPrice) : null,
-        expiresAt:   editExpiry ? new Date(editExpiry).toISOString() : null,
+        name:           editName,
+        startScript:    editScript,
+        installCommand: editInstallCommand || null,
+        groupId:        editGroupId || null,
+        maxMemory:      editMaxMemory || null,
+        currentPrice:   editPrice ? Number(editPrice) : null,
+        expiresAt:      editExpiry ? new Date(editExpiry).toISOString() : null,
       };
       await api.put(`/bots/${id}`, payload);
       setActionMsg({ type: 'success', text: 'Settings saved' });
@@ -416,10 +419,11 @@ export default function BotDetail() {
                     <div className="pt-2 space-y-3">
                     <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800/50 pb-2 mb-4">Metadata Analysis</h3>
                     {[
-                        { label: 'Source',      value: isLocal ? `Local: ${bot.localPath}` : bot.repoUrl },
-                        { label: 'Instance',    value: bot.branch || 'Production' },
-                        { label: 'Entry Point', value: bot.startScript },
-                        { label: 'Memory Limit',value: bot.maxMemory || 'Unrestricted' },
+                        { label: 'Source',          value: isLocal ? `Local: ${bot.localPath}` : bot.repoUrl },
+                        { label: 'Instance',        value: bot.branch || 'Production' },
+                        { label: 'Start Command',   value: bot.startScript },
+                        { label: 'Install Command', value: bot.installCommand || '— None —' },
+                        { label: 'Memory Limit',    value: bot.maxMemory || 'Unrestricted' },
                         { label: 'Collection',  value: currentGroup?.name || 'Ungrouped' },
                         { label: 'Deployment',  value: fmtDate(bot.createdAt) },
                         { label: 'Expiration',  value: bot.expiresAt ? fmtDate(bot.expiresAt) : 'Permanent' },
@@ -527,8 +531,13 @@ export default function BotDetail() {
                                 <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} />
                             </div>
                             <div>
-                                <label className="label">Primary Runtime Script</label>
+                                <label className="label">Start Command</label>
                                 <input className="input font-mono" value={editScript} onChange={(e) => setEditScript(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="label">Install Command</label>
+                                <input className="input font-mono" placeholder="Leave empty to skip" value={editInstallCommand} onChange={(e) => setEditInstallCommand(e.target.value)} />
+                                <p className="text-xs text-slate-500 mt-1">Used during rebuild/update. Leave empty to skip install step.</p>
                             </div>
                             <div>
                                 <label className="label">Target Deployment Group</label>
