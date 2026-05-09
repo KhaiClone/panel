@@ -8,6 +8,7 @@ const NAV_ITEMS = [
     { to: "/dashboard",     icon: "📊", label: "Dashboard" },
     { to: "/groups",        icon: "🗂️", label: "Groups" },
     { to: "/multi-manage",  icon: "⚡", label: "Multi Manage" },
+    { to: "/panel-manage",  icon: "🛠️", label: "Panel" },
     { to: "/system",        icon: "🖥️", label: "System" },
 ];
 
