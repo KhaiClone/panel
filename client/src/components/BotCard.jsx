@@ -82,6 +82,7 @@ export default function BotCard({ bot, onRefresh }) {
     const isStopped = bot.live?.status === "stopped" || !bot.live?.status;
 
     return (
+        <>
         <motion.div 
             whileHover={{ y: -5 }}
             className="group relative"
@@ -185,17 +186,22 @@ export default function BotCard({ bot, onRefresh }) {
                     </button>
                 </div>
             </div>
-
-            {/* Delete confirm */}
-            {confirm?.action === "delete" && (
-                <ConfirmModal
-                    title={`Delete "${bot.name}"?`}
-                    message="This will stop the bot, remove it from PM2, and permanently delete its source folder."
-                    confirmText="Delete permanently"
-                    onConfirm={handleDelete}
-                    onCancel={() => setConfirm(null)}
-                />
-            )}
         </motion.div>
+
+        {/* Delete confirm — rendered outside the card so it covers the full screen */}
+        {confirm?.action === "delete" && (
+            <ConfirmModal
+                title={`Delete "${bot.name}"?`}
+                message={
+                    bot.source === "local"
+                        ? "This will stop the PM2 process and remove the bot from the panel.\n\n📂 Your project folder will NOT be deleted — it stays safe on disk."
+                        : "This will stop the PM2 process, remove the bot from the panel, and delete the project folder from disk.\n\n⚠️ This action is irreversible."
+                }
+                confirmText={bot.source === "local" ? "Remove from Panel" : "Delete permanently"}
+                onConfirm={handleDelete}
+                onCancel={() => setConfirm(null)}
+            />
+        )}
+        </>
     );
 }
