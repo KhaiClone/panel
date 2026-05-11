@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -128,6 +129,562 @@ function ActionButton({ icon, label, description, onClick, loading, disabled, co
                 </div>
             </div>
         </button>
+    );
+}
+
+// ── Add Key Modal ──────────────────────────────────────────────────────────
+function AddKeyModal({ onClose, onCreated }) {
+    const [mode, setMode] = useState("generate"); // "generate" | "import"
+    const [name, setName] = useState("");
+    const [comment, setComment] = useState("");
+    const [privateKey, setPrivateKey] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError("");
+        setLoading(true);
+        try {
+            const payload =
+                mode === "generate"
+                    ? { name, mode: "generate", comment }
+                    : { name, mode: "import", privateKey };
+            const { data } = await api.post("/github/keys", payload);
+            onCreated(data);
+            onClose();
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to add key");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
+                    <h2 className="text-lg font-semibold text-slate-100">
+                        🔑 Add SSH Key
+                    </h2>
+                    <button
+                        onClick={onClose}
+                        className="text-slate-500 hover:text-slate-300 text-xl leading-none"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    {/* Mode toggle */}
+                    <div>
+                        <label className="label">Mode</label>
+                        <div className="flex gap-2 mt-1">
+                            {[
+                                { v: "generate", l: "🔧 Generate New Key" },
+                                { v: "import", l: "📋 Import Existing" },
+                            ].map(({ v, l }) => (
+                                <button
+                                    key={v}
+                                    type="button"
+                                    onClick={() => setMode(v)}
+                                    className={`relative flex-1 py-2 rounded-lg text-sm font-medium border transition-all overflow-hidden ${
+                                        mode === v
+                                            ? "border-indigo-500/50 text-indigo-400 bg-indigo-500/10"
+                                            : "bg-slate-700/30 border-slate-700/50 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
+                                    }`}
+                                >
+                                    {l}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Key name */}
+                    <div>
+                        <label className="label">Key Name *</label>
+                        <input
+                            className="input font-mono"
+                            placeholder="github_myaccount"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                            pattern="[a-zA-Z0-9_-]+"
+                            title="Letters, numbers, hyphens, underscores only"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                            Will be saved as <code className="text-indigo-400">~/.ssh/{name || "..."}</code>
+                        </p>
+                    </div>
+
+                    {mode === "generate" ? (
+                        <div>
+                            <label className="label">Email / Comment</label>
+                            <input
+                                className="input"
+                                placeholder="you@example.com"
+                                value={comment}
+                                onChange={(e) => setComment(e.target.value)}
+                            />
+                            <p className="text-xs text-slate-500 mt-1">
+                                Optional — used in the public key comment field
+                            </p>
+                        </div>
+                    ) : (
+                        <div>
+                            <label className="label">Private Key *</label>
+                            <textarea
+                                className="input font-mono text-xs min-h-[160px] resize-y"
+                                placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
+                                value={privateKey}
+                                onChange={(e) => setPrivateKey(e.target.value)}
+                                required={mode === "import"}
+                                spellCheck={false}
+                            />
+                            <p className="text-xs text-slate-500 mt-1">
+                                Paste your private key content. Public key will be auto-derived.
+                            </p>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="bg-red-900/40 border border-red-700 text-red-400 text-sm rounded-lg px-3 py-2">
+                            {error}
+                        </div>
+                    )}
+
+                    {loading && (
+                        <div className="bg-indigo-900/40 border border-indigo-700 text-indigo-300 text-sm rounded-lg px-3 py-2">
+                            ⏳ {mode === "generate" ? "Generating key pair…" : "Importing key…"}
+                        </div>
+                    )}
+
+                    <div className="flex gap-3 justify-end pt-2">
+                        <button
+                            type="button"
+                            className="btn-ghost"
+                            onClick={onClose}
+                            disabled={loading}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            className="btn-primary"
+                            disabled={loading}
+                        >
+                            {loading
+                                ? "Adding…"
+                                : mode === "generate"
+                                  ? "🔧 Generate"
+                                  : "📋 Import Key"}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+// ── GitHub Section ─────────────────────────────────────────────────────────
+function GitHubSection() {
+    const [keys, setKeys] = useState([]);
+    const [keysLoading, setKeysLoading] = useState(true);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [testResults, setTestResults] = useState({}); // { keyName: { loading, success, output } }
+    const [copiedKey, setCopiedKey] = useState(null);
+    const [gitConfig, setGitConfig] = useState({ name: "", email: "" });
+    const [editingConfig, setEditingConfig] = useState(false);
+    const [configForm, setConfigForm] = useState({ name: "", email: "" });
+    const [configSaving, setConfigSaving] = useState(false);
+    const [expandedKey, setExpandedKey] = useState(null);
+    const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+    const fetchKeys = useCallback(async () => {
+        setKeysLoading(true);
+        try {
+            const { data } = await api.get("/github/keys");
+            setKeys(data);
+        } catch {
+            // ignore
+        } finally {
+            setKeysLoading(false);
+        }
+    }, []);
+
+    const fetchGitConfig = useCallback(async () => {
+        try {
+            const { data } = await api.get("/github/git-config");
+            setGitConfig(data);
+            setConfigForm(data);
+        } catch {
+            // ignore
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchKeys();
+        fetchGitConfig();
+    }, [fetchKeys, fetchGitConfig]);
+
+    const handleTest = async (keyName = null) => {
+        const id = keyName || "__default__";
+        setTestResults((r) => ({ ...r, [id]: { loading: true } }));
+        try {
+            const url = keyName ? `/github/keys/${keyName}/test` : "/github/test";
+            const { data } = await api.post(url);
+            setTestResults((r) => ({ ...r, [id]: { loading: false, ...data } }));
+        } catch {
+            setTestResults((r) => ({
+                ...r,
+                [id]: { loading: false, success: false, output: "Request failed" },
+            }));
+        }
+    };
+
+    const handleCopy = async (publicKey, keyName) => {
+        try {
+            await navigator.clipboard.writeText(publicKey);
+            setCopiedKey(keyName);
+            setTimeout(() => setCopiedKey(null), 2000);
+        } catch {
+            // Fallback
+            const t = document.createElement("textarea");
+            t.value = publicKey;
+            document.body.appendChild(t);
+            t.select();
+            document.execCommand("copy");
+            document.body.removeChild(t);
+            setCopiedKey(keyName);
+            setTimeout(() => setCopiedKey(null), 2000);
+        }
+    };
+
+    const handleDelete = async (keyName) => {
+        try {
+            await api.delete(`/github/keys/${keyName}`);
+            setKeys((k) => k.filter((key) => key.name !== keyName));
+            setDeleteConfirm(null);
+        } catch {
+            // ignore
+        }
+    };
+
+    const handleSaveConfig = async () => {
+        setConfigSaving(true);
+        try {
+            const { data } = await api.put("/github/git-config", configForm);
+            setGitConfig(data);
+            setEditingConfig(false);
+        } catch {
+            // ignore
+        } finally {
+            setConfigSaving(false);
+        }
+    };
+
+    const defaultTest = testResults["__default__"];
+
+    return (
+        <>
+            {/* Delete confirm modal */}
+            {deleteConfirm && (
+                <ConfirmModal
+                    title={`Delete Key "${deleteConfirm}"`}
+                    message={`This will permanently delete the SSH key pair and its SSH config entry.\n\n⚠️ Any GitHub repos using this key will no longer be accessible.`}
+                    confirmText="Delete Key"
+                    onConfirm={() => handleDelete(deleteConfirm)}
+                    onCancel={() => setDeleteConfirm(null)}
+                />
+            )}
+
+            {/* Add key modal */}
+            {showAddModal && (
+                <AddKeyModal
+                    onClose={() => setShowAddModal(false)}
+                    onCreated={() => fetchKeys()}
+                />
+            )}
+
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+                        GitHub & SSH Keys
+                    </h2>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => handleTest(null)}
+                            disabled={defaultTest?.loading}
+                            className="text-xs text-slate-400 hover:text-slate-200 transition-colors px-2 py-1 rounded bg-slate-800/60 hover:bg-slate-700/60 disabled:opacity-50"
+                        >
+                            {defaultTest?.loading ? "Testing…" : "🔗 Test Default"}
+                        </button>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors px-2 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30"
+                        >
+                            + Add Key
+                        </button>
+                    </div>
+                </div>
+
+                {/* Default test result */}
+                {defaultTest && !defaultTest.loading && (
+                    <div
+                        className={`card border text-sm ${
+                            defaultTest.success
+                                ? "border-emerald-500/30 bg-emerald-500/5"
+                                : "border-red-500/30 bg-red-500/5"
+                        }`}
+                    >
+                        <div className="flex items-center gap-2">
+                            <span>{defaultTest.success ? "✅" : "❌"}</span>
+                            <span className={defaultTest.success ? "text-emerald-400" : "text-red-400"}>
+                                {defaultTest.success ? "Connected" : "Connection Failed"}
+                            </span>
+                            <button
+                                onClick={() => setTestResults((r) => { const n = { ...r }; delete n["__default__"]; return n; })}
+                                className="ml-auto text-slate-500 hover:text-slate-300 text-xs"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                        {defaultTest.output && (
+                            <pre className="text-xs text-slate-400 mt-2 font-mono whitespace-pre-wrap">
+                                {defaultTest.output}
+                            </pre>
+                        )}
+                    </div>
+                )}
+
+                {/* Git Config */}
+                <div className="card">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-lg">⚙️</span>
+                            <h3 className="text-sm font-bold text-slate-200">Git Global Config</h3>
+                        </div>
+                        {!editingConfig ? (
+                            <button
+                                onClick={() => {
+                                    setConfigForm(gitConfig);
+                                    setEditingConfig(true);
+                                }}
+                                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                            >
+                                ✏️ Edit
+                            </button>
+                        ) : (
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setEditingConfig(false)}
+                                    className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSaveConfig}
+                                    disabled={configSaving}
+                                    className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50"
+                                >
+                                    {configSaving ? "Saving…" : "💾 Save"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    {editingConfig ? (
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                                    user.name
+                                </label>
+                                <input
+                                    className="input mt-1 text-sm"
+                                    value={configForm.name}
+                                    onChange={(e) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
+                                    placeholder="Your Name"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                                    user.email
+                                </label>
+                                <input
+                                    className="input mt-1 text-sm"
+                                    value={configForm.email}
+                                    onChange={(e) => setConfigForm((f) => ({ ...f, email: e.target.value }))}
+                                    placeholder="you@example.com"
+                                />
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                                    user.name
+                                </p>
+                                <p className="text-sm text-slate-200 font-mono mt-0.5">
+                                    {gitConfig.name || <span className="text-slate-600 italic">Not set</span>}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                                    user.email
+                                </p>
+                                <p className="text-sm text-slate-200 font-mono mt-0.5">
+                                    {gitConfig.email || <span className="text-slate-600 italic">Not set</span>}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Keys list */}
+                {keysLoading ? (
+                    <div className="flex justify-center py-6">
+                        <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
+                    </div>
+                ) : keys.length === 0 ? (
+                    <div className="card text-center py-8">
+                        <p className="text-slate-500 text-sm">No SSH keys found on this VPS</p>
+                        <p className="text-slate-600 text-xs mt-1">
+                            Add a key to connect to GitHub repositories
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {keys.map((key) => {
+                            const test = testResults[key.name];
+                            const isExpanded = expandedKey === key.name;
+
+                            return (
+                                <div
+                                    key={key.name}
+                                    className="card group transition-all duration-200 hover:border-slate-700"
+                                >
+                                    {/* Key header */}
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-lg bg-slate-800/80 flex items-center justify-center text-base shrink-0">
+                                            🔑
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-sm font-bold text-slate-100 font-mono truncate">
+                                                    {key.name}
+                                                </p>
+                                                {key.hostAlias && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+                                                        {key.hostAlias}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {key.fingerprint && (
+                                                <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
+                                                    {key.fingerprint}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {/* Actions */}
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            {/* Test */}
+                                            <button
+                                                onClick={() => handleTest(key.name)}
+                                                disabled={test?.loading}
+                                                className={`text-xs px-2 py-1 rounded transition-colors ${
+                                                    test?.loading
+                                                        ? "text-slate-500"
+                                                        : test?.success === true
+                                                          ? "text-emerald-400 bg-emerald-500/10"
+                                                          : test?.success === false
+                                                            ? "text-red-400 bg-red-500/10"
+                                                            : "text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-700/60"
+                                                }`}
+                                                title="Test SSH connection"
+                                            >
+                                                {test?.loading ? "⏳" : test?.success === true ? "✅" : test?.success === false ? "❌" : "🔗"}
+                                            </button>
+                                            {/* Copy pub key */}
+                                            {key.publicKey && (
+                                                <button
+                                                    onClick={() => handleCopy(key.publicKey, key.name)}
+                                                    className="text-xs px-2 py-1 rounded text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-700/60 transition-colors"
+                                                    title="Copy public key"
+                                                >
+                                                    {copiedKey === key.name ? "✓" : "📋"}
+                                                </button>
+                                            )}
+                                            {/* Expand */}
+                                            <button
+                                                onClick={() => setExpandedKey(isExpanded ? null : key.name)}
+                                                className="text-xs px-2 py-1 rounded text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-700/60 transition-colors"
+                                                title={isExpanded ? "Collapse" : "Show public key"}
+                                            >
+                                                {isExpanded ? "▲" : "▼"}
+                                            </button>
+                                            {/* Delete */}
+                                            <button
+                                                onClick={() => setDeleteConfirm(key.name)}
+                                                className="text-xs px-2 py-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                title="Delete key"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Expanded: public key + test output */}
+                                    {isExpanded && (
+                                        <div className="mt-3 space-y-2">
+                                            {key.publicKey && (
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                                                            Public Key
+                                                        </p>
+                                                        <button
+                                                            onClick={() => handleCopy(key.publicKey, key.name)}
+                                                            className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
+                                                        >
+                                                            {copiedKey === key.name ? "✓ Copied!" : "Copy"}
+                                                        </button>
+                                                    </div>
+                                                    <pre className="text-[10px] text-slate-400 bg-slate-950/80 rounded-lg p-2.5 font-mono whitespace-pre-wrap break-all select-all leading-relaxed">
+                                                        {key.publicKey}
+                                                    </pre>
+                                                </div>
+                                            )}
+                                            {key.hostAlias && (
+                                                <div>
+                                                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                                        Clone URL Pattern
+                                                    </p>
+                                                    <p className="text-xs text-slate-400 font-mono bg-slate-950/80 rounded-lg p-2.5">
+                                                        git@{key.hostAlias}:username/repo.git
+                                                    </p>
+                                                </div>
+                                            )}
+                                            {test && !test.loading && test.output && (
+                                                <div>
+                                                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                                        Test Result
+                                                    </p>
+                                                    <pre className="text-[10px] text-slate-400 bg-slate-950/80 rounded-lg p-2.5 font-mono whitespace-pre-wrap">
+                                                        {test.output}
+                                                    </pre>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </>
     );
 }
 
@@ -348,8 +905,12 @@ export default function PanelManage() {
                     )}
                 </div>
             )}
-
             {/* Logs section */}
+
+            {/* ── GitHub & SSH Keys ──────────────────────────────────────── */}
+            <GitHubSection />
+
+            {/* ── Panel Logs ─────────────────────────────────────────────── */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
