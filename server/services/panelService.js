@@ -1,6 +1,7 @@
 const { exec, execSync } = require("child_process");
 const util = require("util");
 const path = require("path");
+const fs = require("fs");
 const execAsync = util.promisify(exec);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,22 +119,56 @@ const restartPanel = async () => {
  * The build runs synchronously relative to the caller — the panel stays
  * online during the build and only restarts once it succeeds.
  *
+ * Before installing and building, clears node_modules from both the root
+ * and the client directory so stale packages are never left behind.
+ *
  * @returns {{ success, buildOutput, message }}
  */
 const rebuildPanel = async () => {
     const name = await getPanelPM2Name();
     const panelRoot = path.resolve(__dirname, "../..");
+    const clientRoot = path.join(panelRoot, "client");
 
     try {
-        // Run the build — this may take 30-60 s
-        const { stdout, stderr } = await execAsync("npm run build", {
-            cwd: panelRoot,
-            timeout: 120_000, // 2 min max
-        });
+        // ── 1. Clean old node_modules ────────────────────────────────────────
+        for (const [label, dir] of [
+            ["root", path.join(panelRoot, "node_modules")],
+            ["client", path.join(clientRoot, "node_modules")],
+        ]) {
+            if (fs.existsSync(dir)) {
+                console.log(`[Panel] Removing old ${label} node_modules…`);
+                fs.rmSync(dir, { recursive: true, force: true });
+            }
+        }
 
-        const buildOutput = (stdout + "\n" + stderr).trim();
+        // ── 2. Reinstall root deps ───────────────────────────────────────────
+        console.log("[Panel] Installing root dependencies…");
+        const { stdout: installRootOut, stderr: installRootErr } = await execAsync(
+            "npm install",
+            { cwd: panelRoot, timeout: 120_000 },
+        );
 
-        // Build succeeded — schedule restart
+        // ── 3. Reinstall client deps ─────────────────────────────────────────
+        console.log("[Panel] Installing client dependencies…");
+        const { stdout: installClientOut, stderr: installClientErr } = await execAsync(
+            "npm install",
+            { cwd: clientRoot, timeout: 120_000 },
+        );
+
+        // ── 4. Build client ──────────────────────────────────────────────────
+        console.log("[Panel] Building client…");
+        const { stdout: buildOut, stderr: buildErr } = await execAsync(
+            "npm run build",
+            { cwd: panelRoot, timeout: 120_000 },
+        );
+
+        const buildOutput = [
+            installRootOut, installRootErr,
+            installClientOut, installClientErr,
+            buildOut, buildErr,
+        ].filter(Boolean).join("\n").trim();
+
+        // ── 5. Restart panel ─────────────────────────────────────────────────
         setTimeout(() => {
             exec(`pm2 restart "${name}" --no-color`, (err) => {
                 if (err) console.error("[Panel] Post-build restart failed:", err.message);

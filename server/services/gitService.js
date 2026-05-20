@@ -1,5 +1,7 @@
 const { exec } = require("child_process");
 const util = require("util");
+const fs = require("fs");
+const path = require("path");
 const execAsync = util.promisify(exec);
 
 // Timeout for git operations (ms) — large repos may need more
@@ -32,10 +34,49 @@ const pullRepo = async (botPath) => {
 };
 
 /**
+ * Detect and remove the package folder for a given install command.
+ * Supports npm / yarn / pnpm / bun → node_modules
+ *          composer                → vendor
+ *          pip / pip3              → venv (best-effort)
+ *
+ * @param {string} botPath   - Absolute path to the bot's directory
+ * @param {string} cmd       - The install command that will be run
+ */
+const cleanPackageFolder = (botPath, cmd) => {
+    const cmdLower = cmd.toLowerCase().trim();
+
+    let folderName = null;
+
+    if (
+        cmdLower.startsWith("npm ") ||
+        cmdLower.startsWith("yarn") ||
+        cmdLower.startsWith("pnpm ") ||
+        cmdLower.startsWith("bun ")
+    ) {
+        folderName = "node_modules";
+    } else if (cmdLower.startsWith("composer ")) {
+        folderName = "vendor";
+    } else if (cmdLower.startsWith("pip ") || cmdLower.startsWith("pip3 ")) {
+        folderName = "venv";
+    }
+
+    if (!folderName) return; // Unknown package manager — skip cleanup
+
+    const targetPath = path.join(botPath, folderName);
+    if (fs.existsSync(targetPath)) {
+        console.log(`[Git] Removing old ${folderName} at ${targetPath}`);
+        fs.rmSync(targetPath, { recursive: true, force: true });
+    }
+};
+
+/**
  * Run a dependency install command inside the bot directory.
  * Defaults to `npm install` if no custom command is provided.
  * If installCommand is explicitly null or empty, the step is skipped entirely
  * (useful for pre-built projects like Lavalink / Java JARs).
+ *
+ * Automatically removes the old package folder (e.g. node_modules) before
+ * running the install so every reinstall starts from a clean state.
  *
  * @param {string} botPath        - Absolute path to the bot's directory
  * @param {string|null} installCommand - Custom install command, or null to skip
@@ -49,6 +90,9 @@ const installDeps = async (botPath, installCommand = undefined) => {
         ? installCommand.trim()
         : `npm install --omit=dev`;
 
+    // Remove old package folder before reinstalling
+    cleanPackageFolder(botPath, cmd);
+
     const { stdout, stderr } = await execAsync(
         cmd,
         { cwd: botPath, timeout: GIT_TIMEOUT },
@@ -56,4 +100,4 @@ const installDeps = async (botPath, installCommand = undefined) => {
     return stdout || stderr;
 };
 
-module.exports = { cloneRepo, pullRepo, installDeps };
+module.exports = { cloneRepo, pullRepo, installDeps, cleanPackageFolder };
