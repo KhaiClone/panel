@@ -765,7 +765,8 @@ export default function PanelManage() {
                 setBuilding(true);
                 setBuildOutput(null);
                 try {
-                    const r = await api.post("/panel/rebuild");
+                    // Rebuild can take several minutes due to npm install, increase timeout to 5 mins
+                    const r = await api.post("/panel/rebuild", {}, { timeout: 300_000 });
                     setBuildOutput({ success: true, output: r.data.buildOutput, message: r.data.message });
                     // Show reconnect overlay after a short delay
                     setTimeout(() => setReconnecting(true), 1000);
