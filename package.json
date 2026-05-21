@@ -9,9 +9,9 @@
     "dev:client": "cd client && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build": "cd client && npm run build",
-    "reinstall": "rm -rf node_modules && npm install",
-    "reinstall:client": "cd client && rm -rf node_modules && npm install",
-    "reinstall:all": "rm -rf node_modules && npm install && cd client && rm -rf node_modules && npm install"
+    "reinstall": "node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install",
+    "reinstall:client": "cd client && node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install",
+    "reinstall:all": "node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install && cd client && node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install"
   },
   "dependencies": {
     "axios": "^1.6.0",

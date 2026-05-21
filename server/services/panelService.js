@@ -114,50 +114,40 @@ const restartPanel = async () => {
     return { message: `Panel "${name}" will restart in ~1.5 seconds` };
 };
 
-/**
- * Rebuild the client (npm run build) then restart the panel.
- * The build runs synchronously relative to the caller — the panel stays
- * online during the build and only restarts once it succeeds.
- *
- * Before installing and building, clears node_modules from both the root
- * and the client directory so stale packages are never left behind.
- *
- * @returns {{ success, buildOutput, message }}
- */
 const rebuildPanel = async () => {
     const name = await getPanelPM2Name();
     const panelRoot = path.resolve(__dirname, "../..");
-    const clientRoot = path.join(panelRoot, "client");
+
+    let accumulatedOutput = [];
 
     try {
         // ── 1. Git Pull ──────────────────────────────────────────────────────
         console.log("[Panel] Pulling latest changes from git…");
         const { stdout: pullOut, stderr: pullErr } = await execAsync(
             "git pull",
-            { cwd: panelRoot, timeout: 60_000 },
+            { cwd: panelRoot, timeout: 60_000, maxBuffer: 10 * 1024 * 1024 },
         );
+        accumulatedOutput.push(pullOut, pullErr);
 
         // ── 2. Reinstall all deps ────────────────────────────────────────────
         console.log("[Panel] Reinstalling all dependencies…");
         const { stdout: installOut, stderr: installErr } = await execAsync(
             "npm run reinstall:all",
-            { cwd: panelRoot, timeout: 300_000 },
+            { cwd: panelRoot, timeout: 300_000, maxBuffer: 10 * 1024 * 1024 },
         );
+        accumulatedOutput.push(installOut, installErr);
 
         // ── 3. Build client ──────────────────────────────────────────────────
         console.log("[Panel] Building client…");
         const { stdout: buildOut, stderr: buildErr } = await execAsync(
             "npm run build",
-            { cwd: panelRoot, timeout: 120_000 },
+            { cwd: panelRoot, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 },
         );
+        accumulatedOutput.push(buildOut, buildErr);
 
-        const buildOutput = [
-            pullOut, pullErr,
-            installOut, installErr,
-            buildOut, buildErr,
-        ].filter(Boolean).join("\n").trim();
+        const buildOutput = accumulatedOutput.filter(Boolean).join("\n").trim();
 
-        // ── 5. Restart panel ─────────────────────────────────────────────────
+        // ── 4. Restart panel ─────────────────────────────────────────────────
         setTimeout(() => {
             exec(`pm2 restart "${name}" --no-color`, (err) => {
                 if (err) console.error("[Panel] Post-build restart failed:", err.message);
@@ -170,9 +160,22 @@ const rebuildPanel = async () => {
             message: `Build successful. Panel "${name}" will restart in ~1.5 seconds`,
         };
     } catch (err) {
+        // If an execAsync call throws, it usually populates err.stdout and err.stderr with what it captured before crashing
+        if (err.stdout) accumulatedOutput.push(err.stdout);
+        if (err.stderr) accumulatedOutput.push(err.stderr);
+        
+        let failReason = err.message;
+        if (err.killed) {
+            if (err.signal === 'SIGTERM') failReason = "Process timed out (reached timeout limit).";
+            else if (err.signal === 'SIGKILL') failReason = "Process was killed by the OS (likely Out of Memory). Vite build requires significant RAM.";
+        }
+        else if (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') failReason = "Process exceeded max output buffer.";
+
+        accumulatedOutput.push(`\n[ERROR DETAILS] ${failReason}`);
+
         return {
             success: false,
-            buildOutput: err.stdout || err.stderr || err.message,
+            buildOutput: accumulatedOutput.filter(Boolean).join("\n").trim(),
             message: "Build failed — panel was NOT restarted",
         };
     }
