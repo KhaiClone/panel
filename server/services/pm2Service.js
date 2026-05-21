@@ -89,53 +89,60 @@ const startBot = async (
         await runPM2(`delete "${pm2Name}"`);
     }
 
-    // Determine actual command — prepend proxychains4 if proxy is configured
+    // ── Step 1: Resolve single-file scripts to their explicit runtime ──────────
+    // PM2 knows to call `node index.js` when given a bare .js file directly,
+    // but a shell wrapper (needed for proxychains4) does NOT — it tries to exec
+    // the file as a binary and fails. Convert bare filenames to full commands.
     let effectiveCmd = startCommand.trim();
     const isWindows = process.platform === "win32";
 
+    const isBareFile = (cmd) =>
+        !cmd.includes(" ") &&
+        (cmd.endsWith(".js") || cmd.endsWith(".ts") || cmd.endsWith(".py") || cmd.endsWith(".json"));
+
+    if (isBareFile(effectiveCmd)) {
+        if (effectiveCmd.endsWith(".js")) {
+            effectiveCmd = `node ${effectiveCmd}`;
+        } else if (effectiveCmd.endsWith(".ts")) {
+            effectiveCmd = `npx ts-node ${effectiveCmd}`;
+        } else if (effectiveCmd.endsWith(".py")) {
+            effectiveCmd = `python3 ${effectiveCmd}`;
+        } else if (effectiveCmd.endsWith(".json")) {
+            // PM2 ecosystem file — call pm2 itself (proxy wraps the outer process)
+            effectiveCmd = `pm2 start ${effectiveCmd}`;
+        }
+        console.log(`[PM2] Resolved bare file to: ${effectiveCmd}`);
+    }
+
+    // ── Step 2: Prepend proxychains4 if proxy is active ────────────────────────
     if (proxyConf && !isWindows) {
-        // Write per-bot proxychains4 config
         const confPath = writeProxyConfig(botPath, proxyConf);
         effectiveCmd = `proxychains4 -f "${confPath}" ${effectiveCmd}`;
         console.log(`[PM2] Proxy enabled for "${pm2Name}" via ${proxyConf.host}:${proxyConf.port}`);
     }
 
+    // ── Step 3: Always run via wrapper script so the shell resolves the command ─
     const scriptName = isWindows ? ".noflex-start.bat" : ".noflex-start.sh";
     const scriptPath = `${botPath}/${scriptName}`;
     let interpreterFlag = "";
 
-    // Simple script filename mode for backward compatibility
-    if (
-        !effectiveCmd.includes(" ") &&
-        (effectiveCmd.endsWith(".js") ||
-            effectiveCmd.endsWith(".ts") ||
-            effectiveCmd.endsWith(".py") ||
-            effectiveCmd.endsWith(".json"))
-    ) {
-        // Single file — run directly (no wrapper needed)
-        result = await runPM2(
-            `start "${botPath}/${effectiveCmd}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}`,
-        );
-    } else {
-        // Complex command — generate a wrapper script
-        // NOTE: must use actual newline (\n via \x0a), NOT the literal 2-char sequence.
-        const NL = "\n";
-        const scriptContent = isWindows
-            ? `@echo off${NL}${effectiveCmd}`
-            : `#!/bin/bash${NL}${effectiveCmd}`;
-        fs.writeFileSync(scriptPath, scriptContent, "utf8");
-        if (!isWindows) {
-            try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}
-            interpreterFlag = " --interpreter bash";
-        }
-
-        console.log(`[PM2] Wrapper script for "${pm2Name}": ${scriptPath}`);
-        console.log(`[PM2] Effective command: ${effectiveCmd}`);
-
-        result = await runPM2(
-            `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}${interpreterFlag}`,
-        );
+    // NOTE: must use actual newline character, NOT a literal backslash-n.
+    const NL = "\n";
+    const scriptContent = isWindows
+        ? `@echo off${NL}${effectiveCmd}`
+        : `#!/bin/bash${NL}${effectiveCmd}`;
+    fs.writeFileSync(scriptPath, scriptContent, "utf8");
+    if (!isWindows) {
+        try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}
+        interpreterFlag = " --interpreter bash";
     }
+
+    console.log(`[PM2] Wrapper script for "${pm2Name}": ${scriptPath}`);
+    console.log(`[PM2] Effective command: ${effectiveCmd}`);
+
+    result = await runPM2(
+        `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}${interpreterFlag}`,
+    );
 
     await pm2Save();
     return result;
