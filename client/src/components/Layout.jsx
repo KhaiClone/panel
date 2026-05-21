@@ -9,6 +9,7 @@ const NAV_ITEMS = [
     { to: "/groups",        icon: "🗂️", label: "Groups" },
     { to: "/multi-manage",  icon: "⚡", label: "Multi Manage" },
     { to: "/panel-manage",  icon: "🛠️", label: "Panel" },
+    { to: "/proxy",         icon: "🔗", label: "Proxy Manager" },
     { to: "/system",        icon: "🖥️", label: "System" },
 ];
 

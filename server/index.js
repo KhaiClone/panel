@@ -13,6 +13,7 @@ const bulkRoutes = require("./routes/bulk");
 const externalRoutes = require("./routes/external");
 const panelRoutes = require("./routes/panel");
 const githubRoutes = require("./routes/github");
+const proxyRoutes = require("./routes/proxy");
 const { authMiddleware } = require("./middleware/auth");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
 const errorHandler = require("./middleware/errorHandler");
@@ -67,6 +68,7 @@ app.use("/api/logs", logRoutes); // Auth handled per-route (SSE needs query-para
 app.use("/api/system", authMiddleware, systemRoutes);
 app.use("/api/panel", authMiddleware, panelRoutes);
 app.use("/api/github", authMiddleware, githubRoutes);
+app.use("/api/proxy", authMiddleware, proxyRoutes);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────

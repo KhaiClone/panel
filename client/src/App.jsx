@@ -8,6 +8,7 @@ import GroupsPage from "./pages/GroupsPage";
 import MultiManage from "./pages/MultiManage";
 import PanelManage from "./pages/PanelManage";
 import SystemPage from "./pages/SystemPage";
+import ProxyPage from "./pages/ProxyPage";
 import Layout from "./components/Layout";
 
 // ── Auth Guard ─────────────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ export default function App() {
                         <Route path="groups"       element={<GroupsPage />} />
                         <Route path="multi-manage" element={<MultiManage />} />
                         <Route path="panel-manage" element={<PanelManage />} />
+                        <Route path="proxy"        element={<ProxyPage />} />
                         <Route path="system"       element={<SystemPage />} />
                     </Route>
 
