@@ -87,6 +87,32 @@ router.get("/bots", async (req, res, next) => {
 });
 
 /**
+ * PUT /api/proxy/bots/bulk
+ * Bulk enable or disable proxy for multiple bots.
+ * IMPORTANT: must be defined BEFORE /bots/:id to avoid Express matching "bulk" as an id.
+ *
+ * Body: { ids: string[], proxyEnabled: boolean }
+ */
+router.put("/bots/bulk", async (req, res, next) => {
+    try {
+        const { ids, proxyEnabled } = req.body;
+        if (!Array.isArray(ids) || proxyEnabled === undefined)
+            return res.status(400).json({ error: "ids (array) and proxyEnabled are required" });
+
+        const results = await Promise.all(
+            ids.map((id) =>
+                db.findOneAndUpdate("bots", { _id: id }, { proxyEnabled: Boolean(proxyEnabled) })
+            )
+        );
+
+        console.log(`[Proxy] Bulk proxy=${proxyEnabled} for ${ids.length} bots`);
+        res.json({ updated: results.filter(Boolean).length });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * PUT /api/proxy/bots/:id
  * Enable or disable proxy for a specific bot.
  *
@@ -109,31 +135,6 @@ router.put("/bots/:id", async (req, res, next) => {
 
         console.log(`[Proxy] Bot "${bot.name}" proxy=${proxyEnabled}`);
         res.json({ _id: updated._id, name: updated.name, proxyEnabled: updated.proxyEnabled });
-    } catch (err) {
-        next(err);
-    }
-});
-
-/**
- * PUT /api/proxy/bots/bulk
- * Bulk enable or disable proxy for multiple bots.
- *
- * Body: { ids: string[], proxyEnabled: boolean }
- */
-router.put("/bots/bulk", async (req, res, next) => {
-    try {
-        const { ids, proxyEnabled } = req.body;
-        if (!Array.isArray(ids) || proxyEnabled === undefined)
-            return res.status(400).json({ error: "ids (array) and proxyEnabled are required" });
-
-        const results = await Promise.all(
-            ids.map((id) =>
-                db.findOneAndUpdate("bots", { _id: id }, { proxyEnabled: Boolean(proxyEnabled) })
-            )
-        );
-
-        console.log(`[Proxy] Bulk proxy=${proxyEnabled} for ${ids.length} bots`);
-        res.json({ updated: results.filter(Boolean).length });
     } catch (err) {
         next(err);
     }

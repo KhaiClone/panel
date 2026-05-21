@@ -112,20 +112,25 @@ const startBot = async (
             effectiveCmd.endsWith(".py") ||
             effectiveCmd.endsWith(".json"))
     ) {
-        // Single file — run directly (no wrapper needed, proxy prefix already applied above)
+        // Single file — run directly (no wrapper needed)
         result = await runPM2(
             `start "${botPath}/${effectiveCmd}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}`,
         );
     } else {
         // Complex command — generate a wrapper script
+        // NOTE: must use actual newline (\n via \x0a), NOT the literal 2-char sequence.
+        const NL = "\n";
         const scriptContent = isWindows
-            ? `@echo off\n${effectiveCmd}`
-            : `#!/bin/bash\n${effectiveCmd}`;
-        fs.writeFileSync(scriptPath, scriptContent);
+            ? `@echo off${NL}${effectiveCmd}`
+            : `#!/bin/bash${NL}${effectiveCmd}`;
+        fs.writeFileSync(scriptPath, scriptContent, "utf8");
         if (!isWindows) {
             try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}
             interpreterFlag = " --interpreter bash";
         }
+
+        console.log(`[PM2] Wrapper script for "${pm2Name}": ${scriptPath}`);
+        console.log(`[PM2] Effective command: ${effectiveCmd}`);
 
         result = await runPM2(
             `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag}${interpreterFlag}`,
