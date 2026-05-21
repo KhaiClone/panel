@@ -130,32 +130,21 @@ const rebuildPanel = async () => {
     const clientRoot = path.join(panelRoot, "client");
 
     try {
-        // ── 1. Clean old node_modules ────────────────────────────────────────
-        for (const [label, dir] of [
-            ["root", path.join(panelRoot, "node_modules")],
-            ["client", path.join(clientRoot, "node_modules")],
-        ]) {
-            if (fs.existsSync(dir)) {
-                console.log(`[Panel] Removing old ${label} node_modules…`);
-                fs.rmSync(dir, { recursive: true, force: true });
-            }
-        }
-
-        // ── 2. Reinstall root deps ───────────────────────────────────────────
-        console.log("[Panel] Installing root dependencies…");
-        const { stdout: installRootOut, stderr: installRootErr } = await execAsync(
-            "npm install",
-            { cwd: panelRoot, timeout: 120_000 },
+        // ── 1. Git Pull ──────────────────────────────────────────────────────
+        console.log("[Panel] Pulling latest changes from git…");
+        const { stdout: pullOut, stderr: pullErr } = await execAsync(
+            "git pull",
+            { cwd: panelRoot, timeout: 60_000 },
         );
 
-        // ── 3. Reinstall client deps ─────────────────────────────────────────
-        console.log("[Panel] Installing client dependencies…");
-        const { stdout: installClientOut, stderr: installClientErr } = await execAsync(
-            "npm install",
-            { cwd: clientRoot, timeout: 120_000 },
+        // ── 2. Reinstall all deps ────────────────────────────────────────────
+        console.log("[Panel] Reinstalling all dependencies…");
+        const { stdout: installOut, stderr: installErr } = await execAsync(
+            "npm run reinstall:all",
+            { cwd: panelRoot, timeout: 300_000 },
         );
 
-        // ── 4. Build client ──────────────────────────────────────────────────
+        // ── 3. Build client ──────────────────────────────────────────────────
         console.log("[Panel] Building client…");
         const { stdout: buildOut, stderr: buildErr } = await execAsync(
             "npm run build",
@@ -163,8 +152,8 @@ const rebuildPanel = async () => {
         );
 
         const buildOutput = [
-            installRootOut, installRootErr,
-            installClientOut, installClientErr,
+            pullOut, pullErr,
+            installOut, installErr,
             buildOut, buildErr,
         ].filter(Boolean).join("\n").trim();
 
