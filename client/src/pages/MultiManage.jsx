@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useData } from '../context/DataContext';
 import api from '../api/client';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -175,7 +176,7 @@ function ResultsModal({ results, actionLabel, onClose }) {
   const okCount = results.filter((r) => r.status === 'ok').length;
   const errCount = results.filter((r) => r.status === 'error').length;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -227,7 +228,8 @@ function ResultsModal({ results, actionLabel, onClose }) {
           </button>
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

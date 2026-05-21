@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../api/client';
 
 const PRESET_COLORS = [
@@ -175,7 +176,7 @@ export default function GroupsPage() {
       )}
 
       {/* Delete confirm */}
-      {deleteTarget && (
+      {deleteTarget && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4">
           <div className="card w-full max-w-sm space-y-4">
             <h2 className="text-lg font-bold text-slate-100">Delete "{deleteTarget.name}"?</h2>
@@ -185,7 +186,8 @@ export default function GroupsPage() {
               <button className="btn-ghost flex-1" onClick={() => setDeleteTarget(null)}>Cancel</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

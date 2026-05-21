@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+
 // Reusable confirm dialog for destructive actions (delete, stop, etc.)
 export default function ConfirmModal({
     title,
@@ -7,7 +9,7 @@ export default function ConfirmModal({
     onConfirm,
     onCancel,
 }) {
-    return (
+    return createPortal(
         // Backdrop
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
             <div className="bg-slate-900/90 border border-slate-800 backdrop-blur-xl rounded-2xl w-full max-w-md shadow-2xl p-5 lg:p-6 mx-4">
@@ -30,6 +32,7 @@ export default function ConfirmModal({
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
