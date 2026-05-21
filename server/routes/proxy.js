@@ -71,14 +71,21 @@ router.put("/config", async (req, res, next) => {
 router.get("/bots", async (req, res, next) => {
     try {
         const bots = await db.find("bots");
+        const groups = await db.find("groups");
+
+        // Build a groupId → group map for enrichment
+        const groupMap = Object.fromEntries(groups.map((g) => [g._id, g]));
+
         res.json(
-            bots.map(({ _id, name, buyerID, botID, pm2Name, proxyEnabled }) => ({
+            bots.map(({ _id, name, buyerID, botID, pm2Name, proxyEnabled, groupId }) => ({
                 _id,
                 name,
                 buyerID,
                 botID,
                 pm2Name,
                 proxyEnabled: Boolean(proxyEnabled),
+                groupId: groupId || null,
+                group: groupId ? (groupMap[groupId] || null) : null,
             }))
         );
     } catch (err) {
