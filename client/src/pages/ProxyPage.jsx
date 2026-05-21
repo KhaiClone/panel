@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import api from "../api/client";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -441,9 +442,8 @@ export default function ProxyPage() {
                 ) : (
                     <div className="divide-y divide-slate-800/40">
                         {filteredBots.map((bot) => (
-                            <motion.div
+                            <div
                                 key={bot._id}
-                                layout
                                 className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-800/20 transition-colors"
                             >
                                 {/* Avatar */}
@@ -478,31 +478,34 @@ export default function ProxyPage() {
                                     onChange={(val) => handleToggleBot(bot, val)}
                                     disabled={togglingId === bot._id}
                                 />
-                            </motion.div>
+                            </div>
                         ))}
                     </div>
                 )}
             </div>
 
-            {/* ── Toast ──────────────────────────────────────────────────── */}
-            <AnimatePresence>
-                {toast && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        transition={{ duration: 0.2 }}
-                        className={`fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-50 px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center gap-2 max-w-xs ${
-                            toast.type === "error"
-                                ? "bg-red-900/80 text-red-200 border border-red-500/30"
-                                : "bg-slate-800 text-slate-100 border border-slate-700/60"
-                        } backdrop-blur-xl`}
-                    >
-                        <span>{toast.type === "error" ? "❌" : "✅"}</span>
-                        {toast.message}
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* ── Toast (portal so fixed pos is relative to real viewport) ── */}
+            {createPortal(
+                <AnimatePresence>
+                    {toast && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                            transition={{ duration: 0.2 }}
+                            className={`fixed bottom-24 lg:bottom-6 right-4 lg:right-6 z-[9999] px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center gap-2 max-w-xs ${
+                                toast.type === "error"
+                                    ? "bg-red-900/80 text-red-200 border border-red-500/30"
+                                    : "bg-slate-800 text-slate-100 border border-slate-700/60"
+                            } backdrop-blur-xl`}
+                        >
+                            <span>{toast.type === "error" ? "❌" : "✅"}</span>
+                            {toast.message}
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
         </div>
     );
 }
