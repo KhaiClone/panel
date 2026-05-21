@@ -699,7 +699,14 @@ export default function PanelManage() {
     const [reconnecting, setReconnecting] = useState(false);
     const [confirm, setConfirm] = useState(null);
     const [building, setBuilding] = useState(false);
-    const [buildOutput, setBuildOutput] = useState(null);
+    const [buildOutput, setBuildOutput] = useState(() => {
+        const saved = sessionStorage.getItem("panel_build_output");
+        if (saved) {
+            sessionStorage.removeItem("panel_build_output");
+            try { return JSON.parse(saved); } catch (e) { return null; }
+        }
+        return null;
+    });
     const logsEndRef = useRef(null);
 
     // ── Fetch status ───────────────────────────────────────────────────────
@@ -767,7 +774,9 @@ export default function PanelManage() {
                 try {
                     // Rebuild can take several minutes due to npm install, increase timeout to 5 mins
                     const r = await api.post("/panel/rebuild", {}, { timeout: 300_000 });
-                    setBuildOutput({ success: true, output: r.data.buildOutput, message: r.data.message });
+                    const outputData = { success: true, output: r.data.buildOutput, message: r.data.message };
+                    setBuildOutput(outputData);
+                    sessionStorage.setItem("panel_build_output", JSON.stringify(outputData));
                     // Show reconnect overlay after a short delay
                     setTimeout(() => setReconnecting(true), 1000);
                 } catch (err) {
