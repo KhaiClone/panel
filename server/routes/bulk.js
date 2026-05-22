@@ -14,6 +14,13 @@ const botDir = (bot) => {
     return path.join(BOTS_ROOT(), bot.buyerID, bot.botID);
 };
 
+const getProxyConf = async (bot) => {
+    if (!bot.proxyEnabled) return null;
+    const globalConf = await db.get("proxy_config");
+    if (!globalConf || !globalConf.enabled) return null;
+    return globalConf; // { type, host, port, username, password }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  POST /api/bulk/:action
 //  Perform a bulk action on multiple bots.
@@ -51,7 +58,8 @@ router.post("/:action", async (req, res, next) => {
                             throw new Error("Bot is expired");
                         }
                         const dir = botDir(bot);
-                        await pm2Service.startBot(bot.pm2Name, dir, bot.startScript, bot.maxMemory || null);
+                        const proxyConf = await getProxyConf(bot);
+                        await pm2Service.startBot(bot.pm2Name, dir, bot.startScript, bot.maxMemory || null, proxyConf);
                         return "Started successfully";
                     }
 
@@ -64,7 +72,10 @@ router.post("/:action", async (req, res, next) => {
                         if (bot.expiresAt && bot.expiresAt <= Date.now()) {
                             throw new Error("Bot is expired");
                         }
-                        await pm2Service.restartBot(bot.pm2Name);
+                        // Use startBot so the wrapper script is regenerated with current proxy settings
+                        const dir = botDir(bot);
+                        const proxyConf = await getProxyConf(bot);
+                        await pm2Service.startBot(bot.pm2Name, dir, bot.startScript, bot.maxMemory || null, proxyConf);
                         return "Restarted successfully";
                     }
 
@@ -86,7 +97,9 @@ router.post("/:action", async (req, res, next) => {
                             // Not a git repo or no remote — skip
                         }
                         await gitService.installDeps(dir, bot.installCommand);
-                        await pm2Service.restartBot(bot.pm2Name);
+                        
+                        const proxyConf = await getProxyConf(bot);
+                        await pm2Service.startBot(bot.pm2Name, dir, bot.startScript, bot.maxMemory || null, proxyConf);
                         return "Updated and restarted";
                     }
 
