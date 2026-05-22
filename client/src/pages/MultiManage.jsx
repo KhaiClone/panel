@@ -348,76 +348,60 @@ export default function MultiManage() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="p-6 max-w-5xl mx-auto space-y-6 pb-40 lg:pb-8"
+      className="p-5 lg:p-7 max-w-5xl mx-auto space-y-6 pb-40 lg:pb-8"
     >
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-      >
+      {/* ── Header ── */}
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl lg:text-3xl font-black text-slate-100 tracking-tight">Multi Manage</h1>
-          <p className="text-xs lg:text-sm text-slate-500 mt-1 font-medium">
-            Bulk operations on <span className="text-indigo-400">{bots.length}</span> instances
+          <p className="text-xs text-slate-500 mt-1 font-medium">
+            Bulk operations on <span className="text-violet-400 font-bold">{bots.length}</span> instances
           </p>
         </div>
         <div className="flex gap-2 items-center">
-          <button
-            onClick={allFilteredSelected ? deselectAll : selectAll}
-            className="btn-ghost text-xs py-2"
-          >
-            {allFilteredSelected ? '☐ Deselect All' : '☑ Select All'}
+          <button onClick={allFilteredSelected ? deselectAll : selectAll} className="btn-ghost text-xs">
+            {allFilteredSelected ? 'Deselect All' : 'Select All'}
           </button>
           {selectedCount > 0 && (
-            <motion.span
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className="text-[10px] font-black text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20"
-            >
+            <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
+              className="text-[10px] font-black px-3 py-1.5 rounded-full"
+              style={{ background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)", color: "#a78bfa" }}>
               {selectedCount} selected
             </motion.span>
           )}
         </div>
       </motion.div>
 
-      {/* ── Filters ─────────────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="flex flex-col lg:flex-row lg:items-center gap-3 bg-slate-900/40 p-3 lg:p-4 rounded-xl border border-slate-800/50 backdrop-blur-sm"
-      >
+      {/* ── Filters ── */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="flex flex-col lg:flex-row lg:items-center gap-3 rounded-2xl p-3 lg:p-4"
+        style={{ background: "rgba(13,21,37,0.7)", border: "1px solid rgba(255,255,255,0.05)", backdropFilter: "blur(12px)" }}>
         <div className="relative w-full lg:max-w-xs">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔍</span>
-          <input
-            className="input pl-9"
-            placeholder="Search by name, ID..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </div>
+          <input className="input pl-9" placeholder="Search bots…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <div className="flex bg-slate-800/50 p-1 rounded-lg border border-slate-700/50 gap-1 overflow-x-auto no-scrollbar whitespace-nowrap">
+        <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(6,11,20,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}>
           {['all', 'online', 'stopped'].map((f) => (
-            <button
-              key={f}
-              className={`relative px-4 py-1.5 rounded-md text-[10px] lg:text-xs font-bold uppercase tracking-wider transition-all duration-200 overflow-hidden ${
-                statusFilter === f ? 'text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
-              }`}
-              onClick={() => setStatusFilter(f)}
-            >
+            <button key={f}
+              className="relative px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-[0.08em] transition-all duration-200"
+              style={{ color: statusFilter === f ? '#fff' : '#64748b' }}
+              onClick={() => setStatusFilter(f)}>
               {statusFilter === f && (
-                <motion.div
-                  layoutId="multiManageFilter"
-                  className="absolute inset-0 bg-indigo-600 rounded-md shadow-lg shadow-indigo-600/20"
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                />
+                <motion.div layoutId="multiManageFilter" className="absolute inset-0 rounded-lg"
+                  style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)", boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}
+                  transition={{ type: 'spring', bounce: 0.25, duration: 0.5 }} />
               )}
               <span className="relative z-10">{f}</span>
             </button>
           ))}
         </div>
-        <span className="text-[10px] font-mono text-slate-500 ml-auto hidden lg:inline">
-          {filtered.length} <span className="opacity-50">/</span> {bots.length} BOTS
+        <span className="text-[10px] font-mono text-slate-600 ml-auto hidden lg:inline">
+          {filtered.length} / {bots.length} bots
         </span>
       </motion.div>
 
@@ -459,7 +443,7 @@ export default function MultiManage() {
         </div>
       )}
 
-      {/* ── Sticky Action Bar ───────────────────────────────────────────── */}
+      {/* ── Sticky Action Bar ── */}
       <AnimatePresence>
         {selectedCount > 0 && (
           <motion.div
@@ -467,37 +451,27 @@ export default function MultiManage() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
             transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
-            className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-3xl"
+            className="fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-3xl"
           >
-            <div className="bg-slate-900/95 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3 shadow-2xl shadow-black/50">
+            <div className="rounded-2xl p-3" style={{ background: "rgba(10,15,28,0.96)", backdropFilter: "blur(24px)", border: "1px solid rgba(124,58,237,0.2)", boxShadow: "0 24px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,58,237,0.08)" }}>
               <div className="flex items-center gap-2 mb-3 px-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Actions for {selectedCount} bot{selectedCount !== 1 ? 's' : ''}
+                <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
+                  ⚡ Actions for {selectedCount} bot{selectedCount !== 1 ? 's' : ''}
                 </span>
                 <div className="flex-1" />
-                <button
-                  onClick={deselectAll}
-                  className="text-[10px] font-bold text-slate-500 hover:text-slate-300 transition-colors uppercase tracking-wider"
-                >
-                  Clear
-                </button>
+                <button onClick={deselectAll} className="text-[9px] font-bold text-slate-600 hover:text-slate-300 transition-colors uppercase tracking-wider">Clear</button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {ACTIONS.map(({ key, label, style }) => (
-                  <button
-                    key={key}
-                    className={`${style} flex-1 min-w-[100px] py-2.5 font-black uppercase tracking-widest text-[9px] lg:text-[10px]`}
-                    disabled={!!busy}
-                    onClick={() => handleAction(key)}
-                  >
+                  <button key={key}
+                    className={`${style} flex-1 min-w-[90px] py-2.5 font-black uppercase tracking-widest text-[9px]`}
+                    disabled={!!busy} onClick={() => handleAction(key)}>
                     {busy === key ? (
                       <span className="flex items-center justify-center gap-2">
                         <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         Processing…
                       </span>
-                    ) : (
-                      label
-                    )}
+                    ) : label}
                   </button>
                 ))}
               </div>

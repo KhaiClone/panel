@@ -5,28 +5,66 @@ import { motion, AnimatePresence } from "framer-motion";
 
 // ── Nav items ──────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
-    { to: "/dashboard",     icon: "📊", label: "Dashboard" },
-    { to: "/groups",        icon: "🗂️", label: "Groups" },
-    { to: "/multi-manage",  icon: "⚡", label: "Multi Manage" },
-    { to: "/panel-manage",  icon: "🛠️", label: "Panel" },
-    { to: "/proxy",         icon: "🔗", label: "Proxy Manager" },
-    { to: "/system",        icon: "🖥️", label: "System" },
+    {
+        to: "/dashboard",
+        label: "Dashboard",
+        icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+            </svg>
+        ),
+    },
+    {
+        to: "/groups",
+        label: "Groups",
+        icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+        ),
+    },
+    {
+        to: "/multi-manage",
+        label: "Multi Manage",
+        icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+        ),
+    },
+    {
+        to: "/panel-manage",
+        label: "Panel",
+        icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+            </svg>
+        ),
+    },
+    {
+        to: "/proxy",
+        label: "Proxy",
+        icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+        ),
+    },
+    {
+        to: "/system",
+        label: "System",
+        icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+        ),
+    },
 ];
-
-// ── Nav link styles ────────────────────────────────────────────────────────
-const navClass = ({ isActive }) =>
-    `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-        isActive
-            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-            : "text-slate-400 hover:bg-slate-700/50 hover:text-slate-100"
-    }`;
-
-const navClassCollapsed = ({ isActive }) =>
-    `flex items-center justify-center w-10 h-10 rounded-lg text-base transition-all duration-200 ${
-        isActive
-            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-            : "text-slate-400 hover:bg-slate-700/50 hover:text-slate-100"
-    }`;
 
 export default function Layout() {
     const { user, logout } = useAuth();
@@ -34,6 +72,7 @@ export default function Layout() {
     const location = useLocation();
     const [open, setOpen] = useState(true);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -41,182 +80,272 @@ export default function Layout() {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
+    // Close mobile nav on route change
+    useEffect(() => {
+        setMobileNavOpen(false);
+    }, [location.pathname]);
+
     const handleLogout = () => {
         logout();
         navigate("/login");
     };
 
+    const initials = user?.username?.[0]?.toUpperCase();
+
     return (
-        <div className="flex h-[100dvh] bg-slate-950 text-slate-100 overflow-hidden flex-col lg:flex-row">
-            {/* Background Decoration */}
-            <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-indigo-600/5 blur-[120px] animate-glow" />
-                <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] rounded-full bg-blue-600/5 blur-[120px] animate-glow" style={{ animationDelay: '-1.5s' }} />
+        <div className="flex h-[100dvh] overflow-hidden" style={{ background: "var(--bg-base)" }}>
+
+            {/* ── Ambient background glows ───────────────────────────── */}
+            <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+                <div className="absolute -top-[20%] -left-[10%] w-[45%] h-[45%] rounded-full animate-glow"
+                    style={{ background: "radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)", filter: "blur(60px)" }} />
+                <div className="absolute -bottom-[15%] -right-[5%] w-[40%] h-[40%] rounded-full animate-glow"
+                    style={{ background: "radial-gradient(circle, rgba(79,70,229,0.1) 0%, transparent 70%)", filter: "blur(60px)", animationDelay: "-2s" }} />
+                <div className="absolute top-[40%] left-[30%] w-[30%] h-[30%] rounded-full animate-glow"
+                    style={{ background: "radial-gradient(circle, rgba(56,189,248,0.04) 0%, transparent 70%)", filter: "blur(80px)", animationDelay: "-4s" }} />
             </div>
 
-            {/* ── Mobile Header ────────────────────────────────────────────────── */}
-            <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-slate-900/50 border-b border-slate-800/50 backdrop-blur-xl z-30">
-                <div className="flex items-center gap-2">
-                    <span className="text-xl">🤖</span>
-                    <p className="font-bold text-slate-100 text-sm tracking-tight">Bot Panel</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-[10px] font-bold shadow-lg shadow-indigo-600/30">
-                        {user?.username?.[0]?.toUpperCase()}
-                    </div>
-                    <button onClick={handleLogout} className="text-slate-400 hover:text-slate-100 text-lg">
-                        🚪
-                    </button>
-                </div>
-            </div>
-
-            {/* ── Sidebar (Desktop) ────────────────────────────────────────────── */}
+            {/* ── DESKTOP SIDEBAR ─────────────────────────────────────── */}
             <motion.aside
                 initial={false}
-                animate={{ width: open ? 224 : 64 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="hidden lg:flex shrink-0 flex-col bg-slate-900/50 border-r border-slate-800/50 backdrop-blur-xl z-20"
+                animate={{ width: open ? 240 : 68 }}
+                transition={{ type: "spring", stiffness: 320, damping: 32 }}
+                className="hidden lg:flex shrink-0 flex-col relative z-20"
+                style={{
+                    background: "rgba(10,15,28,0.85)",
+                    backdropFilter: "blur(24px)",
+                    borderRight: "1px solid rgba(255,255,255,0.05)",
+                }}
             >
-                {/* Logo + toggle */}
-                <div className="px-3 py-4 border-b border-slate-800/50 flex items-center justify-between gap-2">
-                    <AnimatePresence mode="wait">
+                {/* ── Brand ── */}
+                <div className="px-3 pt-5 pb-4 flex items-center gap-3 overflow-hidden"
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                    {/* Logo icon */}
+                    <div className="w-9 h-9 shrink-0 rounded-xl overflow-hidden flex items-center justify-center"
+                        style={{
+                            background: "linear-gradient(135deg, #7C3AED, #4F46E5)",
+                            boxShadow: "0 4px 16px rgba(124,58,237,0.4)",
+                        }}>
+                        <img src="/logo.png" alt="NexusPanel" className="w-full h-full object-cover" />
+                    </div>
+                    <AnimatePresence>
                         {open && (
-                            <NavLink 
-                                to="/dashboard" 
-                                className="flex items-center gap-2 min-w-0"
+                            <motion.div
+                                key="brand-text"
+                                initial={{ opacity: 0, x: -8 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -8 }}
+                                transition={{ duration: 0.18 }}
+                                className="min-w-0 overflow-hidden"
                             >
-                                <motion.div 
-                                    initial={{ opacity: 0, x: -10 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: -10 }}
-                                    className="flex items-center gap-2 min-w-0"
-                                >
-                                    <span className="text-2xl shrink-0">🤖</span>
-                                    <div className="min-w-0">
-                                        <p className="font-bold text-slate-100 leading-tight truncate">Bot Panel</p>
-                                        <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">Admin Panel</p>
-                                    </div>
-                                </motion.div>
-                            </NavLink>
+                                <p className="font-black text-sm text-slate-100 leading-tight tracking-tight truncate">
+                                    NexusPanel
+                                </p>
+                                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-violet-400/70 truncate mt-0.5">
+                                    Bot Manager
+                                </p>
+                            </motion.div>
                         )}
                     </AnimatePresence>
-                    <button
+
+                    {/* Toggle */}
+                    <motion.button
                         onClick={() => setOpen((v) => !v)}
-                        title={open ? "Collapse sidebar" : "Expand sidebar"}
-                        className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-700/50 hover:text-slate-100 transition-colors ${
-                            !open ? "mx-auto" : ""
-                        }`}
+                        className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-lg transition-colors ${open ? "ml-auto" : "mx-auto"}`}
+                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+                        whileHover={{ background: "rgba(124,58,237,0.15)" }}
+                        title={open ? "Collapse" : "Expand"}
                     >
-                        <motion.div
+                        <motion.svg
                             animate={{ rotate: open ? 0 : 180 }}
                             transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                            className="w-3.5 h-3.5 text-slate-500"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                        </motion.div>
-                    </button>
+                            <polyline points="15 18 9 12 15 6" />
+                        </motion.svg>
+                    </motion.button>
                 </div>
 
-                {/* Nav */}
-                <nav className={`flex-1 p-2 space-y-1 overflow-y-auto ${!open ? "flex flex-col items-center" : ""}`}>
-                    {!open && (
-                        <div className="w-full border-b border-slate-800/50 mb-1" />
-                    )}
+                {/* ── Navigation ── */}
+                <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
                     {open && (
-                        <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest px-3 pt-1 pb-1">
+                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-600 px-3 mb-2">
                             Navigation
                         </p>
                     )}
-                    {NAV_ITEMS.map(({ to, icon, label }) =>
-                        open ? (
-                            <NavLink key={to} to={to} className={navClass}>
-                                <span className="text-lg">{icon}</span>
-                                {label}
-                            </NavLink>
-                        ) : (
-                            <NavLink key={to} to={to} className={navClassCollapsed} title={label}>
-                                <span className="text-lg">{icon}</span>
-                            </NavLink>
-                        )
-                    )}
+                    {NAV_ITEMS.map(({ to, icon, label }) => (
+                        <NavLink key={to} to={to} title={!open ? label : undefined}
+                            className={({ isActive }) =>
+                                `flex items-center gap-3 rounded-xl transition-all duration-200 relative group
+                                ${open ? "px-3 py-2.5" : "w-11 h-11 mx-auto justify-center"}
+                                ${isActive
+                                    ? "text-white"
+                                    : "text-slate-500 hover:text-slate-200"
+                                }`
+                            }
+                        >
+                            {({ isActive }) => (
+                                <>
+                                    {isActive && (
+                                        <motion.div
+                                            layoutId="sidebar-active-bg"
+                                            className="absolute inset-0 rounded-xl"
+                                            style={{
+                                                background: "linear-gradient(135deg, rgba(124,58,237,0.2), rgba(79,70,229,0.15))",
+                                                border: "1px solid rgba(124,58,237,0.2)",
+                                                boxShadow: "0 0 20px rgba(124,58,237,0.1)",
+                                            }}
+                                            transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                                        />
+                                    )}
+                                    <span className={`relative z-10 shrink-0 transition-colors ${isActive ? "text-violet-400" : ""}`}>
+                                        {icon}
+                                    </span>
+                                    {open && (
+                                        <span className="relative z-10 text-sm font-semibold truncate">
+                                            {label}
+                                        </span>
+                                    )}
+                                    {/* Tooltip for collapsed */}
+                                    {!open && (
+                                        <div className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-100 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50"
+                                            style={{ background: "rgba(17,24,39,0.96)", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+                                            {label}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </NavLink>
+                    ))}
                 </nav>
 
-                {/* Footer */}
-                <div className={`p-2 border-t border-slate-800/50 ${!open ? "flex flex-col items-center gap-1" : ""}`}>
-                    {open ? (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="space-y-2"
-                        >
-                            <div className="flex items-center gap-2 px-2">
-                                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold shrink-0 shadow-lg shadow-indigo-600/30">
-                                    {user?.username?.[0]?.toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                    <p className="text-sm font-medium text-slate-200 truncate">{user?.username}</p>
-                                    <p className="text-[10px] text-slate-500">Online</p>
-                                </div>
-                            </div>
-                            <button onClick={handleLogout} className="btn-ghost w-full text-left text-xs flex items-center gap-2">
-                                <span>🚪</span> Logout
-                            </button>
-                        </motion.div>
-                    ) : (
-                        <>
-                            <div
-                                className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold cursor-default shadow-lg shadow-indigo-600/30 mb-1"
-                                title={user?.username}
+                {/* ── User footer ── */}
+                <div className="p-2" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                    <AnimatePresence mode="wait">
+                        {open ? (
+                            <motion.div
+                                key="user-expanded"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="rounded-xl p-2.5 flex items-center gap-3"
+                                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
                             >
-                                {user?.username?.[0]?.toUpperCase()}
-                            </div>
-                            <button
-                                onClick={handleLogout}
-                                title="Logout"
-                                className="flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:bg-slate-700/50 hover:text-slate-100 transition-colors text-base"
-                            >
-                                🚪
-                            </button>
-                        </>
-                    )}
+                                <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-black text-white"
+                                    style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)", boxShadow: "0 4px 12px rgba(124,58,237,0.4)" }}>
+                                    {initials}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold text-slate-200 truncate leading-tight">{user?.username}</p>
+                                    <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">● Online</p>
+                                </div>
+                                <button onClick={handleLogout} title="Logout"
+                                    className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                                    </svg>
+                                </button>
+                            </motion.div>
+                        ) : (
+                            <motion.div key="user-collapsed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                className="flex flex-col items-center gap-1">
+                                <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white"
+                                    style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)", boxShadow: "0 4px 12px rgba(124,58,237,0.35)" }}>
+                                    {initials}
+                                </div>
+                                <button onClick={handleLogout} title="Logout"
+                                    className="w-9 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                                    </svg>
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             </motion.aside>
 
-            {/* ── Main content ────────────────────────────────────────────────── */}
-            <main className="flex-1 overflow-y-auto relative z-10">
+            {/* ── MOBILE HEADER ──────────────────────────────────────── */}
+            <div className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3"
+                style={{ background: "rgba(6,11,20,0.88)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl overflow-hidden" style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)", boxShadow: "0 4px 12px rgba(124,58,237,0.4)" }}>
+                        <img src="/logo.png" alt="NexusPanel" className="w-full h-full object-cover" />
+                    </div>
+                    <span className="font-black text-sm text-slate-100 tracking-tight">NexusPanel</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white"
+                        style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)" }}>
+                        {initials}
+                    </div>
+                    <button onClick={handleLogout}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-rose-400 transition-colors"
+                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            {/* ── MAIN CONTENT ───────────────────────────────────────── */}
+            <main className="flex-1 overflow-y-auto relative z-10 pt-14 lg:pt-0 pb-20 lg:pb-0">
                 <AnimatePresence mode="wait">
                     <motion.div
                         key={location.pathname}
-                        initial={{ opacity: 0, y: 10 }}
+                        initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.12, ease: "easeOut" }}
-                        className="min-h-full pb-32 lg:pb-8"
+                        transition={{ duration: 0.14, ease: "easeOut" }}
+                        className="min-h-full"
                         style={{ willChange: "transform, opacity" }}
                     >
                         <Outlet />
-                        <div className="h-20 lg:hidden" /> {/* Mobile bottom nav spacer */}
                     </motion.div>
                 </AnimatePresence>
             </main>
 
-            {/* ── Mobile Nav (Bottom Bar) ─────────────────────────────────────── */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-slate-900/80 border-t border-slate-800/50 backdrop-blur-xl z-30 px-6 py-2 flex items-center justify-around">
-                {NAV_ITEMS.map(({ to, icon, label }) => (
-                    <NavLink
-                        key={to}
-                        to={to}
-                        className={({ isActive }) => 
-                            `flex flex-col items-center gap-1 p-2 transition-all duration-200 ${
-                                isActive ? "text-indigo-400 scale-110" : "text-slate-500"
-                            }`
-                        }
-                    >
-                        <span className="text-xl">{icon}</span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
-                    </NavLink>
-                ))}
+            {/* ── MOBILE BOTTOM NAV ──────────────────────────────────── */}
+            <div className="lg:hidden fixed bottom-4 left-4 right-4 z-30 rounded-2xl overflow-hidden"
+                style={{
+                    background: "rgba(10,15,28,0.92)",
+                    backdropFilter: "blur(24px)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    boxShadow: "0 -4px 24px rgba(0,0,0,0.4), 0 8px 32px rgba(0,0,0,0.3)",
+                }}>
+                <div className="flex items-center justify-around px-2 py-2">
+                    {NAV_ITEMS.map(({ to, icon, label }) => (
+                        <NavLink
+                            key={to}
+                            to={to}
+                            className={({ isActive }) =>
+                                `flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-200 ${
+                                    isActive
+                                        ? "text-violet-400"
+                                        : "text-slate-600 hover:text-slate-400"
+                                }`
+                            }
+                        >
+                            {({ isActive }) => (
+                                <>
+                                    <div className={`transition-all duration-200 ${isActive ? "scale-110" : ""}`}>
+                                        {icon}
+                                    </div>
+                                    <span className={`text-[9px] font-black uppercase tracking-wider leading-none ${isActive ? "text-violet-400" : ""}`}>
+                                        {label.split(" ")[0]}
+                                    </span>
+                                    {isActive && (
+                                        <motion.div layoutId="mobile-nav-indicator"
+                                            className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-400"
+                                            transition={{ type: "spring", stiffness: 400, damping: 30 }} />
+                                    )}
+                                </>
+                            )}
+                        </NavLink>
+                    ))}
+                </div>
             </div>
         </div>
     );
