@@ -130,7 +130,7 @@ const startBot = async (
     const NL = "\n";
     const scriptContent = isWindows
         ? `@echo off${NL}${effectiveCmd}`
-        : `#!/bin/bash${NL}${effectiveCmd}`;
+        : `#!/bin/bash${NL}exec ${effectiveCmd}`;
     fs.writeFileSync(scriptPath, scriptContent, "utf8");
     if (!isWindows) {
         try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}
