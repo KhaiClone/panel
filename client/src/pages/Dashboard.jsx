@@ -192,28 +192,44 @@ export default function Dashboard() {
                         />
                     </div>
 
-                    {/* Filter pills */}
-                    <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(6,11,20,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                        {FILTERS.map((f) => (
-                            <button
-                                key={f}
-                                id={`filter-${f}`}
-                                className="relative px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-[0.08em] transition-all duration-200"
-                                style={{ color: filter === f ? "#fff" : "#64748b" }}
-                                onClick={() => setFilter(f)}
-                            >
-                                {filter === f && (
-                                    <motion.div
-                                        layoutId="filterBg"
-                                        className="absolute inset-0 rounded-lg"
-                                        style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)", boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}
-                                        transition={{ type: "spring", bounce: 0.25, duration: 0.5 }}
-                                    />
-                                )}
-                                <span className="relative z-10">{f}</span>
-                            </button>
-                        ))}
+                    {/* Filter pills — sliding indicator via Framer Motion layoutId */}
+                    <div
+                        className="flex gap-1 p-1 rounded-xl"
+                        style={{ background: "rgba(6,11,20,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}
+                    >
+                        {FILTERS.map((f) => {
+                            const isActive = filter === f;
+                            return (
+                                <button
+                                    key={f}
+                                    id={`filter-${f}`}
+                                    onClick={() => setFilter(f)}
+                                    className="relative px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-[0.08em] select-none"
+                                    style={{
+                                        color: isActive ? "#fff" : "#64748b",
+                                        transition: "color 0.2s ease",
+                                        zIndex: 1,
+                                    }}
+                                >
+                                    {/* Sliding background — only ONE lives in the DOM at a time (inside the active btn) */}
+                                    {isActive && (
+                                        <motion.div
+                                            layoutId="dashFilterPill"
+                                            className="absolute inset-0 rounded-lg"
+                                            initial={false}
+                                            transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                                            style={{
+                                                background: "linear-gradient(135deg,#7C3AED,#4F46E5)",
+                                                boxShadow: "0 4px 14px rgba(124,58,237,0.35)",
+                                            }}
+                                        />
+                                    )}
+                                    <span className="relative" style={{ zIndex: 2 }}>{f}</span>
+                                </button>
+                            );
+                        })}
                     </div>
+
 
                     <span className="text-[10px] font-mono text-slate-600 ml-auto hidden lg:inline">
                         {visible.length} <span className="opacity-40">/</span> {bots.length} bots
