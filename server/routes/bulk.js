@@ -93,8 +93,8 @@ router.post("/:action", async (req, res, next) => {
                         let pullOutput = "(skipped — no git remote)";
                         try {
                             pullOutput = await gitService.pullRepo(dir);
-                        } catch {
-                            // Not a git repo or no remote — skip
+                        } catch (err) {
+                            pullOutput = `(pull failed or skipped: ${err.message || 'unknown error'})`;
                         }
                         await gitService.installDeps(dir, bot.installCommand);
                         

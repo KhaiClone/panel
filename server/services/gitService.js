@@ -27,10 +27,16 @@ const cloneRepo = async (repoUrl, targetPath, branch = "main") => {
  * @param {string} botPath - Absolute path to the bot's directory
  */
 const pullRepo = async (botPath) => {
-    const { stdout, stderr } = await execAsync(`git -C "${botPath}" pull`, {
-        timeout: GIT_TIMEOUT,
-    });
-    return stdout || stderr;
+    try {
+        const { stdout, stderr } = await execAsync(`git pull`, {
+            cwd: botPath,
+            timeout: GIT_TIMEOUT,
+        });
+        return stdout || stderr;
+    } catch (err) {
+        console.error(`[Git] Pull failed for ${botPath}:`, err.message);
+        throw err;
+    }
 };
 
 /**
