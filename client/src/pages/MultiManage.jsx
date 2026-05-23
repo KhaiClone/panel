@@ -5,7 +5,7 @@ import api from '../api/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import ConfirmModal from '../components/ConfirmModal';
 
-// ── Status helpers ─────────────────────────────────────────────────────────
+// ── Status helpers ──────────────────────────────────────────────────────────
 const STATUS_DOT = {
   online:    'bg-emerald-400',
   stopped:   'bg-rose-400',
@@ -19,14 +19,80 @@ const STATUS_LABEL = {
   launching: 'Launching',
 };
 
-// ── Action definitions ─────────────────────────────────────────────────────
+// ── Action definitions (rich metadata for vivid buttons) ───────────────────
 const ACTIONS = [
-  { key: 'start',   label: '▶ Start',    style: 'btn-success',  icon: '▶',  danger: false },
-  { key: 'stop',    label: '⏹ Stop',     style: 'btn-danger',   icon: '⏹',  danger: false },
-  { key: 'restart', label: '🔄 Restart',  style: 'btn-warning',  icon: '🔄', danger: false },
-  { key: 'install', label: '📦 Install',  style: 'btn-primary',  icon: '📦', danger: false },
-  { key: 'update',  label: '⬆️ Update',  style: 'btn-primary',  icon: '⬆️', danger: false },
-  { key: 'remove',  label: '🗑️ Remove',  style: 'btn-danger',   icon: '🗑️', danger: true  },
+  {
+    key: 'start', label: 'Start',
+    bg: 'rgba(5,150,105,0.2)', border: 'rgba(16,185,129,0.4)', color: '#34d399',
+    hoverBg: 'rgba(5,150,105,0.35)', shadow: 'rgba(16,185,129,0.25)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'stop', label: 'Stop',
+    bg: 'rgba(220,38,38,0.2)', border: 'rgba(239,68,68,0.4)', color: '#f87171',
+    hoverBg: 'rgba(220,38,38,0.35)', shadow: 'rgba(239,68,68,0.25)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]">
+        <rect x="6" y="6" width="12" height="12" rx="1.5"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'restart', label: 'Restart',
+    bg: 'rgba(217,119,6,0.2)', border: 'rgba(245,158,11,0.4)', color: '#fbbf24',
+    hoverBg: 'rgba(217,119,6,0.35)', shadow: 'rgba(245,158,11,0.25)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+        strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+        <polyline points="1 4 1 10 7 10"/>
+        <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'install', label: 'Install',
+    bg: 'rgba(79,70,229,0.2)', border: 'rgba(99,102,241,0.4)', color: '#818cf8',
+    hoverBg: 'rgba(79,70,229,0.35)', shadow: 'rgba(99,102,241,0.25)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+        strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'update', label: 'Update',
+    bg: 'rgba(6,182,212,0.2)', border: 'rgba(34,211,238,0.4)', color: '#22d3ee',
+    hoverBg: 'rgba(6,182,212,0.35)', shadow: 'rgba(34,211,238,0.25)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+        strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+        <polyline points="1 4 1 10 7 10"/>
+        <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+        <polyline points="17 14 21 14 21 10"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'remove', label: 'Remove', danger: true,
+    bg: 'rgba(190,18,60,0.22)', border: 'rgba(244,63,94,0.5)', color: '#fb7185',
+    hoverBg: 'rgba(190,18,60,0.38)', shadow: 'rgba(244,63,94,0.3)',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+        strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6l-1 14H6L5 6"/>
+        <path d="M10 11v6M14 11v6"/>
+        <path d="M9 6V4h6v2"/>
+      </svg>
+    ),
+  },
 ];
 
 // ── Compact bot row ────────────────────────────────────────────────────────
@@ -89,9 +155,8 @@ function BotRow({ bot, selected, onToggle, groupColor }) {
 
       {/* Status label */}
       <span className={`text-[9px] font-black uppercase tracking-widest ${
-        status === 'online' ? 'text-emerald-400' :
-        status === 'errored' ? 'text-orange-400' :
-        'text-slate-500'
+        status === 'online'  ? 'text-emerald-400' :
+        status === 'errored' ? 'text-orange-400'  : 'text-slate-500'
       }`}>
         {STATUS_LABEL[status] || 'Unknown'}
       </span>
@@ -102,13 +167,12 @@ function BotRow({ bot, selected, onToggle, groupColor }) {
 // ── Group section with select-all ──────────────────────────────────────────
 function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup }) {
   const [open, setOpen] = useState(true);
-  const allSelected = bots.length > 0 && bots.every((b) => selected.has(b._id));
+  const allSelected  = bots.length > 0 && bots.every((b) => selected.has(b._id));
   const someSelected = bots.some((b) => selected.has(b._id));
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-3">
-        {/* Group select-all checkbox */}
         <button
           onClick={() => onToggleGroup(bots.map((b) => b._id), !allSelected)}
           className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${
@@ -173,7 +237,7 @@ function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup
 
 // ── Results Modal ──────────────────────────────────────────────────────────
 function ResultsModal({ results, actionLabel, onClose }) {
-  const okCount = results.filter((r) => r.status === 'ok').length;
+  const okCount  = results.filter((r) => r.status === 'ok').length;
   const errCount = results.filter((r) => r.status === 'error').length;
 
   return createPortal(
@@ -181,51 +245,54 @@ function ResultsModal({ results, actionLabel, onClose }) {
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="card w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col bg-slate-900 border-slate-700/50"
+        className="w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col rounded-2xl"
+        style={{
+          background: 'linear-gradient(135deg, rgba(17,24,39,0.98), rgba(13,21,37,0.98))',
+          border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
+        }}
       >
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800/50">
+        <div className="flex items-center justify-between p-5 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div>
-            <h2 className="text-lg font-black text-slate-100">Bulk {actionLabel} Results</h2>
+            <h2 className="text-base font-black text-slate-100">Bulk {actionLabel} — Results</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               <span className="text-emerald-400 font-bold">{okCount} succeeded</span>
               {errCount > 0 && <span className="text-rose-400 font-bold ml-2">· {errCount} failed</span>}
             </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-100 hover:bg-slate-800 transition-colors">
-            ✕
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white transition-colors"
+            style={{ background: 'rgba(255,255,255,0.05)' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-4 h-4">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
           </button>
         </div>
-
-        <div className="flex-1 overflow-y-auto mt-4 space-y-2 pr-1">
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
           {results.map((r, i) => (
             <motion.div
               key={r.botId}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.03 }}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm ${
-                r.status === 'ok'
-                  ? 'bg-emerald-500/5 border-emerald-500/20'
-                  : 'bg-rose-500/5 border-rose-500/20'
-              }`}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm"
+              style={{
+                background: r.status === 'ok' ? 'rgba(5,150,105,0.08)' : 'rgba(220,38,38,0.08)',
+                borderColor: r.status === 'ok' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+              }}
             >
-              <span className={`text-lg shrink-0 ${r.status === 'ok' ? '' : ''}`}>
-                {r.status === 'ok' ? '✅' : '❌'}
-              </span>
+              <span className="text-base shrink-0">{r.status === 'ok' ? '✅' : '❌'}</span>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-slate-200 truncate">{r.name}</p>
-                <p className={`text-[10px] font-mono truncate ${
-                  r.status === 'ok' ? 'text-emerald-400/70' : 'text-rose-400/70'
-                }`}>{r.message}</p>
+                <p className="text-[10px] font-mono truncate"
+                  style={{ color: r.status === 'ok' ? 'rgba(52,211,153,0.7)' : 'rgba(248,113,113,0.7)' }}>
+                  {r.message}
+                </p>
               </div>
             </motion.div>
           ))}
         </div>
-
-        <div className="pt-4 border-t border-slate-800/50 mt-4">
-          <button onClick={onClose} className="btn-primary w-full py-2.5 font-black uppercase tracking-widest text-[10px]">
-            Close
-          </button>
+        <div className="p-5 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <button onClick={onClose} className="btn-primary w-full py-2.5 font-black uppercase tracking-widest text-[10px]">Close</button>
         </div>
       </motion.div>
     </div>,
@@ -233,18 +300,75 @@ function ResultsModal({ results, actionLabel, onClose }) {
   );
 }
 
+// ── Action Button ──────────────────────────────────────────────────────────
+function ActionButton({ action, busy, onClick, index }) {
+  const [hovered, setHovered] = useState(false);
+  const isLoading = busy === action.key;
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 20, scale: 0.85 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 26, delay: index * 0.045 }}
+      onClick={onClick}
+      disabled={!!busy}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="flex flex-col items-center gap-2 py-3 px-2 rounded-xl font-black text-[9px] uppercase tracking-widest flex-1 min-w-[68px] relative overflow-hidden transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
+      style={{
+        background: hovered ? action.hoverBg : action.bg,
+        border: `1px solid ${action.border}`,
+        color: action.color,
+        boxShadow: hovered ? `0 8px 24px ${action.shadow}` : `0 2px 8px ${action.shadow}`,
+      }}
+      title={action.label}
+    >
+      {/* Glow sweep on hover */}
+      <AnimatePresence>
+        {hovered && (
+          <motion.div
+            initial={{ opacity: 0, x: '-100%' }}
+            animate={{ opacity: 1, x: '100%' }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${action.color}18, transparent)`,
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {isLoading ? (
+        <>
+          <svg className="animate-spin w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <span>Working</span>
+        </>
+      ) : (
+        <>
+          <span className="relative z-10">{action.icon}</span>
+          <span className="relative z-10">{action.label}</span>
+        </>
+      )}
+    </motion.button>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function MultiManage() {
   const { bots, groups, refresh } = useData();
-  const [selected, setSelected] = useState(new Set());
-  const [search, setSearch] = useState('');
+  const [selected, setSelected]  = useState(new Set());
+  const [search, setSearch]      = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [busy, setBusy] = useState(null);
-  const [results, setResults] = useState(null);
-  const [confirm, setConfirm] = useState(null);
+  const [busy, setBusy]          = useState(null);
+  const [results, setResults]    = useState(null);
+  const [confirm, setConfirm]    = useState(null);
   const [lastAction, setLastAction] = useState('');
 
-  // ── Filtering ────────────────────────────────────────────────────────────
+  // ── Filtering ──────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return bots.filter((b) => {
       const matchSearch =
@@ -254,65 +378,52 @@ export default function MultiManage() {
         b.buyerID.toLowerCase().includes(search.toLowerCase());
       const matchStatus =
         statusFilter === 'all' ||
-        (statusFilter === 'online' && b.live?.status === 'online') ||
+        (statusFilter === 'online'  && b.live?.status === 'online') ||
         (statusFilter === 'stopped' && b.live?.status !== 'online');
       return matchSearch && matchStatus;
     });
   }, [bots, search, statusFilter]);
 
-  // ── Grouped view ─────────────────────────────────────────────────────────
   const groupMap = useMemo(() => Object.fromEntries(groups.map((g) => [g._id, g])), [groups]);
 
-  const botsByGroup = useMemo(() => {
-    return groups
+  const botsByGroup = useMemo(() =>
+    groups
       .map((g) => ({ group: g, bots: filtered.filter((b) => b.groupId === g._id) }))
-      .filter((s) => s.bots.length > 0);
-  }, [groups, filtered]);
+      .filter((s) => s.bots.length > 0),
+  [groups, filtered]);
 
-  const ungrouped = useMemo(() => {
-    return filtered.filter((b) => !b.groupId || !groupMap[b.groupId]);
-  }, [filtered, groupMap]);
+  const ungrouped = useMemo(() =>
+    filtered.filter((b) => !b.groupId || !groupMap[b.groupId]),
+  [filtered, groupMap]);
 
-  // ── Selection helpers ────────────────────────────────────────────────────
-  const toggleBot = (botId) => {
+  // ── Selection helpers ──────────────────────────────────────────────────
+  const toggleBot = (botId) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(botId)) next.delete(botId);
-      else next.add(botId);
+      next.has(botId) ? next.delete(botId) : next.add(botId);
       return next;
     });
-  };
 
-  const toggleGroup = (botIds, add) => {
+  const toggleGroup = (botIds, add) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      botIds.forEach((id) => {
-        if (add) next.add(id);
-        else next.delete(id);
-      });
+      botIds.forEach((id) => (add ? next.add(id) : next.delete(id)));
       return next;
     });
-  };
 
-  const selectAll = () => {
-    setSelected(new Set(filtered.map((b) => b._id)));
-  };
+  const selectAll   = () => setSelected(new Set(filtered.map((b) => b._id)));
+  const deselectAll = () => setSelected(new Set());
 
-  const deselectAll = () => {
-    setSelected(new Set());
-  };
-
-  // Clean up selection when filtered list changes (remove IDs not in filtered set)
+  // Clean up stale selections when filter changes
   useEffect(() => {
     const filteredIds = new Set(filtered.map((b) => b._id));
     setSelected((prev) => {
       const next = new Set([...prev].filter((id) => filteredIds.has(id)));
-      if (next.size !== prev.size) return next;
-      return prev;
+      return next.size !== prev.size ? next : prev;
     });
   }, [filtered]);
 
-  // ── Execute bulk action ──────────────────────────────────────────────────
+  // ── Execute bulk action ────────────────────────────────────────────────
   const executeBulk = async (action) => {
     if (selected.size === 0) return;
     setBusy(action);
@@ -320,7 +431,6 @@ export default function MultiManage() {
     try {
       const { data } = await api.post(`/bulk/${action}`, { botIds: [...selected] });
       setResults(data.results);
-      // Deselect successfully processed bots for remove action
       if (action === 'remove') {
         const removedIds = new Set(data.results.filter((r) => r.status === 'ok').map((r) => r.botId));
         setSelected((prev) => new Set([...prev].filter((id) => !removedIds.has(id))));
@@ -334,22 +444,17 @@ export default function MultiManage() {
   };
 
   const handleAction = (action) => {
-    if (action === 'remove') {
-      setConfirm({ action: 'remove' });
-    } else {
-      executeBulk(action);
-    }
+    if (action === 'remove') setConfirm({ action: 'remove' });
+    else executeBulk(action);
   };
 
   const selectedCount = selected.size;
   const allFilteredSelected = filtered.length > 0 && filtered.every((b) => selected.has(b._id));
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="p-5 lg:p-7 max-w-5xl mx-auto space-y-6 pb-40 lg:pb-8"
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      className="p-5 lg:p-7 max-w-5xl mx-auto space-y-6 pb-52 lg:pb-8">
+
       {/* ── Header ── */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -363,20 +468,26 @@ export default function MultiManage() {
           <button onClick={allFilteredSelected ? deselectAll : selectAll} className="btn-ghost text-xs">
             {allFilteredSelected ? 'Deselect All' : 'Select All'}
           </button>
-          {selectedCount > 0 && (
-            <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
-              className="text-[10px] font-black px-3 py-1.5 rounded-full"
-              style={{ background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)", color: "#a78bfa" }}>
-              {selectedCount} selected
-            </motion.span>
-          )}
+          <AnimatePresence>
+            {selectedCount > 0 && (
+              <motion.span
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                className="text-[10px] font-black px-3 py-1.5 rounded-full"
+                style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa' }}
+              >
+                {selectedCount} selected
+              </motion.span>
+            )}
+          </AnimatePresence>
         </div>
       </motion.div>
 
       {/* ── Filters ── */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
         className="flex flex-col lg:flex-row lg:items-center gap-3 rounded-2xl p-3 lg:p-4"
-        style={{ background: "rgba(13,21,37,0.7)", border: "1px solid rgba(255,255,255,0.05)", backdropFilter: "blur(12px)" }}>
+        style={{ background: 'rgba(13,21,37,0.7)', border: '1px solid rgba(255,255,255,0.05)', backdropFilter: 'blur(12px)' }}>
         <div className="relative w-full lg:max-w-xs">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -385,60 +496,48 @@ export default function MultiManage() {
           </div>
           <input className="input pl-9" placeholder="Search bots…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(6,11,20,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}>
-          {['all', 'online', 'stopped'].map((f) => (
-            <button key={f}
-              className="relative px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-[0.08em] transition-all duration-200"
-              style={{ color: statusFilter === f ? '#fff' : '#64748b' }}
-              onClick={() => setStatusFilter(f)}>
-              {statusFilter === f && (
-                <motion.div layoutId="multiManageFilter" className="absolute inset-0 rounded-lg"
-                  style={{ background: "linear-gradient(135deg,#7C3AED,#4F46E5)", boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}
-                  transition={{ type: 'spring', bounce: 0.25, duration: 0.5 }} />
-              )}
-              <span className="relative z-10">{f}</span>
-            </button>
-          ))}
+        <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(6,11,20,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          {['all', 'online', 'stopped'].map((f) => {
+            const isActive = statusFilter === f;
+            return (
+              <button key={f}
+                className="relative px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-[0.08em] select-none"
+                style={{ color: isActive ? '#fff' : '#64748b', transition: 'color 0.2s ease', zIndex: 1 }}
+                onClick={() => setStatusFilter(f)}>
+                {isActive && (
+                  <motion.div layoutId="multiFilterPill" className="absolute inset-0 rounded-lg" initial={false}
+                    transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                    style={{ background: 'linear-gradient(135deg,#7C3AED,#4F46E5)', boxShadow: '0 4px 14px rgba(124,58,237,0.35)' }} />
+                )}
+                <span className="relative" style={{ zIndex: 2 }}>{f}</span>
+              </button>
+            );
+          })}
         </div>
         <span className="text-[10px] font-mono text-slate-600 ml-auto hidden lg:inline">
           {filtered.length} / {bots.length} bots
         </span>
       </motion.div>
 
-      {/* ── Bot List ────────────────────────────────────────────────────── */}
+      {/* ── Bot List ── */}
       {filtered.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card text-center py-20 border-dashed border-slate-700 bg-transparent"
-        >
-          <div className="text-5xl mb-4 grayscale opacity-50">⚡</div>
-          <p className="text-slate-400 font-medium">
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center justify-center py-24 rounded-2xl"
+          style={{ border: '1px dashed rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.01)' }}>
+          <div className="text-5xl mb-4 opacity-30">⚡</div>
+          <p className="text-slate-400 font-medium text-sm">
             {bots.length === 0 ? 'No bots found. Create some bots first.' : 'No bots match your filters.'}
           </p>
         </motion.div>
       ) : (
         <div className="space-y-6">
           {botsByGroup.map(({ group, bots: gb }) => (
-            <GroupSection
-              key={group._id}
-              label={group.name}
-              color={group.color}
-              bots={gb}
-              selected={selected}
-              onToggleBot={toggleBot}
-              onToggleGroup={toggleGroup}
-            />
+            <GroupSection key={group._id} label={group.name} color={group.color}
+              bots={gb} selected={selected} onToggleBot={toggleBot} onToggleGroup={toggleGroup} />
           ))}
           {ungrouped.length > 0 && (
-            <GroupSection
-              label="Ungrouped"
-              color="#64748b"
-              bots={ungrouped}
-              selected={selected}
-              onToggleBot={toggleBot}
-              onToggleGroup={toggleGroup}
-            />
+            <GroupSection label="Ungrouped" color="#64748b"
+              bots={ungrouped} selected={selected} onToggleBot={toggleBot} onToggleGroup={toggleGroup} />
           )}
         </div>
       )}
@@ -447,32 +546,56 @@ export default function MultiManage() {
       <AnimatePresence>
         {selectedCount > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.95 }}
+            initial={{ opacity: 0, y: 48, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 40, scale: 0.95 }}
-            transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
-            className="fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-3xl"
+            exit={{ opacity: 0, y: 48, scale: 0.9 }}
+            transition={{ type: 'spring', stiffness: 360, damping: 28 }}
+            className="fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl"
           >
-            <div className="rounded-2xl p-3" style={{ background: "rgba(10,15,28,0.96)", backdropFilter: "blur(24px)", border: "1px solid rgba(124,58,237,0.2)", boxShadow: "0 24px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,58,237,0.08)" }}>
-              <div className="flex items-center gap-2 mb-3 px-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
-                  ⚡ Actions for {selectedCount} bot{selectedCount !== 1 ? 's' : ''}
+            {/* Outer glow ring */}
+            <div className="absolute -inset-[2px] rounded-[22px] pointer-events-none"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.5), rgba(79,70,229,0.3), rgba(16,185,129,0.2))',
+                filter: 'blur(6px)',
+                opacity: 0.7,
+              }} />
+
+            <div className="relative rounded-2xl p-4" style={{
+              background: 'linear-gradient(160deg, rgba(13,18,30,0.98) 0%, rgba(8,12,22,0.98) 100%)',
+              border: '1px solid rgba(124,58,237,0.25)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)',
+              backdropFilter: 'blur(24px)',
+            }}>
+              {/* Header row */}
+              <div className="flex items-center gap-3 mb-3">
+                {/* Pulsing dot */}
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-400" />
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-300">
+                  {selectedCount} bot{selectedCount !== 1 ? 's' : ''} selected
                 </span>
                 <div className="flex-1" />
-                <button onClick={deselectAll} className="text-[9px] font-bold text-slate-600 hover:text-slate-300 transition-colors uppercase tracking-wider">Clear</button>
+                <button onClick={deselectAll}
+                  className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all"
+                  style={{ color: '#64748b', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#e2e8f0'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; }}>
+                  Clear ✕
+                </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {ACTIONS.map(({ key, label, style }) => (
-                  <button key={key}
-                    className={`${style} flex-1 min-w-[90px] py-2.5 font-black uppercase tracking-widest text-[9px]`}
-                    disabled={!!busy} onClick={() => handleAction(key)}>
-                    {busy === key ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Processing…
-                      </span>
-                    ) : label}
-                  </button>
+
+              {/* Action buttons — staggered pop-in */}
+              <div className="flex gap-2 flex-wrap">
+                {ACTIONS.map((action, i) => (
+                  <ActionButton
+                    key={action.key}
+                    action={action}
+                    busy={busy}
+                    onClick={() => handleAction(action.key)}
+                    index={i}
+                  />
                 ))}
               </div>
             </div>
@@ -480,25 +603,18 @@ export default function MultiManage() {
         )}
       </AnimatePresence>
 
-      {/* ── Results modal ───────────────────────────────────────────────── */}
+      {/* ── Results modal ── */}
       {results && (
-        <ResultsModal
-          results={results}
-          actionLabel={lastAction}
-          onClose={() => setResults(null)}
-        />
+        <ResultsModal results={results} actionLabel={lastAction} onClose={() => setResults(null)} />
       )}
 
-      {/* ── Confirm remove modal ────────────────────────────────────────── */}
+      {/* ── Confirm remove ── */}
       {confirm?.action === 'remove' && (
         <ConfirmModal
           title={`Remove ${selectedCount} bot${selectedCount !== 1 ? 's' : ''}?`}
-          message={`This will permanently stop and delete ${selectedCount} bot${selectedCount !== 1 ? 's' : ''}. Local-sourced bots will keep their files. This cannot be undone.`}
+          message={`This will permanently stop and delete ${selectedCount} bot${selectedCount !== 1 ? 's' : ''}.\nLocal-sourced bots will keep their files on disk.\n\nThis cannot be undone.`}
           confirmText="Remove All"
-          onConfirm={() => {
-            setConfirm(null);
-            executeBulk('remove');
-          }}
+          onConfirm={() => { setConfirm(null); executeBulk('remove'); }}
           onCancel={() => setConfirm(null)}
         />
       )}
