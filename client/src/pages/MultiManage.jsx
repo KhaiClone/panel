@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useData } from '../context/DataContext';
 import api from '../api/client';
@@ -19,12 +19,13 @@ const STATUS_LABEL = {
   launching: 'Launching',
 };
 
-// ── Action definitions (rich metadata for vivid buttons) ───────────────────
+// ── Action definitions ──────────────────────────────────────────────────────
 const ACTIONS = [
   {
     key: 'start', label: 'Start',
-    bg: 'rgba(5,150,105,0.2)', border: 'rgba(16,185,129,0.4)', color: '#34d399',
-    hoverBg: 'rgba(5,150,105,0.35)', shadow: 'rgba(16,185,129,0.25)',
+    bg: 'rgba(5,150,105,0.18)', border: 'rgba(16,185,129,0.35)', color: '#34d399',
+    hoverBg: 'rgba(5,150,105,0.32)', shadow: 'rgba(16,185,129,0.2)',
+    disabledBg: 'rgba(5,150,105,0.06)', disabledBorder: 'rgba(16,185,129,0.1)',
     icon: (
       <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]">
         <polygon points="5 3 19 12 5 21 5 3"/>
@@ -33,8 +34,9 @@ const ACTIONS = [
   },
   {
     key: 'stop', label: 'Stop',
-    bg: 'rgba(220,38,38,0.2)', border: 'rgba(239,68,68,0.4)', color: '#f87171',
-    hoverBg: 'rgba(220,38,38,0.35)', shadow: 'rgba(239,68,68,0.25)',
+    bg: 'rgba(220,38,38,0.18)', border: 'rgba(239,68,68,0.35)', color: '#f87171',
+    hoverBg: 'rgba(220,38,38,0.32)', shadow: 'rgba(239,68,68,0.2)',
+    disabledBg: 'rgba(220,38,38,0.06)', disabledBorder: 'rgba(239,68,68,0.1)',
     icon: (
       <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]">
         <rect x="6" y="6" width="12" height="12" rx="1.5"/>
@@ -43,8 +45,9 @@ const ACTIONS = [
   },
   {
     key: 'restart', label: 'Restart',
-    bg: 'rgba(217,119,6,0.2)', border: 'rgba(245,158,11,0.4)', color: '#fbbf24',
-    hoverBg: 'rgba(217,119,6,0.35)', shadow: 'rgba(245,158,11,0.25)',
+    bg: 'rgba(217,119,6,0.18)', border: 'rgba(245,158,11,0.35)', color: '#fbbf24',
+    hoverBg: 'rgba(217,119,6,0.32)', shadow: 'rgba(245,158,11,0.2)',
+    disabledBg: 'rgba(217,119,6,0.06)', disabledBorder: 'rgba(245,158,11,0.1)',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
         strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
@@ -55,8 +58,9 @@ const ACTIONS = [
   },
   {
     key: 'install', label: 'Install',
-    bg: 'rgba(79,70,229,0.2)', border: 'rgba(99,102,241,0.4)', color: '#818cf8',
-    hoverBg: 'rgba(79,70,229,0.35)', shadow: 'rgba(99,102,241,0.25)',
+    bg: 'rgba(79,70,229,0.18)', border: 'rgba(99,102,241,0.35)', color: '#818cf8',
+    hoverBg: 'rgba(79,70,229,0.32)', shadow: 'rgba(99,102,241,0.2)',
+    disabledBg: 'rgba(79,70,229,0.06)', disabledBorder: 'rgba(99,102,241,0.1)',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
         strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
@@ -68,8 +72,9 @@ const ACTIONS = [
   },
   {
     key: 'update', label: 'Update',
-    bg: 'rgba(6,182,212,0.2)', border: 'rgba(34,211,238,0.4)', color: '#22d3ee',
-    hoverBg: 'rgba(6,182,212,0.35)', shadow: 'rgba(34,211,238,0.25)',
+    bg: 'rgba(6,182,212,0.18)', border: 'rgba(34,211,238,0.35)', color: '#22d3ee',
+    hoverBg: 'rgba(6,182,212,0.32)', shadow: 'rgba(34,211,238,0.2)',
+    disabledBg: 'rgba(6,182,212,0.06)', disabledBorder: 'rgba(34,211,238,0.1)',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
         strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
@@ -81,8 +86,9 @@ const ACTIONS = [
   },
   {
     key: 'remove', label: 'Remove', danger: true,
-    bg: 'rgba(190,18,60,0.22)', border: 'rgba(244,63,94,0.5)', color: '#fb7185',
-    hoverBg: 'rgba(190,18,60,0.38)', shadow: 'rgba(244,63,94,0.3)',
+    bg: 'rgba(190,18,60,0.2)', border: 'rgba(244,63,94,0.4)', color: '#fb7185',
+    hoverBg: 'rgba(190,18,60,0.36)', shadow: 'rgba(244,63,94,0.25)',
+    disabledBg: 'rgba(190,18,60,0.06)', disabledBorder: 'rgba(244,63,94,0.1)',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
         strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
@@ -95,8 +101,65 @@ const ACTIONS = [
   },
 ];
 
+// ── Single Action Button (used inside toolbar) ──────────────────────────────
+function ActionButton({ action, busy, disabled, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  const isLoading = busy === action.key;
+  const isDisabled = disabled || (!!busy && !isLoading);
+
+  return (
+    <motion.button
+      whileHover={!isDisabled ? { scale: 1.04, y: -2 } : {}}
+      whileTap={!isDisabled ? { scale: 0.96 } : {}}
+      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+      onClick={onClick}
+      disabled={isDisabled}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="flex flex-col items-center gap-1.5 py-3 px-2.5 rounded-xl flex-1 min-w-[68px] relative overflow-hidden"
+      style={{
+        background: isDisabled ? action.disabledBg : hovered ? action.hoverBg : action.bg,
+        border: `1px solid ${isDisabled ? action.disabledBorder : action.border}`,
+        color: isDisabled ? `${action.color}40` : action.color,
+        boxShadow: !isDisabled && hovered ? `0 8px 24px ${action.shadow}` : 'none',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        transition: 'background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s',
+      }}
+    >
+      {/* Hover sweep */}
+      <AnimatePresence>
+        {hovered && !isDisabled && (
+          <motion.div
+            initial={{ x: '-100%', opacity: 0 }}
+            animate={{ x: '150%', opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45, ease: 'easeInOut' }}
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: `linear-gradient(90deg, transparent, ${action.color}20, transparent)` }}
+          />
+        )}
+      </AnimatePresence>
+
+      {isLoading ? (
+        <>
+          <svg className="animate-spin w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <span className="text-[9px] font-black uppercase tracking-widest">Working…</span>
+        </>
+      ) : (
+        <>
+          <span className="relative z-10">{action.icon}</span>
+          <span className="relative z-10 text-[9px] font-black uppercase tracking-widest">{action.label}</span>
+        </>
+      )}
+    </motion.button>
+  );
+}
+
 // ── Compact bot row ────────────────────────────────────────────────────────
-function BotRow({ bot, selected, onToggle, groupColor }) {
+function BotRow({ bot, selected, onToggle }) {
   const status = bot.live?.status || 'stopped';
   const dotClass = STATUS_DOT[status] || 'bg-slate-400';
   const isExpired = bot.expiresAt && bot.expiresAt <= Date.now();
@@ -114,30 +177,21 @@ function BotRow({ bot, selected, onToggle, groupColor }) {
     >
       {/* Checkbox */}
       <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${
-        selected
-          ? 'bg-indigo-500 border-indigo-500 shadow-md shadow-indigo-500/30'
-          : 'border-slate-600 group-hover:border-slate-500'
+        selected ? 'bg-indigo-500 border-indigo-500 shadow-md shadow-indigo-500/30' : 'border-slate-600 group-hover:border-slate-500'
       }`}>
         {selected && (
-          <motion.svg
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="w-3 h-3 text-white"
-            viewBox="0 0 12 12"
-            fill="none"
-          >
-            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <motion.svg initial={{ scale: 0 }} animate={{ scale: 1 }}
+            className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
+            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </motion.svg>
         )}
       </div>
-      <input type="checkbox" checked={selected} onChange={onToggle} className="sr-only" />
+      <input type="checkbox" checked={selected} onChange={onToggle} className="sr-only"/>
 
       {/* Status dot */}
       <span className="relative flex h-2.5 w-2.5 shrink-0">
-        {status === 'online' && (
-          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dotClass}`} />
-        )}
-        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${dotClass}`} />
+        {status === 'online' && <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dotClass}`}/>}
+        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${dotClass}`}/>
       </span>
 
       {/* Bot info */}
@@ -153,10 +207,9 @@ function BotRow({ bot, selected, onToggle, groupColor }) {
         <p className="text-[10px] text-slate-500 font-mono truncate">{bot.buyerID} / {bot.botID}</p>
       </div>
 
-      {/* Status label */}
       <span className={`text-[9px] font-black uppercase tracking-widest ${
         status === 'online'  ? 'text-emerald-400' :
-        status === 'errored' ? 'text-orange-400'  : 'text-slate-500'
+        status === 'errored' ? 'text-orange-400'  : 'text-slate-600'
       }`}>
         {STATUS_LABEL[status] || 'Unknown'}
       </span>
@@ -164,7 +217,7 @@ function BotRow({ bot, selected, onToggle, groupColor }) {
   );
 }
 
-// ── Group section with select-all ──────────────────────────────────────────
+// ── Group section ──────────────────────────────────────────────────────────
 function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup }) {
   const [open, setOpen] = useState(true);
   const allSelected  = bots.length > 0 && bots.every((b) => selected.has(b._id));
@@ -176,28 +229,22 @@ function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup
         <button
           onClick={() => onToggleGroup(bots.map((b) => b._id), !allSelected)}
           className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${
-            allSelected
-              ? 'bg-indigo-500 border-indigo-500 shadow-md shadow-indigo-500/30'
-              : someSelected
-              ? 'bg-indigo-500/30 border-indigo-500/50'
-              : 'border-slate-600 hover:border-slate-500'
+            allSelected   ? 'bg-indigo-500 border-indigo-500 shadow-md shadow-indigo-500/30' :
+            someSelected  ? 'bg-indigo-500/30 border-indigo-500/50' :
+                            'border-slate-600 hover:border-slate-500'
           }`}
         >
           {allSelected && (
             <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
-              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           )}
-          {someSelected && !allSelected && (
-            <div className="w-2 h-0.5 bg-white rounded-full" />
-          )}
+          {someSelected && !allSelected && <div className="w-2 h-0.5 bg-white rounded-full"/>}
         </button>
 
         <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 flex-1 text-left group">
-          <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 10px ${color}44` }} />
-          <span className="text-sm font-bold text-slate-400 group-hover:text-slate-100 transition-colors uppercase tracking-wider">
-            {label}
-          </span>
+          <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color, boxShadow: `0 0 10px ${color}44` }}/>
+          <span className="text-sm font-bold text-slate-400 group-hover:text-slate-100 transition-colors uppercase tracking-wider">{label}</span>
           <span className="text-xs text-slate-600 font-mono ml-1">[{bots.length}]</span>
           {someSelected && (
             <span className="text-[9px] font-black text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
@@ -210,22 +257,11 @@ function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup
 
       <AnimatePresence>
         {open && (
-          <motion.div
-            key="group-bots"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
+          <motion.div key="bots" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
             <div className="space-y-1.5 pl-4 border-l-2 ml-2" style={{ borderLeftColor: `${color}33` }}>
               {bots.map((bot) => (
-                <BotRow
-                  key={bot._id}
-                  bot={bot}
-                  selected={selected.has(bot._id)}
-                  onToggle={() => onToggleBot(bot._id)}
-                  groupColor={color}
-                />
+                <BotRow key={bot._id} bot={bot} selected={selected.has(bot._id)} onToggle={() => onToggleBot(bot._id)}/>
               ))}
             </div>
           </motion.div>
@@ -242,16 +278,10 @@ function ResultsModal({ results, actionLabel, onClose }) {
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
+      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
         className="w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col rounded-2xl"
-        style={{
-          background: 'linear-gradient(135deg, rgba(17,24,39,0.98), rgba(13,21,37,0.98))',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 30px 80px rgba(0,0,0,0.6)',
-        }}
-      >
+        style={{ background: 'linear-gradient(135deg, rgba(17,24,39,0.98), rgba(13,21,37,0.98))',
+          border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 30px 80px rgba(0,0,0,0.6)' }}>
         <div className="flex items-center justify-between p-5 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div>
             <h2 className="text-base font-black text-slate-100">Bulk {actionLabel} — Results</h2>
@@ -269,20 +299,14 @@ function ResultsModal({ results, actionLabel, onClose }) {
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
           {results.map((r, i) => (
-            <motion.div
-              key={r.botId}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
+            <motion.div key={r.botId} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.03 }}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm"
-              style={{
-                background: r.status === 'ok' ? 'rgba(5,150,105,0.08)' : 'rgba(220,38,38,0.08)',
-                borderColor: r.status === 'ok' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
-              }}
-            >
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
+              style={{ background: r.status === 'ok' ? 'rgba(5,150,105,0.08)' : 'rgba(220,38,38,0.08)',
+                borderColor: r.status === 'ok' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)' }}>
               <span className="text-base shrink-0">{r.status === 'ok' ? '✅' : '❌'}</span>
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-slate-200 truncate">{r.name}</p>
+                <p className="font-bold text-slate-200 truncate text-sm">{r.name}</p>
                 <p className="text-[10px] font-mono truncate"
                   style={{ color: r.status === 'ok' ? 'rgba(52,211,153,0.7)' : 'rgba(248,113,113,0.7)' }}>
                   {r.message}
@@ -300,63 +324,6 @@ function ResultsModal({ results, actionLabel, onClose }) {
   );
 }
 
-// ── Action Button ──────────────────────────────────────────────────────────
-function ActionButton({ action, busy, onClick, index }) {
-  const [hovered, setHovered] = useState(false);
-  const isLoading = busy === action.key;
-
-  return (
-    <motion.button
-      initial={{ opacity: 0, y: 20, scale: 0.85 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 26, delay: index * 0.045 }}
-      onClick={onClick}
-      disabled={!!busy}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="flex flex-col items-center gap-2 py-3 px-2 rounded-xl font-black text-[9px] uppercase tracking-widest flex-1 min-w-[68px] relative overflow-hidden transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
-      style={{
-        background: hovered ? action.hoverBg : action.bg,
-        border: `1px solid ${action.border}`,
-        color: action.color,
-        boxShadow: hovered ? `0 8px 24px ${action.shadow}` : `0 2px 8px ${action.shadow}`,
-      }}
-      title={action.label}
-    >
-      {/* Glow sweep on hover */}
-      <AnimatePresence>
-        {hovered && (
-          <motion.div
-            initial={{ opacity: 0, x: '-100%' }}
-            animate={{ opacity: 1, x: '100%' }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${action.color}18, transparent)`,
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      {isLoading ? (
-        <>
-          <svg className="animate-spin w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-          </svg>
-          <span>Working</span>
-        </>
-      ) : (
-        <>
-          <span className="relative z-10">{action.icon}</span>
-          <span className="relative z-10">{action.label}</span>
-        </>
-      )}
-    </motion.button>
-  );
-}
-
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function MultiManage() {
   const { bots, groups, refresh } = useData();
@@ -368,62 +335,35 @@ export default function MultiManage() {
   const [confirm, setConfirm]    = useState(null);
   const [lastAction, setLastAction] = useState('');
 
-  // ── Filtering ──────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    return bots.filter((b) => {
-      const matchSearch =
-        !search.trim() ||
-        b.name.toLowerCase().includes(search.toLowerCase()) ||
-        b.botID.toLowerCase().includes(search.toLowerCase()) ||
-        b.buyerID.toLowerCase().includes(search.toLowerCase());
-      const matchStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'online'  && b.live?.status === 'online') ||
-        (statusFilter === 'stopped' && b.live?.status !== 'online');
-      return matchSearch && matchStatus;
-    });
-  }, [bots, search, statusFilter]);
+  const filtered = useMemo(() => bots.filter((b) => {
+    const matchSearch =
+      !search.trim() ||
+      b.name.toLowerCase().includes(search.toLowerCase()) ||
+      b.botID.toLowerCase().includes(search.toLowerCase()) ||
+      b.buyerID.toLowerCase().includes(search.toLowerCase());
+    const matchStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'online'  && b.live?.status === 'online') ||
+      (statusFilter === 'stopped' && b.live?.status !== 'online');
+    return matchSearch && matchStatus;
+  }), [bots, search, statusFilter]);
 
-  const groupMap = useMemo(() => Object.fromEntries(groups.map((g) => [g._id, g])), [groups]);
-
+  const groupMap    = useMemo(() => Object.fromEntries(groups.map((g) => [g._id, g])), [groups]);
   const botsByGroup = useMemo(() =>
-    groups
-      .map((g) => ({ group: g, bots: filtered.filter((b) => b.groupId === g._id) }))
-      .filter((s) => s.bots.length > 0),
+    groups.map((g) => ({ group: g, bots: filtered.filter((b) => b.groupId === g._id) })).filter((s) => s.bots.length > 0),
   [groups, filtered]);
+  const ungrouped   = useMemo(() => filtered.filter((b) => !b.groupId || !groupMap[b.groupId]), [filtered, groupMap]);
 
-  const ungrouped = useMemo(() =>
-    filtered.filter((b) => !b.groupId || !groupMap[b.groupId]),
-  [filtered, groupMap]);
-
-  // ── Selection helpers ──────────────────────────────────────────────────
-  const toggleBot = (botId) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(botId) ? next.delete(botId) : next.add(botId);
-      return next;
-    });
-
-  const toggleGroup = (botIds, add) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      botIds.forEach((id) => (add ? next.add(id) : next.delete(id)));
-      return next;
-    });
-
+  const toggleBot   = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleGroup = (ids, add) => setSelected((prev) => { const n = new Set(prev); ids.forEach((id) => add ? n.add(id) : n.delete(id)); return n; });
   const selectAll   = () => setSelected(new Set(filtered.map((b) => b._id)));
   const deselectAll = () => setSelected(new Set());
 
-  // Clean up stale selections when filter changes
   useEffect(() => {
-    const filteredIds = new Set(filtered.map((b) => b._id));
-    setSelected((prev) => {
-      const next = new Set([...prev].filter((id) => filteredIds.has(id)));
-      return next.size !== prev.size ? next : prev;
-    });
+    const ids = new Set(filtered.map((b) => b._id));
+    setSelected((prev) => { const n = new Set([...prev].filter((id) => ids.has(id))); return n.size !== prev.size ? n : prev; });
   }, [filtered]);
 
-  // ── Execute bulk action ────────────────────────────────────────────────
   const executeBulk = async (action) => {
     if (selected.size === 0) return;
     setBusy(action);
@@ -432,8 +372,8 @@ export default function MultiManage() {
       const { data } = await api.post(`/bulk/${action}`, { botIds: [...selected] });
       setResults(data.results);
       if (action === 'remove') {
-        const removedIds = new Set(data.results.filter((r) => r.status === 'ok').map((r) => r.botId));
-        setSelected((prev) => new Set([...prev].filter((id) => !removedIds.has(id))));
+        const removed = new Set(data.results.filter((r) => r.status === 'ok').map((r) => r.botId));
+        setSelected((prev) => new Set([...prev].filter((id) => !removed.has(id))));
       }
       refresh();
     } catch (err) {
@@ -448,35 +388,31 @@ export default function MultiManage() {
     else executeBulk(action);
   };
 
-  const selectedCount = selected.size;
+  const selectedCount       = selected.size;
+  const hasSelection        = selectedCount > 0;
   const allFilteredSelected = filtered.length > 0 && filtered.every((b) => selected.has(b._id));
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-      className="p-5 lg:p-7 max-w-5xl mx-auto space-y-6 pb-52 lg:pb-8">
+    <div className="p-5 lg:p-7 max-w-5xl mx-auto space-y-5">
 
-      {/* ── Header ── */}
+      {/* ── Page header ── */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl lg:text-3xl font-black text-slate-100 tracking-tight">Multi Manage</h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
             Bulk operations on <span className="text-violet-400 font-bold">{bots.length}</span> instances
           </p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex items-center gap-2">
           <button onClick={allFilteredSelected ? deselectAll : selectAll} className="btn-ghost text-xs">
             {allFilteredSelected ? 'Deselect All' : 'Select All'}
           </button>
           <AnimatePresence>
-            {selectedCount > 0 && (
-              <motion.span
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
+            {hasSelection && (
+              <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }}
                 className="text-[10px] font-black px-3 py-1.5 rounded-full"
-                style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa' }}
-              >
+                style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa' }}>
                 {selectedCount} selected
               </motion.span>
             )}
@@ -484,8 +420,101 @@ export default function MultiManage() {
         </div>
       </motion.div>
 
+      {/* ══════════════════════════════════════════════════════════════════
+          ALWAYS-VISIBLE ACTION TOOLBAR
+      ══════════════════════════════════════════════════════════════════ */}
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.06 }}
+        className="relative rounded-2xl overflow-hidden"
+        style={{
+          // Glowing border when active, subtle when idle
+          boxShadow: hasSelection
+            ? '0 0 0 1px rgba(124,58,237,0.4), 0 8px 32px rgba(124,58,237,0.15), 0 2px 8px rgba(0,0,0,0.4)'
+            : '0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.3)',
+          transition: 'box-shadow 0.4s ease',
+        }}
+      >
+        {/* Animated glow halo when active */}
+        <AnimatePresence>
+          {hasSelection && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.35 }}
+              className="absolute -inset-[1px] rounded-2xl pointer-events-none"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(79,70,229,0.2), rgba(16,185,129,0.12))',
+                filter: 'blur(4px)',
+              }}
+            />
+          )}
+        </AnimatePresence>
+
+        <div className="relative rounded-2xl p-4"
+          style={{
+            background: 'linear-gradient(160deg, rgba(13,18,30,0.97) 0%, rgba(8,12,22,0.97) 100%)',
+            border: `1px solid ${hasSelection ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.06)'}`,
+            transition: 'border-color 0.4s ease',
+          }}>
+
+          {/* Toolbar header */}
+          <div className="flex items-center gap-3 mb-3">
+            {/* Status indicator */}
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2 shrink-0">
+                {hasSelection && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-60"/>}
+                <span className="relative inline-flex h-2 w-2 rounded-full transition-colors duration-300"
+                  style={{ background: hasSelection ? '#a78bfa' : '#334155' }}/>
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-[0.14em] transition-colors duration-300"
+                style={{ color: hasSelection ? '#c4b5fd' : '#475569' }}>
+                {hasSelection
+                  ? `${selectedCount} bot${selectedCount !== 1 ? 's' : ''} ready`
+                  : 'Select bots to enable actions'}
+              </span>
+            </div>
+
+            <div className="flex-1"/>
+
+            {/* Clear button — only when active */}
+            <AnimatePresence>
+              {hasSelection && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  onClick={deselectAll}
+                  className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all"
+                  style={{ color: '#64748b', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#e2e8f0'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                >
+                  Clear ✕
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Action buttons row */}
+          <div className="flex gap-2 flex-wrap">
+            {ACTIONS.map((action) => (
+              <ActionButton
+                key={action.key}
+                action={action}
+                busy={busy}
+                disabled={!hasSelection}
+                onClick={() => handleAction(action.key)}
+              />
+            ))}
+          </div>
+        </div>
+      </motion.div>
+
       {/* ── Filters ── */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
         className="flex flex-col lg:flex-row lg:items-center gap-3 rounded-2xl p-3 lg:p-4"
         style={{ background: 'rgba(13,21,37,0.7)', border: '1px solid rgba(255,255,255,0.05)', backdropFilter: 'blur(12px)' }}>
         <div className="relative w-full lg:max-w-xs">
@@ -494,8 +523,9 @@ export default function MultiManage() {
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
           </div>
-          <input className="input pl-9" placeholder="Search bots…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input pl-9" placeholder="Search bots…" value={search} onChange={(e) => setSearch(e.target.value)}/>
         </div>
+
         <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(6,11,20,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
           {['all', 'online', 'stopped'].map((f) => {
             const isActive = statusFilter === f;
@@ -507,13 +537,14 @@ export default function MultiManage() {
                 {isActive && (
                   <motion.div layoutId="multiFilterPill" className="absolute inset-0 rounded-lg" initial={false}
                     transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-                    style={{ background: 'linear-gradient(135deg,#7C3AED,#4F46E5)', boxShadow: '0 4px 14px rgba(124,58,237,0.35)' }} />
+                    style={{ background: 'linear-gradient(135deg,#7C3AED,#4F46E5)', boxShadow: '0 4px 14px rgba(124,58,237,0.35)' }}/>
                 )}
                 <span className="relative" style={{ zIndex: 2 }}>{f}</span>
               </button>
             );
           })}
         </div>
+
         <span className="text-[10px] font-mono text-slate-600 ml-auto hidden lg:inline">
           {filtered.length} / {bots.length} bots
         </span>
@@ -521,7 +552,7 @@ export default function MultiManage() {
 
       {/* ── Bot List ── */}
       {filtered.length === 0 ? (
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
           className="flex flex-col items-center justify-center py-24 rounded-2xl"
           style={{ border: '1px dashed rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.01)' }}>
           <div className="text-5xl mb-4 opacity-30">⚡</div>
@@ -530,83 +561,20 @@ export default function MultiManage() {
           </p>
         </motion.div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 pb-8">
           {botsByGroup.map(({ group, bots: gb }) => (
             <GroupSection key={group._id} label={group.name} color={group.color}
-              bots={gb} selected={selected} onToggleBot={toggleBot} onToggleGroup={toggleGroup} />
+              bots={gb} selected={selected} onToggleBot={toggleBot} onToggleGroup={toggleGroup}/>
           ))}
           {ungrouped.length > 0 && (
             <GroupSection label="Ungrouped" color="#64748b"
-              bots={ungrouped} selected={selected} onToggleBot={toggleBot} onToggleGroup={toggleGroup} />
+              bots={ungrouped} selected={selected} onToggleBot={toggleBot} onToggleGroup={toggleGroup}/>
           )}
         </div>
       )}
 
-      {/* ── Sticky Action Bar ── */}
-      <AnimatePresence>
-        {selectedCount > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 48, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 48, scale: 0.9 }}
-            transition={{ type: 'spring', stiffness: 360, damping: 28 }}
-            className="fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl"
-          >
-            {/* Outer glow ring */}
-            <div className="absolute -inset-[2px] rounded-[22px] pointer-events-none"
-              style={{
-                background: 'linear-gradient(135deg, rgba(124,58,237,0.5), rgba(79,70,229,0.3), rgba(16,185,129,0.2))',
-                filter: 'blur(6px)',
-                opacity: 0.7,
-              }} />
-
-            <div className="relative rounded-2xl p-4" style={{
-              background: 'linear-gradient(160deg, rgba(13,18,30,0.98) 0%, rgba(8,12,22,0.98) 100%)',
-              border: '1px solid rgba(124,58,237,0.25)',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)',
-              backdropFilter: 'blur(24px)',
-            }}>
-              {/* Header row */}
-              <div className="flex items-center gap-3 mb-3">
-                {/* Pulsing dot */}
-                <span className="relative flex h-2 w-2 shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-60" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-400" />
-                </span>
-                <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-300">
-                  {selectedCount} bot{selectedCount !== 1 ? 's' : ''} selected
-                </span>
-                <div className="flex-1" />
-                <button onClick={deselectAll}
-                  className="text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all"
-                  style={{ color: '#64748b', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = '#e2e8f0'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; }}>
-                  Clear ✕
-                </button>
-              </div>
-
-              {/* Action buttons — staggered pop-in */}
-              <div className="flex gap-2 flex-wrap">
-                {ACTIONS.map((action, i) => (
-                  <ActionButton
-                    key={action.key}
-                    action={action}
-                    busy={busy}
-                    onClick={() => handleAction(action.key)}
-                    index={i}
-                  />
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* ── Results modal ── */}
-      {results && (
-        <ResultsModal results={results} actionLabel={lastAction} onClose={() => setResults(null)} />
-      )}
+      {results && <ResultsModal results={results} actionLabel={lastAction} onClose={() => setResults(null)}/>}
 
       {/* ── Confirm remove ── */}
       {confirm?.action === 'remove' && (
@@ -618,6 +586,6 @@ export default function MultiManage() {
           onCancel={() => setConfirm(null)}
         />
       )}
-    </motion.div>
+    </div>
   );
 }
