@@ -521,19 +521,19 @@ function GitHubSection() {
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 gap-3">
-                            <div>
+                            <div className="min-w-0">
                                 <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                                     user.name
                                 </p>
-                                <p className="text-sm text-slate-200 font-mono mt-0.5">
+                                <p className="text-sm text-slate-200 font-mono mt-0.5 truncate" title={gitConfig.name || ""}>
                                     {gitConfig.name || <span className="text-slate-600 italic">Not set</span>}
                                 </p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                                 <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                                     user.email
                                 </p>
-                                <p className="text-sm text-slate-200 font-mono mt-0.5">
+                                <p className="text-sm text-slate-200 font-mono mt-0.5 truncate" title={gitConfig.email || ""}>
                                     {gitConfig.email || <span className="text-slate-600 italic">Not set</span>}
                                 </p>
                             </div>
