@@ -576,10 +576,11 @@ function ResultsModal({ results, actionLabel, onClose }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function MultiManage() {
-    const { bots, groups, refresh } = useData();
+    const { bots, groups, tags, refresh } = useData();
     const [selected, setSelected] = useState(new Set());
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
+    const [selectedTags, setSelectedTags] = useState([]);
     const [busy, setBusy] = useState(null);
     const [results, setResults] = useState(null);
     const [confirm, setConfirm] = useState(null);
@@ -592,16 +593,28 @@ export default function MultiManage() {
                     !search.trim() ||
                     b.name.toLowerCase().includes(search.toLowerCase()) ||
                     b.botID.toLowerCase().includes(search.toLowerCase()) ||
-                    b.buyerID.toLowerCase().includes(search.toLowerCase());
+                    b.buyerID.toLowerCase().includes(search.toLowerCase()) ||
+                    (b.tags || []).some((tid) => {
+                        const tag = tags.find((t) => t._id === tid);
+                        return tag?.name.toLowerCase().includes(search.toLowerCase());
+                    });
                 const matchStatus =
                     statusFilter === "all" ||
                     (statusFilter === "online" &&
                         b.live?.status === "online") ||
                     (statusFilter === "stopped" && b.live?.status !== "online");
-                return matchSearch && matchStatus;
+                const matchTags =
+                    selectedTags.length === 0 ||
+                    selectedTags.some((tid) => (b.tags || []).includes(tid));
+                return matchSearch && matchStatus && matchTags;
             }),
-        [bots, search, statusFilter],
+        [bots, search, statusFilter, selectedTags, tags],
     );
+
+    const toggleTag = (tagId) =>
+        setSelectedTags((prev) =>
+            prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId]
+        );
 
     const groupMap = useMemo(
         () => Object.fromEntries(groups.map((g) => [g._id, g])),
@@ -928,6 +941,47 @@ export default function MultiManage() {
                     {filtered.length} / {bots.length} bots
                 </span>
             </motion.div>
+
+            {/* ── Tag filter pills ── */}
+            {tags.length > 0 && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.15 }}
+                    className="flex flex-wrap gap-2 items-center px-1"
+                >
+                    <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-600 shrink-0">Tags:</span>
+                    {selectedTags.length > 0 && (
+                        <button
+                            onClick={() => setSelectedTags([])}
+                            className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors"
+                            style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}
+                        >
+                            ✕ Clear
+                        </button>
+                    )}
+                    {tags.map((tag) => {
+                        const isActive = selectedTags.includes(tag._id);
+                        return (
+                            <button
+                                key={tag._id}
+                                onClick={() => toggleTag(tag._id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.07em] transition-all duration-150"
+                                style={{
+                                    background: isActive ? `${tag.color}22` : "rgba(255,255,255,0.03)",
+                                    border: `1px solid ${isActive ? tag.color + "55" : "rgba(255,255,255,0.07)"}`,
+                                    color: isActive ? tag.color : "#64748b",
+                                    transform: isActive ? "scale(1.05)" : "scale(1)",
+                                    boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
+                                }}
+                            >
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: isActive ? tag.color : "#64748b" }} />
+                                {tag.name}
+                            </button>
+                        );
+                    })}
+                </motion.div>
+            )}
 
             {/* ── Bot List ── */}
             {filtered.length === 0 ? (

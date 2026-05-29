@@ -325,13 +325,14 @@ export default function Layout() {
                     border: "1px solid rgba(255,255,255,0.08)",
                     boxShadow: "0 -4px 24px rgba(0,0,0,0.4), 0 8px 32px rgba(0,0,0,0.3)",
                 }}>
-                <div className="flex items-center justify-around px-2 py-2">
+                <div className="flex items-center overflow-x-auto no-scrollbar px-1 py-1.5"
+                    style={{ scrollbarWidth: "none" }}>
                     {NAV_ITEMS.map(({ to, icon, label }) => (
                         <NavLink
                             key={to}
                             to={to}
                             className={({ isActive }) =>
-                                `flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-200 ${
+                                `flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 shrink-0 min-w-[52px] ${
                                     isActive
                                         ? "text-violet-400"
                                         : "text-slate-600 hover:text-slate-400"
@@ -343,7 +344,7 @@ export default function Layout() {
                                     <div className={`transition-all duration-200 ${isActive ? "scale-110" : ""}`}>
                                         {icon}
                                     </div>
-                                    <span className={`text-[9px] font-black uppercase tracking-wider leading-none ${isActive ? "text-violet-400" : ""}`}>
+                                    <span className={`text-[8px] font-black uppercase tracking-wide leading-none ${isActive ? "text-violet-400" : ""}`}>
                                         {label.split(" ")[0]}
                                     </span>
                                     {isActive && (

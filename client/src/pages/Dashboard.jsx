@@ -6,7 +6,6 @@ import BotCard from "../components/BotCard";
 import CreateBotModal from "../components/CreateBotModal";
 import GroupManager from "../components/GroupManager";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 
 // ── Stat card ──────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, color, glow, delay = 0 }) {
@@ -84,7 +83,6 @@ function GroupSection({ label, color, bots, onRefresh, defaultOpen = true }) {
 // ── Dashboard ──────────────────────────────────────────────────────────────
 export default function Dashboard() {
     const { bots, groups, tags, loading, refresh: fetchAll } = useData();
-    const navigate = useNavigate();
     const [showCreate, setShowCreate] = useState(false);
     const [showGroups, setShowGroups] = useState(false);
     const [search, setSearch] = useState("");
@@ -143,32 +141,10 @@ export default function Dashboard() {
                         Monitoring <span className="text-violet-400 font-bold">{bots.length}</span> bot instances
                     </p>
                 </div>
-                <div className="flex gap-2 flex-wrap sm:flex-nowrap">
-                    <button
-                        id="btn-manage-groups"
-                        className="btn-ghost text-xs flex-1 sm:flex-none"
-                        onClick={() => setShowGroups(true)}
-                    >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                        </svg>
-                        Groups
-                    </button>
-                    <button
-                        id="btn-manage-tags-shortcut"
-                        className="btn-ghost text-xs flex-1 sm:flex-none"
-                        onClick={() => navigate("/tags")}
-                    >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-                            <line x1="7" y1="7" x2="7.01" y2="7"/>
-                        </svg>
-                        Tags
-                    </button>
+                <div className="flex gap-2">
                     <button
                         id="btn-create-bot"
-                        className="btn-primary text-xs flex-1 sm:flex-none"
+                        className="btn-primary text-xs"
                         onClick={() => setShowCreate(true)}
                     >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">

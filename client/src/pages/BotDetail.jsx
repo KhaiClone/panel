@@ -215,7 +215,7 @@ export default function BotDetail() {
   const isLocal    = bot.source === 'local';
   const msLeft     = bot.expiresAt ? bot.expiresAt - Date.now() : null;
   const currentGroup = groups.find((g) => g._id === bot.groupId);
-  const botTags    = (bot.tags || []).map((id) => allTags.find((t) => t._id === id)).filter(Boolean);
+  const botTags    = (bot.tags || []).map((tagId) => allTags.find((t) => t._id === tagId)).filter(Boolean);
   const memPercent   = getMemoryPercent(bot.live?.memory, bot.maxMemory);
   const memLimitBytes = parseMemLimit(bot.maxMemory);
   const cpuPct = parseFloat((bot.live?.cpu ?? 0).toFixed(1));
