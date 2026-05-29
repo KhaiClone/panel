@@ -12,28 +12,24 @@ import ProxyPage from "./pages/ProxyPage";
 import TagsPage from "./pages/TagsPage";
 import Layout from "./components/Layout";
 
-// ── Auth Guard ─────────────────────────────────────────────────────────────
 function PrivateRoute({ children }) {
     const { user, loading } = useAuth();
-
     if (loading) {
         return (
-            <div className="flex h-screen items-center justify-center" style={{ background: "var(--bg-base)" }}>
-                <div className="flex flex-col items-center gap-4">
-                    <div className="relative w-14 h-14">
-                        <div className="absolute inset-0 rounded-full" style={{ border: "3px solid rgba(124,58,237,0.12)" }} />
-                        <div className="absolute inset-0 rounded-full animate-spin" style={{ border: "3px solid transparent", borderTopColor: "#7C3AED" }} />
-                        {/* Inner dot */}
-                        <div className="absolute inset-[18px] rounded-full animate-pulse" style={{ background: "rgba(124,58,237,0.5)" }} />
-                    </div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600 animate-pulse">
-                        Initializing
-                    </p>
-                </div>
+            <div style={{
+                display: "flex", height: "100vh", alignItems: "center", justifyContent: "center",
+                background: "var(--bg)", flexDirection: "column", gap: 12
+            }}>
+                <div style={{
+                    width: 32, height: 32, borderRadius: "50%",
+                    border: "3px solid var(--border)", borderTopColor: "var(--accent)",
+                    animation: "spin 0.8s linear infinite",
+                }}/>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading…</p>
             </div>
         );
     }
-
     return user ? children : <Navigate to="/login" replace />;
 }
 
@@ -43,10 +39,7 @@ export default function App() {
             <DataProvider>
                 <BrowserRouter>
                     <Routes>
-                        {/* Public */}
                         <Route path="/login" element={<Login />} />
-
-                        {/* Protected — wrapped in sidebar layout */}
                         <Route
                             path="/"
                             element={
@@ -65,8 +58,6 @@ export default function App() {
                             <Route path="tags"         element={<TagsPage />} />
                             <Route path="system"       element={<SystemPage />} />
                         </Route>
-
-                        {/* Fallback */}
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Routes>
                 </BrowserRouter>

@@ -34,7 +34,6 @@
         "@codemirror/view": "^6.41.1",
         "axios": "^1.6.0",
         "codemirror": "^6.0.2",
-        "framer-motion": "^12.38.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "react-router-dom": "^6.22.0",

@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
     if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
@@ -24,117 +23,53 @@ const fmtUptime = (ts) => {
     return `${day}d ${hr % 24}h`;
 };
 
-// ── Status config ──────────────────────────────────────────────────────────
-const STATUS_MAP = {
-    online: { label: "Online", color: "text-emerald-400", bg: "bg-emerald-500/10", ring: "ring-emerald-500/30", dot: "bg-emerald-400", glow: "shadow-emerald-500/20" },
-    stopping: { label: "Stopping", color: "text-amber-400", bg: "bg-amber-500/10", ring: "ring-amber-500/30", dot: "bg-amber-400", glow: "shadow-amber-500/20" },
-    stopped: { label: "Stopped", color: "text-slate-400", bg: "bg-slate-500/10", ring: "ring-slate-500/30", dot: "bg-slate-400", glow: "shadow-slate-500/20" },
-    errored: { label: "Errored", color: "text-red-400", bg: "bg-red-500/10", ring: "ring-red-500/30", dot: "bg-red-400", glow: "shadow-red-500/20" },
-    launching: { label: "Launching", color: "text-blue-400", bg: "bg-blue-500/10", ring: "ring-blue-500/30", dot: "bg-blue-400", glow: "shadow-blue-500/20" },
-    not_found: { label: "Not Found", color: "text-slate-500", bg: "bg-slate-500/10", ring: "ring-slate-500/30", dot: "bg-slate-500", glow: "shadow-slate-500/20" },
-    unknown: { label: "Unknown", color: "text-slate-500", bg: "bg-slate-500/10", ring: "ring-slate-500/30", dot: "bg-slate-500", glow: "shadow-slate-500/20" },
-};
-
-// ── Reconnect overlay ──────────────────────────────────────────────────────
 function ReconnectOverlay({ onReconnected }) {
     const [dots, setDots] = useState("");
     const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
-        const dotTimer = setInterval(() => {
-            setDots((d) => (d.length >= 3 ? "" : d + "."));
-        }, 500);
+        const dotTimer = setInterval(() => setDots(d => (d.length >= 3 ? "" : d + ".")), 500);
         return () => clearInterval(dotTimer);
     }, []);
 
     useEffect(() => {
         const timer = setInterval(async () => {
-            setAttempt((a) => a + 1);
-            try {
-                await api.get("/panel/status");
-                onReconnected();
-            } catch {
-                // still down
-            }
+            setAttempt(a => a + 1);
+            try { await api.get("/panel/status"); onReconnected(); } catch { /* ignore */ }
         }, 2000);
         return () => clearInterval(timer);
     }, [onReconnected]);
 
-    return (
-        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl flex flex-col items-center justify-center gap-6">
-            <div className="relative">
-                <div className="w-20 h-20 rounded-full border-4 border-indigo-500/30 border-t-indigo-500 animate-spin" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-3xl">🔄</span>
-                </div>
+    return createPortal(
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", border: "4px solid rgba(91,115,232,0.3)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }}/>
+            <div style={{ textAlign: "center" }}>
+                <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: "0 0 8px 0" }}>Panel Restarting{dots}</h2>
+                <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 4px 0" }}>Waiting for the panel to come back online</p>
+                <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>Attempt #{attempt}</p>
             </div>
-            <div className="text-center space-y-2">
-                <h2 className="text-xl font-bold text-slate-100">
-                    Panel Restarting{dots}
-                </h2>
-                <p className="text-sm text-slate-400">
-                    Waiting for the panel to come back online
-                </p>
-                <p className="text-xs text-slate-600">
-                    Attempt #{attempt}
-                </p>
+        </div>,
+        document.body
+    );
+}
+
+function StatCard({ icon, label, value, sub, accent = "var(--text)" }) {
+    return (
+        <div className="card" style={{ display: "flex", alignItems: "center", gap: 12, padding: 16 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                {icon}
+            </div>
+            <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 2px 0" }}>{label}</p>
+                <p style={{ fontSize: 18, fontWeight: 700, color: accent, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</p>
+                {sub && <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "2px 0 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</p>}
             </div>
         </div>
     );
 }
 
-// ── Stat card ──────────────────────────────────────────────────────────────
-function StatCard({ icon, label, value, sub, accent = "text-slate-100" }) {
-    return (
-        <div className="card group hover:scale-[1.02] transition-transform duration-200">
-            <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-800/80 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">
-                    {icon}
-                </div>
-                <div className="min-w-0">
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{label}</p>
-                    <p className={`text-lg font-bold ${accent} truncate`}>{value}</p>
-                    {sub && <p className="text-[10px] text-slate-500 truncate">{sub}</p>}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// ── Action button ──────────────────────────────────────────────────────────
-function ActionButton({ icon, label, description, onClick, loading, disabled, color = "indigo" }) {
-    const colors = {
-        indigo: "from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 shadow-indigo-600/20 disabled:from-indigo-900 disabled:to-indigo-900",
-        amber: "from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 shadow-amber-600/20 disabled:from-amber-900 disabled:to-amber-900",
-        rose: "from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 shadow-rose-600/20 disabled:from-rose-900 disabled:to-rose-900",
-    };
-
-    return (
-        <button
-            onClick={onClick}
-            disabled={loading || disabled}
-            className={`relative w-full p-4 rounded-xl bg-gradient-to-br ${colors[color]} shadow-lg text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 group`}
-        >
-            <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center text-lg shrink-0">
-                    {loading ? (
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                        icon
-                    )}
-                </div>
-                <div className="min-w-0">
-                    <p className="font-bold text-white text-sm">{label}</p>
-                    <p className="text-[11px] text-white/60 truncate">{description}</p>
-                </div>
-            </div>
-        </button>
-    );
-}
-
-// ── Add Key Modal ──────────────────────────────────────────────────────────
 function AddKeyModal({ onClose, onCreated }) {
-    const [mode, setMode] = useState("generate"); // "generate" | "import"
+    const [mode, setMode] = useState("generate");
     const [name, setName] = useState("");
     const [comment, setComment] = useState("");
     const [privateKey, setPrivateKey] = useState("");
@@ -142,158 +77,63 @@ function AddKeyModal({ onClose, onCreated }) {
     const [error, setError] = useState("");
 
     const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError("");
-        setLoading(true);
+        e.preventDefault(); setError(""); setLoading(true);
         try {
-            const payload =
-                mode === "generate"
-                    ? { name, mode: "generate", comment }
-                    : { name, mode: "import", privateKey };
+            const payload = mode === "generate" ? { name, mode: "generate", comment } : { name, mode: "import", privateKey };
             const { data } = await api.post("/github/keys", payload);
-            onCreated(data);
-            onClose();
-        } catch (err) {
-            setError(err.response?.data?.error || "Failed to add key");
-        } finally {
-            setLoading(false);
-        }
+            onCreated(data); onClose();
+        } catch (err) { setError(err.response?.data?.error || "Failed to add key"); }
+        finally { setLoading(false); }
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-            <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
-                    <h2 className="text-lg font-semibold text-slate-100">
-                        🔑 Add SSH Key
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="text-slate-500 hover:text-slate-300 text-xl leading-none"
-                    >
-                        ✕
-                    </button>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div className="card" style={{ maxWidth: 500, width: "100%", padding: 0, display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>🔑 Add SSH Key</h2>
+                    <button onClick={onClose} className="btn-ghost" style={{ padding: "4px 8px" }}>✕</button>
                 </div>
-
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    {/* Mode toggle */}
+                <form onSubmit={handleSubmit} style={{ padding: 20, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
                     <div>
                         <label className="label">Mode</label>
-                        <div className="flex gap-2 mt-1">
-                            {[
-                                { v: "generate", l: "🔧 Generate New Key" },
-                                { v: "import", l: "📋 Import Existing" },
-                            ].map(({ v, l }) => (
-                                <button
-                                    key={v}
-                                    type="button"
-                                    onClick={() => setMode(v)}
-                                    className={`relative flex-1 py-2 rounded-lg text-sm font-medium border transition-all overflow-hidden ${
-                                        mode === v
-                                            ? "border-indigo-500/50 text-indigo-400 bg-indigo-500/10"
-                                            : "bg-slate-700/30 border-slate-700/50 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
-                                    }`}
-                                >
-                                    {l}
-                                </button>
-                            ))}
+                        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                            <button type="button" onClick={() => setMode("generate")} className={mode === "generate" ? "btn-primary" : "btn-ghost"} style={{ flex: 1 }}>🔧 Generate</button>
+                            <button type="button" onClick={() => setMode("import")} className={mode === "import" ? "btn-primary" : "btn-ghost"} style={{ flex: 1 }}>📋 Import</button>
                         </div>
                     </div>
-
-                    {/* Key name */}
                     <div>
                         <label className="label">Key Name *</label>
-                        <input
-                            className="input font-mono"
-                            placeholder="github_myaccount"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            required
-                            pattern="[a-zA-Z0-9_-]+"
-                            title="Letters, numbers, hyphens, underscores only"
-                        />
-                        <p className="text-xs text-slate-500 mt-1">
-                            Will be saved as <code className="text-indigo-400">~/.ssh/{name || "..."}</code>
-                        </p>
+                        <input className="input mono" placeholder="github_myaccount" value={name} onChange={e => setName(e.target.value)} required pattern="[a-zA-Z0-9_-]+" />
+                        <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>Saved as ~/.ssh/{name || "..."}</p>
                     </div>
-
                     {mode === "generate" ? (
                         <div>
                             <label className="label">Email / Comment</label>
-                            <input
-                                className="input"
-                                placeholder="you@example.com"
-                                value={comment}
-                                onChange={(e) => setComment(e.target.value)}
-                            />
-                            <p className="text-xs text-slate-500 mt-1">
-                                Optional — used in the public key comment field
-                            </p>
+                            <input className="input" placeholder="you@example.com" value={comment} onChange={e => setComment(e.target.value)} />
                         </div>
                     ) : (
                         <div>
                             <label className="label">Private Key *</label>
-                            <textarea
-                                className="input font-mono text-xs min-h-[160px] resize-y"
-                                placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
-                                value={privateKey}
-                                onChange={(e) => setPrivateKey(e.target.value)}
-                                required={mode === "import"}
-                                spellCheck={false}
-                            />
-                            <p className="text-xs text-slate-500 mt-1">
-                                Paste your private key content. Public key will be auto-derived.
-                            </p>
+                            <textarea className="input mono" style={{ height: 160, resize: "vertical", fontSize: 12 }} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..." value={privateKey} onChange={e => setPrivateKey(e.target.value)} required spellCheck={false} />
                         </div>
                     )}
-
-                    {error && (
-                        <div className="bg-red-900/40 border border-red-700 text-red-400 text-sm rounded-lg px-3 py-2">
-                            {error}
-                        </div>
-                    )}
-
-                    {loading && (
-                        <div className="bg-indigo-900/40 border border-indigo-700 text-indigo-300 text-sm rounded-lg px-3 py-2">
-                            ⏳ {mode === "generate" ? "Generating key pair…" : "Importing key…"}
-                        </div>
-                    )}
-
-                    <div className="flex gap-3 justify-end pt-2">
-                        <button
-                            type="button"
-                            className="btn-ghost"
-                            onClick={onClose}
-                            disabled={loading}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            className="btn-primary"
-                            disabled={loading}
-                        >
-                            {loading
-                                ? "Adding…"
-                                : mode === "generate"
-                                  ? "🔧 Generate"
-                                  : "📋 Import Key"}
-                        </button>
+                    {error && <div style={{ padding: 12, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)", borderRadius: 8, fontSize: 13 }}>{error}</div>}
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+                        <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
+                        <button type="submit" className="btn-primary" disabled={loading}>{loading ? "Saving…" : "Save Key"}</button>
                     </div>
                 </form>
             </div>
         </div>,
-        document.body,
+        document.body
     );
 }
 
-// ── GitHub Section ─────────────────────────────────────────────────────────
 function GitHubSection() {
     const [keys, setKeys] = useState([]);
     const [keysLoading, setKeysLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
-    const [testResults, setTestResults] = useState({}); // { keyName: { loading, success, output } }
+    const [testResults, setTestResults] = useState({});
     const [copiedKey, setCopiedKey] = useState(null);
     const [gitConfig, setGitConfig] = useState({ name: "", email: "" });
     const [editingConfig, setEditingConfig] = useState(false);
@@ -304,393 +144,168 @@ function GitHubSection() {
 
     const fetchKeys = useCallback(async () => {
         setKeysLoading(true);
-        try {
-            const { data } = await api.get("/github/keys");
-            setKeys(data);
-        } catch {
-            // ignore
-        } finally {
-            setKeysLoading(false);
-        }
+        try { const { data } = await api.get("/github/keys"); setKeys(data); } catch { /* ignore */ }
+        finally { setKeysLoading(false); }
     }, []);
 
     const fetchGitConfig = useCallback(async () => {
-        try {
-            const { data } = await api.get("/github/git-config");
-            setGitConfig(data);
-            setConfigForm(data);
-        } catch {
-            // ignore
-        }
+        try { const { data } = await api.get("/github/git-config"); setGitConfig(data); setConfigForm(data); } catch { /* ignore */ }
     }, []);
 
-    useEffect(() => {
-        fetchKeys();
-        fetchGitConfig();
-    }, [fetchKeys, fetchGitConfig]);
+    useEffect(() => { fetchKeys(); fetchGitConfig(); }, [fetchKeys, fetchGitConfig]);
 
     const handleTest = async (keyName = null) => {
         const id = keyName || "__default__";
-        setTestResults((r) => ({ ...r, [id]: { loading: true } }));
+        setTestResults(r => ({ ...r, [id]: { loading: true } }));
         try {
             const url = keyName ? `/github/keys/${keyName}/test` : "/github/test";
             const { data } = await api.post(url);
-            setTestResults((r) => ({ ...r, [id]: { loading: false, ...data } }));
+            setTestResults(r => ({ ...r, [id]: { loading: false, ...data } }));
         } catch {
-            setTestResults((r) => ({
-                ...r,
-                [id]: { loading: false, success: false, output: "Request failed" },
-            }));
+            setTestResults(r => ({ ...r, [id]: { loading: false, success: false, output: "Request failed" } }));
         }
     };
 
     const handleCopy = async (publicKey, keyName) => {
         try {
             await navigator.clipboard.writeText(publicKey);
-            setCopiedKey(keyName);
-            setTimeout(() => setCopiedKey(null), 2000);
-        } catch {
-            // Fallback
-            const t = document.createElement("textarea");
-            t.value = publicKey;
-            document.body.appendChild(t);
-            t.select();
-            document.execCommand("copy");
-            document.body.removeChild(t);
-            setCopiedKey(keyName);
-            setTimeout(() => setCopiedKey(null), 2000);
-        }
+            setCopiedKey(keyName); setTimeout(() => setCopiedKey(null), 2000);
+        } catch { /* ignore */ }
     };
 
     const handleDelete = async (keyName) => {
-        try {
-            await api.delete(`/github/keys/${keyName}`);
-            setKeys((k) => k.filter((key) => key.name !== keyName));
-            setDeleteConfirm(null);
-        } catch {
-            // ignore
-        }
+        try { await api.delete(`/github/keys/${keyName}`); setKeys(k => k.filter(key => key.name !== keyName)); setDeleteConfirm(null); } catch { /* ignore */ }
     };
 
     const handleSaveConfig = async () => {
         setConfigSaving(true);
         try {
             const { data } = await api.put("/github/git-config", configForm);
-            setGitConfig(data);
-            setEditingConfig(false);
-        } catch {
-            // ignore
-        } finally {
-            setConfigSaving(false);
-        }
+            setGitConfig(data); setEditingConfig(false);
+        } catch { /* ignore */ }
+        finally { setConfigSaving(false); }
     };
 
     const defaultTest = testResults["__default__"];
 
     return (
-        <>
-            {/* Delete confirm modal */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {deleteConfirm && (
-                <ConfirmModal
-                    title={`Delete Key "${deleteConfirm}"`}
-                    message={`This will permanently delete the SSH key pair and its SSH config entry.\n\n⚠️ Any GitHub repos using this key will no longer be accessible.`}
-                    confirmText="Delete Key"
-                    onConfirm={() => handleDelete(deleteConfirm)}
-                    onCancel={() => setDeleteConfirm(null)}
-                />
+                <ConfirmModal title={`Delete Key "${deleteConfirm}"`} message={`This will permanently delete the SSH key pair and its SSH config entry.\n\n⚠️ Any GitHub repos using this key will no longer be accessible.`} confirmText="Delete Key" onConfirm={() => handleDelete(deleteConfirm)} onCancel={() => setDeleteConfirm(null)} />
             )}
+            {showAddModal && <AddKeyModal onClose={() => setShowAddModal(false)} onCreated={() => fetchKeys()} />}
 
-            {/* Add key modal */}
-            {showAddModal && (
-                <AddKeyModal
-                    onClose={() => setShowAddModal(false)}
-                    onCreated={() => fetchKeys()}
-                />
-            )}
-
-            <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-                        GitHub & SSH Keys
-                    </h2>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => handleTest(null)}
-                            disabled={defaultTest?.loading}
-                            className="text-xs text-slate-400 hover:text-slate-200 transition-colors px-2 py-1 rounded bg-slate-800/60 hover:bg-slate-700/60 disabled:opacity-50"
-                        >
-                            {defaultTest?.loading ? "Testing…" : "🔗 Test Default"}
-                        </button>
-                        <button
-                            onClick={() => setShowAddModal(true)}
-                            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors px-2 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30"
-                        >
-                            + Add Key
-                        </button>
-                    </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <h2 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>GitHub & SSH Keys</h2>
+                <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => handleTest(null)} disabled={defaultTest?.loading} className="btn-ghost" style={{ fontSize: 11, padding: "4px 8px" }}>
+                        {defaultTest?.loading ? "Testing…" : "🔗 Test Default"}
+                    </button>
+                    <button onClick={() => setShowAddModal(true)} className="btn-primary" style={{ fontSize: 11, padding: "4px 8px" }}>+ Add Key</button>
                 </div>
+            </div>
 
-                {/* Default test result */}
-                {defaultTest && !defaultTest.loading && (
-                    <div
-                        className={`card border text-sm ${
-                            defaultTest.success
-                                ? "border-emerald-500/30 bg-emerald-500/5"
-                                : "border-red-500/30 bg-red-500/5"
-                        }`}
-                    >
-                        <div className="flex items-center gap-2">
-                            <span>{defaultTest.success ? "✅" : "❌"}</span>
-                            <span className={defaultTest.success ? "text-emerald-400" : "text-red-400"}>
-                                {defaultTest.success ? "Connected" : "Connection Failed"}
-                            </span>
-                            <button
-                                onClick={() => setTestResults((r) => { const n = { ...r }; delete n["__default__"]; return n; })}
-                                className="ml-auto text-slate-500 hover:text-slate-300 text-xs"
-                            >
-                                Dismiss
-                            </button>
-                        </div>
-                        {defaultTest.output && (
-                            <pre className="text-xs text-slate-400 mt-2 font-mono whitespace-pre-wrap">
-                                {defaultTest.output}
-                            </pre>
-                        )}
+            {defaultTest && !defaultTest.loading && (
+                <div className="card" style={{ padding: 12, border: `1px solid ${defaultTest.success ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, background: defaultTest.success ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)' }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: defaultTest.output ? 8 : 0 }}>
+                        <span>{defaultTest.success ? "✅" : "❌"}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: defaultTest.success ? "#4ade80" : "#f87171" }}>{defaultTest.success ? "Connected" : "Connection Failed"}</span>
+                        <button onClick={() => setTestResults(r => { const n = { ...r }; delete n["__default__"]; return n; })} className="btn-ghost" style={{ marginLeft: "auto", fontSize: 11, padding: "2px 6px" }}>Dismiss</button>
                     </div>
-                )}
+                    {defaultTest.output && <pre className="mono" style={{ fontSize: 11, color: "var(--text-dim)", margin: 0, whiteSpace: "pre-wrap" }}>{defaultTest.output}</pre>}
+                </div>
+            )}
 
-                {/* Git Config */}
-                <div className="card">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                            <span className="text-lg">⚙️</span>
-                            <h3 className="text-sm font-bold text-slate-200">Git Global Config</h3>
-                        </div>
-                        {!editingConfig ? (
-                            <button
-                                onClick={() => {
-                                    setConfigForm(gitConfig);
-                                    setEditingConfig(true);
-                                }}
-                                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                            >
-                                ✏️ Edit
-                            </button>
-                        ) : (
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setEditingConfig(false)}
-                                    className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleSaveConfig}
-                                    disabled={configSaving}
-                                    className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50"
-                                >
-                                    {configSaving ? "Saving…" : "💾 Save"}
-                                </button>
-                            </div>
-                        )}
+            <div className="card" style={{ padding: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span>⚙️</span><h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Git Global Config</h3>
                     </div>
-                    {editingConfig ? (
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                                    user.name
-                                </label>
-                                <input
-                                    className="input mt-1 text-sm"
-                                    value={configForm.name}
-                                    onChange={(e) => setConfigForm((f) => ({ ...f, name: e.target.value }))}
-                                    placeholder="Your Name"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                                    user.email
-                                </label>
-                                <input
-                                    className="input mt-1 text-sm"
-                                    value={configForm.email}
-                                    onChange={(e) => setConfigForm((f) => ({ ...f, email: e.target.value }))}
-                                    placeholder="you@example.com"
-                                />
-                            </div>
-                        </div>
+                    {!editingConfig ? (
+                        <button onClick={() => { setConfigForm(gitConfig); setEditingConfig(true); }} className="btn-ghost" style={{ fontSize: 11, padding: "4px 8px" }}>✏️ Edit</button>
                     ) : (
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="min-w-0">
-                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                                    user.name
-                                </p>
-                                <p className="text-sm text-slate-200 font-mono mt-0.5 truncate" title={gitConfig.name || ""}>
-                                    {gitConfig.name || <span className="text-slate-600 italic">Not set</span>}
-                                </p>
-                            </div>
-                            <div className="min-w-0">
-                                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                                    user.email
-                                </p>
-                                <p className="text-sm text-slate-200 font-mono mt-0.5 truncate" title={gitConfig.email || ""}>
-                                    {gitConfig.email || <span className="text-slate-600 italic">Not set</span>}
-                                </p>
-                            </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={() => setEditingConfig(false)} className="btn-ghost" style={{ fontSize: 11, padding: "4px 8px" }}>Cancel</button>
+                            <button onClick={handleSaveConfig} disabled={configSaving} className="btn-success" style={{ fontSize: 11, padding: "4px 8px" }}>{configSaving ? "Saving…" : "💾 Save"}</button>
                         </div>
                     )}
                 </div>
-
-                {/* Keys list */}
-                {keysLoading ? (
-                    <div className="flex justify-center py-6">
-                        <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
-                    </div>
-                ) : keys.length === 0 ? (
-                    <div className="card text-center py-8">
-                        <p className="text-slate-500 text-sm">No SSH keys found on this VPS</p>
-                        <p className="text-slate-600 text-xs mt-1">
-                            Add a key to connect to GitHub repositories
-                        </p>
+                {editingConfig ? (
+                    <div style={{ display: "flex", gap: 12 }}>
+                        <div style={{ flex: 1 }}><label className="label">user.name</label><input className="input" value={configForm.name} onChange={e => setConfigForm(f => ({ ...f, name: e.target.value }))} placeholder="Your Name" /></div>
+                        <div style={{ flex: 1 }}><label className="label">user.email</label><input className="input" value={configForm.email} onChange={e => setConfigForm(f => ({ ...f, email: e.target.value }))} placeholder="you@example.com" /></div>
                     </div>
                 ) : (
-                    <div className="space-y-2">
-                        {keys.map((key) => {
-                            const test = testResults[key.name];
-                            const isExpanded = expandedKey === key.name;
-
-                            return (
-                                <div
-                                    key={key.name}
-                                    className="card group transition-all duration-200 hover:border-slate-700"
-                                >
-                                    {/* Key header */}
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-9 h-9 rounded-lg bg-slate-800/80 flex items-center justify-center text-base shrink-0">
-                                            🔑
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-sm font-bold text-slate-100 font-mono truncate">
-                                                    {key.name}
-                                                </p>
-                                                {key.hostAlias && (
-                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
-                                                        {key.hostAlias}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {key.fingerprint && (
-                                                <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
-                                                    {key.fingerprint}
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        {/* Actions */}
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            {/* Test */}
-                                            <button
-                                                onClick={() => handleTest(key.name)}
-                                                disabled={test?.loading}
-                                                className={`text-xs px-2 py-1 rounded transition-colors ${
-                                                    test?.loading
-                                                        ? "text-slate-500"
-                                                        : test?.success === true
-                                                          ? "text-emerald-400 bg-emerald-500/10"
-                                                          : test?.success === false
-                                                            ? "text-red-400 bg-red-500/10"
-                                                            : "text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-700/60"
-                                                }`}
-                                                title="Test SSH connection"
-                                            >
-                                                {test?.loading ? "⏳" : test?.success === true ? "✅" : test?.success === false ? "❌" : "🔗"}
-                                            </button>
-                                            {/* Copy pub key */}
-                                            {key.publicKey && (
-                                                <button
-                                                    onClick={() => handleCopy(key.publicKey, key.name)}
-                                                    className="text-xs px-2 py-1 rounded text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-700/60 transition-colors"
-                                                    title="Copy public key"
-                                                >
-                                                    {copiedKey === key.name ? "✓" : "📋"}
-                                                </button>
-                                            )}
-                                            {/* Expand */}
-                                            <button
-                                                onClick={() => setExpandedKey(isExpanded ? null : key.name)}
-                                                className="text-xs px-2 py-1 rounded text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-700/60 transition-colors"
-                                                title={isExpanded ? "Collapse" : "Show public key"}
-                                            >
-                                                {isExpanded ? "▲" : "▼"}
-                                            </button>
-                                            {/* Delete */}
-                                            <button
-                                                onClick={() => setDeleteConfirm(key.name)}
-                                                className="text-xs px-2 py-1 rounded text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                                title="Delete key"
-                                            >
-                                                🗑️
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Expanded: public key + test output */}
-                                    {isExpanded && (
-                                        <div className="mt-3 space-y-2">
-                                            {key.publicKey && (
-                                                <div>
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                                                            Public Key
-                                                        </p>
-                                                        <button
-                                                            onClick={() => handleCopy(key.publicKey, key.name)}
-                                                            className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors"
-                                                        >
-                                                            {copiedKey === key.name ? "✓ Copied!" : "Copy"}
-                                                        </button>
-                                                    </div>
-                                                    <pre className="text-[10px] text-slate-400 bg-slate-950/80 rounded-lg p-2.5 font-mono whitespace-pre-wrap break-all select-all leading-relaxed">
-                                                        {key.publicKey}
-                                                    </pre>
-                                                </div>
-                                            )}
-                                            {key.hostAlias && (
-                                                <div>
-                                                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                                        Clone URL Pattern
-                                                    </p>
-                                                    <p className="text-xs text-slate-400 font-mono bg-slate-950/80 rounded-lg p-2.5">
-                                                        git@{key.hostAlias}:username/repo.git
-                                                    </p>
-                                                </div>
-                                            )}
-                                            {test && !test.loading && test.output && (
-                                                <div>
-                                                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                                        Test Result
-                                                    </p>
-                                                    <pre className="text-[10px] text-slate-400 bg-slate-950/80 rounded-lg p-2.5 font-mono whitespace-pre-wrap">
-                                                        {test.output}
-                                                    </pre>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                    <div style={{ display: "flex", gap: 12 }}>
+                        <div style={{ flex: 1 }}><p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", margin: "0 0 4px 0" }}>user.name</p><p className="mono" style={{ fontSize: 13, margin: 0 }}>{gitConfig.name || <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>Not set</span>}</p></div>
+                        <div style={{ flex: 1 }}><p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", margin: "0 0 4px 0" }}>user.email</p><p className="mono" style={{ fontSize: 13, margin: 0 }}>{gitConfig.email || <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>Not set</span>}</p></div>
                     </div>
                 )}
             </div>
-        </>
+
+            {keysLoading ? (
+                <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading keys…</div>
+            ) : keys.length === 0 ? (
+                <div className="card" style={{ padding: 24, textAlign: "center" }}>
+                    <p style={{ fontSize: 14, color: "var(--text)", margin: "0 0 4px 0" }}>No SSH keys found</p>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Add a key to connect to GitHub repositories</p>
+                </div>
+            ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {keys.map(key => {
+                        const test = testResults[key.name];
+                        const isExpanded = expandedKey === key.name;
+                        return (
+                            <div key={key.name} className="card" style={{ padding: 12 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🔑</div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                            <p className="mono" style={{ fontSize: 13, fontWeight: 700, margin: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{key.name}</p>
+                                            {key.hostAlias && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(91,115,232,0.1)", color: "var(--accent)" }}>{key.hostAlias}</span>}
+                                        </div>
+                                        {key.fingerprint && <p className="mono" style={{ fontSize: 10, color: "var(--text-dim)", margin: "4px 0 0 0", overflow: "hidden", textOverflow: "ellipsis" }}>{key.fingerprint}</p>}
+                                    </div>
+                                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                                        <button onClick={() => handleTest(key.name)} disabled={test?.loading} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12, color: test?.success === true ? "#4ade80" : test?.success === false ? "#f87171" : "inherit" }}>
+                                            {test?.loading ? "⏳" : test?.success === true ? "✅" : test?.success === false ? "❌" : "🔗"}
+                                        </button>
+                                        {key.publicKey && <button onClick={() => handleCopy(key.publicKey, key.name)} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }}>{copiedKey === key.name ? "✓" : "📋"}</button>}
+                                        <button onClick={() => setExpandedKey(isExpanded ? null : key.name)} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12 }}>{isExpanded ? "▲" : "▼"}</button>
+                                        <button onClick={() => setDeleteConfirm(key.name)} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12, color: "var(--danger)" }}>🗑️</button>
+                                    </div>
+                                </div>
+                                {isExpanded && (
+                                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+                                        {key.publicKey && (
+                                            <div>
+                                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", margin: 0 }}>Public Key</p></div>
+                                                <pre className="mono" style={{ fontSize: 10, color: "var(--text-dim)", background: "var(--bg-input)", padding: 10, borderRadius: 6, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{key.publicKey}</pre>
+                                            </div>
+                                        )}
+                                        {key.hostAlias && (
+                                            <div>
+                                                <p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", margin: "0 0 4px 0" }}>Clone URL Pattern</p>
+                                                <p className="mono" style={{ fontSize: 11, color: "var(--text)", background: "var(--bg-input)", padding: 10, borderRadius: 6, margin: 0 }}>git@{key.hostAlias}:username/repo.git</p>
+                                            </div>
+                                        )}
+                                        {test && !test.loading && test.output && (
+                                            <div>
+                                                <p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", margin: "0 0 4px 0" }}>Test Result</p>
+                                                <pre className="mono" style={{ fontSize: 10, color: "var(--text-dim)", background: "var(--bg-input)", padding: 10, borderRadius: 6, margin: 0, whiteSpace: "pre-wrap" }}>{test.output}</pre>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
     );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Main Page
-// ═══════════════════════════════════════════════════════════════════════════
 export default function PanelManage() {
     const [status, setStatus] = useState(null);
     const [logs, setLogs] = useState("");
@@ -701,64 +316,31 @@ export default function PanelManage() {
     const [building, setBuilding] = useState(false);
     const [buildOutput, setBuildOutput] = useState(() => {
         const saved = sessionStorage.getItem("panel_build_output");
-        if (saved) {
-            sessionStorage.removeItem("panel_build_output");
-            try { return JSON.parse(saved); } catch (e) { return null; }
-        }
+        if (saved) { sessionStorage.removeItem("panel_build_output"); try { return JSON.parse(saved); } catch { return null; } }
         return null;
     });
     const logsEndRef = useRef(null);
 
-    // ── Fetch status ───────────────────────────────────────────────────────
-    const fetchStatus = useCallback(() => {
-        api.get("/panel/status")
-            .then((r) => setStatus(r.data))
-            .catch(() => {});
-    }, []);
+    const fetchStatus = useCallback(() => { api.get("/panel/status").then(r => setStatus(r.data)).catch(() => {}); }, []);
+    useEffect(() => { fetchStatus(); const int = setInterval(fetchStatus, 5000); return () => clearInterval(int); }, [fetchStatus]);
 
-    useEffect(() => {
-        fetchStatus();
-        const interval = setInterval(fetchStatus, 5000);
-        return () => clearInterval(interval);
-    }, [fetchStatus]);
-
-    // ── Fetch logs ─────────────────────────────────────────────────────────
     const fetchLogs = async () => {
         setLogsLoading(true);
-        try {
-            const r = await api.get("/panel/logs?lines=200");
-            setLogs(r.data.logs || "No logs available");
-        } catch {
-            setLogs("Failed to fetch logs");
-        } finally {
-            setLogsLoading(false);
-        }
+        try { const r = await api.get("/panel/logs?lines=200"); setLogs(r.data.logs || "No logs available"); }
+        catch { setLogs("Failed to fetch logs"); }
+        finally { setLogsLoading(false); }
     };
+    useEffect(() => { if (showLogs) fetchLogs(); }, [showLogs]);
+    useEffect(() => { if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [logs]);
 
-    useEffect(() => {
-        if (showLogs) fetchLogs();
-    }, [showLogs]);
-
-    useEffect(() => {
-        if (logsEndRef.current) {
-            logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [logs]);
-
-    // ── Actions ────────────────────────────────────────────────────────────
     const handleRestart = () => {
         setConfirm({
             title: "Restart Panel",
             message: "The panel will restart. You'll lose connection for a few seconds while it comes back up. Continue?",
             onConfirm: async () => {
                 setConfirm(null);
-                try {
-                    await api.post("/panel/restart");
-                    // Show reconnect overlay after a short delay
-                    setTimeout(() => setReconnecting(true), 1000);
-                } catch (err) {
-                    alert("Failed to restart: " + (err.response?.data?.message || err.message));
-                }
+                try { await api.post("/panel/restart"); setTimeout(() => setReconnecting(true), 1000); }
+                catch (err) { alert("Failed to restart: " + (err.response?.data?.message || err.message)); }
             },
         });
     };
@@ -768,193 +350,112 @@ export default function PanelManage() {
             title: "Rebuild & Restart Panel",
             message: "This will rebuild the client UI (may take 30-60 seconds) and then restart the panel. The panel stays online during the build. Continue?",
             onConfirm: async () => {
-                setConfirm(null);
-                setBuilding(true);
-                setBuildOutput(null);
+                setConfirm(null); setBuilding(true); setBuildOutput(null);
                 try {
-                    // Rebuild can take several minutes due to npm install, increase timeout to 5 mins
                     const r = await api.post("/panel/rebuild", {}, { timeout: 300_000 });
                     const outputData = { success: true, output: r.data.buildOutput, message: r.data.message };
-                    setBuildOutput(outputData);
-                    sessionStorage.setItem("panel_build_output", JSON.stringify(outputData));
-                    // Show reconnect overlay after a short delay
+                    setBuildOutput(outputData); sessionStorage.setItem("panel_build_output", JSON.stringify(outputData));
                     setTimeout(() => setReconnecting(true), 1000);
                 } catch (err) {
-                    const data = err.response?.data;
-                    setBuildOutput({
-                        success: false,
-                        output: data?.buildOutput || err.message,
-                        message: data?.message || "Build failed",
-                    });
-                } finally {
-                    setBuilding(false);
-                }
+                    setBuildOutput({ success: false, output: err.response?.data?.buildOutput || err.message, message: err.response?.data?.message || "Build failed" });
+                } finally { setBuilding(false); }
             },
         });
     };
 
-    const handleReconnected = useCallback(() => {
-        setReconnecting(false);
-        fetchStatus();
-        // Refresh the page to load potentially new assets
-        window.location.reload();
-    }, [fetchStatus]);
+    const handleReconnected = useCallback(() => { setReconnecting(false); fetchStatus(); window.location.reload(); }, [fetchStatus]);
 
-    // ── Render ─────────────────────────────────────────────────────────────
-    const s = status ? STATUS_MAP[status.status] || STATUS_MAP.unknown : null;
+    if (!status) {
+        return <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>Loading panel info…</div>;
+    }
+
+    const { env, git, pm2 } = status;
+    const isOnline = pm2?.status === "online";
+    const statusColor = isOnline ? "var(--success)" : "var(--danger)";
 
     return (
-        <div className="p-6 max-w-4xl mx-auto space-y-6">
-            {/* Reconnect overlay */}
+        <div style={{ padding: "20px 24px", maxWidth: 960, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
             {reconnecting && <ReconnectOverlay onReconnected={handleReconnected} />}
-
-            {/* Confirm modal */}
-            {confirm && (
-                <ConfirmModal
-                    title={confirm.title}
-                    message={confirm.message}
-                    onConfirm={confirm.onConfirm}
-                    onCancel={() => setConfirm(null)}
-                />
-            )}
+            {confirm && <ConfirmModal title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
 
             {/* Header */}
             <div>
-                <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-bold text-slate-100">Panel Management</h1>
-                    {s && (
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ring-1 ${s.bg} ${s.color} ${s.ring}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${s.dot} animate-pulse`} />
-                            {s.label}
-                        </span>
-                    )}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                    <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: 0 }}>Panel Settings</h1>
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", padding: "2px 8px", borderRadius: 99, background: isOnline ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)", color: statusColor, border: `1px solid ${isOnline ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"}` }}>
+                        {pm2?.status || "Unknown"}
+                    </span>
+                    {env?.isDev && <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", padding: "2px 8px", borderRadius: 99, background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.2)" }}>Dev Mode</span>}
                 </div>
-                <p className="text-sm text-slate-500 mt-1">
-                    Manage the panel itself — restart, rebuild, and view logs
-                </p>
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Manage the control panel process and configuration</p>
             </div>
 
-            {/* Status cards */}
-            {status ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <StatCard
-                        icon="📛"
-                        label="PM2 Name"
-                        value={status.name}
-                        sub={status.pm_id !== null ? `ID: ${status.pm_id}` : null}
-                    />
-                    <StatCard
-                        icon="⏱️"
-                        label="Uptime"
-                        value={fmtUptime(status.uptime)}
-                        accent="text-indigo-400"
-                    />
-                    <StatCard
-                        icon="🧠"
-                        label="Memory"
-                        value={fmt(status.memory)}
-                        sub={`CPU: ${status.cpu}%`}
-                        accent="text-blue-400"
-                    />
-                    <StatCard
-                        icon="🔁"
-                        label="Restarts"
-                        value={status.restarts}
-                        accent={status.restarts > 10 ? "text-amber-400" : "text-slate-100"}
-                    />
-                </div>
-            ) : (
-                <div className="flex justify-center py-8">
-                    <div className="animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full" />
-                </div>
-            )}
-
-            {/* Action buttons */}
-            <div className="space-y-3">
-                <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-                    Actions
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <ActionButton
-                        icon="🔄"
-                        label="Restart Panel"
-                        description="Restart the PM2 process (~3s downtime)"
-                        onClick={handleRestart}
-                        color="indigo"
-                    />
-                    <ActionButton
-                        icon="🏗️"
-                        label="Rebuild & Restart"
-                        description="Rebuild client UI, then restart (30-60s)"
-                        onClick={handleRebuild}
-                        loading={building}
-                        color="amber"
-                    />
-                </div>
-            </div>
-
-            {/* Build output */}
+            {/* Build output banner */}
             {buildOutput && (
-                <div className={`card border ${buildOutput.success ? "border-emerald-500/30" : "border-red-500/30"}`}>
-                    <div className="flex items-center gap-2 mb-3">
-                        <span className="text-lg">{buildOutput.success ? "✅" : "❌"}</span>
-                        <h3 className={`text-sm font-bold ${buildOutput.success ? "text-emerald-400" : "text-red-400"}`}>
-                            {buildOutput.message}
-                        </h3>
-                        <button
-                            onClick={() => setBuildOutput(null)}
-                            className="ml-auto text-slate-500 hover:text-slate-300 text-xs"
-                        >
-                            Dismiss
-                        </button>
+                <div className="card" style={{ padding: 16, border: `1px solid ${buildOutput.success ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, background: buildOutput.success ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)' }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: buildOutput.output ? 12 : 0 }}>
+                        <h3 style={{ fontSize: 14, fontWeight: 700, color: buildOutput.success ? "#4ade80" : "#f87171", margin: 0 }}>{buildOutput.success ? "✅ Build Successful" : "❌ Build Failed"}</h3>
+                        <button onClick={() => setBuildOutput(null)} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }}>Dismiss</button>
                     </div>
-                    {buildOutput.output && (
-                        <pre className="text-xs text-slate-400 bg-slate-900/60 rounded-lg p-3 max-h-48 overflow-auto font-mono whitespace-pre-wrap">
-                            {buildOutput.output}
-                        </pre>
-                    )}
+                    {buildOutput.message && <p style={{ fontSize: 13, margin: "0 0 8px 0" }}>{buildOutput.message}</p>}
+                    {buildOutput.output && <pre className="mono" style={{ fontSize: 11, color: "var(--text-dim)", background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, margin: 0, maxHeight: 300, overflowY: "auto", whiteSpace: "pre-wrap" }}>{buildOutput.output}</pre>}
                 </div>
             )}
-            {/* Logs section */}
 
-            {/* ── GitHub & SSH Keys ──────────────────────────────────────── */}
-            <GitHubSection />
+            {/* Stats */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+                <StatCard icon="⚡" label="Version" value={`v${env?.version || "?"}`} sub={git?.commitHash ? `Commit: ${git.commitHash.substring(0,7)}` : ""} />
+                <StatCard icon="⏱️" label="Uptime" value={fmtUptime(pm2?.pm_uptime)} sub="Time since last restart" />
+                <StatCard icon="💾" label="Memory" value={fmt(pm2?.monit?.memory)} sub="Panel RAM usage" />
+                <StatCard icon="🖥️" label="CPU" value={`${pm2?.monit?.cpu || 0}%`} sub="Panel CPU usage" />
+            </div>
 
-            {/* ── Panel Logs ─────────────────────────────────────────────── */}
-            <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-                        Panel Logs
-                    </h2>
-                    <div className="flex items-center gap-2">
-                        {showLogs && (
-                            <button
-                                onClick={fetchLogs}
-                                disabled={logsLoading}
-                                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors disabled:opacity-50"
-                            >
-                                {logsLoading ? "Loading..." : "🔄 Refresh"}
-                            </button>
-                        )}
-                        <button
-                            onClick={() => setShowLogs((v) => !v)}
-                            className="text-xs text-slate-400 hover:text-slate-200 transition-colors px-2 py-1 rounded bg-slate-800/60 hover:bg-slate-700/60"
-                        >
-                            {showLogs ? "Hide Logs" : "Show Logs"}
-                        </button>
-                    </div>
+            {/* Grid for Actions and Info */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
+                {/* Process Actions */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <h2 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Actions</h2>
+                    <button onClick={handleRestart} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 12, border: "1px solid rgba(245,158,11,0.3)", background: "rgba(245,158,11,0.05)", cursor: "pointer", transition: "all 0.2s" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(245,158,11,0.1)"} onMouseLeave={e => e.currentTarget.style.background = "rgba(245,158,11,0.05)"}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(245,158,11,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "#f59e0b" }}>🔄</div>
+                        <div style={{ textAlign: "left" }}>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 2px 0" }}>Restart Panel</p>
+                            <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>Restarts the PM2 process</p>
+                        </div>
+                    </button>
+                    <button onClick={handleRebuild} disabled={building} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 12, border: "1px solid rgba(91,115,232,0.3)", background: "rgba(91,115,232,0.05)", cursor: building ? "wait" : "pointer", opacity: building ? 0.7 : 1, transition: "all 0.2s" }} onMouseEnter={e => !building && (e.currentTarget.style.background = "rgba(91,115,232,0.1)")} onMouseLeave={e => !building && (e.currentTarget.style.background = "rgba(91,115,232,0.05)")}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(91,115,232,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--accent)" }}>{building ? "⏳" : "🛠️"}</div>
+                        <div style={{ textAlign: "left" }}>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 2px 0" }}>{building ? "Rebuilding..." : "Rebuild & Restart"}</p>
+                            <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>Rebuilds frontend assets and restarts</p>
+                        </div>
+                    </button>
                 </div>
 
+                {/* GitHub Keys */}
+                <GitHubSection />
+            </div>
+
+            {/* Logs Viewer */}
+            <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 400, padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 16 }}>📋</span>
+                        <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Panel Logs</h2>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        {showLogs && <button onClick={fetchLogs} disabled={logsLoading} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }}>{logsLoading ? "⏳" : "🔄 Refresh"}</button>}
+                        <button onClick={() => setShowLogs(!showLogs)} className="btn-primary" style={{ padding: "4px 8px", fontSize: 11 }}>{showLogs ? "Hide Logs" : "Load Logs"}</button>
+                    </div>
+                </div>
                 {showLogs && (
-                    <div className="card p-0 overflow-hidden">
-                        <pre className="text-xs text-slate-300 bg-slate-950 p-4 max-h-96 overflow-auto font-mono whitespace-pre-wrap leading-relaxed">
-                            {logsLoading ? (
-                                <span className="text-slate-500">Loading logs...</span>
-                            ) : (
-                                logs
-                            )}
-                            <div ref={logsEndRef} />
-                        </pre>
+                    <div className="mono" style={{ flex: 1, padding: 16, background: "var(--bg-input)", overflowY: "auto", fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                        {logs}
+                        <div ref={logsEndRef} />
+                    </div>
+                )}
+                {!showLogs && (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 13 }}>
+                        Logs are hidden. Click "Load Logs" to view.
                     </div>
                 )}
             </div>

@@ -1,61 +1,4 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { useData } from "../context/DataContext";
-
-// ── Animated Ring gauge ─────────────────────────────────────────────────────
-function Ring({ percent, color, label, sub }) {
-    const r = 34;
-    const circ = 2 * Math.PI * r;
-    const [offset, setOffset] = useState(circ); // start fully empty
-
-    // Animate offset on mount and whenever percent changes
-    useEffect(() => {
-        const t = setTimeout(() => {
-            const safePercent = Number.isFinite(percent) ? Math.min(Math.max(percent, 0), 100) : 0;
-            setOffset(circ - (safePercent / 100) * circ);
-        }, 80); // tiny delay so the initial render draws "empty" first → animates in
-        return () => clearTimeout(t);
-    }, [percent, circ]);
-
-    const safePercent = Number.isFinite(percent) ? Math.min(Math.max(Math.round(percent), 0), 100) : 0;
-
-    return (
-        <div className="flex flex-col items-center gap-2.5">
-            <div className="relative w-[88px] h-[88px]">
-                <svg className="w-full h-full -rotate-90 overflow-visible" viewBox="0 0 88 88">
-                    {/* Track */}
-                    <circle cx="44" cy="44" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
-                    {/* Progress — CSS transition so it animates smoothly */}
-                    <circle
-                        cx="44" cy="44" r={r} fill="none"
-                        stroke={color} strokeWidth="8" strokeLinecap="round"
-                        strokeDasharray={circ}
-                        strokeDashoffset={offset}
-                        style={{
-                            transition: "stroke-dashoffset 1s cubic-bezier(0.34,1.56,0.64,1)",
-                            filter: `drop-shadow(0 0 8px ${color}88)`,
-                        }}
-                    />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <motion.span
-                        key={safePercent}
-                        initial={{ opacity: 0, scale: 0.7 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ type: "spring", stiffness: 300, damping: 22 }}
-                        className="text-base font-black text-slate-100"
-                    >
-                        {safePercent}%
-                    </motion.span>
-                </div>
-            </div>
-            <div className="text-center">
-                <p className="text-xs font-bold text-slate-300">{label}</p>
-                {sub && <p className="text-[10px] text-slate-500 mt-0.5 max-w-[110px] truncate">{sub}</p>}
-            </div>
-        </div>
-    );
-}
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -64,23 +7,31 @@ const fmt = (bytes) => {
     return `${bytes} B`;
 };
 
-// ── StatsWidget ─────────────────────────────────────────────────────────────
+function ProgressBar({ percent, color }) {
+    const pct = Math.min(Math.max(percent ?? 0, 0), 100);
+    return (
+        <div style={{ background: "var(--bg-input)", borderRadius: 4, height: 6, overflow: "hidden" }}>
+            <div style={{
+                width: `${pct}%`, height: "100%", borderRadius: 4,
+                background: color, transition: "width 0.4s ease",
+            }}/>
+        </div>
+    );
+}
+
 export default function StatsWidget() {
     const { stats } = useData();
 
     if (!stats) {
         return (
-            <div
-                className="card flex flex-col gap-4 items-center justify-center h-36"
-                style={{ background: "linear-gradient(135deg, rgba(17,24,39,0.9), rgba(13,21,37,0.9))" }}
-            >
-                <div className="relative w-8 h-8">
-                    <div className="absolute inset-0 rounded-full" style={{ border: "2px solid rgba(124,58,237,0.15)" }} />
-                    <div className="absolute inset-0 rounded-full animate-spin" style={{ border: "2px solid transparent", borderTopColor: "#7C3AED" }} />
-                </div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 animate-pulse">
-                    Loading system stats…
-                </p>
+            <div className="card" style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-muted)", fontSize: 13 }}>
+                <div style={{
+                    width: 18, height: 18, borderRadius: "50%",
+                    border: "2px solid var(--border)", borderTopColor: "var(--accent)",
+                    animation: "spin 0.8s linear infinite",
+                }}/>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                Loading system stats…
             </div>
         );
     }
@@ -89,69 +40,58 @@ export default function StatsWidget() {
     const ram  = stats?.memory?.usedPercent ?? 0;
     const disk = stats?.disk?.usedPercent   ?? null;
 
-    const cpuColor  = cpu  > 80 ? "#f87171" : cpu  > 50 ? "#fb923c" : "#34d399";
-    const ramColor  = ram  > 80 ? "#f87171" : ram  > 50 ? "#fb923c" : "#818cf8";
-    const diskColor = disk !== null
-        ? disk > 85 ? "#f87171" : disk > 65 ? "#fb923c" : "#38bdf8"
-        : "#64748b";
+    const cpuColor  = cpu  > 80 ? "#ef4444" : cpu  > 50 ? "#f97316" : "#22c55e";
+    const ramColor  = ram  > 80 ? "#ef4444" : ram  > 50 ? "#f97316" : "#5b73e8";
+    const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f97316" : "#38bdf8") : "#64748b";
 
-    const ramSub  = `${fmt(stats.memory?.usedBytes)} / ${fmt(stats.memory?.totalBytes)}`;
-    const diskSub = stats.disk ? `${fmt(stats.disk.usedBytes)} / ${fmt(stats.disk.totalBytes)}` : null;
+    const metrics = [
+        {
+            label: "CPU",
+            value: `${Math.round(cpu)}%`,
+            sub: stats.cpu?.temperature ? `${stats.cpu.temperature}°C` : null,
+            percent: cpu,
+            color: cpuColor,
+        },
+        {
+            label: "Memory",
+            value: `${Math.round(ram)}%`,
+            sub: `${fmt(stats.memory?.usedBytes)} / ${fmt(stats.memory?.totalBytes)}`,
+            percent: ram,
+            color: ramColor,
+        },
+        {
+            label: "Disk",
+            value: disk !== null ? `${Math.round(disk)}%` : "N/A",
+            sub: stats.disk ? `${fmt(stats.disk.usedBytes)} / ${fmt(stats.disk.totalBytes)}` : null,
+            percent: disk ?? 0,
+            color: diskColor,
+        },
+    ];
 
     return (
-        <div
-            className="card"
-            style={{ background: "linear-gradient(135deg, rgba(17,24,39,0.92), rgba(13,21,37,0.92))" }}
-        >
-            {/* Header */}
-            <div className="flex items-center gap-2 mb-6">
-                <div
-                    className="w-6 h-6 rounded-lg flex items-center justify-center"
-                    style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.2)" }}
-                >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+        <div className="card">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                     </svg>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>System Resources</span>
                 </div>
-                <h2 className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">System Resources</h2>
-                <span className="ml-auto flex items-center gap-1.5 text-[9px] font-bold text-emerald-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 5, fontWeight: 500 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", display: "inline-block" }}/>
                     Live
                 </span>
             </div>
 
-            {/* Rings */}
-            <div className="flex items-center justify-around flex-wrap gap-8 py-2">
-                <Ring percent={cpu}  color={cpuColor}  label="CPU"  sub={stats.cpu?.temperature ? `${stats.cpu.temperature}°C` : "Load"} />
-                <Ring percent={ram}  color={ramColor}  label="RAM"  sub={ramSub} />
-                {disk !== null ? (
-                    <Ring percent={disk} color={diskColor} label="Disk" sub={diskSub} />
-                ) : (
-                    <div className="flex flex-col items-center gap-2.5 opacity-30">
-                        <div
-                            className="w-[88px] h-[88px] rounded-full flex items-center justify-center"
-                            style={{ border: "8px solid rgba(255,255,255,0.05)" }}
-                        >
-                            <span className="text-slate-600 text-[10px] font-bold uppercase">N/A</span>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+                {metrics.map(({ label, value, sub, percent, color }) => (
+                    <div key={label} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{label}</span>
+                            <span className="mono" style={{ fontSize: 13, fontWeight: 700, color }}>{value}</span>
                         </div>
-                        <p className="text-xs font-bold text-slate-500">Disk</p>
-                    </div>
-                )}
-            </div>
-
-            {/* Mini stat row */}
-            <div
-                className="grid grid-cols-3 gap-4 mt-5 pt-4"
-                style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
-            >
-                {[
-                    { label: "CPU",    value: `${cpu}%`,   color: cpuColor  },
-                    { label: "Memory", value: fmt(stats.memory?.usedBytes), color: ramColor  },
-                    { label: "Disk",   value: disk !== null ? `${disk}%` : "N/A", color: diskColor },
-                ].map(({ label, value, color }) => (
-                    <div key={label} className="text-center">
-                        <p className="text-[9px] font-black uppercase tracking-wider text-slate-600">{label}</p>
-                        <p className="text-sm font-black mt-1 font-mono" style={{ color }}>{value}</p>
+                        <ProgressBar percent={percent} color={color} />
+                        {sub && <p className="mono" style={{ fontSize: 11, color: "var(--text-dim)", marginTop: -4 }}>{sub}</p>}
                     </div>
                 ))}
             </div>
