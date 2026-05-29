@@ -122,7 +122,7 @@ const TABS = [
 export default function BotDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { groups } = useData();
+  const { groups, tags: allTags } = useData();
 
   const [bot, setBot]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -138,6 +138,7 @@ export default function BotDetail() {
   const [editGroupId,        setEditGroupId]        = useState('');
   const [editMaxMemory,      setEditMaxMemory]      = useState('');
   const [editPrice,          setEditPrice]          = useState('');
+  const [editTags,           setEditTags]           = useState([]);
   const [savingMeta,         setSavingMeta]         = useState(false);
 
   const fetchBot = async () => {
@@ -150,6 +151,7 @@ export default function BotDetail() {
       setEditGroupId(data.groupId || '');
       setEditMaxMemory(data.maxMemory || '');
       setEditPrice(data.currentPrice || '');
+      setEditTags(Array.isArray(data.tags) ? data.tags : []);
       setEditExpiry(data.expiresAt ? toLocalDatetimeInputValue(data.expiresAt) : '');
     } catch { navigate('/dashboard'); }
     finally { setLoading(false); }
@@ -186,6 +188,7 @@ export default function BotDetail() {
         installCommand: editInstallCommand || null,
         groupId: editGroupId || null, maxMemory: editMaxMemory || null,
         currentPrice: editPrice ? Number(editPrice) : null,
+        tags: editTags,
         expiresAt: editExpiry ? new Date(editExpiry).toISOString() : null,
       });
       setActionMsg({ type: 'success', text: 'Settings saved' });
@@ -212,9 +215,16 @@ export default function BotDetail() {
   const isLocal    = bot.source === 'local';
   const msLeft     = bot.expiresAt ? bot.expiresAt - Date.now() : null;
   const currentGroup = groups.find((g) => g._id === bot.groupId);
+  const botTags    = (bot.tags || []).map((id) => allTags.find((t) => t._id === id)).filter(Boolean);
   const memPercent   = getMemoryPercent(bot.live?.memory, bot.maxMemory);
   const memLimitBytes = parseMemLimit(bot.maxMemory);
   const cpuPct = parseFloat((bot.live?.cpu ?? 0).toFixed(1));
+
+  const toggleEditTag = (tagId) => {
+    setEditTags((prev) =>
+      prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId]
+    );
+  };
 
   // Summary stats
   const summaryStats = [
@@ -260,6 +270,14 @@ export default function BotDetail() {
                   {currentGroup.name}
                 </span>
               )}
+              {botTags.map((tag) => (
+                <span key={tag._id}
+                  className="text-[9px] font-black uppercase tracking-[0.07em] px-2.5 py-1 rounded-full shrink-0 border inline-flex items-center gap-1"
+                  style={{ background: `${tag.color}14`, borderColor: `${tag.color}30`, color: tag.color }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: tag.color }} />
+                  {tag.name}
+                </span>
+              ))}
             </div>
             <p className="text-[10px] text-slate-600 font-mono mt-1 truncate">{bot.buyerID} / {bot.botID}</p>
           </div>
@@ -480,6 +498,32 @@ export default function BotDetail() {
                       {groups.map((g) => <option key={g._id} value={g._id}>{g.name}</option>)}
                     </select>
                   </div>
+                  {allTags.length > 0 && (
+                    <div>
+                      <label className="label">Tags</label>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {allTags.map((tag) => {
+                          const isActive = editTags.includes(tag._id);
+                          return (
+                            <button
+                              key={tag._id}
+                              type="button"
+                              onClick={() => toggleEditTag(tag._id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.07em] transition-all duration-150"
+                              style={{
+                                background: isActive ? `${tag.color}22` : 'rgba(255,255,255,0.03)',
+                                border: `1px solid ${isActive ? tag.color + '55' : 'rgba(255,255,255,0.08)'}`,
+                                color: isActive ? tag.color : '#64748b',
+                              }}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: isActive ? tag.color : '#64748b' }} />
+                              {tag.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-4">

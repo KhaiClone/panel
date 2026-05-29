@@ -6,6 +6,7 @@ import BotCard from "../components/BotCard";
 import CreateBotModal from "../components/CreateBotModal";
 import GroupManager from "../components/GroupManager";
 import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 
 // ── Stat card ──────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, color, glow, delay = 0 }) {
@@ -82,11 +83,13 @@ function GroupSection({ label, color, bots, onRefresh, defaultOpen = true }) {
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 export default function Dashboard() {
-    const { bots, groups, loading, refresh: fetchAll } = useData();
+    const { bots, groups, tags, loading, refresh: fetchAll } = useData();
+    const navigate = useNavigate();
     const [showCreate, setShowCreate] = useState(false);
     const [showGroups, setShowGroups] = useState(false);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
+    const [selectedTags, setSelectedTags] = useState([]);
 
     const online       = bots.filter((b) => b.live?.status === "online").length;
     const errored      = bots.filter((b) => b.live?.status === "errored").length;
@@ -98,17 +101,29 @@ export default function Dashboard() {
     const visible = bots.filter((b) => {
         const ms = b.name.toLowerCase().includes(search.toLowerCase()) ||
                    b.botID.toLowerCase().includes(search.toLowerCase()) ||
-                   b.buyerID.toLowerCase().includes(search.toLowerCase());
+                   b.buyerID.toLowerCase().includes(search.toLowerCase()) ||
+                   (b.tags || []).some((tid) => {
+                       const tag = tags.find((t) => t._id === tid);
+                       return tag?.name.toLowerCase().includes(search.toLowerCase());
+                   });
         const mf = filter === "all" ||
                    (filter === "online" && b.live?.status === "online") ||
                    (filter === "stopped" && b.live?.status !== "online");
-        return ms && mf;
+        const mt = selectedTags.length === 0 ||
+                   selectedTags.some((tid) => (b.tags || []).includes(tid));
+        return ms && mf && mt;
     });
+
+    const toggleTag = (tagId) => {
+        setSelectedTags((prev) =>
+            prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId]
+        );
+    };
 
     const groupMap    = Object.fromEntries(groups.map((g) => [g._id, g]));
     const botsByGroup = groups.map((g) => ({ group: g, bots: visible.filter((b) => b.groupId === g._id) })).filter((s) => s.bots.length > 0);
     const ungrouped   = visible.filter((b) => !b.groupId || !groupMap[b.groupId]);
-    const isFiltering = search.trim() !== "" || filter !== "all";
+    const isFiltering = search.trim() !== "" || filter !== "all" || selectedTags.length > 0;
 
     const FILTERS = ["all", "online", "stopped"];
 
@@ -139,6 +154,17 @@ export default function Dashboard() {
                             <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                         </svg>
                         Groups
+                    </button>
+                    <button
+                        id="btn-manage-tags-shortcut"
+                        className="btn-ghost text-xs flex-1 sm:flex-none"
+                        onClick={() => navigate("/tags")}
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        Tags
                     </button>
                     <button
                         id="btn-create-bot"
@@ -235,6 +261,48 @@ export default function Dashboard() {
                         {visible.length} <span className="opacity-40">/</span> {bots.length} bots
                     </span>
                 </motion.div>
+
+                {/* Tag filter pills */}
+                {tags.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.25 }}
+                        className="flex flex-wrap gap-2 items-center px-1"
+                    >
+                        <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-600 shrink-0">Tags:</span>
+                        {selectedTags.length > 0 && (
+                            <button
+                                onClick={() => setSelectedTags([])}
+                                className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors"
+                                style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}
+                            >
+                                ✕ Clear
+                            </button>
+                        )}
+                        {tags.map((tag) => {
+                            const isActive = selectedTags.includes(tag._id);
+                            return (
+                                <button
+                                    key={tag._id}
+                                    id={`tag-filter-${tag._id}`}
+                                    onClick={() => toggleTag(tag._id)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.07em] transition-all duration-150"
+                                    style={{
+                                        background: isActive ? `${tag.color}22` : "rgba(255,255,255,0.03)",
+                                        border: `1px solid ${isActive ? tag.color + "55" : "rgba(255,255,255,0.07)"}`,
+                                        color: isActive ? tag.color : "#64748b",
+                                        transform: isActive ? "scale(1.05)" : "scale(1)",
+                                        boxShadow: isActive ? `0 0 10px ${tag.color}30` : "none",
+                                    }}
+                                >
+                                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: isActive ? tag.color : "#64748b" }} />
+                                    {tag.name}
+                                </button>
+                            );
+                        })}
+                    </motion.div>
+                )}
 
                 {/* Bot grid / groups */}
                 {loading && bots.length === 0 ? (

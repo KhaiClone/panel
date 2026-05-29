@@ -14,6 +14,7 @@ const externalRoutes = require("./routes/external");
 const panelRoutes = require("./routes/panel");
 const githubRoutes = require("./routes/github");
 const proxyRoutes = require("./routes/proxy");
+const tagRoutes = require("./routes/tags");
 const { authMiddleware } = require("./middleware/auth");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
 const errorHandler = require("./middleware/errorHandler");
@@ -70,6 +71,7 @@ app.use("/api/panel", authMiddleware, panelRoutes);
 app.use("/api/github", authMiddleware, githubRoutes);
 app.use("/api/proxy", authMiddleware, proxyRoutes);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
+app.use("/api/tags", authMiddleware, tagRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production

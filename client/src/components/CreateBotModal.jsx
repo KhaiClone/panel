@@ -15,6 +15,7 @@ const defaultForm = {
     groupId: "",
     maxMemory: "",
     currentPrice: "",
+    tags: [],
     // git-only
     repoUrl: "",
     branch: "main",
@@ -28,20 +29,29 @@ const MEM_HINT = 'e.g. "300M", "1G" — leave blank for no limit';
 export default function CreateBotModal({ onClose, onCreated }) {
     const [form, setForm] = useState(defaultForm);
     const [groups, setGroups] = useState([]);
+    const [availableTags, setAvailableTags] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
-    // Fetch groups for the dropdown
+    // Fetch groups and tags for the dropdowns
     useEffect(() => {
-        api.get("/groups")
-            .then((r) => setGroups(r.data))
-            .catch(() => {});
+        api.get("/groups").then((r) => setGroups(r.data)).catch(() => {});
+        api.get("/tags").then((r) => setAvailableTags(r.data)).catch(() => {});
     }, []);
 
     const set = (field) => (e) => {
         const val =
             e.target.type === "checkbox" ? e.target.checked : e.target.value;
         setForm((f) => ({ ...f, [field]: val }));
+    };
+
+    const toggleTag = (tagId) => {
+        setForm((f) => ({
+            ...f,
+            tags: f.tags.includes(tagId)
+                ? f.tags.filter((t) => t !== tagId)
+                : [...f.tags, tagId],
+        }));
     };
 
     const handleSubmit = async (e) => {
@@ -71,6 +81,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                           currentPrice: form.currentPrice
                               ? Number(form.currentPrice)
                               : null,
+                          tags: form.tags,
                       }
                     : {
                           buyerID: form.buyerID,
@@ -87,6 +98,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                           currentPrice: form.currentPrice
                               ? Number(form.currentPrice)
                               : null,
+                          tags: form.tags,
                       };
 
             const { data } = await api.post(endpoint, payload);
@@ -333,6 +345,34 @@ export default function CreateBotModal({ onClose, onCreated }) {
                             </p>
                         </div>
                     </div>
+
+                    {/* Tags */}
+                    {availableTags.length > 0 && (
+                        <div>
+                            <label className="label">Tags</label>
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                                {availableTags.map((tag) => {
+                                    const isActive = form.tags.includes(tag._id);
+                                    return (
+                                        <button
+                                            key={tag._id}
+                                            type="button"
+                                            onClick={() => toggleTag(tag._id)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.07em] transition-all duration-150"
+                                            style={{
+                                                background: isActive ? `${tag.color}22` : "rgba(255,255,255,0.04)",
+                                                border: `1px solid ${isActive ? tag.color + "55" : "rgba(255,255,255,0.1)"}`,
+                                                color: isActive ? tag.color : "#64748b",
+                                            }}
+                                        >
+                                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: isActive ? tag.color : "#64748b" }} />
+                                            {tag.name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Expiry */}
                     <div>

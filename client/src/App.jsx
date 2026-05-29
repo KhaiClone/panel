@@ -9,6 +9,7 @@ import MultiManage from "./pages/MultiManage";
 import PanelManage from "./pages/PanelManage";
 import SystemPage from "./pages/SystemPage";
 import ProxyPage from "./pages/ProxyPage";
+import TagsPage from "./pages/TagsPage";
 import Layout from "./components/Layout";
 
 // ── Auth Guard ─────────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ export default function App() {
                             <Route path="multi-manage" element={<MultiManage />} />
                             <Route path="panel-manage" element={<PanelManage />} />
                             <Route path="proxy"        element={<ProxyPage />} />
+                            <Route path="tags"         element={<TagsPage />} />
                             <Route path="system"       element={<SystemPage />} />
                         </Route>
 

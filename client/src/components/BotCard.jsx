@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import ConfirmModal from "./ConfirmModal";
 import { motion } from "framer-motion";
+import { useData } from "../context/DataContext";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const STATUS_STYLES = {
@@ -26,8 +27,11 @@ const formatTimeLeft = (ms) => {
 // ── Component ──────────────────────────────────────────────────────────────
 export default function BotCard({ bot, onRefresh }) {
     const navigate = useNavigate();
+    const { tags: allTags } = useData();
     const [busy, setBusy] = useState(false);
     const [confirm, setConfirm] = useState(null);
+
+    const botTags = (bot.tags || []).map((id) => allTags.find((t) => t._id === id)).filter(Boolean);
 
     const style = getStyle(bot.live?.status);
     const now = Date.now();
@@ -104,6 +108,26 @@ export default function BotCard({ bot, onRefresh }) {
                                 <span className={style.text}>{style.label}</span>
                             </div>
                         </div>
+
+                        {/* Tag pills */}
+                        {botTags.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                                {botTags.map((tag) => (
+                                    <span
+                                        key={tag._id}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-[0.07em]"
+                                        style={{
+                                            background: `${tag.color}15`,
+                                            border: `1px solid ${tag.color}35`,
+                                            color: tag.color,
+                                        }}
+                                    >
+                                        <span className="w-1 h-1 rounded-full" style={{ background: tag.color }} />
+                                        {tag.name}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Expiry tag */}
                         {msLeft !== null && (

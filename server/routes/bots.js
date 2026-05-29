@@ -115,6 +115,7 @@ router.post("/", async (req, res, next) => {
             groupId = null,
             maxMemory = null,
             currentPrice = null,
+            tags = [],
         } = req.body;
 
         // Validate required fields
@@ -161,6 +162,7 @@ router.post("/", async (req, res, next) => {
             groupId,
             maxMemory,
             currentPrice,
+            tags: Array.isArray(tags) ? tags : [],
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
             createdAt: Date.now(),
         });
@@ -206,6 +208,7 @@ router.post("/import-local", async (req, res, next) => {
             groupId = null,
             maxMemory = null,
             currentPrice = null,
+            tags = [],
         } = req.body;
 
         if (!buyerID || !botID || !name || !localPath) {
@@ -266,6 +269,7 @@ router.post("/import-local", async (req, res, next) => {
             groupId,
             maxMemory,
             currentPrice,
+            tags: Array.isArray(tags) ? tags : [],
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
             createdAt: Date.now(),
         });
@@ -292,7 +296,7 @@ router.put("/:id", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const { name, expiresAt, startScript, installCommand, groupId, maxMemory, currentPrice } = req.body;
+        const { name, expiresAt, startScript, installCommand, groupId, maxMemory, currentPrice, tags } = req.body;
 
         const updates = {};
         if (name !== undefined) updates.name = name;
@@ -301,6 +305,7 @@ router.put("/:id", async (req, res, next) => {
         if (groupId !== undefined) updates.groupId = groupId;
         if (maxMemory !== undefined) updates.maxMemory = maxMemory || null;
         if (currentPrice !== undefined) updates.currentPrice = currentPrice || null;
+        if (tags !== undefined) updates.tags = Array.isArray(tags) ? tags : [];
         if (expiresAt !== undefined) {
             updates.expiresAt = expiresAt
                 ? new Date(expiresAt).getTime()
