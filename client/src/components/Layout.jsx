@@ -92,12 +92,10 @@ export default function Layout() {
                     borderBottom: "1px solid var(--border-light)",
                 }}>
                     <div style={{
-                        width: 36, height: 36, borderRadius: 10,
-                        background: "linear-gradient(135deg, var(--accent), var(--accent-hover))",
-                        boxShadow: "0 4px 12px rgba(99, 102, 241, 0.3)",
+                        width: 40, height: 40, 
                         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
                     }}>
-                        <img src="/logo.png" alt="" style={{ width: "65%", height: "65%", objectFit: "contain", filter: "brightness(0) invert(1)" }} />
+                        <img src="/logo.png" alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     </div>
                     
                     <div style={{ overflow: "hidden", opacity: sidebarOpen ? 1 : 0, transition: "opacity 0.2s" }}>
