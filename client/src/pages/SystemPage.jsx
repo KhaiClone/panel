@@ -14,15 +14,19 @@ const clamp = (v) => Number.isFinite(v) ? Math.min(Math.max(Math.round(v), 0), 1
 function BigRing({ percent, color, label, sub }) {
     const safe = clamp(percent);
     return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-            <div style={{ position: "relative", width: 140, height: 140, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: `conic-gradient(${color} ${safe}%, var(--bg-input) ${safe}%)` }}>
-                <div style={{ width: 120, height: 120, borderRadius: "50%", background: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ fontSize: 28, fontWeight: 800, color: "var(--text)" }}>{safe}%</span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            <div style={{ 
+                position: "relative", width: 160, height: 160, display: "flex", alignItems: "center", justifyContent: "center", 
+                borderRadius: "50%", background: `conic-gradient(${color} ${safe}%, var(--bg-input) ${safe}%)`,
+                boxShadow: `0 0 20px ${color}20`
+            }}>
+                <div style={{ width: 140, height: 140, borderRadius: "50%", background: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontSize: 32, fontWeight: 800, color: "var(--text)" }}>{safe}<span style={{ fontSize: 16, color: "var(--text-muted)", marginLeft: 2 }}>%</span></span>
                 </div>
             </div>
             <div style={{ textAlign: "center" }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", margin: "0 0 2px 0" }}>{label}</p>
-                {sub && <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</p>}
+                <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: "0 0 4px 0", letterSpacing: "0.02em" }}>{label}</p>
+                {sub && <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</p>}
             </div>
         </div>
     );
@@ -30,14 +34,14 @@ function BigRing({ percent, color, label, sub }) {
 
 function StatRow({ label, value, accent, barPercent, barColor }) {
     return (
-        <div style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border-light)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-                <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: accent || "var(--text)" }}>{value}</span>
+                <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>{label}</span>
+                <span className="mono" style={{ fontSize: 14, fontWeight: 600, color: accent || "var(--text)" }}>{value}</span>
             </div>
             {barPercent != null && (
-                <div style={{ marginTop: 6, height: 4, borderRadius: 2, background: "var(--bg-input)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${clamp(barPercent)}%`, background: barColor || "var(--accent)", transition: "width 0.5s ease" }} />
+                <div style={{ marginTop: 10, height: 6, borderRadius: 3, background: "var(--bg-input)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${clamp(barPercent)}%`, background: barColor || "var(--accent)", transition: "width 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }} />
                 </div>
             )}
         </div>
@@ -50,19 +54,19 @@ function Sparkline({ values, color, samples }) {
     const pts = values.map((v, i) => `${(i / (values.length - 1)) * W},${H - (clamp(v) / 100) * H}`);
     const gradId = `grad-${color.replace("#", "")}`;
     return (
-        <div style={{ marginTop: 12, borderRadius: 8, padding: 10, background: "var(--bg-input)", border: "1px solid var(--border)", cursor: "pointer" }}>
-            <svg viewBox="0 0 200 40" style={{ width: "100%", height: 32, overflow: "visible" }}>
+        <div className="card-hover" style={{ marginTop: 20, borderRadius: 12, padding: 16, background: "var(--bg-input)", border: "1px solid var(--border)", cursor: "pointer", transition: "all 0.2s" }}>
+            <svg viewBox="0 0 200 40" style={{ width: "100%", height: 40, overflow: "visible" }}>
                 <defs>
                     <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                        <stop offset="0%" stopColor={color} stopOpacity="0.4" />
                         <stop offset="100%" stopColor={color} stopOpacity="0" />
                     </linearGradient>
                 </defs>
                 <path d={`M${pts.join("L")} L${W},${H} L0,${H} Z`} fill={`url(#${gradId})`} />
-                <path d={`M${pts.join("L")}`} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                {pts.length > 0 && <circle cx={pts[pts.length - 1].split(",")[0]} cy={pts[pts.length - 1].split(",")[1]} r="3" fill={color} />}
+                <path d={`M${pts.join("L")}`} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                {pts.length > 0 && <circle cx={pts[pts.length - 1].split(",")[0]} cy={pts[pts.length - 1].split(",")[1]} r="4" fill={color} stroke="var(--bg-input)" strokeWidth="1.5" />}
             </svg>
-            <p style={{ fontSize: 10, color: "var(--text-dim)", textAlign: "center", margin: "4px 0 0 0" }}>{samples} samples · click to expand</p>
+            <p style={{ fontSize: 11, color: "var(--text-dim)", textAlign: "center", margin: "12px 0 0 0", fontWeight: 500 }}>{samples} samples · Click to view history</p>
         </div>
     );
 }
@@ -95,85 +99,102 @@ export default function SystemPage() {
     }, []);
 
     if (!stats) {
-        return <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>Fetching metrics…</div>;
+        return (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 16 }}>
+                <div style={{ width: 48, height: 48, borderRadius: "50%", border: "4px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }}/>
+                <p style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>Establishing telemetry connection…</p>
+            </div>
+        );
     }
 
     const cpu = clamp(stats.cpu?.usagePercent);
     const ram = clamp(stats.memory?.usedPercent);
     const disk = stats.disk ? clamp(stats.disk.usedPercent) : null;
 
-    const cpuColor = cpu > 80 ? "#ef4444" : cpu > 50 ? "#f59e0b" : "#10b981";
-    const ramColor = ram > 80 ? "#ef4444" : ram > 50 ? "#f59e0b" : "#6366f1";
-    const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9") : "#64748b";
+    const cpuColor = cpu > 80 ? "var(--danger)" : cpu > 50 ? "var(--warning)" : "var(--success)";
+    const ramColor = ram > 80 ? "var(--danger)" : ram > 50 ? "var(--warning)" : "var(--accent-hover)";
+    const diskColor = disk !== null ? (disk > 85 ? "var(--danger)" : disk > 65 ? "var(--warning)" : "#0ea5e9") : "var(--text-muted)";
 
     const cpuVals = history.map(s => clamp(s.cpu?.usagePercent));
     const ramVals = history.map(s => clamp(s.memory?.usedPercent));
 
     return (
-        <div style={{ padding: "20px 24px", maxWidth: 960, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
-            <div>
-                <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: 0 }}>System Monitor</h1>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0 0", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }}/>
-                    Live server stats — refreshes every 4s
-                </p>
+        <div className="fade-in" style={{ padding: "32px", maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 32 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                    <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>System Monitor</h1>
+                    <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "6px 0 0 0" }}>Host server resource utilization.</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 99 }}>
+                    <span className="status-dot" style={{ width: 8, height: 8, background: "var(--success)" }}/>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--success)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Live Updates</span>
+                </div>
             </div>
 
-            <div className="card" style={{ padding: 24 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Resource Overview</span>
-                </div>
+            <div className="card slide-up" style={{ padding: 32, background: "linear-gradient(to right, var(--bg-card), var(--bg-surface))" }}>
+                <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 32 }}>Resource Overview</h2>
+                
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-around", gap: 32 }}>
                     <BigRing percent={cpu} color={cpuColor} label="CPU Load" sub={stats.cpu?.model ?? (stats.cpu?.temperature ? `${stats.cpu.temperature}°C` : "Processor")} />
-                    <BigRing percent={ram} color={ramColor} label="Memory" sub={`${fmt(stats.memory?.usedBytes)} / ${fmt(stats.memory?.totalBytes)}`} />
+                    <BigRing percent={ram} color={ramColor} label="Memory Usage" sub={`${fmt(stats.memory?.usedBytes)} / ${fmt(stats.memory?.totalBytes)}`} />
                     {disk !== null ? (
                         <BigRing percent={disk} color={diskColor} label={`Disk (${stats.disk.mount})`} sub={`${fmt(stats.disk.usedBytes)} / ${fmt(stats.disk.totalBytes)}`} />
                     ) : (
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, opacity: 0.5 }}>
-                            <div style={{ width: 140, height: 140, borderRadius: "50%", border: "12px solid var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, opacity: 0.5 }}>
+                            <div style={{ width: 160, height: 160, borderRadius: "50%", border: "12px solid var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                 <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text-muted)" }}>N/A</span>
                             </div>
-                            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Disk</p>
+                            <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Disk Unavailable</p>
                         </div>
                     )}
                 </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-                <div className="card" style={{ padding: 20 }}>
-                    <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 16px 0" }}>CPU Details</h3>
-                    <StatRow label="Usage" value={`${cpu}%`} accent={cpuColor} barPercent={cpu} barColor={cpuColor} />
-                    <StatRow label="Model" value={stats.cpu?.model ?? "—"} />
-                    <StatRow label="Temperature" value={stats.cpu?.temperature ? `${stats.cpu.temperature}°C` : "Unavailable"} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
+                <div className="card slide-up" style={{ padding: 24, animationDelay: "0.1s" }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 20px 0", display: "flex", alignItems: "center", gap: 8 }}>
+                        💻 CPU Metrics
+                    </h3>
+                    <StatRow label="Current Usage" value={`${cpu}%`} accent={cpuColor} barPercent={cpu} barColor={cpuColor} />
+                    <StatRow label="Model Processor" value={stats.cpu?.model ?? "—"} />
+                    <StatRow label="Core Temperature" value={stats.cpu?.temperature ? `${stats.cpu.temperature}°C` : "Unavailable"} />
                     {history.length > 1 && <div onClick={() => setTrendModal("cpu")}><Sparkline values={cpuVals} color={cpuColor} samples={history.length} /></div>}
                 </div>
-                <div className="card" style={{ padding: 20 }}>
-                    <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 16px 0" }}>Memory Details</h3>
-                    <StatRow label="Usage" value={`${ram}%`} accent={ramColor} barPercent={ram} barColor={ramColor} />
-                    <StatRow label="Used" value={fmt(stats.memory?.usedBytes)} />
-                    <StatRow label="Free" value={fmt(stats.memory?.freeBytes)} />
-                    <StatRow label="Total" value={fmt(stats.memory?.totalBytes)} />
+
+                <div className="card slide-up" style={{ padding: 24, animationDelay: "0.2s" }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 20px 0", display: "flex", alignItems: "center", gap: 8 }}>
+                        🧠 Memory Metrics
+                    </h3>
+                    <StatRow label="Current Usage" value={`${ram}%`} accent={ramColor} barPercent={ram} barColor={ramColor} />
+                    <StatRow label="Allocated / Used" value={fmt(stats.memory?.usedBytes)} />
+                    <StatRow label="Available / Free" value={fmt(stats.memory?.freeBytes)} />
+                    <StatRow label="Total Capacity" value={fmt(stats.memory?.totalBytes)} />
                     {history.length > 1 && <div onClick={() => setTrendModal("mem")}><Sparkline values={ramVals} color={ramColor} samples={history.length} /></div>}
                 </div>
-                <div className="card" style={{ padding: 20 }}>
-                    <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 16px 0" }}>Disk Details</h3>
+
+                <div className="card slide-up" style={{ padding: 24, animationDelay: "0.3s" }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 20px 0", display: "flex", alignItems: "center", gap: 8 }}>
+                        💽 Disk Metrics
+                    </h3>
                     {stats.disk ? (
                         <>
-                            <StatRow label="Usage" value={`${disk}%`} accent={diskColor} barPercent={disk} barColor={diskColor} />
-                            <StatRow label="Mount" value={stats.disk.mount} />
-                            <StatRow label="Filesystem" value={stats.disk.fs} />
-                            <StatRow label="Used" value={fmt(stats.disk.usedBytes)} />
-                            <StatRow label="Free" value={fmt(stats.disk.freeBytes)} />
-                            <StatRow label="Total" value={fmt(stats.disk.totalBytes)} />
+                            <StatRow label="Current Usage" value={`${disk}%`} accent={diskColor} barPercent={disk} barColor={diskColor} />
+                            <StatRow label="Mount Point" value={stats.disk.mount} />
+                            <StatRow label="Filesystem Type" value={stats.disk.fs} />
+                            <StatRow label="Space Used" value={fmt(stats.disk.usedBytes)} />
+                            <StatRow label="Space Free" value={fmt(stats.disk.freeBytes)} />
+                            <StatRow label="Total Capacity" value={fmt(stats.disk.totalBytes)} />
                         </>
                     ) : (
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "20px 0" }}>Disk info unavailable</p>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, border: "1px dashed var(--border)", borderRadius: 8, background: "var(--bg-input)" }}>
+                            <p style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>Disk telemetry unavailable</p>
+                        </div>
                     )}
                 </div>
             </div>
 
-            {trendModal === "cpu" && <TrendModal title="CPU" color={cpuColor} data={history} valueKey="cpu" onClose={() => setTrendModal(null)} />}
-            {trendModal === "mem" && <TrendModal title="RAM" color={ramColor} data={history} valueKey="mem" onClose={() => setTrendModal(null)} />}
+            {trendModal === "cpu" && <TrendModal title="CPU Utilization History" color={cpuColor} data={history} valueKey="cpu" onClose={() => setTrendModal(null)} />}
+            {trendModal === "mem" && <TrendModal title="Memory Utilization History" color={ramColor} data={history} valueKey="mem" onClose={() => setTrendModal(null)} />}
         </div>
     );
 }

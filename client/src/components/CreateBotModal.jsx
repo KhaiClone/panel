@@ -40,17 +40,14 @@ export default function CreateBotModal({ onClose, onCreated }) {
     }, []);
 
     const set = (field) => (e) => {
-        const val =
-            e.target.type === "checkbox" ? e.target.checked : e.target.value;
+        const val = e.target.type === "checkbox" ? e.target.checked : e.target.value;
         setForm((f) => ({ ...f, [field]: val }));
     };
 
     const toggleTag = (tagId) => {
         setForm((f) => ({
             ...f,
-            tags: f.tags.includes(tagId)
-                ? f.tags.filter((t) => t !== tagId)
-                : [...f.tags, tagId],
+            tags: f.tags.includes(tagId) ? f.tags.filter((t) => t !== tagId) : [...f.tags, tagId],
         }));
     };
 
@@ -60,52 +57,32 @@ export default function CreateBotModal({ onClose, onCreated }) {
         setLoading(true);
 
         try {
-            const endpoint =
-                form.source === "local" ? "/bots/import-local" : "/bots";
-
-            const payload =
-                form.source === "git"
-                    ? {
-                          buyerID: form.buyerID,
-                          botID: form.botID,
-                          name: form.name,
-                          repoUrl: form.repoUrl,
-                          branch: form.branch || "main",
-                          startScript: form.startScript || "npm start",
-                          installCommand: form.installCommand || null,
-                          expiresAt: form.expiresAt
-                              ? new Date(form.expiresAt).toISOString()
-                              : null,
-                          groupId: form.groupId || null,
-                          maxMemory: form.maxMemory || null,
-                          currentPrice: form.currentPrice
-                              ? Number(form.currentPrice)
-                              : null,
-                          tags: form.tags,
-                      }
-                    : {
-                          buyerID: form.buyerID,
-                          botID: form.botID,
-                          name: form.name,
-                          localPath: form.localPath,
-                          startScript: form.startScript || "npm start",
-                          installCommand: form.installCommand || null,
-                          expiresAt: form.expiresAt
-                              ? new Date(form.expiresAt).toISOString()
-                              : null,
-                          groupId: form.groupId || null,
-                          maxMemory: form.maxMemory || null,
-                          currentPrice: form.currentPrice
-                              ? Number(form.currentPrice)
-                              : null,
-                          tags: form.tags,
-                      };
+            const endpoint = form.source === "local" ? "/bots/import-local" : "/bots";
+            const payload = form.source === "git"
+                ? {
+                      buyerID: form.buyerID, botID: form.botID, name: form.name,
+                      repoUrl: form.repoUrl, branch: form.branch || "main",
+                      startScript: form.startScript || "npm start", installCommand: form.installCommand || null,
+                      expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
+                      groupId: form.groupId || null, maxMemory: form.maxMemory || null,
+                      currentPrice: form.currentPrice ? Number(form.currentPrice) : null,
+                      tags: form.tags,
+                  }
+                : {
+                      buyerID: form.buyerID, botID: form.botID, name: form.name,
+                      localPath: form.localPath,
+                      startScript: form.startScript || "npm start", installCommand: form.installCommand || null,
+                      expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
+                      groupId: form.groupId || null, maxMemory: form.maxMemory || null,
+                      currentPrice: form.currentPrice ? Number(form.currentPrice) : null,
+                      tags: form.tags,
+                  };
 
             const { data } = await api.post(endpoint, payload);
             onCreated(data);
             onClose();
         } catch (err) {
-            setError(err.response?.data?.error || "Failed to create bot");
+            setError(err.response?.data?.error || "Failed to create instance");
         } finally {
             setLoading(false);
         }
@@ -114,258 +91,140 @@ export default function CreateBotModal({ onClose, onCreated }) {
     const isGit = form.source === "git";
 
     return createPortal(
-        /* Backdrop */
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-            <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="modal-overlay">
+            <div className="card slide-up" style={{ width: "100%", maxWidth: 650, maxHeight: "90vh", overflowY: "auto", padding: 0, display: "flex", flexDirection: "column" }}>
+                
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
-                    <h2 className="text-lg font-semibold text-slate-100">
-                        ➕ Add Bot
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="text-slate-500 hover:text-slate-300 text-xl leading-none"
-                    >
-                        ✕
-                    </button>
+                <div style={{ display: "flex", alignItems: "center", justifyItems: "space-between", padding: "20px 24px", borderBottom: "1px solid var(--border-light)", background: "var(--bg-surface)", position: "sticky", top: 0, zIndex: 10 }}>
+                    <div style={{ flex: 1 }}>
+                        <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Create New Instance</h2>
+                        <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>Deploy a new bot from Git or Local directory</p>
+                    </div>
+                    <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, padding: 4 }}>✕</button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    {/* ── Source Type Toggle ─────────────────────────────── */}
+                <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}>
+                    
+                    {/* Source Toggle */}
                     <div>
-                        <label className="label">Source</label>
-                        <div className="flex gap-2 mt-1">
-                            {["git", "local"].map((s) => (
+                        <label className="label">Source Type</label>
+                        <div className="tab-bar" style={{ display: "flex", width: "100%", gap: 4 }}>
+                            {["git", "local"].map(s => (
                                 <button
-                                    key={s}
-                                    type="button"
-                                    onClick={() =>
-                                        setForm((f) => ({ ...f, source: s }))
-                                    }
-                                    className={`relative flex-1 py-2 rounded-lg text-sm font-medium border transition-all overflow-hidden ${
-                                        form.source === s
-                                            ? "border-indigo-500/50 text-indigo-400 bg-indigo-500/10"
-                                            : "bg-slate-700/30 border-slate-700/50 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50"
-                                    }`}
+                                    key={s} type="button" onClick={() => setForm(f => ({ ...f, source: s }))}
+                                    className={`tab-item ${form.source === s ? 'active' : ''}`}
+                                    style={{ flex: 1, padding: "12px", fontSize: 14 }}
                                 >
-                                    {s === "git"
-                                        ? "🔗 GitHub / Git URL"
-                                        : "📂 Local Folder"}
+                                    {s === "git" ? "🔗 GitHub / Git URL" : "📂 Local Directory"}
                                 </button>
                             ))}
                         </div>
                     </div>
 
-                    {/* ── Common Fields ──────────────────────────────────── */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                         <div>
                             <label className="label">Buyer Discord ID *</label>
-                            <input
-                                className="input"
-                                placeholder="123456789012345678"
-                                value={form.buyerID}
-                                onChange={set("buyerID")}
-                                required
-                            />
+                            <input className="input" placeholder="123456789012345678" value={form.buyerID} onChange={set("buyerID")} required />
                         </div>
                         <div>
-                            <label className="label">Bot Slug *</label>
-                            <input
-                                className="input"
-                                placeholder="my-bot"
-                                value={form.botID}
-                                onChange={set("botID")}
-                                required
-                                pattern="[a-zA-Z0-9_-]+"
-                                title="Letters, numbers, hyphens, underscores only"
-                            />
+                            <label className="label">Instance ID *</label>
+                            <input className="input" placeholder="my-bot-instance" value={form.botID} onChange={set("botID")} required pattern="[a-zA-Z0-9_-]+" title="Letters, numbers, hyphens, underscores only" />
                         </div>
                     </div>
 
                     <div>
                         <label className="label">Display Name *</label>
-                        <input
-                            className="input"
-                            placeholder="My Awesome Bot"
-                            value={form.name}
-                            onChange={set("name")}
-                            required
-                        />
+                        <input className="input" placeholder="My Awesome Bot" value={form.name} onChange={set("name")} required />
                     </div>
 
-                    {/* ── Git-only Fields ────────────────────────────────── */}
+                    {/* Git Fields */}
                     {isGit && (
-                        <>
+                        <div style={{ padding: 20, background: "rgba(99,102,241,0.05)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
                             <div>
-                                <label className="label">
-                                    Git Repository URL *
-                                </label>
-                                <input
-                                    className="input"
-                                    placeholder="https://github.com/user/repo.git"
-                                    value={form.repoUrl}
-                                    onChange={set("repoUrl")}
-                                    required={isGit}
-                                />
+                                <label className="label" style={{ color: "var(--accent-hover)" }}>Git Repository URL *</label>
+                                <input className="input" placeholder="https://github.com/user/repo.git" value={form.repoUrl} onChange={set("repoUrl")} required={isGit} />
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                 <div>
                                     <label className="label">Branch</label>
-                                    <input
-                                        className="input"
-                                        placeholder="main"
-                                        value={form.branch}
-                                        onChange={set("branch")}
-                                    />
+                                    <input className="input" placeholder="main" value={form.branch} onChange={set("branch")} />
                                 </div>
                                 <div>
-                                    <label className="label">
-                                        Start Command
-                                    </label>
-                                    <input
-                                        className="input"
-                                        placeholder="npm start"
-                                        value={form.startScript}
-                                        onChange={set("startScript")}
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        Supports sudo, e.g. "sudo java -jar Lavalink.jar"
-                                    </p>
+                                    <label className="label">Start Command</label>
+                                    <input className="input mono" placeholder="npm start" value={form.startScript} onChange={set("startScript")} />
                                 </div>
-                            </div>
-                            <div>
-                                <label className="label">
-                                    Install Command
-                                </label>
-                                <input
-                                    className="input"
-                                    placeholder="npm install --omit=dev"
-                                    value={form.installCommand}
-                                    onChange={set("installCommand")}
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Leave empty to skip. Supports sudo if needed.
-                                </p>
-                            </div>
-                        </>
-                    )}
-
-                    {/* ── Local-only Fields ──────────────────────────────── */}
-                    {!isGit && (
-                        <>
-                            <div>
-                                <label className="label">
-                                    Absolute Path on Server *
-                                </label>
-                                <input
-                                    className="input font-mono text-sm"
-                                    placeholder="/root/bots/my-project"
-                                    value={form.localPath}
-                                    onChange={set("localPath")}
-                                    required={!isGit}
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Must be an existing directory on the server.
-                                </p>
-                            </div>
-                            <div>
-                                <label className="label">Start Command</label>
-                                <input
-                                    className="input"
-                                    placeholder="npm start"
-                                    value={form.startScript}
-                                    onChange={set("startScript")}
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Supports sudo, e.g. "sudo java -jar Lavalink.jar"
-                                </p>
                             </div>
                             <div>
                                 <label className="label">Install Command</label>
-                                <input
-                                    className="input"
-                                    placeholder="npm install --omit=dev"
-                                    value={form.installCommand}
-                                    onChange={set("installCommand")}
-                                />
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Leave empty to skip. Supports sudo if needed.
-                                </p>
+                                <input className="input mono" placeholder="npm install --omit=dev" value={form.installCommand} onChange={set("installCommand")} />
+                                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Executed after git pull.</p>
                             </div>
-                        </>
+                        </div>
                     )}
 
-                    {/* ── Shared Optional Fields ─────────────────────────── */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {/* Group */}
+                    {/* Local Fields */}
+                    {!isGit && (
+                        <div style={{ padding: 20, background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
+                            <div>
+                                <label className="label">Absolute Path on Server *</label>
+                                <input className="input mono" placeholder="/root/bots/my-project" value={form.localPath} onChange={set("localPath")} required={!isGit} />
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                <div>
+                                    <label className="label">Start Command</label>
+                                    <input className="input mono" placeholder="npm start" value={form.startScript} onChange={set("startScript")} />
+                                </div>
+                                <div>
+                                    <label className="label">Install Command</label>
+                                    <input className="input mono" placeholder="npm install --omit=dev" value={form.installCommand} onChange={set("installCommand")} />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Meta Fields */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
                         <div>
                             <label className="label">Group</label>
-                            <select
-                                className="input"
-                                value={form.groupId}
-                                onChange={set("groupId")}
-                            >
-                                <option value="">— No group —</option>
-                                {groups.map((g) => (
-                                    <option key={g._id} value={g._id}>
-                                        {g.name}
-                                    </option>
-                                ))}
+                            <select className="input" value={form.groupId} onChange={set("groupId")}>
+                                <option value="">— Ungrouped —</option>
+                                {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
                             </select>
                         </div>
-                        {/* Max Memory */}
                         <div>
                             <label className="label">Max Memory</label>
-                            <input
-                                className="input font-mono"
-                                placeholder="300M"
-                                value={form.maxMemory}
-                                onChange={set("maxMemory")}
-                                pattern="^\d+[KMG]?$"
-                                title={MEM_HINT}
-                            />
-                            <p className="text-xs text-slate-500 mt-1">
-                                {MEM_HINT}
-                            </p>
+                            <input className="input mono" placeholder="300M" value={form.maxMemory} onChange={set("maxMemory")} pattern="^\d+[KMG]?$" title={MEM_HINT} />
                         </div>
-                        {/* Current Price */}
                         <div>
-                            <label className="label">Current Price</label>
-                            <input
-                                type="number"
-                                className="input font-mono disabled:opacity-50"
-                                placeholder="Optional"
-                                value={form.currentPrice}
-                                onChange={set("currentPrice")}
-                                disabled={!form.maxMemory}
-                                title="Only available when Max Memory is set"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">
-                                Optional override price.
-                            </p>
+                            <label className="label">Price (Optional)</label>
+                            <input type="number" className="input mono" placeholder="Override price" value={form.currentPrice} onChange={set("currentPrice")} disabled={!form.maxMemory} />
                         </div>
                     </div>
 
-                    {/* Tags */}
+                    <div>
+                        <label className="label">Expiry Date</label>
+                        <input type="datetime-local" className="input" value={form.expiresAt} onChange={set("expiresAt")} />
+                    </div>
+
                     {availableTags.length > 0 && (
                         <div>
                             <label className="label">Tags</label>
-                            <div className="flex flex-wrap gap-1.5 mt-1">
-                                {availableTags.map((tag) => {
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                                {availableTags.map(tag => {
                                     const isActive = form.tags.includes(tag._id);
                                     return (
                                         <button
-                                            key={tag._id}
-                                            type="button"
-                                            onClick={() => toggleTag(tag._id)}
-                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.07em] transition-all duration-150"
+                                            key={tag._id} type="button" onClick={() => toggleTag(tag._id)}
+                                            className="badge"
                                             style={{
-                                                background: isActive ? `${tag.color}22` : "rgba(255,255,255,0.04)",
-                                                border: `1px solid ${isActive ? tag.color + "55" : "rgba(255,255,255,0.1)"}`,
-                                                color: isActive ? tag.color : "#64748b",
+                                                cursor: "pointer", transition: "all 0.2s",
+                                                background: isActive ? `${tag.color}25` : "var(--bg-input)",
+                                                border: `1px solid ${isActive ? tag.color + "50" : "var(--border)"}`,
+                                                color: isActive ? tag.color : "var(--text-muted)",
+                                                padding: "4px 12px"
                                             }}
                                         >
-                                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: isActive ? tag.color : "#64748b" }} />
+                                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: isActive ? tag.color : "var(--text-dim)", transition: "all 0.2s" }}/>
                                             {tag.name}
                                         </button>
                                     );
@@ -374,55 +233,20 @@ export default function CreateBotModal({ onClose, onCreated }) {
                         </div>
                     )}
 
-                    {/* Expiry */}
-                    <div>
-                        <label className="label">Expiry Date (optional)</label>
-                        <input
-                            type="datetime-local"
-                            className="input"
-                            value={form.expiresAt}
-                            onChange={set("expiresAt")}
-                        />
-                        <p className="text-xs text-slate-500 mt-1">
-                            Leave empty for no expiry.
-                        </p>
-                    </div>
-
-                    {/* Error */}
-                    {error && (
-                        <div className="bg-red-900/40 border border-red-700 text-red-400 text-sm rounded-lg px-3 py-2">
-                            {error}
-                        </div>
-                    )}
-
+                    {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)" }}>{error}</div>}
+                    
                     {loading && (
-                        <div className="bg-indigo-900/40 border border-indigo-700 text-indigo-300 text-sm rounded-lg px-3 py-2">
-                            {isGit
-                                ? "⏳ Cloning repo and installing dependencies — this may take a moment…"
-                                : "⏳ Registering bot…"}
+                        <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--accent-dim)", color: "var(--accent-hover)", border: "1px solid var(--accent)", display: "flex", alignItems: "center", gap: 12 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--accent-hover)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
+                            {isGit ? "Cloning repository and installing dependencies..." : "Registering instance..."}
                         </div>
                     )}
 
-                    {/* Actions */}
-                    <div className="flex gap-3 justify-end pt-2">
-                        <button
-                            type="button"
-                            className="btn-ghost"
-                            onClick={onClose}
-                            disabled={loading}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            className="btn-primary"
-                            disabled={loading}
-                        >
-                            {loading
-                                ? "Adding…"
-                                : isGit
-                                  ? "🔗 Clone & Add"
-                                  : "📂 Import Bot"}
+                    {/* Footer */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+                        <button type="button" className="btn-ghost" onClick={onClose} disabled={loading} style={{ padding: "10px 20px" }}>Cancel</button>
+                        <button type="submit" className="btn-primary" disabled={loading} style={{ padding: "10px 24px" }}>
+                            {loading ? "Deploying..." : (isGit ? "🔗 Deploy from Git" : "📂 Deploy Local Instance")}
                         </button>
                     </div>
                 </form>

@@ -1,16 +1,22 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useData } from "../context/DataContext";
-import api from "../api/client";
 import StatsWidget from "../components/StatsWidget";
 import BotCard from "../components/BotCard";
 import CreateBotModal from "../components/CreateBotModal";
 import GroupManager from "../components/GroupManager";
 
-function StatCard({ label, value, color }) {
+function StatCard({ label, value, icon, color, gradient }) {
     return (
-        <div className="card" style={{ padding: 16 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{label}</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color, lineHeight: 1 }}>{value}</p>
+        <div className="card" style={{ padding: 20, position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: -20, right: -20, width: 100, height: 100, background: gradient, opacity: 0.1, filter: "blur(20px)", borderRadius: "50%" }} />
+            
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
+                <div style={{ padding: 8, borderRadius: 10, background: `${color}15`, color: color }}>
+                    {icon}
+                </div>
+            </div>
+            <p style={{ fontSize: 32, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{value}</p>
         </div>
     );
 }
@@ -18,36 +24,30 @@ function StatCard({ label, value, color }) {
 function GroupSection({ label, color, bots, onRefresh }) {
     const [open, setOpen] = useState(true);
     return (
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 24 }} className="slide-up">
             <button
                 onClick={() => setOpen(v => !v)}
                 style={{
-                    display: "flex", alignItems: "center", gap: 8, width: "100%",
-                    background: "none", border: "none", cursor: "pointer", padding: "4px 0",
+                    display: "flex", alignItems: "center", gap: 12, width: "100%",
+                    background: "none", border: "none", cursor: "pointer", padding: "8px 0",
                     marginBottom: open ? 12 : 4,
                 }}
             >
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: color || "#8892a4", flexShrink: 0 }}/>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-                <span style={{
-                    fontSize: 11, color: "var(--text-dim)", background: "var(--bg-input)",
-                    border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px", fontWeight: 600,
-                }}>{bots.length}</span>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: color || "#8892a4", flexShrink: 0, boxShadow: `0 0 10px ${color}60` }}/>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+                <span className="badge" style={{ background: "var(--bg-input)", color: "var(--text-muted)" }}>{bots.length}</span>
+                
+                <div style={{ flex: 1, height: 1, background: "var(--border-light)", marginLeft: 8 }} />
+
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{
-                    width: 12, height: 12, color: "var(--text-dim)", marginLeft: "auto",
-                    transform: open ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s",
+                    width: 16, height: 16, color: "var(--text-dim)",
+                    transform: open ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s",
                 }}>
                     <polyline points="6 9 12 15 18 9"/>
                 </svg>
             </button>
             {open && (
-                <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                    gap: 12,
-                    paddingLeft: 16,
-                    borderLeft: `2px solid ${color ? `${color}44` : "var(--border)"}`,
-                }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     {bots.map(bot => (
                         <BotCard key={bot._id} bot={bot} onRefresh={onRefresh} />
                     ))}
@@ -85,9 +85,7 @@ export default function Dashboard() {
         return ms && mf && mt;
     });
 
-    const toggleTag = (tagId) => {
-        setSelectedTags(prev => prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]);
-    };
+    const toggleTag = (tagId) => setSelectedTags(prev => prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]);
 
     const groupMap    = Object.fromEntries(groups.map(g => [g._id, g]));
     const botsByGroup = groups.map(g => ({ group: g, bots: visible.filter(b => b.groupId === g._id) })).filter(s => s.bots.length > 0);
@@ -95,95 +93,66 @@ export default function Dashboard() {
     const isFiltering = search.trim() !== "" || filter !== "all" || selectedTags.length > 0;
 
     return (
-        <div style={{ padding: "20px 24px", maxWidth: 1400, margin: "0 auto" }}>
+        <div style={{ padding: "32px", maxWidth: 1600, margin: "0 auto" }}>
 
             {/* Page header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32 }}>
                 <div>
-                    <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: 0 }}>Dashboard</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
-                        {bots.length} bot instances
-                    </p>
+                    <h1 style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>Overview</h1>
+                    <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>Manage and monitor your hosting instances</p>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button id="btn-create-bot" className="btn-primary" onClick={() => setShowCreate(true)}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 13, height: 13 }}>
-                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                        </svg>
-                        New Bot
+                <div style={{ display: "flex", gap: 12 }}>
+                    <button className="btn-ghost" onClick={() => setShowGroups(true)}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        Manage Groups
+                    </button>
+                    <button className="btn-primary" onClick={() => setShowCreate(true)}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16 }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        New Instance
                     </button>
                 </div>
             </div>
 
             {/* Stat cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-                <StatCard label="Total Bots"  value={bots.length} color="var(--accent)" />
-                <StatCard label="Online"      value={online}       color="var(--success)" />
-                <StatCard label="Errored"     value={errored}      color="var(--danger)" />
-                <StatCard label="Expiring"    value={expiringSoon} color="var(--warning)" />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginBottom: 32 }}>
+                <StatCard label="Total Instances" value={bots.length} color="var(--accent)" gradient="var(--accent)" icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 24, height: 24 }}><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>} />
+                <StatCard label="Online" value={online} color="var(--success)" gradient="var(--success)" icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 24, height: 24 }}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
+                <StatCard label="Errored" value={errored} color="var(--danger)" gradient="var(--danger)" icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 24, height: 24 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>} />
+                <StatCard label="Expiring Soon" value={expiringSoon} color="var(--warning)" gradient="var(--warning)" icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 24, height: 24 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>} />
             </div>
 
-            {/* System stats */}
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: 32 }}>
                 <StatsWidget />
             </div>
 
-            {/* Filter bar */}
-            <div style={{
-                display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
-                marginBottom: 16, padding: "10px 14px",
-                background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10,
-            }}>
-                {/* Search */}
-                <div style={{ position: "relative", flex: "1 1 200px", maxWidth: 280 }}>
+            {/* Filter & Search Bar */}
+            <div className="card" style={{ marginBottom: 24, padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
+                <div style={{ position: "relative", flex: "1 1 250px", maxWidth: 400 }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{
-                        width: 15, height: 15, position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
-                        color: "var(--text-dim)"
-                    }}>
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input
-                        id="bot-search"
-                        className="input"
-                        style={{ paddingLeft: 32, fontSize: 13 }}
-                        placeholder="Search bots…"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                    />
+                        width: 16, height: 16, position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)"
+                    }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input className="input" style={{ paddingLeft: 38 }} placeholder="Search instances by name, ID, or tag..." value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
 
-                {/* Filter pills */}
-                <div style={{ display: "flex", gap: 4 }}>
+                <div className="tab-bar">
                     {["all", "online", "stopped"].map(f => (
-                        <button
-                            key={f}
-                            id={`filter-${f}`}
-                            onClick={() => setFilter(f)}
-                            className={filter === f ? "btn-primary" : "btn-ghost"}
-                            style={{ fontSize: 12, textTransform: "capitalize", padding: "5px 12px" }}
-                        >
+                        <button key={f} className={`tab-item ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)} style={{ textTransform: "capitalize" }}>
                             {f}
                         </button>
                     ))}
                 </div>
 
-                <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-dim)" }}>
-                    {visible.length} / {bots.length}
+                <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--text-dim)", fontWeight: 500 }}>
+                    Showing {visible.length} of {bots.length}
                 </span>
             </div>
 
             {/* Tag filters */}
             {tags.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 16 }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Tags:</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 24 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Tags:</span>
                     {selectedTags.length > 0 && (
-                        <button
-                            onClick={() => setSelectedTags([])}
-                            style={{
-                                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, cursor: "pointer",
-                                background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171"
-                            }}
-                        >
+                        <button className="badge" onClick={() => setSelectedTags([])} style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", cursor: "pointer" }}>
                             ✕ Clear
                         </button>
                     )}
@@ -192,17 +161,17 @@ export default function Dashboard() {
                         return (
                             <button
                                 key={tag._id}
-                                id={`tag-filter-${tag._id}`}
                                 onClick={() => toggleTag(tag._id)}
+                                className="badge"
                                 style={{
-                                    display: "inline-flex", alignItems: "center", gap: 4,
-                                    padding: "3px 9px", borderRadius: 99, fontSize: 11, fontWeight: 500, cursor: "pointer",
-                                    background: isActive ? `${tag.color}18` : "var(--bg-input)",
-                                    border: `1px solid ${isActive ? tag.color + "40" : "var(--border)"}`,
+                                    cursor: "pointer",
+                                    background: isActive ? `${tag.color}25` : "var(--bg-input)",
+                                    border: `1px solid ${isActive ? tag.color + "50" : "var(--border)"}`,
                                     color: isActive ? tag.color : "var(--text-muted)",
+                                    transition: "all 0.2s"
                                 }}
                             >
-                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: isActive ? tag.color : "var(--text-dim)" }}/>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: isActive ? tag.color : "var(--text-dim)", transition: "all 0.2s" }}/>
                                 {tag.name}
                             </button>
                         );
@@ -210,42 +179,45 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* Bot list */}
+            {/* Instance List */}
             {loading && bots.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)", fontSize: 13 }}>
-                    <div style={{
-                        width: 28, height: 28, borderRadius: "50%",
-                        border: "3px solid var(--border)", borderTopColor: "var(--accent)",
-                        animation: "spin 0.8s linear infinite", margin: "0 auto 12px",
-                    }}/>
+                <div style={{ textAlign: "center", padding: "80px 0" }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid var(--border-light)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite", margin: "0 auto 16px" }}/>
                     <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                    Loading bots…
+                    <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading instances...</p>
                 </div>
             ) : visible.length === 0 ? (
-                <div style={{
-                    textAlign: "center", padding: "60px 0", borderRadius: 10,
-                    border: "1px dashed var(--border)", color: "var(--text-muted)", fontSize: 13,
-                }}>
-                    <p style={{ fontSize: 32, marginBottom: 12 }}>🤖</p>
-                    <p>{bots.length === 0 ? "No bots yet. Create your first instance." : "No results match your filters."}</p>
+                <div className="card" style={{ textAlign: "center", padding: "80px 0", borderStyle: "dashed" }}>
+                    <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 32, height: 32, color: "var(--text-dim)" }}><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{bots.length === 0 ? "No instances found" : "No matches found"}</h3>
+                    <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 24 }}>{bots.length === 0 ? "Get started by creating your first hosting instance." : "Try adjusting your search or filters."}</p>
                     {bots.length === 0 && (
-                        <button className="btn-primary" style={{ marginTop: 16 }} onClick={() => setShowCreate(true)}>
-                            Create Bot
-                        </button>
+                        <button className="btn-primary" onClick={() => setShowCreate(true)}>Create First Instance</button>
                     )}
                 </div>
             ) : isFiltering ? (
-                <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                    gap: 12,
-                }}>
-                    {visible.map(bot => (
-                        <BotCard key={bot._id} bot={bot} onRefresh={fetchAll} />
-                    ))}
+                <div className="slide-up" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    {/* Header Row */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.2fr 1fr 1fr", padding: "0 20px 12px 20px", gap: 16 }}>
+                        <span className="label">Instance</span>
+                        <span className="label">Status</span>
+                        <span className="label">Usage</span>
+                        <span className="label">Tags</span>
+                        <span className="label" style={{ textAlign: "right" }}>Actions</span>
+                    </div>
+                    {visible.map(bot => <BotCard key={bot._id} bot={bot} onRefresh={fetchAll} />)}
                 </div>
             ) : (
-                <div>
+                <div className="slide-up">
+                    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.2fr 1fr 1fr", padding: "0 20px 12px 20px", gap: 16 }}>
+                        <span className="label">Instance</span>
+                        <span className="label">Status</span>
+                        <span className="label">Usage</span>
+                        <span className="label">Tags</span>
+                        <span className="label" style={{ textAlign: "right" }}>Actions</span>
+                    </div>
                     {botsByGroup.map(({ group, bots: gb }) => (
                         <GroupSection key={group._id} label={group.name} color={group.color} bots={gb} onRefresh={fetchAll} />
                     ))}

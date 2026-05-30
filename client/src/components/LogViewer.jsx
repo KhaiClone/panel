@@ -68,59 +68,53 @@ export default function LogViewer({ botId }) {
 
     // ── Color coding ──────────────────────────────────────────────────────────
     const colorLine = (line) => {
-        if (/error|err|fail|fatal/i.test(line)) return "text-red-400";
-        if (/warn/i.test(line)) return "text-amber-400";
-        if (/info|ready|online/i.test(line)) return "text-emerald-400";
-        if (/debug/i.test(line)) return "text-slate-500";
-        return "text-slate-300";
+        if (/error|err|fail|fatal/i.test(line)) return "var(--danger)";
+        if (/warn/i.test(line)) return "var(--warning)";
+        if (/info|ready|online/i.test(line)) return "var(--success)";
+        if (/debug/i.test(line)) return "var(--text-dim)";
+        return "var(--text)";
     };
 
     return (
-        <div className="flex flex-col gap-4 p-4">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 20, background: "var(--bg-card)", height: 600 }}>
             {/* Toolbar */}
-            <div className="flex items-center gap-3">
-                <span className="text-sm font-semibold text-slate-200">
-                    📋 Logs
-                </span>
-                <div className="flex items-center gap-2 ml-auto">
-                    <button
-                        className="btn-ghost text-xs py-1.5"
-                        onClick={fetchSnapshot}
-                        disabled={loading || live}
-                    >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+                        Console Output
+                    </span>
+                    {live && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "var(--success)", textTransform: "uppercase", letterSpacing: "0.05em", padding: "2px 8px", background: "var(--success-bg)", borderRadius: 99 }}>
+                            <span className="status-dot" style={{ width: 6, height: 6, background: "var(--success)" }} />
+                            Live
+                        </span>
+                    )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button className="btn-ghost" onClick={fetchSnapshot} disabled={loading || live} style={{ padding: "6px 12px" }}>
                         🔄 Refresh
                     </button>
-                    <button
-                        className={`text-[10px] py-1.5 px-3 font-black uppercase tracking-widest transition-all ${
-                            live ? "btn-danger" : "btn-success"
-                        }`}
-                        onClick={toggleLive}
-                    >
-                        {live ? "⏹ Stop Live" : "▶ Live Stream"}
+                    <button className={live ? "btn-danger" : "btn-success"} onClick={toggleLive} style={{ padding: "6px 14px", fontWeight: 700 }}>
+                        {live ? "⏹ Stop Stream" : "▶ Start Live Stream"}
                     </button>
                 </div>
-                {live && (
-                    <span className="flex items-center gap-1 text-xs text-emerald-400">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        LIVE
-                    </span>
-                )}
             </div>
 
             {/* Log output */}
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 h-96 overflow-y-auto font-mono text-xs leading-relaxed">
+            <div className="mono no-scrollbar" style={{ 
+                flex: 1, background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 10,
+                padding: "16px 20px", overflowY: "auto", fontSize: 13, lineHeight: 1.6,
+                boxShadow: "inset 0 4px 20px rgba(0,0,0,0.5)"
+            }}>
                 {loading && !lines.length ? (
-                    <div className="flex items-center justify-center h-full">
-                        <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                        <div style={{ width: 30, height: 30, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
                     </div>
                 ) : lines.length === 0 ? (
-                    <p className="text-slate-500 italic">No logs available.</p>
+                    <p style={{ color: "var(--text-dim)", fontStyle: "italic", textAlign: "center", marginTop: 40 }}>No logs available.</p>
                 ) : (
                     lines.map((line, i) => (
-                        <div
-                            key={i}
-                            className={`${colorLine(line)} whitespace-pre-wrap break-all`}
-                        >
+                        <div key={i} style={{ color: colorLine(line), whiteSpace: "pre-wrap", wordBreak: "break-all", marginBottom: 2 }}>
                             {line}
                         </div>
                     ))

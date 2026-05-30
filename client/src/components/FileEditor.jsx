@@ -59,7 +59,6 @@ export default function FileEditor({ botId }) {
             const isSQLite = isSQLiteFile(filePath);
             const { data } = await api.get(`/bots/${botId}/fs/read?path=${encodeURIComponent(filePath)}${isSQLite ? '&binary=true' : ''}`);
 
-            // Get file size from the files list
             const file = files.find(f => {
                 const fullPath = currentPath ? `${currentPath}/${f.name}` : f.name;
                 return fullPath === filePath;
@@ -67,10 +66,8 @@ export default function FileEditor({ botId }) {
             setFileSize(file ? file.size : null);
 
             if (isSQLite) {
-                // For SQLite files, keep the binary content
                 setContent(data.content);
             } else {
-                // For text files, ensure content is a string
                 setContent(typeof data.content === 'string' ? data.content : String(data.content));
             }
 
@@ -89,11 +86,7 @@ export default function FileEditor({ botId }) {
         setMsg(null);
         try {
             const isSQLite = isSQLiteFile(selectedFile);
-            await api.put(`/bots/${botId}/fs/write`, {
-                path: selectedFile,
-                content,
-                binary: isSQLite
-            });
+            await api.put(`/bots/${botId}/fs/write`, { path: selectedFile, content, binary: isSQLite });
             setOriginal(content);
             setMsg({ type: "success", text: "✅ File saved successfully" });
         } catch (err) {
@@ -125,10 +118,7 @@ export default function FileEditor({ botId }) {
         try {
             await api.delete(`/bots/${botId}/fs/delete`, { data: { path: pathToDelete } });
             if (selectedFile === pathToDelete) {
-                setSelectedFile(null);
-                setContent("");
-                setOriginal("");
-                setFileSize(null);
+                setSelectedFile(null); setContent(""); setOriginal(""); setFileSize(null);
             }
             loadDirectory(currentPath);
             setMsg({ type: "success", text: `✅ Deleted ${f.name}` });
@@ -146,9 +136,7 @@ export default function FileEditor({ botId }) {
         const newPath = currentPath ? `${currentPath}/${newName}` : newName;
         try {
             await api.put(`/bots/${botId}/fs/rename`, { oldPath, newPath });
-            if (selectedFile === oldPath) {
-                setSelectedFile(newPath);
-            }
+            if (selectedFile === oldPath) setSelectedFile(newPath);
             loadDirectory(currentPath);
             setMsg({ type: "success", text: `✅ Renamed to ${newName}` });
         } catch (err) {
@@ -166,15 +154,13 @@ export default function FileEditor({ botId }) {
 
         setMsg(null);
         try {
-            await api.post(`/bots/${botId}/fs/upload`, formData, {
-                headers: { "Content-Type": "multipart/form-data" }
-            });
+            await api.post(`/bots/${botId}/fs/upload`, formData, { headers: { "Content-Type": "multipart/form-data" } });
             loadDirectory(currentPath);
             setMsg({ type: "success", text: `✅ Uploaded ${file.name}` });
         } catch (err) {
             setMsg({ type: "error", text: err.response?.data?.error || "Upload failed" });
         } finally {
-            e.target.value = ""; // Reset input
+            e.target.value = "";
         }
     };
 
@@ -182,14 +168,11 @@ export default function FileEditor({ botId }) {
         e.stopPropagation();
         const filePath = currentPath ? `${currentPath}/${f.name}` : f.name;
         const token = localStorage.getItem("token");
-        // SSE/Download needs token in query param
         const url = `/api/bots/${botId}/fs/download?path=${encodeURIComponent(filePath)}&token=${token}`;
         window.open(url, "_blank");
     };
 
-    useEffect(() => {
-        loadDirectory("");
-    }, [botId]);
+    useEffect(() => { loadDirectory(""); }, [botId]);
 
     const handleNavigateUp = () => {
         if (parts.length === 0) return;
@@ -197,41 +180,28 @@ export default function FileEditor({ botId }) {
         loadDirectory(parts.join("/"));
     };
 
-    const handleNavigateTo = (index) => {
-        const newPath = parts.slice(0, index + 1).join("/");
-        loadDirectory(newPath);
-    };
-
     return (
-        <div className="flex flex-col md:flex-row gap-4 h-[600px]">
+        <div style={{ display: "flex", gap: 16, height: 600, padding: 16, background: "var(--bg-card)", borderRadius: 12 }}>
             {/* File Browser (Left) */}
-            <div className="w-full md:w-1/3 flex flex-col border border-slate-700 rounded bg-slate-800/50 overflow-hidden">
+            <div style={{ width: "30%", display: "flex", flexDirection: "column", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
                 {/* Actions Toolbar */}
-                <div className="p-2 border-b border-slate-700 bg-slate-800 flex items-center justify-between gap-2 text-xs">
-                    <div className="flex gap-2">
-                        <button className="text-slate-300 hover:text-emerald-400" onClick={() => handleCreate('file')} title="New File">📄+</button>
-                        <button className="text-slate-300 hover:text-emerald-400" onClick={() => handleCreate('dir')} title="New Folder">📁+</button>
-                        <button className="text-slate-300 hover:text-indigo-400" onClick={() => fileInputRef.current?.click()} title="Upload File">⬆️ Upload</button>
-                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleUpload} />
+                <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-input)" }}>
+                    <div style={{ display: "flex", gap: 12 }}>
+                        <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }} onClick={() => handleCreate('file')} title="New File">📄</button>
+                        <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }} onClick={() => handleCreate('dir')} title="New Folder">📁</button>
+                        <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }} onClick={() => fileInputRef.current?.click()} title="Upload File">⬆️</button>
+                        <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleUpload} />
                     </div>
-                    <button className="text-slate-400 hover:text-slate-200" onClick={() => loadDirectory(currentPath)} title="Refresh">🔄</button>
+                    <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 14 }} onClick={() => loadDirectory(currentPath)} title="Refresh">🔄</button>
                 </div>
 
                 {/* Breadcrumbs */}
-                <div className="px-2 py-1.5 border-b border-slate-700 bg-slate-800/80 flex items-center gap-1 text-xs font-mono overflow-x-auto whitespace-nowrap scrollbar-thin">
-                    <button 
-                        className="text-indigo-400 hover:text-indigo-300 shrink-0" 
-                        onClick={() => loadDirectory("")}
-                    >
-                        [root]
-                    </button>
+                <div className="mono no-scrollbar" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)", display: "flex", alignItems: "center", gap: 6, fontSize: 12, overflowX: "auto", whiteSpace: "nowrap" }}>
+                    <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent-hover)", padding: 0 }} onClick={() => loadDirectory("")}>~</button>
                     {parts.map((p, i) => (
-                        <span key={i} className="flex items-center gap-1 shrink-0">
-                            <span className="text-slate-500">/</span>
-                            <button 
-                                className="text-indigo-400 hover:text-indigo-300"
-                                onClick={() => handleNavigateTo(i)}
-                            >
+                        <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ color: "var(--text-dim)" }}>/</span>
+                            <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text)", padding: 0 }} onClick={() => loadDirectory(parts.slice(0, i + 1).join("/"))}>
                                 {p}
                             </button>
                         </span>
@@ -239,21 +209,23 @@ export default function FileEditor({ botId }) {
                 </div>
                 
                 {/* File List */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-0.5 scrollbar-thin">
+                <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
                     {loadingDir ? (
-                        <div className="text-center text-slate-500 py-4 text-xs animate-pulse">Loading...</div>
+                        <div style={{ textAlign: "center", color: "var(--text-dim)", padding: 20, fontSize: 13, fontStyle: "italic" }}>Loading...</div>
                     ) : (
-                        <>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             {parts.length > 0 && (
                                 <button
-                                    className="w-full text-left px-2 py-1.5 text-xs text-slate-400 hover:bg-slate-700 rounded flex items-center gap-2"
                                     onClick={handleNavigateUp}
+                                    style={{ width: "100%", textAlign: "left", padding: "6px 10px", fontSize: 13, color: "var(--text-muted)", background: "transparent", border: "none", cursor: "pointer", borderRadius: 6, display: "flex", gap: 8, alignItems: "center" }}
+                                    onMouseOver={e => e.currentTarget.style.background = "var(--bg-input)"}
+                                    onMouseOut={e => e.currentTarget.style.background = "transparent"}
                                 >
                                     <span>📁</span> ..
                                 </button>
                             )}
                             {files.length === 0 && (
-                                <div className="text-center text-slate-500 py-4 text-xs">Folder is empty</div>
+                                <div style={{ textAlign: "center", color: "var(--text-dim)", padding: 20, fontSize: 13 }}>Empty directory</div>
                             )}
                             {files.map(f => {
                                 const fullPath = currentPath ? `${currentPath}/${f.name}` : f.name;
@@ -261,143 +233,81 @@ export default function FileEditor({ botId }) {
                                 return (
                                     <div
                                         key={f.name}
-                                        className={`group w-full text-left px-2 py-1.5 text-xs rounded flex items-center justify-between gap-2 cursor-pointer ${
-                                            isSelected ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-700'
-                                        }`}
-                                        onClick={() => {
-                                            if (f.isDir) {
-                                                loadDirectory(fullPath);
-                                            } else {
-                                                openFile(fullPath);
-                                            }
+                                        style={{
+                                            width: "100%", padding: "6px 10px", fontSize: 13, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer",
+                                            background: isSelected ? "var(--accent)" : "transparent",
+                                            color: isSelected ? "#fff" : "var(--text)",
                                         }}
+                                        onMouseOver={e => { if (!isSelected) e.currentTarget.style.background = "var(--bg-input)"; }}
+                                        onMouseOut={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                                        onClick={() => f.isDir ? loadDirectory(fullPath) : openFile(fullPath)}
                                     >
-                                        <div className="flex items-center gap-2 truncate flex-1">
-                                            <span className="shrink-0">{f.isDir ? '📁' : '📄'}</span>
-                                            <span className="truncate">{f.name}</span>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                                            <span style={{ flexShrink: 0 }}>{f.isDir ? '📁' : '📄'}</span>
+                                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
                                         </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {!f.isDir && (
-                                                <span className={`text-xs ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>
-                                                    {formatFileSize(f.size)}
-                                                </span>
-                                            )}
-                                            <div className={`flex items-center gap-2 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                                {f.isDir ? null : (
-                                                    <button
-                                                        className="hover:text-indigo-400"
-                                                        onClick={(e) => handleDownload(e, f)}
-                                                        title="Download"
-                                                    >
-                                                        ⬇️
-                                                    </button>
-                                                )}
-                                                <button
-                                                    className="hover:text-amber-300"
-                                                    onClick={(e) => handleRename(e, f)}
-                                                    title="Rename"
-                                                >
-                                                    ✏️
-                                                </button>
-                                                <button
-                                                    className="hover:text-red-400"
-                                                    onClick={(e) => handleDelete(e, f)}
-                                                    title="Delete"
-                                                >
-                                                    🗑️
-                                                </button>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                            <div style={{ display: "flex", gap: 4, opacity: isSelected ? 1 : 0.4 }}>
+                                                {!f.isDir && <button style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }} onClick={e => handleDownload(e, f)}>⬇️</button>}
+                                                <button style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }} onClick={e => handleRename(e, f)}>✏️</button>
+                                                <button style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }} onClick={e => handleDelete(e, f)}>🗑️</button>
                                             </div>
                                         </div>
                                     </div>
                                 );
                             })}
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
 
             {/* Editor (Right) */}
-            <div className="w-full md:w-2/3 flex flex-col gap-3">
+            <div style={{ width: "70%", display: "flex", flexDirection: "column", gap: 12 }}>
                 {selectedFile ? (
                     <>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 truncate">
-                                <span className="text-sm font-semibold text-slate-200 truncate">
+                        <div style={{ display: "flex", alignItems: "center", justifyItems: "space-between", gap: 12 }}>
+                            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12 }}>
+                                <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>
                                     {selectedFile.split(/[\/\\]/).pop()}
                                 </span>
-                                {fileSize && (
-                                    <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded border border-slate-700">
-                                        {formatFileSize(fileSize)}
-                                    </span>
-                                )}
-                                {isDirty && (
-                                    <span className="text-xs text-amber-400 bg-amber-900/30 border border-amber-800 px-2 py-0.5 rounded shrink-0">
-                                        Unsaved
-                                    </span>
-                                )}
+                                {fileSize && <span className="badge" style={{ background: "var(--bg-input)", color: "var(--text-muted)" }}>{formatFileSize(fileSize)}</span>}
+                                {isDirty && <span className="badge" style={{ background: "var(--warning-bg)", color: "var(--warning)" }}>Unsaved changes</span>}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    className="btn-ghost text-xs py-1.5 px-3"
-                                    onClick={() => {
-                                        const token = localStorage.getItem("token");
-                                        const url = `/api/bots/${botId}/fs/download?path=${encodeURIComponent(selectedFile)}&token=${token}`;
-                                        window.open(url, "_blank");
-                                    }}
-                                    title="Download File"
-                                >
-                                    ⬇️ Download
-                                </button>
-                                <button
-                                    className="btn-primary text-xs py-1.5 shrink-0"
-                                    onClick={saveFile}
-                                    disabled={saving || !isDirty}
-                                >
-                                    {saving ? "Saving…" : "💾 Save"}
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <button className="btn-primary" onClick={saveFile} disabled={saving || !isDirty} style={{ padding: "6px 16px" }}>
+                                    {saving ? "Saving…" : "💾 Save File"}
                                 </button>
                             </div>
                         </div>
 
                         {loadingFile ? (
-                            <div className="flex-1 flex items-center justify-center border border-slate-700 rounded bg-slate-900/50">
-                                <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
+                            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-base)" }}>
+                                <div style={{ width: 30, height: 30, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
                             </div>
                         ) : isSQLiteFile(selectedFile) ? (
-                            <div className="flex-1 min-h-[300px] overflow-hidden border border-slate-700 rounded bg-slate-900/50">
-                                <SQLiteViewer
-                                    fileContent={content}
-                                    fileName={selectedFile.split(/[\/\\]/).pop()}
-                                />
+                            <div style={{ flex: 1, overflow: "hidden", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-base)" }}>
+                                <SQLiteViewer fileContent={content} fileName={selectedFile.split(/[\/\\]/).pop()} />
                             </div>
                         ) : (
-                            <div className="flex-1 min-h-[300px] overflow-hidden border border-slate-700 rounded bg-slate-900/50">
-                                <CodeMirrorEditor
-                                    value={content}
-                                    onChange={setContent}
-                                    fileName={selectedFile}
-                                />
+                            <div style={{ flex: 1, overflow: "hidden", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-base)" }}>
+                                <CodeMirrorEditor value={content} onChange={setContent} fileName={selectedFile} />
                             </div>
                         )}
-                        <p className="text-xs text-slate-500">
-                            ⚠️ Restart the bot after saving for changes to take effect.
-                        </p>
+                        
+                        {msg && (
+                            <div style={{
+                                padding: "8px 12px", borderRadius: 8, fontSize: 13,
+                                background: msg.type === "success" ? "var(--success-bg)" : "var(--danger-bg)",
+                                color: msg.type === "success" ? "var(--success)" : "var(--danger)",
+                                border: `1px solid ${msg.type === "success" ? "var(--success-border)" : "var(--danger-border)"}`
+                            }}>
+                                {msg.text}
+                            </div>
+                        )}
                     </>
                 ) : (
-                    <div className="flex-1 border border-slate-700 border-dashed rounded flex items-center justify-center text-slate-500 text-sm">
-                        Select a file from the browser to edit
-                    </div>
-                )}
-                
-                {/* Feedback */}
-                {msg && (
-                    <div
-                        className={`text-sm rounded-lg px-3 py-2 border ${
-                            msg.type === "success"
-                                ? "bg-emerald-900/40 border-emerald-700 text-emerald-400"
-                                : "bg-red-900/40 border-red-700 text-red-400"
-                        }`}
-                    >
-                        {msg.text}
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", border: "1px dashed var(--border)", borderRadius: 10, color: "var(--text-dim)", fontSize: 14 }}>
+                        Select a file from the explorer to view and edit
                     </div>
                 )}
             </div>
