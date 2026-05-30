@@ -79,6 +79,15 @@ const checkExpiry = async () => {
                 await sendExpiryWarning(bot, hoursLeft);
             }
         }
+
+        // ── NOTIFICATION CLEANUP ───────────────────────────────────────────────
+        const oldTime = now - (24 * 60 * 60 * 1000); // 24 hours ago
+        const notifs = await db.find("notifications") || [];
+        for (const n of notifs) {
+            if (n.createdAt < oldTime) {
+                await db.findOneAndDelete("notifications", { _id: n._id });
+            }
+        }
     } catch (err) {
         console.error(`[Expiry] Error during check: ${err.message}`);
     }
