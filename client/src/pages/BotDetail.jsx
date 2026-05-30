@@ -79,7 +79,46 @@ function ProgressBar({ percent, color, animated = false }) {
     );
 }
 
-const TABS = ['Controls', 'Resources', 'Logs', 'Environment', 'Files', 'Settings'];
+// ── SVG Icon Components ─────────────────────────────────────────────────────
+const IconCpu = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
+        <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
+        <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
+        <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
+        <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+    </svg>
+);
+const IconMemory = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+        <rect x="2" y="6" width="20" height="12" rx="2"/>
+        <line x1="6" y1="10" x2="6" y2="14"/><line x1="10" y1="10" x2="10" y2="14"/>
+        <line x1="14" y1="10" x2="14" y2="14"/><line x1="18" y1="10" x2="18" y2="14"/>
+    </svg>
+);
+const IconClock = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+);
+const IconRefresh = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+    </svg>
+);
+const IconHourglass = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+        <path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
+        <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
+    </svg>
+);
+
+// Inline spinner for buttons
+const BtnSpinner = () => (
+    <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+);
+
+const TABS = ['Manage', 'Resources', 'Logs', 'Environment', 'Files'];
 
 export default function BotDetail() {
     const { id } = useParams();
@@ -88,7 +127,7 @@ export default function BotDetail() {
 
     const [bot, setBot]       = useState(null);
     const [loading, setLoading] = useState(true);
-    const [tab, setTab]       = useState('Controls');
+    const [tab, setTab]       = useState('Manage');
     const [busy, setBusy]     = useState(null);
     const [confirm, setConfirm] = useState(null);
     const [actionMsg, setActionMsg] = useState(null);
@@ -195,14 +234,20 @@ export default function BotDetail() {
                     color: actionMsg.type === 'success' ? "var(--success)" : "var(--danger)",
                     boxShadow: actionMsg.type === 'success' ? "0 4px 12px rgba(16,185,129,0.2)" : "0 4px 12px rgba(239,68,68,0.2)"
                 }}>
-                    <span>{actionMsg.type === 'success' ? '✓' : '✕'}</span>
+                    {actionMsg.type === 'success' ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>
+                    ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    )}
                     {actionMsg.text}
-                    <button onClick={() => setActionMsg(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "inherit", cursor: "pointer", opacity: 0.7, padding: 4 }}>✕</button>
+                    <button onClick={() => setActionMsg(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "inherit", cursor: "pointer", opacity: 0.7, padding: 4, display: "flex", alignItems: "center" }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
                 </div>
             )}
 
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 32 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                     <button onClick={() => navigate('/dashboard')} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)" }}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6"/></svg>
@@ -211,7 +256,10 @@ export default function BotDetail() {
                         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
                             <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>{bot.name}</h1>
                             {isLocal && (
-                                <span className="badge" style={{ background: "var(--accent-dim)", border: "1px solid var(--accent)", color: "var(--accent)" }}>📂 Local</span>
+                                <span className="badge" style={{ background: "var(--accent-dim)", border: "1px solid var(--accent)", color: "var(--accent)", display: "flex", alignItems: "center", gap: 5 }}>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 11, height: 11 }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                                    Local
+                                </span>
                             )}
                             {currentGroup && (
                                 <span className="badge" style={{ background: `${currentGroup.color}20`, border: `1px solid ${currentGroup.color}40`, color: currentGroup.color }}>{currentGroup.name}</span>
@@ -235,19 +283,22 @@ export default function BotDetail() {
                 </div>
             </div>
 
+            {/* Decorative status accent bar */}
+            <div style={{ height: 2, background: `linear-gradient(90deg, ${s.color}, transparent)`, marginBottom: 28, borderRadius: 1 }} />
+
             {/* Summary stats */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 32 }}>
                 {[
-                    { label: "CPU Usage",   value: `${bot.live?.cpu ?? 0}%`,                        color: "var(--accent-hover)", icon: "💻" },
-                    { label: "Memory",      value: fmt(bot.live?.memory),                            color: "#60A5FA",             icon: "🧠" },
-                    { label: "Uptime",      value: isOnline ? formatUptime(bot.live?.uptime) : "—", color: "var(--success)",      icon: "⏱️" },
-                    { label: "Restarts",    value: bot.live?.restarts ?? 0,                          color: "var(--danger)",       icon: "🔄" },
-                    { label: "Time Left",   value: msLeft !== null ? formatTimeLeft(msLeft) : "∞",  color: msLeft !== null && msLeft < 3 * 86_400_000 ? "var(--danger)" : "var(--warning)", icon: "⏳" },
-                ].map(({ label, value, color, icon }) => (
+                    { label: "CPU Usage",  value: `${bot.live?.cpu ?? 0}%`,                        color: "var(--accent-hover)", Icon: IconCpu },
+                    { label: "Memory",     value: fmt(bot.live?.memory),                            color: "#60A5FA",             Icon: IconMemory },
+                    { label: "Uptime",     value: isOnline ? formatUptime(bot.live?.uptime) : "—", color: "var(--success)",      Icon: IconClock },
+                    { label: "Restarts",   value: bot.live?.restarts ?? 0,                          color: "var(--danger)",       Icon: IconRefresh },
+                    { label: "Time Left",  value: msLeft !== null ? formatTimeLeft(msLeft) : "∞",  color: msLeft !== null && msLeft < 3 * 86_400_000 ? "var(--danger)" : "var(--warning)", Icon: IconHourglass },
+                ].map(({ label, value, color, Icon }) => (
                     <div key={label} className="card card-hover" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
-                            <span style={{ filter: "grayscale(0.5) opacity(0.5)" }}>{icon}</span>
+                            <span style={{ color, opacity: 0.6 }}><Icon /></span>
                         </div>
                         <p className="mono" style={{ fontSize: 22, fontWeight: 700, color }}>{value}</p>
                     </div>
@@ -264,87 +315,199 @@ export default function BotDetail() {
             </div>
 
             <div className="slide-up">
-                {/* Controls Tab */}
-                {tab === 'Controls' && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
-                        <div className="card">
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
-                                <div>
-                                    <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Runtime Controls</h2>
-                                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>Manage the PM2 instance lifecycle</p>
+                {/* ── Manage Tab (Controls + Settings merged) ── */}
+                {tab === 'Manage' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+                        {/* Section 1: Runtime Controls + Metadata side by side */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
+                            {/* Runtime Controls card */}
+                            <div className="card">
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
+                                    <div>
+                                        <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Runtime Controls</h2>
+                                        <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>Manage the PM2 instance lifecycle</p>
+                                    </div>
+                                    <span className="mono badge" style={{ background: "var(--bg-input)", color: "var(--text-dim)", border: "1px solid var(--border)" }}>
+                                        {bot.pm2Name}
+                                    </span>
                                 </div>
-                                <span className="mono badge" style={{ background: "var(--bg-input)", color: "var(--text-dim)", border: "1px solid var(--border)" }}>
-                                    {bot.pm2Name}
-                                </span>
-                            </div>
-                            
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                                {isStopped && (
-                                    <button className="btn-success" style={{ padding: "12px" }} disabled={!!busy} onClick={() => runAction('start', 'start')}>
-                                        {busy === 'start' ? (
-                                            <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }}/> Starting…</>
+                                
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                    {isStopped && (
+                                        <button className="btn-success" style={{ padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => runAction('start', 'start')}>
+                                            {busy === 'start' ? (
+                                                <><BtnSpinner /> Starting…</>
+                                            ) : (
+                                                <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Instance</>
+                                            )}
+                                        </button>
+                                    )}
+                                    {isOnline && (
+                                        <button className="btn-danger" style={{ padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => runAction('stop', 'stop')}>
+                                            {busy === 'stop' ? (
+                                                <><BtnSpinner /> Stopping…</>
+                                            ) : (
+                                                <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop Instance</>
+                                            )}
+                                        </button>
+                                    )}
+                                    <button className="btn-warning" style={{ padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
+                                        {busy === 'restart' ? (
+                                            <><BtnSpinner /> Restarting…</>
                                         ) : (
-                                            <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Instance</>
+                                            <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restart Instance</>
                                         )}
                                     </button>
-                                )}
-                                {isOnline && (
-                                    <button className="btn-danger" style={{ padding: "12px" }} disabled={!!busy} onClick={() => runAction('stop', 'stop')}>
-                                        {busy === 'stop' ? (
-                                            <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }}/> Stopping…</>
+                                    <button className="btn-primary" style={{ padding: "12px", gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
+                                        {busy === 'update' ? (
+                                            <><BtnSpinner /> Processing…</>
+                                        ) : isLocal ? (
+                                            <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Rebuild from Local</>
                                         ) : (
-                                            <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop Instance</>
+                                            <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Pull &amp; Update from Git</>
                                         )}
                                     </button>
-                                )}
-                                <button className="btn-warning" style={{ padding: "12px" }} disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
-                                    {busy === 'restart' ? (
-                                        <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }}/> Restarting…</>
-                                    ) : (
-                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restart Instance</>
-                                    )}
-                                </button>
-                                <button className="btn-primary" style={{ padding: "12px", gridColumn: "1 / -1" }} disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
-                                    {busy === 'update' ? (
-                                        <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }}/> Processing…</>
-                                    ) : isLocal ? (
-                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Rebuild from Local</>
-                                    ) : (
-                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Pull &amp; Update from Git</>
-                                    )}
-                                </button>
+                                </div>
                             </div>
-                            
-                            <div style={{ marginTop: 32, paddingTop: 20, borderTop: "1px dashed var(--danger-border)" }}>
-                                <h3 style={{ fontSize: 14, color: "var(--danger)", fontWeight: 600, marginBottom: 12 }}>Danger Zone</h3>
-                                <button className="btn-ghost" style={{ width: "100%", padding: 12, color: "var(--danger)", border: "1px solid var(--danger-border)", background: "rgba(239,68,68,0.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => setConfirm({ action: 'delete' })}>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                                    Delete Instance
-                                </button>
+
+                            {/* Instance Metadata card */}
+                            <div className="card">
+                                <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
+                                    Instance Metadata
+                                </h3>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                                    {[
+                                        { label: 'Source',          value: isLocal ? `Local: ${bot.localPath}` : bot.repoUrl },
+                                        { label: 'Branch',          value: bot.branch || 'main' },
+                                        { label: 'Start Command',   value: bot.startScript },
+                                        { label: 'Install Command', value: bot.installCommand || '—' },
+                                        { label: 'Memory Limit',    value: bot.maxMemory || 'Unrestricted' },
+                                        { label: 'Created',         value: fmtDate(bot.createdAt) },
+                                        { label: 'Expires',         value: bot.expiresAt ? fmtDate(bot.expiresAt) : 'Permanent' },
+                                    ].map(({ label, value }) => (
+                                        <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                                            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-muted)", flexShrink: 0 }}>{label}</span>
+                                            <span className="mono" style={{ fontSize: 13, color: "var(--text)", textAlign: "right", wordBreak: "break-all" }}>{value}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
-                        {/* Metadata */}
+                        {/* Divider */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                            <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
+                            <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0, whiteSpace: "nowrap" }}>Configuration</h3>
+                            <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
+                        </div>
+
+                        {/* Section 2: Configuration form */}
                         <div className="card">
-                            <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
-                                Instance Metadata
-                            </h3>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                                {[
-                                    { label: 'Source',          value: isLocal ? `Local: ${bot.localPath}` : bot.repoUrl },
-                                    { label: 'Branch',          value: bot.branch || 'main' },
-                                    { label: 'Start Command',   value: bot.startScript },
-                                    { label: 'Install Command', value: bot.installCommand || '—' },
-                                    { label: 'Memory Limit',    value: bot.maxMemory || 'Unrestricted' },
-                                    { label: 'Created',         value: fmtDate(bot.createdAt) },
-                                    { label: 'Expires',         value: bot.expiresAt ? fmtDate(bot.expiresAt) : 'Permanent' },
-                                ].map(({ label, value }) => (
-                                    <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                                        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-muted)", flexShrink: 0 }}>{label}</span>
-                                        <span className="mono" style={{ fontSize: 13, color: "var(--text)", textAlign: "right", wordBreak: "break-all" }}>{value}</span>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 32 }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                                    <div>
+                                        <label className="label">Instance Name</label>
+                                        <input className="input" value={editName} onChange={e => setEditName(e.target.value)} />
                                     </div>
-                                ))}
+                                    <div>
+                                        <label className="label">Start Command</label>
+                                        <input className="input mono" value={editScript} onChange={e => setEditScript(e.target.value)} />
+                                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Supports sudo, e.g. <span className="mono">sudo java -jar app.jar</span></p>
+                                    </div>
+                                    <div>
+                                        <label className="label">Install Command</label>
+                                        <input className="input mono" placeholder="Leave empty to skip" value={editInstallCommand} onChange={e => setEditInstallCommand(e.target.value)} />
+                                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Executed during rebuild or git pull.</p>
+                                    </div>
+                                    <div>
+                                        <label className="label">Group Assignment</label>
+                                        <select className="input" value={editGroupId} onChange={e => setEditGroupId(e.target.value)}>
+                                            <option value="">Ungrouped</option>
+                                            {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
+                                        </select>
+                                    </div>
+                                    {allTags.length > 0 && (
+                                        <div>
+                                            <label className="label">Tags</label>
+                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                                                {allTags.map(tag => {
+                                                    const isActive = editTags.includes(tag._id);
+                                                    return (
+                                                        <button
+                                                            key={tag._id} type="button" onClick={() => toggleEditTag(tag._id)}
+                                                            className="badge"
+                                                            style={{
+                                                                cursor: "pointer", transition: "all 0.2s",
+                                                                background: isActive ? `${tag.color}25` : "var(--bg-input)",
+                                                                border: `1px solid ${isActive ? tag.color + "50" : "var(--border)"}`,
+                                                                color: isActive ? tag.color : "var(--text-muted)",
+                                                            }}
+                                                        >
+                                                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: isActive ? tag.color : "var(--text-dim)", transition: "all 0.2s" }}/>
+                                                            {tag.name}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                        <div>
+                                            <label className="label">Memory Limit</label>
+                                            <input className="input mono" placeholder="e.g. 500M, 1G" value={editMaxMemory} onChange={e => setEditMaxMemory(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="label">Monthly Price (VND)</label>
+                                            <input type="number" className="input mono" placeholder="e.g. 50000" value={editPrice} onChange={e => setEditPrice(e.target.value)} disabled={!editMaxMemory} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="label">Subscription Expiration</label>
+                                        <input type="datetime-local" className="input" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} />
+                                    </div>
+                                    
+                                    <div style={{ marginTop: "auto", background: "var(--bg-input)", padding: 16, borderRadius: 8, border: "1px solid var(--border)" }}>
+                                        <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Need Help?</h4>
+                                        <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                                            Make sure the memory limit uses correct suffixes (K, M, G). The start command will be executed from the root of your project directory.
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 20, borderTop: "1px solid var(--border-light)" }}>
+                                <button className="btn-primary" style={{ padding: "10px 24px", display: "flex", alignItems: "center", gap: 8 }} onClick={saveMeta} disabled={savingMeta}>
+                                    {savingMeta ? (
+                                        <><BtnSpinner /> Saving…</>
+                                    ) : (
+                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 15, height: 15 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Configuration</>
+                                    )}
+                                </button>
+                                {isLocal && (
+                                    <p style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic", display: "flex", alignItems: "center", gap: 6 }}>
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                        Local directory mapping — source code persists even if instance is deleted.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Danger Zone */}
+                        <div style={{ padding: 20, borderRadius: 10, background: 'rgba(239,68,68,0.03)', border: '1px solid var(--danger-border)' }}>
+                            <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>Danger Zone</h3>
+                            <button
+                                className="btn-ghost"
+                                style={{ padding: "10px 20px", color: "var(--danger)", border: "1px solid var(--danger-border)", background: "rgba(239,68,68,0.05)", display: "flex", alignItems: "center", gap: 8 }}
+                                disabled={!!busy}
+                                onClick={() => setConfirm({ action: 'delete' })}
+                            >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                Delete Instance
+                            </button>
                         </div>
                     </div>
                 )}
@@ -352,7 +515,7 @@ export default function BotDetail() {
                 {/* Resources Tab */}
                 {tab === 'Resources' && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                        <div className="card" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24, divideColor: "var(--border)" }}>
+                        <div className="card" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
                                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Current Status</p>
                                 <span className="status-pill" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, fontSize: 15, padding: "8px 20px" }}>
@@ -379,7 +542,7 @@ export default function BotDetail() {
                                 <div>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                            <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6 }}>💻</span>
+                                            <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconCpu /></span>
                                             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>CPU Utilization</span>
                                         </div>
                                         <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)" }}>
@@ -392,7 +555,7 @@ export default function BotDetail() {
                                 <div>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                            <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6 }}>🧠</span>
+                                            <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconMemory /></span>
                                             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>Memory Utilization</span>
                                         </div>
                                         <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-hover)" }}>
@@ -408,7 +571,8 @@ export default function BotDetail() {
                                     )}
                                     {memPercent !== null && memPercent >= 80 && (
                                         <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 6, display: "inline-flex", gap: 8, color: "var(--danger)", fontSize: 13, fontWeight: 500 }}>
-                                            ⚠️ Warning: Memory critical at {memPercent}%. PM2 will restart process if it hits 100%.
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14, flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                            Warning: Memory critical at {memPercent}%. PM2 will restart process if it hits 100%.
                                         </div>
                                     )}
                                 </div>
@@ -435,106 +599,6 @@ export default function BotDetail() {
                 {tab === 'Files' && (
                     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
                         <FileEditor botId={id} />
-                    </div>
-                )}
-
-                {/* Settings Tab */}
-                {tab === 'Settings' && (
-                    <div className="card">
-                        <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 24, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
-                            Instance Configuration
-                        </h2>
-
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 32 }}>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                                <div>
-                                    <label className="label">Instance Name</label>
-                                    <input className="input" value={editName} onChange={e => setEditName(e.target.value)} />
-                                </div>
-                                <div>
-                                    <label className="label">Start Command</label>
-                                    <input className="input mono" value={editScript} onChange={e => setEditScript(e.target.value)} />
-                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Supports sudo, e.g. <span className="mono">sudo java -jar app.jar</span></p>
-                                </div>
-                                <div>
-                                    <label className="label">Install Command</label>
-                                    <input className="input mono" placeholder="Leave empty to skip" value={editInstallCommand} onChange={e => setEditInstallCommand(e.target.value)} />
-                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Executed during rebuild or git pull.</p>
-                                </div>
-                                <div>
-                                    <label className="label">Group Assignment</label>
-                                    <select className="input" value={editGroupId} onChange={e => setEditGroupId(e.target.value)}>
-                                        <option value="">Ungrouped</option>
-                                        {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
-                                    </select>
-                                </div>
-                                {allTags.length > 0 && (
-                                    <div>
-                                        <label className="label">Tags</label>
-                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                                            {allTags.map(tag => {
-                                                const isActive = editTags.includes(tag._id);
-                                                return (
-                                                    <button
-                                                        key={tag._id} type="button" onClick={() => toggleEditTag(tag._id)}
-                                                        className="badge"
-                                                        style={{
-                                                            cursor: "pointer", transition: "all 0.2s",
-                                                            background: isActive ? `${tag.color}25` : "var(--bg-input)",
-                                                            border: `1px solid ${isActive ? tag.color + "50" : "var(--border)"}`,
-                                                            color: isActive ? tag.color : "var(--text-muted)",
-                                                        }}
-                                                    >
-                                                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: isActive ? tag.color : "var(--text-dim)", transition: "all 0.2s" }}/>
-                                                        {tag.name}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                                    <div>
-                                        <label className="label">Memory Limit</label>
-                                        <input className="input mono" placeholder="e.g. 500M, 1G" value={editMaxMemory} onChange={e => setEditMaxMemory(e.target.value)} />
-                                    </div>
-                                    <div>
-                                        <label className="label">Monthly Price (VND)</label>
-                                        <input type="number" className="input mono" placeholder="e.g. 50000" value={editPrice} onChange={e => setEditPrice(e.target.value)} disabled={!editMaxMemory} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="label">Subscription Expiration</label>
-                                    <input type="datetime-local" className="input" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} />
-                                </div>
-                                
-                                <div style={{ marginTop: "auto", background: "var(--bg-input)", padding: 16, borderRadius: 8, border: "1px solid var(--border)" }}>
-                                    <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Need Help?</h4>
-                                    <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                                        Make sure the memory limit uses correct suffixes (K, M, G). The start command will be executed from the root of your project directory.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 20, borderTop: "1px solid var(--border-light)" }}>
-                            <button className="btn-primary" style={{ padding: "10px 24px", display: "flex", alignItems: "center", gap: 8 }} onClick={saveMeta} disabled={savingMeta}>
-                                {savingMeta ? (
-                                    <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }}/> Saving…</>
-                                ) : (
-                                    <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 15, height: 15 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Configuration</>
-                                )}
-                            </button>
-                            {isLocal && (
-                                <p style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic", display: "flex", alignItems: "center", gap: 6 }}>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                    Local directory mapping — source code persists even if instance is deleted.
-                                </p>
-                            )}
-                        </div>
                     </div>
                 )}
             </div>

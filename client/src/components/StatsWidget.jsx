@@ -10,10 +10,12 @@ const fmt = (bytes) => {
 function ProgressBar({ percent, color }) {
     const pct = Math.min(Math.max(percent ?? 0, 0), 100);
     return (
-        <div style={{ background: "var(--bg-input)", borderRadius: 4, height: 6, overflow: "hidden" }}>
+        <div style={{ background: "var(--bg-input)", borderRadius: 6, height: 8, overflow: "hidden" }}>
             <div style={{
-                width: `${pct}%`, height: "100%", borderRadius: 4,
-                background: color, transition: "width 0.4s ease",
+                width: `${pct}%`, height: "100%", borderRadius: 6,
+                background: `linear-gradient(90deg, ${color}cc, ${color})`,
+                transition: "width 0.4s ease",
+                boxShadow: pct > 70 ? `0 0 8px ${color}60` : 'none',
             }}/>
         </div>
     );
@@ -69,7 +71,8 @@ export default function StatsWidget() {
 
     return (
         <div className="card">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
@@ -77,20 +80,34 @@ export default function StatsWidget() {
                     <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>System Resources</span>
                 </div>
                 <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 5, fontWeight: 500 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", display: "inline-block" }}/>
+                    <span className="status-dot" style={{ width: 6, height: 6, background: "var(--success)" }}/>
                     Live
                 </span>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
+            {/* Divider below header */}
+            <div style={{ height: 1, background: "var(--border-light)", marginBottom: 16 }} />
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
                 {metrics.map(({ label, value, sub, percent, color }) => (
-                    <div key={label} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div
+                        key={label}
+                        style={{
+                            display: "flex", flexDirection: "column", gap: 8,
+                            padding: "12px 16px", borderRadius: 10,
+                            background: `${color}06`,
+                            border: `1px solid ${color}15`,
+                            transition: "all 0.2s",
+                        }}
+                    >
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{label}</span>
                             <span className="mono" style={{ fontSize: 13, fontWeight: 700, color }}>{value}</span>
                         </div>
                         <ProgressBar percent={percent} color={color} />
-                        {sub && <p className="mono" style={{ fontSize: 11, color: "var(--text-dim)", marginTop: -4 }}>{sub}</p>}
+                        {sub && (
+                            <p className="mono" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -2 }}>{sub}</p>
+                        )}
                     </div>
                 ))}
             </div>

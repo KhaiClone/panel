@@ -8,13 +8,48 @@ const STATUS_LABEL = {
 };
 
 const ACTIONS = [
-    { key: "start",   label: "Start",   btnClass: "btn-success" },
-    { key: "stop",    label: "Stop",    btnClass: "btn-danger" },
-    { key: "restart", label: "Restart", btnClass: "btn-warning" },
-    { key: "install", label: "Install", btnClass: "btn-primary" },
-    { key: "update",  label: "Update",  btnClass: "btn-primary" },
-    { key: "remove",  label: "Remove",  btnClass: "btn-danger", danger: true },
+    { key: "start",   label: "Start",   btnClass: "btn-success",  icon: "play" },
+    { key: "stop",    label: "Stop",    btnClass: "btn-danger",   icon: "stop" },
+    { key: "restart", label: "Restart", btnClass: "btn-warning",  icon: "restart" },
+    { key: "install", label: "Install", btnClass: "btn-primary",  icon: "download" },
+    { key: "update",  label: "Update",  btnClass: "btn-primary",  icon: "refresh" },
+    { key: "remove",  label: "Remove",  btnClass: "btn-danger",   icon: "trash", danger: true },
 ];
+
+function ActionIcon({ type }) {
+    const s = { width: 13, height: 13 };
+    if (type === "play") return (
+        <svg viewBox="0 0 24 24" fill="currentColor" style={s}><polygon points="5 3 19 12 5 21 5 3" /></svg>
+    );
+    if (type === "stop") return (
+        <svg viewBox="0 0 24 24" fill="currentColor" style={s}><rect x="3" y="3" width="18" height="18" rx="2" /></svg>
+    );
+    if (type === "restart") return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={s}>
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 .49-4.96" />
+        </svg>
+    );
+    if (type === "download") return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={s}>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+    );
+    if (type === "refresh") return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={s}>
+            <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+    );
+    if (type === "trash") return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={s}>
+            <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v6M14 11v6M9 6V4h6v2" />
+        </svg>
+    );
+    return null;
+}
 
 function BotRow({ bot, selected, onToggle }) {
     const status = bot.live?.status || "stopped";
@@ -24,22 +59,23 @@ function BotRow({ bot, selected, onToggle }) {
     return (
         <label style={{
             display: "flex", alignItems: "center", gap: 12, padding: "8px 14px",
-            background: selected ? "rgba(91,115,232,0.1)" : "var(--bg-input)",
+            background: selected ? "rgba(99,102,241,0.08)" : "var(--bg-input)",
             border: `1px solid ${selected ? "var(--accent)" : "var(--border)"}`,
             borderRadius: 8, cursor: "pointer", userSelect: "none", marginBottom: 6,
+            transition: "all 0.15s",
         }}>
-            <input type="checkbox" checked={selected} onChange={onToggle} style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: isOnline ? "var(--success)" : "var(--text-dim)", flexShrink: 0 }}/>
+            <input type="checkbox" checked={selected} onChange={onToggle} style={{ width: 15, height: 15, cursor: "pointer", flexShrink: 0, accentColor: "var(--accent)" }} />
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: isOnline ? "var(--success)" : "var(--text-dim)", flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {bot.name}
                 </span>
-                {isExpired && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--danger)" }}>Expired</span>}
-                <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)", marginLeft: "auto" }}>
+                {isExpired && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--danger)", flexShrink: 0 }}>Expired</span>}
+                <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: "auto", flexShrink: 0 }}>
                     {bot.buyerID} / {bot.botID}
                 </span>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", color: isOnline ? "var(--success)" : "var(--text-muted)", width: 70, textAlign: "right" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: isOnline ? "var(--success)" : "var(--text-muted)", width: 64, textAlign: "right", flexShrink: 0 }}>
                 {STATUS_LABEL[status] || "Unknown"}
             </span>
         </label>
@@ -59,33 +95,39 @@ function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup
                     checked={allSelected}
                     ref={input => { if (input) input.indeterminate = someSelected && !allSelected; }}
                     onChange={() => onToggleGroup(bots.map(b => b._id), !allSelected)}
-                    style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }}
+                    style={{ width: 15, height: 15, cursor: "pointer", flexShrink: 0, accentColor: "var(--accent)" }}
                 />
                 <button
                     onClick={() => setOpen(v => !v)}
                     style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}
                 >
-                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: color || "#8892a4" }}/>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: color || "#8892a4" }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
                     <span style={{ fontSize: 12, color: "var(--text-dim)" }}>[{bots.length}]</span>
                     {someSelected && (
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", background: "rgba(91,115,232,0.1)", padding: "2px 8px", borderRadius: 99 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", background: "rgba(99,102,241,0.1)", padding: "2px 8px", borderRadius: 99 }}>
                             {bots.filter(b => selected.has(b._id)).length} selected
                         </span>
                     )}
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14, color: "var(--text-dim)", marginLeft: "auto", transform: open ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }}>
-                        <polyline points="6 9 12 15 18 9"/>
+                        <polyline points="6 9 12 15 18 9" />
                     </svg>
                 </button>
             </div>
             {open && (
-                <div style={{ paddingLeft: 26, borderLeft: `2px solid ${color ? color + '40' : 'var(--border)'}`, marginLeft: 7 }}>
+                <div style={{ paddingLeft: 26, borderLeft: `2px solid ${color ? color + "40" : "var(--border)"}`, marginLeft: 7 }}>
                     {bots.map(bot => (
                         <BotRow key={bot._id} bot={bot} selected={selected.has(bot._id)} onToggle={() => onToggleBot(bot._id)} />
                     ))}
                 </div>
             )}
         </div>
+    );
+}
+
+function MiniSpinner() {
+    return (
+        <div style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
     );
 }
 
@@ -146,42 +188,54 @@ export default function MultiManage() {
     const allFilteredSelected = filtered.length > 0 && filtered.every(b => selected.has(b._id));
 
     return (
-        <div style={{ padding: "20px 24px", maxWidth: 960, margin: "0 auto" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div className="fade-in" style={{ padding: "28px 32px", maxWidth: 960, margin: "0 auto" }}>
+
+            {/* Page Header */}
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
                 <div>
-                    <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: 0 }}>Multi Manage</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>Bulk operations on {bots.length} instances</p>
+                    <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>Multi-Manage</h1>
+                    <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "6px 0 0 0" }}>Bulk operations on {bots.length} instances</p>
                 </div>
-                <button onClick={allFilteredSelected ? deselectAll : selectAll} className="btn-ghost" style={{ fontSize: 12 }}>
+                <button onClick={allFilteredSelected ? deselectAll : selectAll} className="btn-ghost" style={{ fontSize: 12, padding: "8px 16px" }}>
                     {allFilteredSelected ? "Deselect All" : "Select All"}
                 </button>
             </div>
 
-            {/* Toolbar */}
-            <div className="card" style={{ marginBottom: 20, borderColor: hasSelection ? "var(--accent)" : "var(--border)", transition: "border-color 0.2s" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: hasSelection ? "var(--accent)" : "var(--text-dim)" }}/>
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: hasSelection ? "var(--accent)" : "var(--text-muted)" }}>
-                        {selected.size} Bot{selected.size !== 1 ? 's' : ''} Selected
+            {/* Sticky Action Toolbar */}
+            <div style={{
+                position: "sticky", top: 0, zIndex: 10,
+                background: "rgba(6,8,15,0.92)", backdropFilter: "blur(12px)",
+                padding: "12px 0", marginBottom: 20,
+                borderBottom: `1px solid ${hasSelection ? "var(--accent)" : "var(--border)"}`,
+                transition: "border-color 0.2s",
+            }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{
+                        fontSize: 13, fontWeight: 700,
+                        color: hasSelection ? "var(--accent)" : "var(--text-dim)",
+                        minWidth: 120, transition: "color 0.2s"
+                    }}>
+                        {selected.size} selected
                     </span>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {ACTIONS.map(a => (
                         <button
                             key={a.key}
                             className={a.btnClass}
-                            style={{ flex: "1 1 120px", padding: "10px 0" }}
-                            disabled={!hasSelection || busy}
+                            style={{ padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                            disabled={!hasSelection || !!busy}
                             onClick={() => handleAction(a.key)}
                         >
-                            {busy === a.key ? "⏳ Processing…" : a.label}
+                            {busy === a.key
+                                ? <><MiniSpinner /> Processing…</>
+                                : <><ActionIcon type={a.icon} /> {a.label}</>
+                            }
                         </button>
                     ))}
                 </div>
             </div>
 
             {/* Filters */}
-            <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
                 <input
                     className="input"
                     style={{ flex: "1 1 200px" }}
@@ -206,14 +260,15 @@ export default function MultiManage() {
                                 key={tag._id}
                                 onClick={() => setSelectedTags(prev => prev.includes(tag._id) ? prev.filter(t => t !== tag._id) : [...prev, tag._id])}
                                 style={{
-                                    display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 99,
+                                    display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 99,
                                     fontSize: 12, fontWeight: 500, cursor: "pointer",
                                     background: active ? `${tag.color}18` : "var(--bg-input)",
                                     border: `1px solid ${active ? tag.color + "40" : "var(--border)"}`,
                                     color: active ? tag.color : "var(--text-muted)",
+                                    transition: "all 0.15s",
                                 }}
                             >
-                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: active ? tag.color : "var(--text-dim)" }}/>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: active ? tag.color : "var(--text-dim)" }} />
                                 {tag.name}
                             </button>
                         );
@@ -221,10 +276,13 @@ export default function MultiManage() {
                 </div>
             )}
 
-            {/* Lists */}
+            {/* Bot List */}
             {filtered.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "40px 0", border: "1px dashed var(--border)", borderRadius: 10, color: "var(--text-muted)", fontSize: 13 }}>
-                    No bots match your filters.
+                <div style={{ textAlign: "center", padding: "48px 0", border: "1px dashed var(--border)", borderRadius: 12 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 40, height: 40, color: "var(--text-dim)", marginBottom: 12 }}>
+                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>No bots match your filters.</p>
                 </div>
             ) : (
                 <div>
@@ -237,7 +295,7 @@ export default function MultiManage() {
                 </div>
             )}
 
-            {/* Modals */}
+            {/* Confirm remove modal */}
             {confirm?.action === "remove" && (
                 <ConfirmModal
                     title="Bulk Delete Bots"
@@ -248,27 +306,49 @@ export default function MultiManage() {
                 />
             )}
 
+            {/* Results Modal */}
             {results && (
-                <div style={{ position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "rgba(0,0,0,0.6)" }}>
-                    <div className="card" style={{ maxWidth: 600, width: "100%", maxHeight: "80vh", display: "flex", flexDirection: "column", padding: 0 }}>
-                        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Bulk {lastAction} Results</h2>
-                            <button onClick={() => setResults(null)} className="btn-ghost" style={{ padding: "4px 8px" }}>✕</button>
+                <div className="modal-overlay" onClick={() => setResults(null)}>
+                    <div className="card slide-up" style={{ maxWidth: 620, width: "100%", maxHeight: "80vh", display: "flex", flexDirection: "column", padding: 0 }}
+                        onClick={e => e.stopPropagation()}>
+                        {/* Modal header */}
+                        <div style={{ padding: "16px 22px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                                <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: "var(--text)" }}>Bulk {lastAction} Results</h2>
+                                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "3px 0 0 0" }}>
+                                    {results.filter(r => r.status === "ok").length} succeeded · {results.filter(r => r.status !== "ok").length} failed
+                                </p>
+                            </div>
+                            <button onClick={() => setResults(null)} className="btn-ghost" style={{ padding: "6px 10px", display: "flex", alignItems: "center" }}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}>
+                                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                            </button>
                         </div>
-                        <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-                            {results.map(r => (
-                                <div key={r.botId} style={{
+                        {/* Results list */}
+                        <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                            {results.map((r, i) => (
+                                <div key={r.botId + i} style={{
                                     display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 8,
-                                    background: r.status === "ok" ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
-                                    border: `1px solid ${r.status === "ok" ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+                                    background: r.status === "ok" ? "var(--success-bg)" : "var(--danger-bg)",
+                                    borderLeft: `3px solid ${r.status === "ok" ? "var(--success)" : "var(--danger)"}`,
+                                    border: `1px solid ${r.status === "ok" ? "var(--success-border)" : "var(--danger-border)"}`,
                                 }}>
-                                    <span style={{ fontSize: 16 }}>{r.status === "ok" ? "✅" : "❌"}</span>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, color: r.status === "ok" ? "var(--success)" : "var(--danger)", flexShrink: 0 }}>
+                                        {r.status === "ok"
+                                            ? <><polyline points="20 6 9 17 4 12" /></>
+                                            : <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                                        }
+                                    </svg>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</p>
-                                        <p className="mono" style={{ fontSize: 11, color: r.status === "ok" ? "#4ade80" : "#f87171", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.message}</p>
+                                        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{r.name}</p>
+                                        <p className="mono" style={{ fontSize: 11, color: r.status === "ok" ? "var(--success)" : "var(--danger)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: "2px 0 0 0" }}>{r.message}</p>
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+                            <button onClick={() => setResults(null)} className="btn-primary" style={{ width: "100%", padding: 10 }}>Done</button>
                         </div>
                     </div>
                 </div>
