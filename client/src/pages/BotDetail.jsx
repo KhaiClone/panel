@@ -164,7 +164,6 @@ export default function BotDetail() {
         return (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
                 <div style={{ width: 48, height: 48, borderRadius: "50%", border: "4px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }}/>
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                 <p style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>Initializing Environment…</p>
             </div>
         );
@@ -282,26 +281,45 @@ export default function BotDetail() {
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                 {isStopped && (
                                     <button className="btn-success" style={{ padding: "12px" }} disabled={!!busy} onClick={() => runAction('start', 'start')}>
-                                        {busy === 'start' ? '⏳ Starting…' : '▶ Start Instance'}
+                                        {busy === 'start' ? (
+                                            <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }}/> Starting…</>
+                                        ) : (
+                                            <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Instance</>
+                                        )}
                                     </button>
                                 )}
                                 {isOnline && (
                                     <button className="btn-danger" style={{ padding: "12px" }} disabled={!!busy} onClick={() => runAction('stop', 'stop')}>
-                                        {busy === 'stop' ? '⏳ Stopping…' : '⏹ Stop Instance'}
+                                        {busy === 'stop' ? (
+                                            <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }}/> Stopping…</>
+                                        ) : (
+                                            <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop Instance</>
+                                        )}
                                     </button>
                                 )}
                                 <button className="btn-warning" style={{ padding: "12px" }} disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
-                                    {busy === 'restart' ? '⏳ Restarting…' : '↺ Restart Instance'}
+                                    {busy === 'restart' ? (
+                                        <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }}/> Restarting…</>
+                                    ) : (
+                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restart Instance</>
+                                    )}
                                 </button>
                                 <button className="btn-primary" style={{ padding: "12px", gridColumn: "1 / -1" }} disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
-                                    {busy === 'update' ? '⏳ Processing…' : isLocal ? '📦 Rebuild from Local' : '⬆ Pull & Update from Git'}
+                                    {busy === 'update' ? (
+                                        <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }}/> Processing…</>
+                                    ) : isLocal ? (
+                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Rebuild from Local</>
+                                    ) : (
+                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Pull &amp; Update from Git</>
+                                    )}
                                 </button>
                             </div>
                             
                             <div style={{ marginTop: 32, paddingTop: 20, borderTop: "1px dashed var(--danger-border)" }}>
                                 <h3 style={{ fontSize: 14, color: "var(--danger)", fontWeight: 600, marginBottom: 12 }}>Danger Zone</h3>
-                                <button className="btn-ghost" style={{ width: "100%", padding: 12, color: "var(--danger)", border: "1px solid var(--danger-border)", background: "rgba(239,68,68,0.05)" }} disabled={!!busy} onClick={() => setConfirm({ action: 'delete' })}>
-                                    🗑️ Delete Instance
+                                <button className="btn-ghost" style={{ width: "100%", padding: 12, color: "var(--danger)", border: "1px solid var(--danger-border)", background: "rgba(239,68,68,0.05)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => setConfirm({ action: 'delete' })}>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                    Delete Instance
                                 </button>
                             </div>
                         </div>
@@ -503,8 +521,12 @@ export default function BotDetail() {
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 20, borderTop: "1px solid var(--border-light)" }}>
-                            <button className="btn-primary" style={{ padding: "10px 24px" }} onClick={saveMeta} disabled={savingMeta}>
-                                {savingMeta ? '⏳ Saving Changes…' : '💾 Save Configuration'}
+                            <button className="btn-primary" style={{ padding: "10px 24px", display: "flex", alignItems: "center", gap: 8 }} onClick={saveMeta} disabled={savingMeta}>
+                                {savingMeta ? (
+                                    <><div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }}/> Saving…</>
+                                ) : (
+                                    <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 15, height: 15 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Configuration</>
+                                )}
                             </button>
                             {isLocal && (
                                 <p style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic", display: "flex", alignItems: "center", gap: 6 }}>

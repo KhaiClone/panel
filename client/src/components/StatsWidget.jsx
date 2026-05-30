@@ -30,7 +30,6 @@ export default function StatsWidget() {
                     border: "2px solid var(--border)", borderTopColor: "var(--accent)",
                     animation: "spin 0.8s linear infinite",
                 }}/>
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                 Loading system stats…
             </div>
         );

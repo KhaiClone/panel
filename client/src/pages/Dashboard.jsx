@@ -183,7 +183,6 @@ export default function Dashboard() {
             {loading && bots.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "80px 0" }}>
                     <div style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid var(--border-light)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite", margin: "0 auto 16px" }}/>
-                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                     <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading instances...</p>
                 </div>
             ) : visible.length === 0 ? (

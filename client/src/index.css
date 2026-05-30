@@ -37,6 +37,9 @@
   --sidebar-w: 260px;
   --glass-blur: blur(12px);
   --glow-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+
+  /* alias kept for backwards-compat with Login */
+  --bg: var(--bg-base);
 }
 
 /* ── Base ── */
@@ -302,6 +305,11 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Global spin keyframe (shared, no more inline duplicates) */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Modal overlay */
 .modal-overlay {
   position: fixed;
@@ -312,6 +320,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
   z-index: 1000;
   animation: fadeIn 0.2s ease;
 }

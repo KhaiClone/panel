@@ -27,12 +27,12 @@ export default function Login() {
     };
 
     return (
-        <div style={{
+        <div className="fade-in" style={{
             minHeight: "100vh",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background: "var(--bg)",
+            background: "var(--bg-base)",
             padding: "20px",
         }}>
             <div style={{ width: "100%", maxWidth: 380 }}>
@@ -56,7 +56,7 @@ export default function Login() {
                 </div>
 
                 {/* Form card */}
-                <div className="card" style={{ padding: 24 }}>
+                <div className="card slide-up" style={{ padding: 24 }}>
                     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                         <div>
                             <label className="label">Username</label>
