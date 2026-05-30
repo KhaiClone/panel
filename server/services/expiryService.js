@@ -2,7 +2,7 @@ const cron = require("node-cron");
 const path = require("path");
 const fs = require("fs");
 const db = require("../db");
-const { deleteBot, stopBot, getBotStatus } = require("./pm2Service");
+const { deleteBot, stopBot, getBotStatus, flushLogs } = require("./pm2Service");
 const { sendExpiryWarning, sendExpiryRemoval, sendExpirySuspended } = require("./discordService");
 const { createNotification } = require("../routes/notifications");
 
@@ -107,6 +107,13 @@ const start = () => {
 
     // Every hour at minute 0
     cron.schedule("0 * * * *", checkExpiry);
+    
+    // Auto remove hosting logs every 3 days (midnight on every 3rd day)
+    cron.schedule("0 0 */3 * *", async () => {
+        console.log("[Logs] Auto flushing PM2 hosting logs (3-day cycle)...");
+        await flushLogs();
+    });
+
     console.log("[Expiry] Expiry service started — runs every hour");
 };
 

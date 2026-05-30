@@ -272,6 +272,17 @@ const streamBotLogs = (pm2Name, lines = 50) => {
     );
 };
 
+/**
+ * Flush all PM2 logs.
+ */
+const flushLogs = async () => {
+    try {
+        await runPM2("flush");
+    } catch (err) {
+        console.error("[PM2] Failed to flush logs", err);
+    }
+};
+
 module.exports = {
     startBot,
     stopBot,
@@ -282,4 +293,5 @@ module.exports = {
     getBotLogs,
     streamBotLogs,
     getProcessList,
+    flushLogs,
 };
