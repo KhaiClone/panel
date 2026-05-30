@@ -111,9 +111,9 @@ export default function SystemPage() {
     const ram = clamp(stats.memory?.usedPercent);
     const disk = stats.disk ? clamp(stats.disk.usedPercent) : null;
 
-    const cpuColor = cpu > 80 ? "var(--danger)" : cpu > 50 ? "var(--warning)" : "var(--success)";
-    const ramColor = ram > 80 ? "var(--danger)" : ram > 50 ? "var(--warning)" : "var(--accent-hover)";
-    const diskColor = disk !== null ? (disk > 85 ? "var(--danger)" : disk > 65 ? "var(--warning)" : "#0ea5e9") : "var(--text-muted)";
+    const cpuColor = cpu > 80 ? "#ef4444" : cpu > 50 ? "#f59e0b" : "#10b981";
+    const ramColor = ram > 80 ? "#ef4444" : ram > 50 ? "#f59e0b" : "#6366f1";
+    const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9") : "#64748b";
 
     const cpuVals = history.map(s => clamp(s.cpu?.usagePercent));
     const ramVals = history.map(s => clamp(s.memory?.usedPercent));

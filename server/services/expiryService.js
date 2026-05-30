@@ -4,6 +4,7 @@ const fs = require("fs");
 const db = require("../db");
 const { deleteBot, stopBot, getBotStatus } = require("./pm2Service");
 const { sendExpiryWarning, sendExpiryRemoval, sendExpirySuspended } = require("./discordService");
+const { createNotification } = require("../routes/notifications");
 
 // Hours before expiry to send a warning notification
 // e.g. warn at 72 hours, 47 hours, 24 hours left
@@ -68,6 +69,7 @@ const checkExpiry = async () => {
                     );
                     await stopBot(bot.pm2Name);
                     await sendExpirySuspended(bot);
+                    await createNotification(`Bot "${bot.name}" has expired and was stopped.`, "expired");
                 }
             } else if (WARNING_HOURS.includes(hoursLeft)) {
                 // ── WARNING: notify but keep bot running ───────────────────────────

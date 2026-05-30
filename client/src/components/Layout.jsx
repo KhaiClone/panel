@@ -18,6 +18,19 @@ export default function Layout() {
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+    const [notifs, setNotifs] = useState([]);
+    const [showNotifs, setShowNotifs] = useState(false);
+
+    useEffect(() => {
+        const fetchNotifs = () => {
+            import("../api/client").then(({ default: api }) => {
+                api.get("/notifications").then(r => setNotifs(r.data)).catch(() => {});
+            });
+        };
+        fetchNotifs();
+        const int = setInterval(fetchNotifs, 15000);
+        return () => clearInterval(int);
+    }, []);
 
     useEffect(() => {
         const handleResize = () => {
@@ -34,6 +47,16 @@ export default function Layout() {
     }, [location.pathname]);
 
     const handleLogout = () => { logout(); navigate("/login"); };
+
+    const handleMarkRead = async () => {
+        try {
+            const { default: api } = await import("../api/client");
+            await api.post("/notifications/read");
+            setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+        } catch {}
+    };
+
+    const unreadCount = notifs.filter(n => !n.read).length;
 
     return (
         <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "transparent" }}>
@@ -202,12 +225,64 @@ export default function Layout() {
                         </p>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <button className="btn-ghost" style={{ padding: 8, borderRadius: "50%" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, position: "relative" }}>
+                        <button 
+                            className="btn-ghost" 
+                            style={{ padding: 8, borderRadius: "50%", position: "relative" }}
+                            onClick={() => {
+                                setShowNotifs(!showNotifs);
+                                if (!showNotifs && unreadCount > 0) handleMarkRead();
+                            }}
+                        >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}>
                                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                             </svg>
+                            {unreadCount > 0 && (
+                                <span style={{
+                                    position: "absolute", top: 4, right: 6, width: 8, height: 8, borderRadius: "50%", 
+                                    background: "var(--danger)", border: "2px solid var(--bg-surface)"
+                                }}/>
+                            )}
                         </button>
+
+                        {showNotifs && (
+                            <>
+                                <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setShowNotifs(false)} />
+                                <div className="card slide-up" style={{
+                                    position: "absolute", top: "calc(100% + 10px)", right: 0, width: 340, maxHeight: 400, 
+                                    padding: 0, overflowY: "auto", zIndex: 50, boxShadow: "0 10px 40px rgba(0,0,0,0.4)",
+                                    border: "1px solid var(--border)"
+                                }}>
+                                    <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-input)", position: "sticky", top: 0, zIndex: 2 }}>
+                                        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Notifications</h3>
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column" }}>
+                                        {notifs.length === 0 ? (
+                                            <p style={{ padding: 32, textAlign: "center", margin: 0, fontSize: 13, color: "var(--text-dim)", fontStyle: "italic" }}>No notifications yet.</p>
+                                        ) : (
+                                            notifs.map(n => {
+                                                let badgeColor = "var(--accent)";
+                                                if (n.type === "stop" || n.type === "expired") badgeColor = "var(--warning)";
+                                                if (n.type === "start") badgeColor = "var(--success)";
+                                                
+                                                return (
+                                                    <div key={n._id} style={{ 
+                                                        padding: "16px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", gap: 12,
+                                                        background: n.read ? "transparent" : "var(--bg-input)", transition: "background 0.3s"
+                                                    }}>
+                                                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: badgeColor, marginTop: 5, flexShrink: 0, boxShadow: `0 0 8px ${badgeColor}80` }}/>
+                                                        <div>
+                                                            <p style={{ margin: 0, fontSize: 13, color: "var(--text)", lineHeight: 1.4, fontWeight: n.read ? 500 : 600 }}>{n.message}</p>
+                                                            <p style={{ margin: "4px 0 0 0", fontSize: 11, color: "var(--text-muted)" }}>{new Date(n.createdAt).toLocaleString()}</p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </header>
 

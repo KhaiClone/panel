@@ -6,6 +6,7 @@ const router = express.Router();
 const db = require("../db");
 const pm2Service = require("../services/pm2Service");
 const gitService = require("../services/gitService");
+const { createNotification } = require("./notifications");
 
 // Root directory where all buyer bot folders live (e.g. /root/bots)
 const BOTS_ROOT = () => process.env.BOTS_ROOT_DIR;
@@ -318,6 +319,10 @@ router.put("/:id", async (req, res, next) => {
             updates,
         );
 
+        if (expiresAt !== undefined && (!bot.expiresAt || new Date(expiresAt).getTime() !== bot.expiresAt)) {
+            await createNotification(`Bot "${bot.name}" expiry was extended.`, "extend");
+        }
+
         // If maxMemory changed and the bot is running, apply the new limit live
         if (maxMemory !== undefined) {
             const live = await pm2Service.getBotStatus(bot.pm2Name);
@@ -390,6 +395,7 @@ router.post("/:id/start", async (req, res, next) => {
             bot.maxMemory || null,
             proxyConf,
         );
+        await createNotification(`Bot "${bot.name}" was started.`, "start");
         res.json({ message: "Bot started", output });
     } catch (err) {
         next(err);
@@ -403,6 +409,7 @@ router.post("/:id/stop", async (req, res, next) => {
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
         const output = await pm2Service.stopBot(bot.pm2Name);
+        await createNotification(`Bot "${bot.name}" was stopped.`, "stop");
         res.json({ message: "Bot stopped", output });
     } catch (err) {
         next(err);
@@ -430,6 +437,7 @@ router.post("/:id/restart", async (req, res, next) => {
             bot.maxMemory || null,
             proxyConf,
         );
+        await createNotification(`Bot "${bot.name}" was restarted.`, "restart");
         res.json({ message: "Bot restarted", output });
     } catch (err) {
         next(err);
@@ -478,6 +486,7 @@ router.post("/:id/update", async (req, res, next) => {
             proxyConf,
         );
 
+        await createNotification(`Bot "${bot.name}" was updated / reinstalled.`, "reinstall");
         console.log(`[Bots] Updated bot "${bot.name}"`);
         res.json({
             message: "Bot updated and restarted",

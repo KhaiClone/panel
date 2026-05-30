@@ -83,6 +83,7 @@ export default function ProxyPage() {
     const [loadingConfig, setLoadingConfig] = useState(true);
     const [loadingBots, setLoadingBots] = useState(true);
     const [savingConfig, setSavingConfig] = useState(false);
+    const [msg, setMsg] = useState(null);
     const [togglingId, setTogglingId] = useState(null);
     const [bulkingGroup, setBulkingGroup] = useState(null);
     const [search, setSearch] = useState("");
@@ -104,11 +105,14 @@ export default function ProxyPage() {
 
     const handleSaveConfig = async () => {
         setSavingConfig(true);
+        setMsg(null);
         try {
             const payload = { ...config, port: Number(config.port), username: config.username || null, password: config.password || null };
             const { data } = await api.put("/proxy/config", payload);
             setConfig(c => ({ ...c, ...data }));
-        } catch { alert("Failed to save configuration"); } finally { setSavingConfig(false); }
+            setMsg({ type: "success", text: "Proxy configuration saved successfully." });
+            setTimeout(() => setMsg(null), 3000);
+        } catch { setMsg({ type: "error", text: "Failed to save configuration" }); setTimeout(() => setMsg(null), 3000); } finally { setSavingConfig(false); }
     };
 
     const handleToggleGlobal = async (val) => {
@@ -210,8 +214,13 @@ export default function ProxyPage() {
                                     <div style={{ flex: 1 }}><InputField id="user" label="Username (Optional)" value={config.username} onChange={v => setConfig(c => ({ ...c, username: v }))} placeholder="Leave blank if none" /></div>
                                     <div style={{ flex: 1 }}><InputField id="pass" label="Password (Optional)" type="password" value={config.password} onChange={v => setConfig(c => ({ ...c, password: v }))} placeholder="Leave blank if none" /></div>
                                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                    <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>Requires proxychains4 installed on server.</p>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                                    <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0, flex: 1 }}>Requires proxychains4 installed on server.</p>
+                                    {msg && (
+                                        <span style={{ fontSize: 13, fontWeight: 500, color: msg.type === "success" ? "var(--success)" : "var(--danger)" }}>
+                                            {msg.text}
+                                        </span>
+                                    )}
                                     <button onClick={handleSaveConfig} disabled={savingConfig} className="btn-success" style={{ padding: "8px 24px" }}>{savingConfig ? "Saving..." : "💾 Save"}</button>
                                 </div>
                             </div>
