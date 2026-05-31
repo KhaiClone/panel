@@ -1,6 +1,27 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import api from "../api/client";
 import TrendModal from "../components/TrendModal";
+
+// ── Background poller: runs even when SystemPage is unmounted ─────────────────
+let _bgInterval = null;
+function startGlobalPoller() {
+    if (_bgInterval) return; // already running
+    const poll = () => {
+        api.get("/system/stats").then(r => {
+            const entry = { ...r.data, _ts: Date.now() };
+            try {
+                const saved = localStorage.getItem("bp_sys_history");
+                const prev  = saved ? JSON.parse(saved) : [];
+                const next  = [...prev.slice(-119), entry]; // keep 120 samples
+                localStorage.setItem("bp_sys_history", JSON.stringify(next));
+            } catch { /* storage full */ }
+        }).catch(() => {});
+    };
+    poll(); // immediate first poll
+    _bgInterval = setInterval(poll, 4000);
+}
+// Kick off immediately when module is imported
+startGlobalPoller();
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -87,23 +108,24 @@ export default function SystemPage() {
         try { const saved = localStorage.getItem("bp_sys_history"); return saved ? JSON.parse(saved) : []; }
         catch { return []; }
     });
-    const firstLoad = useRef(true);
 
-    const fetchStats = () => {
-        api.get("/system/stats").then(r => {
-            setStats(r.data);
-            setHistory(h => {
-                const next = [...h.slice(-59), { ...r.data, _ts: Date.now() }];
-                try { localStorage.setItem("bp_sys_history", JSON.stringify(next)); } catch {}
-                return next;
-            });
-            firstLoad.current = false;
-        }).catch(() => {});
-    };
 
     useEffect(() => {
-        fetchStats();
-        const int = setInterval(fetchStats, 4000);
+        // Page-local refresh: re-read from localStorage every 4s so UI stays live
+        const sync = () => {
+            try {
+                const saved = localStorage.getItem("bp_sys_history");
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.length > 0) {
+                        setHistory(parsed);
+                        setStats(parsed[parsed.length - 1]);
+                    }
+                }
+            } catch { /* ignore */ }
+        };
+        sync(); // immediate
+        const int = setInterval(sync, 4000);
         return () => clearInterval(int);
     }, []);
 

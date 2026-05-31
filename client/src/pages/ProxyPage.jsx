@@ -354,15 +354,36 @@ export default function ProxyPage() {
                             {filteredBots.map(bot => {
                                 const isToggling = togglingId === bot._id;
                                 const group = groups.find(g => g._id === bot.groupId);
+                                const isActive = bot.proxyEnabled;
                                 return (
-                                    <div key={bot._id} className="card-hover" style={{
-                                        display: "flex", alignItems: "center", gap: 16, padding: "14px 18px",
-                                        borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-input)", transition: "all 0.2s"
-                                    }}>
+                                    <div
+                                        key={bot._id}
+                                        className="card card-hover"
+                                        onClick={() => !isToggling && handleToggleBot(bot, !bot.proxyEnabled)}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: 16, padding: "14px 20px",
+                                            border: `1px solid ${isActive ? "rgba(16,185,129,0.4)" : "var(--border)"}`,
+                                            background: isActive
+                                                ? "linear-gradient(135deg, var(--bg-card) 0%, rgba(16,185,129,0.04) 100%)"
+                                                : "var(--bg-card)",
+                                            cursor: isToggling ? "wait" : "pointer",
+                                            transition: "all 0.2s",
+                                        }}
+                                    >
+                                        {/* Status dot */}
+                                        <span style={{
+                                            width: 12, height: 12, borderRadius: "50%", flexShrink: 0,
+                                            background: isActive ? "var(--success)" : "var(--text-dim)",
+                                            boxShadow: isActive ? "0 0 8px rgba(16,185,129,0.6)" : "none",
+                                        }} />
+
+                                        {/* Info */}
                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
-                                                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bot.name}</span>
-                                                <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)", background: "var(--bg-surface)", padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border-light)", flexShrink: 0 }}>{bot.pm2Name}</span>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                    {bot.name}
+                                                </span>
+                                                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", background: "var(--bg-input)", padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border-light)", flexShrink: 0 }}>{bot.pm2Name}</span>
                                             </div>
                                             <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
                                                 {group ? (
@@ -374,35 +395,28 @@ export default function ProxyPage() {
                                                     <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>Ungrouped</span>
                                                 )}
                                                 <span style={{ color: "var(--border)" }}>•</span>
-                                                <span style={{ color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 11, height: 11 }}>
-                                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-                                                    </svg>
-                                                    {bot.buyerID || "Unknown"}
-                                                </span>
+                                                <span style={{ color: "var(--text-muted)" }}>{bot.buyerID || "Unknown"}</span>
                                             </div>
                                         </div>
 
-                                        <div style={{ display: "flex", alignItems: "center", gap: 14, paddingLeft: 16, borderLeft: "1px solid var(--border-light)" }}>
-                                            {/* Visual status pill */}
-                                            <span style={{
-                                                display: "inline-flex", alignItems: "center", gap: 5,
-                                                padding: "3px 10px", borderRadius: 99, fontSize: 11, fontWeight: 700,
-                                                background: bot.proxyEnabled ? "var(--success-bg)" : "var(--bg-surface)",
-                                                border: `1px solid ${bot.proxyEnabled ? "var(--success-border)" : "var(--border)"}`,
-                                                color: bot.proxyEnabled ? "var(--success)" : "var(--text-dim)",
-                                            }}>
-                                                <span style={{ width: 5, height: 5, borderRadius: "50%", background: bot.proxyEnabled ? "var(--success)" : "var(--text-dim)" }} />
-                                                {bot.proxyEnabled ? "ROUTED" : "DIRECT"}
-                                            </span>
+                                        {/* Proxy status pill */}
+                                        <span style={{
+                                            fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99,
+                                            background: isActive ? "var(--success-bg)" : "var(--bg-input)",
+                                            border: `1px solid ${isActive ? "var(--success-border)" : "var(--border)"}`,
+                                            color: isActive ? "var(--success)" : "var(--text-dim)",
+                                            whiteSpace: "nowrap",
+                                        }}>
+                                            {isActive ? "ROUTED" : "DIRECT"}
+                                        </span>
 
-                                            <div style={{ width: 44, display: "flex", justifyContent: "center" }}>
-                                                {isToggling ? (
-                                                    <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
-                                                ) : (
-                                                    <Toggle enabled={bot.proxyEnabled} onChange={v => handleToggleBot(bot, v)} />
-                                                )}
-                                            </div>
+                                        {/* Toggle */}
+                                        <div style={{ width: 44, display: "flex", justifyContent: "center" }} onClick={e => e.stopPropagation()}>
+                                            {isToggling ? (
+                                                <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
+                                            ) : (
+                                                <Toggle enabled={bot.proxyEnabled} onChange={v => handleToggleBot(bot, v)} />
+                                            )}
                                         </div>
                                     </div>
                                 );

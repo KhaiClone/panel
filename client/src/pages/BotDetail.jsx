@@ -545,11 +545,11 @@ export default function BotDetail() {
                                             <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconCpu /></span>
                                             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>CPU Utilization</span>
                                         </div>
-                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)" }}>
+                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: cpuPct > 80 ? "#ef4444" : cpuPct > 50 ? "#f59e0b" : "#10b981" }}>
                                             {cpuPct}%
                                         </span>
                                     </div>
-                                    <ProgressBar percent={cpuPct} color={cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)"} animated={isOnline} />
+                                    <ProgressBar percent={cpuPct} color={cpuPct > 80 ? "#ef4444" : cpuPct > 50 ? "#f59e0b" : "#10b981"} animated={isOnline} />
                                 </div>
                                 {/* Memory */}
                                 <div>
@@ -558,7 +558,7 @@ export default function BotDetail() {
                                             <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconMemory /></span>
                                             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>Memory Utilization</span>
                                         </div>
-                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-hover)" }}>
+                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: memPercent !== null && memPercent > 80 ? "#ef4444" : "#6366f1" }}>
                                             {fmt(bot.live?.memory)}{memLimitBytes ? ` / ${fmt(memLimitBytes)}` : ""}
                                         </span>
                                     </div>
@@ -583,7 +583,7 @@ export default function BotDetail() {
 
                 {/* Logs Tab */}
                 {tab === 'Logs' && (
-                    <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
+                    <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg-base)", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
                         <LogViewer botId={id} />
                     </div>
                 )}

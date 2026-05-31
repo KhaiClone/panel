@@ -168,8 +168,20 @@ function GitHubSection() {
 
     const handleCopy = async (publicKey, keyName) => {
         try {
-            await navigator.clipboard.writeText(publicKey);
-            setCopiedKey(keyName); setTimeout(() => setCopiedKey(null), 2000);
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(publicKey);
+            } else {
+                // Fallback for non-HTTPS or older browsers
+                const el = document.createElement('textarea');
+                el.value = publicKey;
+                el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+                document.body.appendChild(el);
+                el.focus(); el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            }
+            setCopiedKey(keyName);
+            setTimeout(() => setCopiedKey(null), 2000);
         } catch { /* ignore */ }
     };
 
@@ -448,7 +460,7 @@ export default function PanelManage() {
                     </div>
                 </div>
                 {showLogs && (
-                    <div className="mono" style={{ flex: 1, padding: 16, background: "var(--bg-input)", overflowY: "auto", fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                    <div className="mono" style={{ flex: 1, padding: 16, background: "var(--bg-base)", overflowY: "auto", fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all", borderTop: "1px solid var(--border)" }}>
                         {logs}
                         <div ref={logsEndRef} />
                     </div>
