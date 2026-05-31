@@ -13,15 +13,22 @@ const clamp = (v) => Number.isFinite(v) ? Math.min(Math.max(Math.round(v), 0), 1
 
 function BigRing({ percent, color, label, sub }) {
     const safe = clamp(percent);
+    const radius = 64;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (safe / 100) * circumference;
+
     return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-            <div style={{
-                position: "relative", width: 160, height: 160, display: "flex", alignItems: "center", justifyContent: "center",
-                borderRadius: "50%", background: `conic-gradient(${color} ${safe}%, var(--bg-input) ${safe}%)`,
-                boxShadow: `0 0 24px ${color}25`,
-            }}>
-                <div style={{ width: 140, height: 140, borderRadius: "50%", background: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ fontSize: 32, fontWeight: 800, color: "var(--text)" }}>{safe}<span style={{ fontSize: 16, color: "var(--text-muted)", marginLeft: 2 }}>%</span></span>
+            <div style={{ position: "relative", width: 160, height: 160, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="160" height="160" style={{ position: "absolute", top: 0, left: 0, transform: "rotate(-90deg)", filter: `drop-shadow(0 0 12px ${color}40)` }}>
+                    <circle cx="80" cy="80" r={radius} fill="none" stroke="var(--bg-input)" strokeWidth="12" />
+                    <circle cx="80" cy="80" r={radius} fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
+                            style={{ strokeDasharray: circumference, strokeDashoffset, transition: "stroke-dashoffset 1s ease-out" }} />
+                </svg>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 1 }}>
+                    <span style={{ fontSize: 36, fontWeight: 800, color: "var(--text)", lineHeight: 1 }}>
+                        {safe}<span style={{ fontSize: 18, color: "var(--text-muted)", marginLeft: 2 }}>%</span>
+                    </span>
                 </div>
             </div>
             <div style={{ textAlign: "center" }}>

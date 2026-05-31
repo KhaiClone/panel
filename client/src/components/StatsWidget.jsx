@@ -41,9 +41,9 @@ export default function StatsWidget() {
     const ram  = stats?.memory?.usedPercent ?? 0;
     const disk = stats?.disk?.usedPercent   ?? null;
 
-    const cpuColor  = cpu  > 80 ? "#ef4444" : cpu  > 50 ? "#f97316" : "#22c55e";
-    const ramColor  = ram  > 80 ? "#ef4444" : ram  > 50 ? "#f97316" : "#5b73e8";
-    const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f97316" : "#38bdf8") : "#64748b";
+    const cpuColor  = cpu  > 80 ? "#ef4444" : cpu  > 50 ? "#f59e0b" : "#10b981";
+    const ramColor  = ram  > 80 ? "#ef4444" : ram  > 50 ? "#f59e0b" : "#6366f1";
+    const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9") : "#64748b";
 
     const metrics = [
         {
