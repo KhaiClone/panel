@@ -230,25 +230,36 @@ export default function MultiManage() {
 
             {/* Sticky Action Toolbar */}
             <div style={{
-                position: "sticky", top: 0, zIndex: 10,
-                background: "rgba(6,8,15,0.92)", backdropFilter: "blur(12px)",
-                padding: "12px 0", marginBottom: 20,
-                borderBottom: `1px solid ${hasSelection ? "var(--accent)" : "var(--border)"}`,
-                transition: "border-color 0.2s",
+                position: "sticky", top: 16, zIndex: 10,
+                background: "var(--bg-card)", backdropFilter: "blur(20px)",
+                padding: "12px 20px", marginBottom: 24,
+                borderRadius: 16,
+                border: `1px solid ${hasSelection ? "var(--accent)" : "var(--border)"}`,
+                boxShadow: hasSelection ? "0 10px 40px rgba(99,102,241,0.2)" : "0 10px 30px rgba(0,0,0,0.5)",
+                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16
             }}>
+                <span style={{
+                    fontSize: 14, fontWeight: 700,
+                    color: hasSelection ? "var(--accent)" : "var(--text-dim)",
+                    display: "flex", alignItems: "center", gap: 8,
+                    transition: "color 0.2s"
+                }}>
+                    {hasSelection && (
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
+                    )}
+                    {selected.size} selected
+                </span>
+                
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <span style={{
-                        fontSize: 13, fontWeight: 700,
-                        color: hasSelection ? "var(--accent)" : "var(--text-dim)",
-                        minWidth: 120, transition: "color 0.2s"
-                    }}>
-                        {selected.size} selected
-                    </span>
                     {ACTIONS.map(a => (
                         <button
                             key={a.key}
                             className={a.btnClass}
-                            style={{ padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+                            style={{ 
+                                padding: "8px 16px", fontSize: 13, display: "flex", alignItems: "center", gap: 8,
+                                opacity: !hasSelection || !!busy ? 0.6 : 1
+                            }}
                             disabled={!hasSelection || !!busy}
                             onClick={() => handleAction(a.key)}
                         >
