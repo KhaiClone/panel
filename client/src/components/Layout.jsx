@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -73,6 +73,25 @@ export default function Layout() {
         } catch {}
     };
 
+    const handleRemoveNotif = async (id) => {
+        try {
+            const { default: api } = await import("../api/client");
+            await api.delete(`/notifications/${id}`);
+            setNotifs(prev => prev.filter(n => n._id !== id));
+        } catch {}
+    };
+
+    const notifRef = useRef(null);
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (showNotifs && notifRef.current && !notifRef.current.contains(e.target)) {
+                setShowNotifs(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [showNotifs]);
+
     const unreadCount = notifs.filter(n => !n.read).length;
 
     const cpuPct = stats?.cpu?.usagePercent != null ? Math.round(stats.cpu.usagePercent) : null;
@@ -118,43 +137,50 @@ export default function Layout() {
 
                 {/* Brand header */}
                 <div style={{
-                    padding: "16px",
+                    padding: sidebarOpen ? "16px" : "16px 0",
                     display: "flex",
                     alignItems: "center",
+                    justifyContent: sidebarOpen ? "flex-start" : "center",
                     gap: 12,
                     minHeight: 66,
                     borderBottom: "1px solid var(--border-light)",
                 }}>
                     {/* Logo */}
-                    <div style={{
-                        width: 40, height: 40,
-                        borderRadius: 10,
-                        overflow: "hidden",
-                        flexShrink: 0,
-                        background: "var(--accent-dim)",
-                        border: "1px solid var(--border)",
-                    }}>
+                    <div 
+                        onClick={() => !sidebarOpen && setSidebarOpen(true)}
+                        style={{
+                            width: 40, height: 40,
+                            borderRadius: 10,
+                            overflow: "hidden",
+                            flexShrink: 0,
+                            background: "var(--accent-dim)",
+                            border: "1px solid var(--border)",
+                            cursor: sidebarOpen ? "default" : "pointer",
+                        }}>
                         <img src="/logo.png" alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     </div>
 
-                    <div style={{ overflow: "hidden", opacity: sidebarOpen ? 1 : 0, transition: "opacity 0.2s", flex: 1 }}>
-                        <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text)", letterSpacing: "0.02em", whiteSpace: "nowrap", margin: 0 }}>NexusPanel</p>
-                        <p style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", margin: 0 }}>Bot Manager</p>
-                    </div>
+                    {sidebarOpen && (
+                        <>
+                            <div className="fade-in" style={{ flex: 1, overflow: "hidden" }}>
+                                <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text)", letterSpacing: "0.02em", whiteSpace: "nowrap", margin: 0 }}>NexusPanel</p>
+                                <p style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", margin: 0 }}>Bot Manager</p>
+                            </div>
 
-                    <button
-                        onClick={() => setSidebarOpen(v => !v)}
-                        style={{
-                            marginLeft: "auto",
-                            background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer",
-                            padding: 6, display: "flex", borderRadius: 8, flexShrink: 0, transition: "all 0.2s",
-                        }}
-                        title={sidebarOpen ? "Collapse" : "Expand"}
-                    >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18, transform: sidebarOpen ? "none" : "rotate(180deg)", transition: "transform 0.3s" }}>
-                            <polyline points="15 18 9 12 15 6"/>
-                        </svg>
-                    </button>
+                            <button
+                                onClick={() => setSidebarOpen(false)}
+                                style={{
+                                    background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer",
+                                    padding: 6, display: "flex", borderRadius: 8, flexShrink: 0, transition: "all 0.2s",
+                                }}
+                                title="Collapse"
+                            >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}>
+                                    <polyline points="15 18 9 12 15 6"/>
+                                </svg>
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 {/* Nav */}
@@ -292,11 +318,11 @@ export default function Layout() {
                     </div>
 
                     {/* Right section */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }} ref={notifRef}>
 
                         {/* CPU Health chip */}
                         {cpuPct != null && (
-                            <div style={{
+                            <div className="hide-mobile" style={{
                                 display: "flex", alignItems: "center", gap: 6,
                                 padding: "5px 10px", borderRadius: 99,
                                 background: "var(--bg-input)", border: "1px solid var(--border)",
@@ -330,15 +356,13 @@ export default function Layout() {
 
                         {/* Notification dropdown */}
                         {showNotifs && (
-                            <>
-                                <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setShowNotifs(false)} />
-                                <div className="card slide-up" style={{
-                                    position: "absolute", top: "calc(100% + 10px)", right: 0,
-                                    width: 340, maxHeight: 420,
-                                    padding: 0, overflowY: "auto", zIndex: 50,
-                                    boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
-                                    border: "1px solid var(--border)",
-                                }}>
+                            <div className="card slide-up" style={{
+                                position: "absolute", top: "calc(100% + 10px)", right: 0,
+                                width: 340, maxHeight: 420,
+                                padding: 0, overflowY: "auto", zIndex: 50,
+                                boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
+                                border: "1px solid var(--border)",
+                            }}>
                                     {/* Header */}
                                     <div style={{
                                         padding: "14px 18px",
@@ -381,22 +405,32 @@ export default function Layout() {
                                                     <div key={n._id} style={{
                                                         padding: "14px 18px",
                                                         borderBottom: "1px solid var(--border-light)",
-                                                        display: "flex", gap: 12,
+                                                        display: "flex", gap: 12, alignItems: "flex-start",
                                                         background: n.read ? "transparent" : "var(--bg-input)",
                                                         borderLeft: `3px solid ${borderColor}`,
                                                         transition: "background 0.3s",
                                                     }}>
-                                                        <div>
+                                                        <div style={{ flex: 1 }}>
                                                             <p style={{ margin: 0, fontSize: 13, color: "var(--text)", lineHeight: 1.4, fontWeight: n.read ? 400 : 600 }}>{n.message}</p>
                                                             <p style={{ margin: "5px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{new Date(n.createdAt).toLocaleString()}</p>
                                                         </div>
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); handleRemoveNotif(n._id); }} 
+                                                            style={{ 
+                                                                background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", 
+                                                                padding: 4, display: "flex", borderRadius: 4 
+                                                            }}
+                                                            onMouseOver={e => e.currentTarget.style.color = "var(--danger)"}
+                                                            onMouseOut={e => e.currentTarget.style.color = "var(--text-muted)"}
+                                                        >
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                                        </button>
                                                     </div>
                                                 );
                                             })
                                         )}
                                     </div>
                                 </div>
-                            </>
                         )}
                     </div>
                 </header>
