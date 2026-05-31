@@ -448,7 +448,7 @@ export default function PanelManage() {
             </div>
 
             {/* Logs Viewer */}
-            <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 400, padding: 0, overflow: "hidden" }}>
+            <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 400, maxHeight: 600, padding: 0, overflow: "hidden" }}>
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 16 }}>📋</span>
