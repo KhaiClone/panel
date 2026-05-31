@@ -183,9 +183,9 @@ export default function FileEditor({ botId }) {
     return (
         <div style={{ display: "flex", gap: 16, height: 600, padding: 16, background: "var(--bg-card)", borderRadius: 12 }}>
             {/* File Browser (Left) */}
-            <div style={{ width: "30%", display: "flex", flexDirection: "column", background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ width: "30%", display: "flex", flexDirection: "column", background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
                 {/* Actions Toolbar */}
-                <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-input)" }}>
+                <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.15)" }}>
                     <div style={{ display: "flex", gap: 12 }}>
                         <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }} onClick={() => handleCreate('file')} title="New File">📄</button>
                         <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }} onClick={() => handleCreate('dir')} title="New Folder">📁</button>
@@ -196,7 +196,7 @@ export default function FileEditor({ botId }) {
                 </div>
 
                 {/* Breadcrumbs */}
-                <div className="mono no-scrollbar" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)", display: "flex", alignItems: "center", gap: 6, fontSize: 12, overflowX: "auto", whiteSpace: "nowrap" }}>
+                <div className="mono no-scrollbar" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.1)", display: "flex", alignItems: "center", gap: 6, fontSize: 12, overflowX: "auto", whiteSpace: "nowrap" }}>
                     <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent-hover)", padding: 0 }} onClick={() => loadDirectory("")}>~</button>
                     {parts.map((p, i) => (
                         <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -281,15 +281,15 @@ export default function FileEditor({ botId }) {
                         </div>
 
                         {loadingFile ? (
-                            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-base)" }}>
+                            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-input)" }}>
                                 <div style={{ width: 30, height: 30, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
                             </div>
                         ) : isSQLiteFile(selectedFile) ? (
-                            <div style={{ flex: 1, overflow: "hidden", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-base)" }}>
+                            <div style={{ flex: 1, overflow: "hidden", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-input)" }}>
                                 <SQLiteViewer fileContent={content} fileName={selectedFile.split(/[\/\\]/).pop()} />
                             </div>
                         ) : (
-                            <div style={{ flex: 1, overflow: "hidden", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-base)" }}>
+                            <div style={{ flex: 1, overflow: "hidden", border: "1px solid var(--border)", borderRadius: 10, background: "var(--bg-input)" }}>
                                 <CodeMirrorEditor value={content} onChange={setContent} fileName={selectedFile} />
                             </div>
                         )}
