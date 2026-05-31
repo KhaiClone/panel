@@ -165,7 +165,7 @@ export default function ProxyPage() {
                     : 'var(--bg-card)',
             }}>
                 {/* Group header */}
-                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
                     <span style={{ width: 14, height: 14, borderRadius: "50%", background: color || '#64748b', flexShrink: 0, boxShadow: color ? `0 0 10px ${color}80` : 'none' }} />
                     <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {group?.name ?? 'Ungrouped'}

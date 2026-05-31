@@ -102,7 +102,7 @@ function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup
                 : 'var(--bg-card)',
         }}>
             {/* Group header row */}
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: bots.length > 0 ? 16 : 0 }}>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: bots.length > 0 ? 16 : 0 }}>
                 {/* Colored dot */}
                 <span style={{ width: 14, height: 14, borderRadius: "50%", background: color || '#64748b', flexShrink: 0, boxShadow: color ? `0 0 10px ${color}80` : 'none' }} />
 
