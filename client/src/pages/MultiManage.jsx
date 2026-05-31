@@ -60,50 +60,26 @@ function BotRow({ bot, selected, onToggle }) {
     return (
         <div
             onClick={onToggle}
-            className="card card-hover"
             style={{
-                display: "flex", alignItems: "center", gap: 14, padding: "12px 18px",
-                marginBottom: 8, cursor: "pointer", userSelect: "none",
+                display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                borderRadius: 8, cursor: "pointer", userSelect: "none",
+                background: selected ? "rgba(99,102,241,0.1)" : "var(--bg-input)",
                 border: `1px solid ${selected ? "var(--accent)" : "var(--border)"}`,
-                background: selected
-                    ? "linear-gradient(135deg, var(--bg-card) 0%, rgba(99,102,241,0.06) 100%)"
-                    : "var(--bg-card)",
-                boxShadow: selected ? "0 0 0 1px var(--accent-dim)" : "none",
                 transition: "all 0.15s",
             }}
         >
-            {/* Left accent strip */}
-            <span style={{ width: 10, height: 10, borderRadius: "50%", background: statusColor, flexShrink: 0, boxShadow: `0 0 6px ${statusColor}80` }} />
-
-            {/* Name + IDs */}
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor, flexShrink: 0, boxShadow: isOnline ? `0 0 5px ${statusColor}80` : 'none' }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {bot.name}
                     </span>
-                    {isExpired && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--danger)", flexShrink: 0 }}>Expired</span>}
+                    {isExpired && <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "rgba(239,68,68,0.1)", color: "var(--danger)", flexShrink: 0 }}>Expired</span>}
                 </div>
-                <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                    {bot.buyerID} / {bot.botID}
-                </span>
+                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>{bot.buyerID}</span>
             </div>
-
-            {/* Status label */}
-            <span style={{
-                fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-                padding: "3px 10px", borderRadius: 99,
-                background: isOnline ? "var(--success-bg)" : "var(--bg-input)",
-                border: `1px solid ${isOnline ? "var(--success-border)" : "var(--border)"}`,
-                color: isOnline ? "var(--success)" : "var(--text-muted)",
-                flexShrink: 0,
-            }}>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: statusColor, display: "inline-block", marginRight: 5 }} />
-                {STATUS_LABEL[status] || "Unknown"}
-            </span>
-
-            {/* Selected check */}
             {selected && (
-                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" style={{ width: 14, height: 14, flexShrink: 0 }}>
                     <polyline points="20 6 9 17 4 12" />
                 </svg>
             )}
@@ -111,41 +87,60 @@ function BotRow({ bot, selected, onToggle }) {
     );
 }
 
-
 function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup }) {
-    const [open, setOpen] = useState(true);
     const allSelected = bots.length > 0 && bots.every(b => selected.has(b._id));
     const someSelected = bots.some(b => selected.has(b._id));
+    const onlineCount = bots.filter(b => b.live?.status === 'online').length;
+    const selectedCount = bots.filter(b => selected.has(b._id)).length;
 
     return (
-        <div style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <input
-                    type="checkbox"
-                    checked={allSelected}
-                    ref={input => { if (input) input.indeterminate = someSelected && !allSelected; }}
-                    onChange={() => onToggleGroup(bots.map(b => b._id), !allSelected)}
-                    style={{ width: 15, height: 15, cursor: "pointer", flexShrink: 0, accentColor: "var(--accent)" }}
-                />
+        <div className="card card-hover" style={{
+            padding: 20, marginBottom: 12,
+            border: `1px solid ${color ? color + '40' : 'var(--border)'}`,
+            background: color
+                ? `linear-gradient(135deg, var(--bg-card) 0%, ${color}05 100%)`
+                : 'var(--bg-card)',
+        }}>
+            {/* Group header row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: bots.length > 0 ? 16 : 0 }}>
+                {/* Colored dot */}
+                <span style={{ width: 14, height: 14, borderRadius: "50%", background: color || '#64748b', flexShrink: 0, boxShadow: color ? `0 0 10px ${color}80` : 'none' }} />
+
+                {/* Group name */}
+                <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+
+                {/* Online badge */}
+                <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", whiteSpace: "nowrap" }}>
+                    {onlineCount} online
+                </span>
+
+                {/* Bot count */}
+                <span style={{ fontSize: 13, color: "var(--text-muted)", whiteSpace: "nowrap", width: 56, textAlign: "right" }}>
+                    {bots.length} bot{bots.length !== 1 ? 's' : ''}
+                </span>
+
+                {/* Selected count badge */}
+                {someSelected && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", background: "rgba(99,102,241,0.12)", padding: "3px 10px", borderRadius: 99, border: "1px solid var(--accent-dim)", whiteSpace: "nowrap" }}>
+                        {selectedCount} selected
+                    </span>
+                )}
+
+                {/* Select all / deselect all */}
                 <button
-                    onClick={() => setOpen(v => !v)}
-                    style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}
+                    onClick={() => onToggleGroup(bots.map(b => b._id), !allSelected)}
+                    className="btn-ghost"
+                    style={{ padding: "4px 12px", fontSize: 12, color: allSelected ? "var(--danger)" : "var(--accent)", border: `1px solid ${allSelected ? "var(--danger-border)" : "var(--accent-dim)"}`, whiteSpace: "nowrap" }}
                 >
-                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: color || "#8892a4" }} />
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}>[{bots.length}]</span>
-                    {someSelected && (
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", background: "rgba(99,102,241,0.1)", padding: "2px 8px", borderRadius: 99 }}>
-                            {bots.filter(b => selected.has(b._id)).length} selected
-                        </span>
-                    )}
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14, color: "var(--text-dim)", marginLeft: "auto", transform: open ? "none" : "rotate(-90deg)", transition: "transform 0.15s" }}>
-                        <polyline points="6 9 12 15 18 9" />
-                    </svg>
+                    {allSelected ? "Deselect all" : "Select all"}
                 </button>
             </div>
-            {open && (
-                <div style={{ paddingLeft: 26, borderLeft: `2px solid ${color ? color + "40" : "var(--border)"}`, marginLeft: 7 }}>
+
+            {/* Bot rows — always visible */}
+            {bots.length === 0 ? (
+                <p style={{ fontSize: 13, color: "var(--text-dim)", fontStyle: "italic", textAlign: "center", margin: 0 }}>No bots assigned to this group.</p>
+            ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
                     {bots.map(bot => (
                         <BotRow key={bot._id} bot={bot} selected={selected.has(bot._id)} onToggle={() => onToggleBot(bot._id)} />
                     ))}
@@ -154,6 +149,8 @@ function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup
         </div>
     );
 }
+
+
 
 function MiniSpinner() {
     return (

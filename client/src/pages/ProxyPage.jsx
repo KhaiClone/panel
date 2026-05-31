@@ -137,6 +137,10 @@ export default function ProxyPage() {
         });
     }, [bots, search, filterGroup, filterStatus]);
 
+    const groupMap = useMemo(() => Object.fromEntries(groups.map(g => [g._id, g])), [groups]);
+    const botsByGroup = useMemo(() => groups.map(g => ({ group: g, bots: filteredBots.filter(b => b.groupId === g._id) })).filter(s => s.bots.length > 0), [groups, filteredBots]);
+    const ungrouped = useMemo(() => filteredBots.filter(b => !b.groupId || !groupMap[b.groupId]), [filteredBots, groupMap]);
+
     const handleBulk = async (proxyEnabled) => {
         setBulking(true);
         const ids = filteredBots.map(b => b._id);
@@ -148,6 +152,100 @@ export default function ProxyPage() {
 
     const enabledCount = bots.filter(b => b.proxyEnabled).length;
     const isConfigured = !!(config.host && config.port);
+
+    const ProxyGroupCard = ({ group, groupBots }) => {
+        const proxiedCount = groupBots.filter(b => b.proxyEnabled).length;
+        const color = group?.color;
+        return (
+            <div className="card card-hover" style={{
+                padding: 20, marginBottom: 12,
+                border: `1px solid ${color ? color + '40' : 'var(--border)'}`,
+                background: color
+                    ? `linear-gradient(135deg, var(--bg-card) 0%, ${color}05 100%)`
+                    : 'var(--bg-card)',
+            }}>
+                {/* Group header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+                    <span style={{ width: 14, height: 14, borderRadius: "50%", background: color || '#64748b', flexShrink: 0, boxShadow: color ? `0 0 10px ${color}80` : 'none' }} />
+                    <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {group?.name ?? 'Ungrouped'}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "var(--success-bg)", border: "1px solid var(--success-border)", color: "var(--success)", whiteSpace: "nowrap" }}>
+                        {proxiedCount} proxied
+                    </span>
+                    <span style={{ fontSize: 13, color: "var(--text-muted)", whiteSpace: "nowrap", width: 56, textAlign: "right" }}>
+                        {groupBots.length} bot{groupBots.length !== 1 ? 's' : ''}
+                    </span>
+                    {/* Bulk enable/disable for this group */}
+                    <button onClick={() => handleBulkGroup(groupBots, true)} disabled={bulking} className="btn-ghost"
+                        style={{ padding: "4px 10px", fontSize: 11, color: "var(--success)", border: "1px solid var(--success-border)", whiteSpace: "nowrap" }}>
+                        Enable all
+                    </button>
+                    <button onClick={() => handleBulkGroup(groupBots, false)} disabled={bulking} className="btn-ghost"
+                        style={{ padding: "4px 10px", fontSize: 11, color: "var(--danger)", border: "1px solid var(--danger-border)", whiteSpace: "nowrap" }}>
+                        Disable all
+                    </button>
+                </div>
+
+                {/* Bot items grid */}
+                {groupBots.length === 0 ? (
+                    <p style={{ fontSize: 13, color: "var(--text-dim)", fontStyle: "italic", textAlign: "center", margin: 0 }}>No instances match current filters.</p>
+                ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 8 }}>
+                        {groupBots.map(bot => {
+                            const isToggling = togglingId === bot._id;
+                            const isActive = bot.proxyEnabled;
+                            return (
+                                <div
+                                    key={bot._id}
+                                    onClick={() => !isToggling && handleToggleBot(bot, !bot.proxyEnabled)}
+                                    style={{
+                                        display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                                        borderRadius: 8, cursor: isToggling ? "wait" : "pointer",
+                                        background: isActive ? "rgba(16,185,129,0.08)" : "var(--bg-input)",
+                                        border: `1px solid ${isActive ? "rgba(16,185,129,0.35)" : "var(--border)"}`,
+                                        transition: "all 0.15s",
+                                    }}
+                                >
+                                    <span style={{
+                                        width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                                        background: isActive ? "#10b981" : "var(--text-dim)",
+                                        boxShadow: isActive ? "0 0 6px rgba(16,185,129,0.7)" : "none",
+                                    }} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bot.name}</div>
+                                        <div className="mono" style={{ fontSize: 10, color: "var(--text-dim)" }}>{bot.buyerID}</div>
+                                    </div>
+                                    <span style={{
+                                        fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
+                                        background: isActive ? "var(--success-bg)" : "var(--bg-surface)",
+                                        border: `1px solid ${isActive ? "var(--success-border)" : "var(--border)"}`,
+                                        color: isActive ? "var(--success)" : "var(--text-dim)",
+                                        whiteSpace: "nowrap", flexShrink: 0,
+                                    }}>{ isActive ? "ON" : "OFF" }</span>
+                                    <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                                        {isToggling
+                                            ? <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
+                                            : <Toggle enabled={bot.proxyEnabled} onChange={v => handleToggleBot(bot, v)} />
+                                        }
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const handleBulkGroup = async (groupBots, proxyEnabled) => {
+        setBulking(true);
+        const ids = groupBots.map(b => b._id);
+        try {
+            await api.put("/proxy/bots/bulk", { ids, proxyEnabled });
+            setBots(prev => prev.map(b => ids.includes(b._id) ? { ...b, proxyEnabled } : b));
+        } catch { alert("Bulk operation failed"); } finally { setBulking(false); }
+    };
 
     return (
         <div className="fade-in" style={{ padding: "28px 32px", maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
@@ -296,22 +394,17 @@ export default function ProxyPage() {
                 )}
             </div>
 
-            {/* Instance Assignments */}
-            <div className="card slide-up" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                {/* Header with filters */}
-                <div style={{ padding: "18px 24px", borderBottom: "1px solid var(--border)", background: "var(--bg-input)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
-                    <div style={{ flex: 1, minWidth: 180 }}>
-                        <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: "var(--text)" }}>Instance Assignments</h2>
-                        <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "3px 0 0 0" }}>Control which instances are routed through the proxy.</p>
+            {/* Instance Assignments - GroupCard style */}
+            <div>
+                {/* Section header + filters */}
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1 }}>
+                        <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: "0 0 4px" }}>Instance Assignments</h2>
+                        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Click a hosting to toggle proxy routing.</p>
                     </div>
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <input className="input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 200, background: "var(--bg-card)" }} />
-                        <select className="input" value={filterGroup} onChange={e => setFilterGroup(e.target.value)} style={{ width: 150, background: "var(--bg-card)" }}>
-                            <option value="all">All Groups</option>
-                            <option value="ungrouped">Ungrouped</option>
-                            {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
-                        </select>
-                        <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ width: 150, background: "var(--bg-card)" }}>
+                        <input className="input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 180 }} />
+                        <select className="input" value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ width: 140 }}>
                             <option value="all">Any Status</option>
                             <option value="active">Proxy Active</option>
                             <option value="inactive">Proxy Inactive</option>
@@ -319,111 +412,26 @@ export default function ProxyPage() {
                     </div>
                 </div>
 
-                {/* Bulk actions sub-bar */}
-                <div style={{ padding: "10px 24px", background: "var(--bg-surface)", borderBottom: "1px solid var(--border-light)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
-                        {filteredBots.length} instance{filteredBots.length !== 1 ? "s" : ""} shown
-                    </span>
-                    <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={() => handleBulk(true)} disabled={bulking || loadingBots || filteredBots.length === 0} className="btn-ghost"
-                            style={{ padding: "5px 12px", fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 5 }}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 11, height: 11 }}><polyline points="20 6 9 17 4 12" /></svg>
-                            Enable All
-                        </button>
-                        <button onClick={() => handleBulk(false)} disabled={bulking || loadingBots || filteredBots.length === 0} className="btn-ghost"
-                            style={{ padding: "5px 12px", fontSize: 11, color: "var(--danger)", display: "flex", alignItems: "center", gap: 5 }}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 11, height: 11 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                            Disable All
-                        </button>
+                {loadingBots ? (
+                    <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: "50%", border: "4px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
                     </div>
-                </div>
-
-                <div style={{ padding: 16 }}>
-                    {loadingBots ? (
-                        <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
-                        </div>
-                    ) : filteredBots.length === 0 ? (
-                        <div style={{ padding: "50px 20px", textAlign: "center" }}>
-                            <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><IconSearch /></div>
-                            <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 6px 0" }}>No instances found</h3>
-                            <p style={{ fontSize: 13, color: "var(--text-dim)", margin: 0 }}>Try adjusting your filters or search query.</p>
-                        </div>
-                    ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            {filteredBots.map(bot => {
-                                const isToggling = togglingId === bot._id;
-                                const group = groups.find(g => g._id === bot.groupId);
-                                const isActive = bot.proxyEnabled;
-                                return (
-                                    <div
-                                        key={bot._id}
-                                        className="card card-hover"
-                                        onClick={() => !isToggling && handleToggleBot(bot, !bot.proxyEnabled)}
-                                        style={{
-                                            display: "flex", alignItems: "center", gap: 16, padding: "14px 20px",
-                                            border: `1px solid ${isActive ? "rgba(16,185,129,0.4)" : "var(--border)"}`,
-                                            background: isActive
-                                                ? "linear-gradient(135deg, var(--bg-card) 0%, rgba(16,185,129,0.04) 100%)"
-                                                : "var(--bg-card)",
-                                            cursor: isToggling ? "wait" : "pointer",
-                                            transition: "all 0.2s",
-                                        }}
-                                    >
-                                        {/* Status dot */}
-                                        <span style={{
-                                            width: 12, height: 12, borderRadius: "50%", flexShrink: 0,
-                                            background: isActive ? "var(--success)" : "var(--text-dim)",
-                                            boxShadow: isActive ? "0 0 8px rgba(16,185,129,0.6)" : "none",
-                                        }} />
-
-                                        {/* Info */}
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                    {bot.name}
-                                                </span>
-                                                <span className="mono" style={{ fontSize: 10, color: "var(--text-dim)", background: "var(--bg-input)", padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border-light)", flexShrink: 0 }}>{bot.pm2Name}</span>
-                                            </div>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
-                                                {group ? (
-                                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--text-muted)" }}>
-                                                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color || "var(--text-muted)" }} />
-                                                        {group.name}
-                                                    </span>
-                                                ) : (
-                                                    <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>Ungrouped</span>
-                                                )}
-                                                <span style={{ color: "var(--border)" }}>•</span>
-                                                <span style={{ color: "var(--text-muted)" }}>{bot.buyerID || "Unknown"}</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Proxy status pill */}
-                                        <span style={{
-                                            fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99,
-                                            background: isActive ? "var(--success-bg)" : "var(--bg-input)",
-                                            border: `1px solid ${isActive ? "var(--success-border)" : "var(--border)"}`,
-                                            color: isActive ? "var(--success)" : "var(--text-dim)",
-                                            whiteSpace: "nowrap",
-                                        }}>
-                                            {isActive ? "ROUTED" : "DIRECT"}
-                                        </span>
-
-                                        {/* Toggle */}
-                                        <div style={{ width: 44, display: "flex", justifyContent: "center" }} onClick={e => e.stopPropagation()}>
-                                            {isToggling ? (
-                                                <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
-                                            ) : (
-                                                <Toggle enabled={bot.proxyEnabled} onChange={v => handleToggleBot(bot, v)} />
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
+                ) : filteredBots.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "64px 20px", border: "1px dashed var(--border)", borderRadius: 16 }}>
+                        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><IconSearch /></div>
+                        <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-muted)", margin: "0 0 6px" }}>No instances found</h3>
+                        <p style={{ fontSize: 13, color: "var(--text-dim)", margin: 0 }}>Try adjusting your filters.</p>
+                    </div>
+                ) : (
+                    <div>
+                        {botsByGroup.map(({ group, bots: gb }) => (
+                            <ProxyGroupCard key={group._id} group={group} groupBots={gb} />
+                        ))}
+                        {ungrouped.length > 0 && (
+                            <ProxyGroupCard group={{ name: 'Ungrouped', color: '#64748b' }} groupBots={ungrouped} />
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
