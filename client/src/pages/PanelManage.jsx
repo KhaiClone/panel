@@ -386,7 +386,7 @@ export default function PanelManage() {
     const statusColor = isOnline ? "var(--success)" : "var(--danger)";
 
     return (
-        <div style={{ padding: "20px 24px", maxWidth: 960, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        <div className="page-compact fade-in" style={{ maxWidth: 960, display: "flex", flexDirection: "column", gap: 24 }}>
             {reconnecting && <ReconnectOverlay onReconnected={handleReconnected} />}
             {confirm && <ConfirmModal title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
 

@@ -105,8 +105,11 @@
 
   /* ── Page Layout ── */
   .page {
+    padding: 32px;
+    margin: 0 auto;
+  }
+  .page-compact {
     padding: 28px 32px;
-    max-width: 1600px;
     margin: 0 auto;
   }
 
@@ -343,6 +346,8 @@
     background: var(--accent);
     color: #fff;
     box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
+  .w-full-mobile {
+    width: 100% !important;
   }
 }
 
@@ -394,4 +399,34 @@
   padding: 16px;
   z-index: 1000;
   animation: fadeIn 0.2s ease;
+}
+
+/* ── Mobile Layout Fixes ── */
+@media (max-width: 768px) {
+  .page, .page-compact {
+    padding: 16px !important;
+  }
+  .card, .card-glass {
+    padding: 16px !important;
+  }
+  .form-group {
+    width: 100% !important;
+  }
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+  .mobile-wrap {
+    flex-wrap: wrap !important;
+  }
+  .hide-mobile {
+    display: none !important;
+  }
+  .w-full-mobile {
+    width: 100% !important;
+  }
+}
+
+.overflow-x-auto {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }

@@ -181,9 +181,9 @@ export default function FileEditor({ botId }) {
     };
 
     return (
-        <div style={{ display: "flex", gap: 16, height: 600, padding: 16, background: "var(--bg-card)", borderRadius: 12 }}>
+        <div className="mobile-stack" style={{ display: "flex", gap: 16, height: "min(600px, 80vh)", padding: 16, background: "var(--bg-card)", borderRadius: 12 }}>
             {/* File Browser (Left) */}
-            <div style={{ width: "30%", display: "flex", flexDirection: "column", background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+            <div className="w-full-mobile" style={{ width: "30%", display: "flex", flexDirection: "column", background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
                 {/* Actions Toolbar */}
                 <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.15)" }}>
                     <div style={{ display: "flex", gap: 12 }}>
@@ -262,7 +262,7 @@ export default function FileEditor({ botId }) {
             </div>
 
             {/* Editor (Right) */}
-            <div style={{ width: "70%", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="w-full-mobile" style={{ width: "70%", display: "flex", flexDirection: "column", gap: 12, minHeight: 400 }}>
                 {selectedFile ? (
                     <>
                         <div style={{ display: "flex", alignItems: "center", justifyItems: "space-between", gap: 12 }}>

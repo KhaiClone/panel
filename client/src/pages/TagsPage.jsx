@@ -124,7 +124,7 @@ export default function TagsPage() {
     };
 
     return (
-        <div className="fade-in" style={{ padding: "28px 32px", maxWidth: 1100, margin: "0 auto" }}>
+        <div className="fade-in page-compact" style={{ maxWidth: 1100 }}>
             {/* Page Header */}
             <div style={{ marginBottom: 28 }}>
                 <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>Instance Tags</h1>

@@ -189,7 +189,7 @@ export default function Dashboard() {
     const isFiltering = search.trim() !== "" || filter !== "all" || selectedTags.length > 0;
 
     return (
-        <div className="fade-in" style={{ padding: "32px", maxWidth: 1600, margin: "0 auto" }}>
+        <div className="fade-in page" style={{ maxWidth: 1600 }}>
 
             {/* ── Page header ── */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32 }}>

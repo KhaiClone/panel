@@ -215,7 +215,7 @@ export default function MultiManage() {
     const allFilteredSelected = filtered.length > 0 && filtered.every(b => selected.has(b._id));
 
     return (
-        <div className="fade-in" style={{ padding: "28px 32px", maxWidth: 960, margin: "0 auto" }}>
+        <div className="fade-in page-compact" style={{ maxWidth: 960 }}>
 
             {/* Page Header */}
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>

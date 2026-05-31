@@ -105,7 +105,7 @@ export default function GroupsPage() {
     }
 
     return (
-        <div className="fade-in" style={{ padding: "32px", maxWidth: 1000, margin: "0 auto" }}>
+        <div className="fade-in page" style={{ maxWidth: 1000 }}>
 
             {/* Header */}
             <div style={{ display: "flex", alignItems: "flex-end", justifyItems: "space-between", marginBottom: 32 }}>

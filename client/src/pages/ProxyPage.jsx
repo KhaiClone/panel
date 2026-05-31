@@ -248,7 +248,7 @@ export default function ProxyPage() {
     };
 
     return (
-        <div className="fade-in" style={{ padding: "28px 32px", maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        <div className="fade-in page-compact" style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: 24 }}>
 
             {/* Page Header */}
             <div>

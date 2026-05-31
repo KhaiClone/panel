@@ -150,7 +150,7 @@ export default function SystemPage() {
     const ramVals = history.map(s => clamp(s.memory?.usedPercent));
 
     return (
-        <div className="fade-in" style={{ padding: "28px 32px", maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 28 }}>
+        <div className="fade-in page-compact" style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: 28 }}>
 
             {/* Page Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
