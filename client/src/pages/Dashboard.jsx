@@ -192,7 +192,7 @@ export default function Dashboard() {
         <div className="fade-in page" style={{ maxWidth: 1600 }}>
 
             {/* ── Page header ── */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32 }}>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32 }}>
                 <div>
                     <h1 style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>
                         Overview

@@ -32,6 +32,19 @@ router.post("/read", async (req, res, next) => {
 });
 
 /**
+ * DELETE /api/notifications/:id
+ * Removes a specific notification.
+ */
+router.delete("/:id", async (req, res, next) => {
+    try {
+        await db.findOneAndDelete("notifications", { _id: req.params.id });
+        res.json({ message: "Notification deleted" });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * Helper to create a notification directly from backend services.
  */
 router.createNotification = async (message, type) => {

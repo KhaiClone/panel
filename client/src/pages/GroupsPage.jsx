@@ -108,7 +108,7 @@ export default function GroupsPage() {
         <div className="fade-in page" style={{ maxWidth: 1000 }}>
 
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "flex-end", justifyItems: "space-between", marginBottom: 32 }}>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 32, gap: 16 }}>
                 <div style={{ flex: 1 }}>
                     <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>Bot Groups</h1>
                     <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 6 }}>Organise your instances into categorised collections.</p>
@@ -128,7 +128,7 @@ export default function GroupsPage() {
                         {editing === 'new' ? 'Create New Group' : `Edit Group: ${editing.name}`}
                     </h2>
                     
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                             <div>
                                 <label className="label">Group Name</label>
