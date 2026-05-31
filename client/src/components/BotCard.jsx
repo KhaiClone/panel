@@ -42,6 +42,20 @@ export default function BotCard({ bot, onRefresh }) {
 
     const cpuPct = bot.live?.cpu ?? 0;
     const ramMB  = bot.live?.memory ? Math.round(bot.live.memory / 1_048_576) : 0;
+    
+    // Parse memory limit
+    let limitMB = 1024;
+    if (bot.maxMemory) {
+        const m = bot.maxMemory.match(/^(\d+)(K|M|G)?$/i);
+        if (m) {
+            const v = parseInt(m[1]);
+            const u = (m[2] || 'M').toUpperCase();
+            if (u === 'K') limitMB = v / 1024;
+            else if (u === 'G') limitMB = v * 1024;
+            else limitMB = v;
+        }
+    }
+    const ramPct = Math.round((ramMB / limitMB) * 100);
 
     const action = async (endpoint) => {
         setBusy(true);
@@ -183,7 +197,7 @@ export default function BotCard({ bot, onRefresh }) {
                                 <div style={{ height: 3, background: "var(--bg-input)", borderRadius: 2, overflow: "hidden" }}>
                                     <div style={{
                                         height: "100%",
-                                        width: `${Math.min((ramMB / 1024) * 100, 100)}%`,
+                                        width: `${Math.min(ramPct, 100)}%`,
                                         background: "#60A5FA",
                                         borderRadius: 2,
                                         transition: "width 0.4s ease",

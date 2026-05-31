@@ -216,7 +216,8 @@ export default function BotDetail() {
     const botTags      = (bot.tags || []).map(tagId => allTags.find(t => t._id === tagId)).filter(Boolean);
     const cpuPct       = parseFloat((bot.live?.cpu ?? 0).toFixed(1));
     const memLimitBytes = parseMemLimit(bot.maxMemory);
-    const memPercent   = (bot.live?.memory && memLimitBytes) ? parseFloat(((bot.live.memory / memLimitBytes) * 100).toFixed(1)) : null;
+    const activeMemLimitBytes = memLimitBytes || (1024 * 1024 * 1024); // 1GB fallback
+    const memPercent   = bot.live?.memory ? parseFloat(((bot.live.memory / activeMemLimitBytes) * 100).toFixed(1)) : 0;
     const s            = getStyle(bot.live?.status);
 
     const toggleEditTag = (tagId) => setEditTags(prev => prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]);
@@ -558,21 +559,20 @@ export default function BotDetail() {
                                             <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconMemory /></span>
                                             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>Memory Utilization</span>
                                         </div>
-                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: memPercent !== null && memPercent > 80 ? "#ef4444" : "#6366f1" }}>
-                                            {fmt(bot.live?.memory)}{memLimitBytes ? ` / ${fmt(memLimitBytes)}` : ""}
-                                        </span>
-                                    </div>
-                                    {memPercent !== null ? (
-                                        <ProgressBar percent={memPercent} color={memPercent > 85 ? "var(--danger)" : "var(--accent-hover)"} animated={isOnline} />
-                                    ) : (
-                                        <div style={{ background: "var(--bg-input)", borderRadius: 8, height: 10 }}>
-                                            <div style={{ height: "100%", borderRadius: 8, background: "var(--accent-hover)", width: "30%", opacity: 0.5 }}/>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                            <span className="mono" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                                                ({memPercent}%)
+                                            </span>
+                                            <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: memPercent > 80 ? "#ef4444" : "#6366f1" }}>
+                                                {fmt(bot.live?.memory)}{memLimitBytes ? ` / ${fmt(memLimitBytes)}` : " / 1.00 GB"}
+                                            </span>
                                         </div>
-                                    )}
-                                    {memPercent !== null && memPercent >= 80 && (
+                                    </div>
+                                    <ProgressBar percent={memPercent} color={memPercent > 85 ? "var(--danger)" : "var(--accent-hover)"} animated={isOnline} />
+                                    {memLimitBytes && memPercent >= 80 && (
                                         <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 6, display: "inline-flex", gap: 8, color: "var(--danger)", fontSize: 13, fontWeight: 500 }}>
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14, flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                            Warning: Memory critical at {memPercent}%. PM2 will restart process if it hits 100%.
+                                            Warning: Memory critical at {memPercent}%. PM2 should restart the process if it hits 100%.
                                         </div>
                                     )}
                                 </div>

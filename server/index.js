@@ -21,6 +21,7 @@ const { apiKeyMiddleware } = require("./middleware/apiKey");
 const errorHandler = require("./middleware/errorHandler");
 const expiryService = require("./services/expiryService");
 const backupService = require("./services/backupService");
+const memoryMonitorService = require("./services/memoryMonitorService");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Validate critical env vars on startup
@@ -97,6 +98,7 @@ app.use(errorHandler);
 // ─────────────────────────────────────────────────────────────────────────────
 expiryService.start();
 backupService.start();
+memoryMonitorService.start();
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Listen
