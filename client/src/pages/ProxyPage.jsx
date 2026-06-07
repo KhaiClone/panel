@@ -64,6 +64,15 @@ const IconWarn = () => (
     </svg>
 );
 
+const toFormConfig = (data = {}) => ({
+    enabled: data.enabled ?? false,
+    type: data.type ?? "socks5",
+    host: data.host ?? "",
+    port: data.port ?? 1080,
+    username: data.username ?? "",
+    password: data.password ?? "",
+});
+
 export default function ProxyPage() {
     const [config, setConfig] = useState({ enabled: false, type: "socks5", host: "", port: 1080, username: "", password: "" });
     const [bots, setBots] = useState([]);
@@ -86,7 +95,7 @@ export default function ProxyPage() {
     const fetchConfig = useCallback(async () => {
         try {
             const { data } = await api.get("/proxy/config");
-            setConfig({ enabled: data.enabled ?? false, type: data.type ?? "socks5", host: data.host ?? "", port: data.port ?? 1080, username: data.username ?? "", password: data.password ?? "" });
+            setConfig(toFormConfig(data));
         } catch { /* ignore */ } finally { setLoadingConfig(false); }
     }, []);
 
@@ -105,19 +114,28 @@ export default function ProxyPage() {
         try {
             const payload = { ...config, port: Number(config.port), username: config.username || null, password: config.password || null };
             const { data } = await api.put("/proxy/config", payload);
-            setConfig(c => ({ ...c, ...data }));
+            setConfig(toFormConfig(data));
             setMsg({ type: "success", text: "Configuration saved." });
             setTimeout(() => setMsg(null), 3000);
-        } catch {
-            setMsg({ type: "error", text: "Failed to save configuration." });
+        } catch (err) {
+            setMsg({ type: "error", text: err.response?.data?.error || "Failed to save configuration." });
             setTimeout(() => setMsg(null), 3000);
         } finally { setSavingConfig(false); }
     };
 
     const handleToggleGlobal = async (val) => {
-        const prev = config; setConfig(c => ({ ...c, enabled: val }));
-        try { await api.put("/proxy/config", { enabled: val }); }
-        catch { setConfig(prev); alert("Failed to toggle proxy"); }
+        const prev = { ...config };
+        const next = { ...config, enabled: val };
+        setConfig(next);
+        try {
+            const payload = { ...next, port: Number(next.port), username: next.username || null, password: next.password || null };
+            const { data } = await api.put("/proxy/config", payload);
+            setConfig(toFormConfig(data));
+        }
+        catch (err) {
+            setConfig(prev);
+            alert(err.response?.data?.error || "Failed to toggle proxy");
+        }
     };
 
     const handleToggleBot = async (bot, val) => {

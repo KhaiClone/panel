@@ -66,6 +66,38 @@ class QuickDBExtension extends QuickDB {
         return newData[index];
     }
 
+    /** Update all records matching a partial query object */
+    async updateMany(model, query, data) {
+        if (data?._id) throw new Error("You can't change _id");
+
+        const oldData = (await this.get(model)) || [];
+        let count = 0;
+        const newData = oldData.map((e) => {
+            for (const key in query) {
+                const expected = query[key];
+                if (Array.isArray(expected)) {
+                    if (!expected.includes(e[key])) return e;
+                } else if (e[key] !== expected) {
+                    return e;
+                }
+            }
+            count += 1;
+            return { ...e, ...data };
+        });
+        await this.set(model, newData);
+        return { count, records: newData.filter((e) => {
+            for (const key in query) {
+                const expected = query[key];
+                if (Array.isArray(expected)) {
+                    if (!expected.includes(e[key])) return false;
+                } else if (e[key] !== expected) {
+                    return false;
+                }
+            }
+            return true;
+        }) };
+    }
+
     /** Find a record by query and delete it, returns deleted record */
     async findOneAndDelete(model, query) {
         const oldData = (await this.get(model)) || [];
