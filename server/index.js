@@ -104,7 +104,7 @@ memoryMonitorService.start();
 //  Listen
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT) || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
     console.log(
         `[Server] Bot Panel running on port ${PORT} (${process.env.NODE_ENV || "development"})`,
     );
