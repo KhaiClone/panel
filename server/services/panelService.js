@@ -4,6 +4,8 @@ const path = require("path");
 const fs = require("fs");
 const execAsync = util.promisify(exec);
 
+const pkg = (() => { try { return require("../../package.json"); } catch { return {}; } })();
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Panel PM2 Identity
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,12 +51,32 @@ const getPanelPM2Name = async () => {
 //  Status
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Resolve the latest git commit hash (short). Returns null if not a git repo. */
+const getGitCommitHash = () => {
+    try {
+        return execSync("git rev-parse HEAD", { cwd: path.resolve(__dirname, "../.."), timeout: 3000 })
+            .toString()
+            .trim();
+    } catch {
+        return null;
+    }
+};
+
 /**
  * Get live status info for the panel's PM2 process.
- * @returns {{ name, status, cpu, memory, restarts, uptime, pm_id }}
+ * Returns { env, git, pm2 } matching the shape the frontend expects.
  */
 const getPanelStatus = async () => {
     const name = await getPanelPM2Name();
+
+    const env = {
+        version: pkg.version || "?",
+        isDev: process.env.NODE_ENV === "development",
+    };
+
+    const git = {
+        commitHash: getGitCommitHash(),
+    };
 
     try {
         const { stdout } = await execAsync("pm2 jlist --no-color");
@@ -63,34 +85,46 @@ const getPanelStatus = async () => {
 
         if (!proc) {
             return {
-                name,
-                status: "not_found",
-                cpu: 0,
-                memory: 0,
-                restarts: 0,
-                uptime: null,
-                pm_id: null,
+                env,
+                git,
+                pm2: {
+                    name,
+                    status: "not_found",
+                    monit: { cpu: 0, memory: 0 },
+                    pm_uptime: null,
+                    restarts: 0,
+                    pm_id: null,
+                },
             };
         }
 
         return {
-            name: proc.name,
-            status: proc.pm2_env.status,
-            cpu: proc.monit?.cpu ?? 0,
-            memory: proc.monit?.memory ?? 0,
-            restarts: proc.pm2_env.restart_time ?? 0,
-            uptime: proc.pm2_env.pm_uptime ?? null,
-            pm_id: proc.pm_id,
+            env,
+            git,
+            pm2: {
+                name: proc.name,
+                status: proc.pm2_env.status,
+                monit: {
+                    cpu: proc.monit?.cpu ?? 0,
+                    memory: proc.monit?.memory ?? 0,
+                },
+                pm_uptime: proc.pm2_env.pm_uptime ?? null,
+                restarts: proc.pm2_env.restart_time ?? 0,
+                pm_id: proc.pm_id,
+            },
         };
     } catch {
         return {
-            name,
-            status: "unknown",
-            cpu: 0,
-            memory: 0,
-            restarts: 0,
-            uptime: null,
-            pm_id: null,
+            env,
+            git,
+            pm2: {
+                name,
+                status: "unknown",
+                monit: { cpu: 0, memory: 0 },
+                pm_uptime: null,
+                restarts: 0,
+                pm_id: null,
+            },
         };
     }
 };
