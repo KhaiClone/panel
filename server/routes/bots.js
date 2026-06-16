@@ -11,6 +11,26 @@ const { createNotification } = require("./notifications");
 // Root directory where all buyer bot folders live (e.g. /root/bots)
 const BOTS_ROOT = () => process.env.BOTS_ROOT_DIR;
 
+// ─── Restart rate limiter ───────────────────────────────────────────────────
+// Tracks timestamps of recent restart attempts per bot id.
+// If a bot is restarted >= 5 times within 10 s it is auto-stopped.
+const RESTART_WINDOW_MS = 10_000;
+const RESTART_MAX = 5;
+const restartTimestamps = new Map(); // botId → number[]
+
+/**
+ * Record a restart attempt and return true if the bot should be force-stopped.
+ * @param {string} botId
+ */
+const shouldAutoStop = (botId) => {
+    const now = Date.now();
+    const cutoff = now - RESTART_WINDOW_MS;
+    const times = (restartTimestamps.get(botId) || []).filter((t) => t > cutoff);
+    times.push(now);
+    restartTimestamps.set(botId, times);
+    return times.length >= RESTART_MAX;
+};
+
 /**
  * Resolve the effective proxychains4 config for a given bot.
  * Returns the proxy config object if the global proxy is enabled AND the bot
@@ -424,6 +444,19 @@ router.post("/:id/restart", async (req, res, next) => {
 
         if (bot.expiresAt && bot.expiresAt <= Date.now()) {
             return res.status(403).json({ error: "Bot is expired. Please extend to start." });
+        }
+
+        // Auto-stop if the bot has been restarted too many times in a short window.
+        if (shouldAutoStop(req.params.id)) {
+            restartTimestamps.delete(req.params.id); // reset counter after stopping
+            await pm2Service.stopBot(bot.pm2Name);
+            await createNotification(
+                `Bot "${bot.name}" was auto-stopped after ${RESTART_MAX} restarts within ${RESTART_WINDOW_MS / 1000}s.`,
+                "restart",
+            );
+            return res.status(429).json({
+                error: `Bot auto-stopped: restarted ${RESTART_MAX}+ times within ${RESTART_WINDOW_MS / 1000}s to prevent a restart loop.`,
+            });
         }
 
         // Use startBot (which deletes + re-registers) so the wrapper script
