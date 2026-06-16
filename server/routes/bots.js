@@ -1,11 +1,16 @@
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
+const { exec } = require("child_process");
+const { promisify } = require("util");
+const execAsync = promisify(exec);
 const router = express.Router();
 
 const db = require("../db");
 const pm2Service = require("../services/pm2Service");
 const gitService = require("../services/gitService");
+const nginxService = require("../services/nginxService");
+const ufwService = require("../services/ufwService");
 const { createNotification } = require("./notifications");
 
 // Root directory where all buyer bot folders live (e.g. /root/bots)
@@ -29,6 +34,63 @@ const shouldAutoStop = (botId) => {
     times.push(now);
     restartTimestamps.set(botId, times);
     return times.length >= RESTART_MAX;
+};
+
+// ─── Website helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Resolve the distFolder (relative or absolute) to an absolute path.
+ * If already absolute, returns as-is. Otherwise resolves relative to botDir.
+ */
+const resolveDistFolder = (bot, distFolder) => {
+    if (path.isAbsolute(distFolder)) return distFolder;
+    return path.join(botDir(bot), distFolder);
+};
+
+/**
+ * Assign a port for a website project.
+ * Uses the user-supplied port or auto-assigns a free one.
+ * @returns {Promise<number>}
+ */
+const assignPort = async (requestedPort) => {
+    if (requestedPort) {
+        const port = parseInt(requestedPort, 10);
+        if (isNaN(port) || port < 1 || port > 65535)
+            throw new Error("Invalid port number");
+        return port;
+    }
+    return ufwService.findFreePort(3000, 9000);
+};
+
+/**
+ * Apply nginx config + UFW for a website project.
+ * @param {Object} bot  - Full bot record (must have pm2Name, websiteConfig)
+ * @param {string} dir  - Absolute botDir
+ */
+const applyWebsiteInfra = async (bot, dir) => {
+    const wc = bot.websiteConfig;
+    const distAbs = resolveDistFolder({ ...bot, source: bot.source, localPath: bot.localPath }, wc.distFolder);
+    await nginxService.writeConfig(bot.pm2Name, {
+        mode: wc.mode,
+        port: wc.port,
+        apiPort: wc.apiPort || null,
+        distFolder: distAbs,
+        domain: wc.domain || null,
+    });
+    await ufwService.openPort(wc.port);
+};
+
+/**
+ * Get live status for any project type.
+ * - discord / fullstack website → PM2 status
+ * - static website → nginx config existence
+ */
+const getLiveStatus = async (bot, pm2List) => {
+    if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
+        const online = nginxService.configExists(bot.pm2Name);
+        return { status: online ? "online" : "stopped", cpu: 0, memory: 0, restarts: 0, uptime: null };
+    }
+    return pm2Service.getBotStatus(bot.pm2Name, pm2List);
 };
 
 /**
@@ -70,10 +132,9 @@ router.get("/", async (req, res, next) => {
         const bots = await db.find("bots");
         const pm2List = await pm2Service.getProcessList();
 
-        // Fetch live PM2 status for each bot in parallel using the cached list
         const enriched = await Promise.all(
             bots.map(async (bot) => {
-                const live = await pm2Service.getBotStatus(bot.pm2Name, pm2List);
+                const live = await getLiveStatus(bot, pm2List);
                 return { ...bot, live };
             }),
         );
@@ -94,7 +155,7 @@ router.get("/:id", async (req, res, next) => {
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
         const pm2List = await pm2Service.getProcessList();
-        const live = await pm2Service.getBotStatus(bot.pm2Name, pm2List);
+        const live = await getLiveStatus(bot, pm2List);
         res.json({ ...bot, live });
     } catch (err) {
         next(err);
@@ -137,6 +198,9 @@ router.post("/", async (req, res, next) => {
             maxMemory = null,
             currentPrice = null,
             tags = [],
+            // Website-specific
+            projectType = "discord",
+            websiteConfig: rawWebsiteConfig,
         } = req.body;
 
         // Validate required fields
@@ -144,6 +208,12 @@ router.post("/", async (req, res, next) => {
             return res.status(400).json({
                 error: "buyerID, botID, name, and repoUrl are required",
             });
+        }
+        if (projectType === "website") {
+            if (!rawWebsiteConfig?.distFolder)
+                return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
+            if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
+                return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
         }
 
         // Prevent duplicate botID under same buyer
@@ -163,11 +233,30 @@ router.post("/", async (req, res, next) => {
         console.log(`[Bots] Cloning ${repoUrl} → ${dir}`);
         await gitService.cloneRepo(repoUrl, dir, branch);
 
-        // 2. Install dependencies (if installCommand is provided or defaults to npm install)
+        // 2. Install dependencies
         console.log(`[Bots] Installing deps for ${botID}`);
         await gitService.installDeps(dir, installCommand);
 
-        // 3. Save to DB
+        // 3. Build step (website only)
+        let websiteConfig = null;
+        if (projectType === "website") {
+            if (rawWebsiteConfig.buildCommand) {
+                console.log(`[Bots] Running build command for ${botID}`);
+                await execAsync(rawWebsiteConfig.buildCommand, { cwd: dir, timeout: 300_000 });
+            }
+            const port = await assignPort(rawWebsiteConfig.port);
+            websiteConfig = {
+                mode: rawWebsiteConfig.mode || "static",
+                port,
+                apiPort: rawWebsiteConfig.apiPort ? parseInt(rawWebsiteConfig.apiPort, 10) : null,
+                buildCommand: rawWebsiteConfig.buildCommand || null,
+                distFolder: rawWebsiteConfig.distFolder,
+                domain: null,
+                sslEnabled: false,
+            };
+        }
+
+        // 4. Save to DB
         const pm2Name = `${buyerID}-${botID}`;
         const botRecord = await db.create("bots", {
             buyerID,
@@ -185,10 +274,18 @@ router.post("/", async (req, res, next) => {
             currentPrice,
             tags: Array.isArray(tags) ? tags : [],
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
+            projectType,
+            websiteConfig,
             createdAt: Date.now(),
         });
 
-        console.log(`[Bots] Created bot "${name}" (${pm2Name})`);
+        // 5. Website infra: nginx + UFW
+        if (projectType === "website") {
+            await applyWebsiteInfra(botRecord, dir);
+            console.log(`[Bots] Website infra applied for "${name}" on port ${websiteConfig.port}`);
+        }
+
+        console.log(`[Bots] Created ${projectType} "${name}" (${pm2Name})`);
         res.status(201).json(botRecord);
     } catch (err) {
         next(err);
@@ -230,12 +327,20 @@ router.post("/import-local", async (req, res, next) => {
             maxMemory = null,
             currentPrice = null,
             tags = [],
+            projectType = "discord",
+            websiteConfig: rawWebsiteConfig,
         } = req.body;
 
         if (!buyerID || !botID || !name || !localPath) {
             return res.status(400).json({
                 error: "buyerID, botID, name, and localPath are required",
             });
+        }
+        if (projectType === "website") {
+            if (!rawWebsiteConfig?.distFolder)
+                return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
+            if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
+                return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
         }
 
         // Validate the path exists on disk
@@ -259,17 +364,31 @@ router.post("/import-local", async (req, res, next) => {
             await gitService.installDeps(localPath, installCommand);
         }
 
+        // Build step (website only)
+        let websiteConfig = null;
+        if (projectType === "website") {
+            if (rawWebsiteConfig.buildCommand) {
+                await execAsync(rawWebsiteConfig.buildCommand, { cwd: localPath, timeout: 300_000 });
+            }
+            const port = await assignPort(rawWebsiteConfig.port);
+            websiteConfig = {
+                mode: rawWebsiteConfig.mode || "static",
+                port,
+                apiPort: rawWebsiteConfig.apiPort ? parseInt(rawWebsiteConfig.apiPort, 10) : null,
+                buildCommand: rawWebsiteConfig.buildCommand || null,
+                distFolder: rawWebsiteConfig.distFolder,
+                domain: null,
+                sslEnabled: false,
+            };
+        }
+
         // Check if it's a git repo (for informational field)
         let repoUrl = null;
         let branch = null;
         try {
-            const { stdout: remoteOut } = await require("util").promisify(require("child_process").exec)(
-                `git -C "${localPath}" remote get-url origin`,
-            );
+            const { stdout: remoteOut } = await execAsync(`git -C "${localPath}" remote get-url origin`);
             repoUrl = remoteOut.trim();
-            const { stdout: branchOut } = await require("util").promisify(require("child_process").exec)(
-                `git -C "${localPath}" rev-parse --abbrev-ref HEAD`,
-            );
+            const { stdout: branchOut } = await execAsync(`git -C "${localPath}" rev-parse --abbrev-ref HEAD`);
             branch = branchOut.trim();
         } catch {
             // Not a git repo — that's fine
@@ -292,10 +411,16 @@ router.post("/import-local", async (req, res, next) => {
             currentPrice,
             tags: Array.isArray(tags) ? tags : [],
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
+            projectType,
+            websiteConfig,
             createdAt: Date.now(),
         });
 
-        console.log(`[Bots] Imported local bot "${name}" (${pm2Name}) from ${localPath}`);
+        if (projectType === "website") {
+            await applyWebsiteInfra(botRecord, localPath);
+        }
+
+        console.log(`[Bots] Imported local ${projectType} "${name}" (${pm2Name}) from ${localPath}`);
         res.status(201).json(botRecord);
     } catch (err) {
         next(err);
@@ -374,6 +499,12 @@ router.delete("/:id", async (req, res, next) => {
         // Stop & unregister from PM2
         await pm2Service.deleteBot(bot.pm2Name);
 
+        // Website cleanup: remove nginx config + close UFW port
+        if (bot.projectType === "website" && bot.websiteConfig) {
+            await nginxService.removeConfig(bot.pm2Name);
+            await ufwService.closePort(bot.websiteConfig.port);
+        }
+
         // Only delete source files for git-managed bots
         if (bot.source !== "local") {
             const dir = botDir(bot);
@@ -385,7 +516,7 @@ router.delete("/:id", async (req, res, next) => {
         // Remove from DB
         await db.findOneAndDelete("bots", { _id: req.params.id });
 
-        console.log(`[Bots] Deleted bot "${bot.name}" (${bot.pm2Name})`);
+        console.log(`[Bots] Deleted ${bot.projectType || "discord"} "${bot.name}" (${bot.pm2Name})`);
         res.json({ message: `Bot "${bot.name}" deleted successfully` });
     } catch (err) {
         next(err);
@@ -407,6 +538,19 @@ router.post("/:id/start", async (req, res, next) => {
         }
 
         const dir = botDir(bot);
+
+        // Static website: rebuild + re-apply nginx config (no PM2)
+        if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
+            const wc = bot.websiteConfig;
+            if (wc.buildCommand) {
+                await execAsync(wc.buildCommand, { cwd: dir, timeout: 300_000 });
+            }
+            await applyWebsiteInfra(bot, dir);
+            await createNotification(`Website "${bot.name}" was started.`, "start");
+            return res.json({ message: "Website started", output: "nginx config applied" });
+        }
+
+        // Discord bot or fullstack website: use PM2
         const proxyConf = await getProxyConf(bot);
         const output = await pm2Service.startBot(
             bot.pm2Name,
@@ -428,9 +572,56 @@ router.post("/:id/stop", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
+        // Static website: remove nginx config (no PM2 to stop)
+        if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
+            await nginxService.removeConfig(bot.pm2Name);
+            await createNotification(`Website "${bot.name}" was stopped.`, "stop");
+            return res.json({ message: "Website stopped", output: "nginx config removed" });
+        }
+
         const output = await pm2Service.stopBot(bot.pm2Name);
         await createNotification(`Bot "${bot.name}" was stopped.`, "stop");
         res.json({ message: "Bot stopped", output });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/bots/:id/domain — set custom domain + issue SSL */
+router.post("/:id/domain", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+        if (bot.projectType !== "website") return res.status(400).json({ error: "Only website projects support custom domains" });
+
+        const { domain, email } = req.body;
+        if (!domain) return res.status(400).json({ error: "domain is required" });
+
+        const dir = botDir(bot);
+        const wc = bot.websiteConfig;
+
+        // Regenerate nginx config with new domain
+        const distAbs = resolveDistFolder(bot, wc.distFolder);
+        await nginxService.writeConfig(bot.pm2Name, {
+            mode: wc.mode,
+            port: wc.port,
+            apiPort: wc.apiPort || null,
+            distFolder: distAbs,
+            domain,
+        });
+
+        // Issue SSL via certbot
+        await nginxService.enableSSL(domain, email || null);
+
+        // Persist domain + sslEnabled to DB
+        const updated = await db.findOneAndUpdate(
+            "bots",
+            { _id: req.params.id },
+            { websiteConfig: { ...wc, domain, sslEnabled: true } },
+        );
+
+        await createNotification(`Domain "${domain}" with SSL was configured for "${bot.name}".`, "info");
+        res.json({ message: `SSL configured for ${domain}`, bot: updated });
     } catch (err) {
         next(err);
     }
@@ -459,9 +650,21 @@ router.post("/:id/restart", async (req, res, next) => {
             });
         }
 
+        const dir = botDir(bot);
+
+        // Static website: rebuild + re-apply nginx (no PM2 restart)
+        if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
+            const wc = bot.websiteConfig;
+            if (wc.buildCommand) {
+                await execAsync(wc.buildCommand, { cwd: dir, timeout: 300_000 });
+            }
+            await applyWebsiteInfra(bot, dir);
+            await createNotification(`Website "${bot.name}" was restarted (rebuilt).`, "restart");
+            return res.json({ message: "Website rebuilt and restarted" });
+        }
+
         // Use startBot (which deletes + re-registers) so the wrapper script
         // is always regenerated with the current proxy settings.
-        const dir = botDir(bot);
         const proxyConf = await getProxyConf(bot);
         const output = await pm2Service.startBot(
             bot.pm2Name,

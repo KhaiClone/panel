@@ -124,12 +124,24 @@ export default function BotCard({ bot, onRefresh }) {
 
                         {/* Name + buyer */}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <h3 style={{
-                                fontWeight: 700, fontSize: 14, color: "var(--text)", margin: 0,
-                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                            }}>
-                                {bot.name}
-                            </h3>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <h3 style={{
+                                    fontWeight: 700, fontSize: 14, color: "var(--text)", margin: 0,
+                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                }}>
+                                    {bot.name}
+                                </h3>
+                                {bot.projectType === "website" && (
+                                    <span style={{
+                                        fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                                        padding: "2px 6px", borderRadius: 4,
+                                        background: "rgba(34,197,94,0.12)", color: "#4ade80",
+                                        border: "1px solid rgba(34,197,94,0.25)", flexShrink: 0,
+                                    }}>
+                                        {bot.websiteConfig?.mode === "fullstack" ? "Full-Stack" : "Static"}
+                                    </span>
+                                )}
+                            </div>
                             <p className="mono" style={{
                                 fontSize: 11, color: "var(--text-dim)", marginTop: 2,
                                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",

@@ -120,6 +120,114 @@ const BtnSpinner = () => (
 
 const TABS = ['Manage', 'Resources', 'Logs', 'Environment', 'Files'];
 
+// ── Website Panel ───────────────────────────────────────────────────────────
+function WebsitePanel({ bot, onRefresh }) {
+    const wc = bot.websiteConfig;
+    const [domain, setDomain] = useState(wc.domain || "");
+    const [email, setEmail]   = useState("");
+    const [saving, setSaving] = useState(false);
+    const [msg, setMsg]       = useState(null);
+
+    const accessUrl = wc.sslEnabled && wc.domain
+        ? `https://${wc.domain}`
+        : wc.domain
+            ? `http://${wc.domain}`
+            : `http://<server-ip>:${wc.port}`;
+
+    const handleDomain = async (e) => {
+        e.preventDefault();
+        if (!domain.trim()) return;
+        setSaving(true); setMsg(null);
+        try {
+            await api.post(`/bots/${bot._id}/domain`, { domain: domain.trim(), email: email.trim() || undefined });
+            setMsg({ type: "success", text: `SSL issued for ${domain.trim()}` });
+            onRefresh();
+        } catch (err) {
+            setMsg({ type: "error", text: err.response?.data?.error || "Failed to configure domain" });
+        } finally { setSaving(false); }
+    };
+
+    return (
+        <div className="card" style={{ border: "1px solid rgba(34,197,94,0.2)", background: "rgba(34,197,94,0.03)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid rgba(34,197,94,0.15)" }}>
+                <span style={{ fontSize: 18 }}>🌐</span>
+                <div>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: 0 }}>Website</h3>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                        {wc.mode === "static" ? "Static site — served by nginx" : "Full-stack — PM2 API + nginx frontend"}
+                    </p>
+                </div>
+                {wc.sslEnabled && (
+                    <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "rgba(34,197,94,0.15)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)" }}>
+                        🔒 SSL Active
+                    </span>
+                )}
+            </div>
+
+            {/* Info grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 20 }}>
+                {[
+                    { label: "Public Port", value: wc.port },
+                    wc.mode === "fullstack" && { label: "API Port", value: wc.apiPort },
+                    { label: "Mode", value: wc.mode === "static" ? "Static" : "Full-Stack" },
+                    { label: "Dist Folder", value: wc.distFolder },
+                    wc.buildCommand && { label: "Build Command", value: wc.buildCommand },
+                    wc.domain && { label: "Domain", value: wc.domain },
+                ].filter(Boolean).map(({ label, value }) => (
+                    <div key={label} style={{ background: "var(--bg-input)", borderRadius: 8, padding: "10px 14px" }}>
+                        <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px" }}>{label}</p>
+                        <p className="mono" style={{ fontSize: 13, color: "var(--text)", margin: 0, wordBreak: "break-all" }}>{value}</p>
+                    </div>
+                ))}
+            </div>
+
+            {/* Access link */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "10px 14px", background: "var(--bg-input)", borderRadius: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Access URL:</span>
+                <span className="mono" style={{ fontSize: 13, color: "var(--accent-hover)", flex: 1, wordBreak: "break-all" }}>{accessUrl}</span>
+                <button
+                    onClick={() => navigator.clipboard?.writeText(accessUrl)}
+                    className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}
+                >
+                    Copy
+                </button>
+            </div>
+
+            {/* Domain / SSL form */}
+            <form onSubmit={handleDomain} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+                    {wc.domain ? "Update Domain & SSL" : "Add Custom Domain + SSL"}
+                </h4>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                        <label className="label">Domain *</label>
+                        <input className="input mono" placeholder="example.com" value={domain} onChange={e => setDomain(e.target.value)} required />
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Must already point to this server's IP.</p>
+                    </div>
+                    <div>
+                        <label className="label">Let's Encrypt Email</label>
+                        <input className="input mono" placeholder="admin@example.com" value={email} onChange={e => setEmail(e.target.value)} type="email" />
+                        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Optional — for certificate renewal notices.</p>
+                    </div>
+                </div>
+                {msg && (
+                    <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+                        background: msg.type === "success" ? "var(--success-bg)" : "var(--danger-bg)",
+                        color: msg.type === "success" ? "var(--success)" : "var(--danger)",
+                        border: `1px solid ${msg.type === "success" ? "var(--success-border)" : "var(--danger-border)"}` }}>
+                        {msg.text}
+                    </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button type="submit" className="btn-primary" disabled={saving} style={{ padding: "9px 20px", display: "flex", alignItems: "center", gap: 8 }}>
+                        {saving ? <><BtnSpinner /> Issuing SSL…</> : "🔒 Save & Issue SSL"}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
 export default function BotDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -395,6 +503,11 @@ export default function BotDetail() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* ── Website Info Panel ───────────────────────── */}
+                        {bot.projectType === 'website' && bot.websiteConfig && (
+                            <WebsitePanel bot={bot} onRefresh={fetchBot} />
+                        )}
 
                         {/* Divider */}
                         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
