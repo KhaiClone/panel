@@ -132,13 +132,13 @@ export default function BotCard({ bot, onRefresh }) {
                                     {bot.name}
                                 </h3>
                                 {bot.projectType === "website" && (
-                                    <span style={{
-                                        fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-                                        padding: "2px 6px", borderRadius: 4,
-                                        background: "rgba(34,197,94,0.12)", color: "#4ade80",
-                                        border: "1px solid rgba(34,197,94,0.25)", flexShrink: 0,
-                                    }}>
+                                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "2px 6px", borderRadius: 4, background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)", flexShrink: 0 }}>
                                         {bot.websiteConfig?.mode === "fullstack" ? "Full-Stack" : "Static"}
+                                    </span>
+                                )}
+                                {bot.projectType === "service" && (
+                                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "2px 6px", borderRadius: 4, background: "rgba(167,139,250,0.12)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.25)", flexShrink: 0 }}>
+                                        Service
                                     </span>
                                 )}
                             </div>

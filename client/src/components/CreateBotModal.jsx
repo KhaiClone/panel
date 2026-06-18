@@ -29,6 +29,8 @@ const defaultForm = {
     websiteApiPort: "",
     buildCommand: "npm run build",
     distFolder: "dist",
+    // service-only
+    servicePort: "",
 };
 
 const MEM_HINT = 'e.g. "300M", "1G" — leave blank for no limit';
@@ -94,6 +96,10 @@ export default function CreateBotModal({ onClose, onCreated }) {
                   }
                 : undefined;
 
+            const serviceConfig = form.projectType === "service" && form.servicePort
+                ? { port: form.servicePort }
+                : undefined;
+
             const common = {
                 buyerID: form.buyerID,
                 botID: form.botID,
@@ -109,6 +115,7 @@ export default function CreateBotModal({ onClose, onCreated }) {
                 tags: form.tags,
                 projectType: form.projectType,
                 websiteConfig,
+                serviceConfig,
             };
 
             const payload = form.source === "git"
@@ -127,12 +134,12 @@ export default function CreateBotModal({ onClose, onCreated }) {
 
     const isGit = form.source === "git";
     const isWebsite = form.projectType === "website";
+    const isService = form.projectType === "service";
     const isFullstack = isWebsite && form.websiteMode === "fullstack";
     const isStatic = isWebsite && form.websiteMode === "static";
 
-    const deployLabel = isGit
-        ? (isWebsite ? "🌐 Deploy Website from Git" : "🔗 Deploy from Git")
-        : (isWebsite ? "🌐 Import Local Website" : "📂 Deploy Local Instance");
+    const ICONS = { discord: "🤖", website: "🌐", service: "⚙️" };
+    const deployLabel = `${ICONS[form.projectType] || "📦"} ${isGit ? "Deploy from Git" : "Import Local"}`;
 
     return createPortal(
         <div className="modal-overlay">
@@ -158,8 +165,14 @@ export default function CreateBotModal({ onClose, onCreated }) {
                             options={[
                                 { key: "discord", label: "🤖 Discord Bot" },
                                 { key: "website", label: "🌐 Website" },
+                                { key: "service", label: "⚙️ Service" },
                             ]}
                         />
+                        {isService && (
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+                                For Lavalink, Java servers, or any process that needs a port opened. PM2 manages the process.
+                            </p>
+                        )}
                     </div>
 
                     {/* ── Website Mode (only for website) ──────────────── */}
@@ -198,12 +211,12 @@ export default function CreateBotModal({ onClose, onCreated }) {
                     {/* ── Identity ──────────────────────────────────────── */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                         <div>
-                            <label className="label">Buyer Discord ID *</label>
-                            <input className="input" placeholder="123456789012345678" value={form.buyerID} onChange={set("buyerID")} required />
+                            <label className="label">Client / Owner ID *</label>
+                            <input className="input" placeholder="Discord ID or owner identifier" value={form.buyerID} onChange={set("buyerID")} required />
                         </div>
                         <div>
-                            <label className="label">Instance ID *</label>
-                            <input className="input" placeholder="my-bot-instance" value={form.botID} onChange={set("botID")} required pattern="[a-zA-Z0-9_-]+" title="Letters, numbers, hyphens, underscores only" />
+                            <label className="label">Project ID *</label>
+                            <input className="input" placeholder="my-project" value={form.botID} onChange={set("botID")} required pattern="[a-zA-Z0-9_-]+" title="Letters, numbers, hyphens, underscores only" />
                         </div>
                     </div>
 
@@ -302,6 +315,24 @@ export default function CreateBotModal({ onClose, onCreated }) {
                         </div>
                     )}
 
+                    {/* ── Service Config ───────────────────────────────── */}
+                    {isService && (
+                        <div style={{ padding: 20, background: "rgba(167,139,250,0.05)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
+                            <h3 style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Service Configuration</h3>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                <div>
+                                    <label className="label">Service Port</label>
+                                    <input className="input mono" placeholder="e.g. 2333" value={form.servicePort} onChange={set("servicePort")} type="number" min="1" max="65535" />
+                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>UFW will be opened automatically. Leave blank to skip.</p>
+                                </div>
+                                <div>
+                                    <label className="label">Start Command</label>
+                                    <input className="input mono" placeholder="java -jar lavalink.jar" value={form.startScript} onChange={set("startScript")} />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── Meta ─────────────────────────────────────────── */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
                         <div>
@@ -358,11 +389,10 @@ export default function CreateBotModal({ onClose, onCreated }) {
                     {loading && (
                         <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--accent-dim)", color: "var(--accent-hover)", border: "1px solid var(--accent)", display: "flex", alignItems: "center", gap: 12 }}>
                             <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--accent-hover)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
-                            {isWebsite
-                                ? "Cloning, installing and building..."
-                                : isGit
-                                    ? "Cloning repository and installing dependencies..."
-                                    : "Registering instance..."}
+                            {isWebsite ? "Cloning, installing and building…"
+                                : isService ? "Cloning and setting up service…"
+                                : isGit ? "Cloning repository and installing dependencies…"
+                                : "Registering instance…"}
                         </div>
                     )}
 

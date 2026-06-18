@@ -124,6 +124,30 @@ const botDir = (bot) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * GET /api/bots/domains
+ * Returns all website projects that have a custom domain configured.
+ */
+router.get("/domains", async (req, res, next) => {
+    try {
+        const bots = await db.find("bots");
+        const domains = bots
+            .filter((b) => b.projectType === "website" && b.websiteConfig?.domain)
+            .map((b) => ({
+                _id: b._id,
+                name: b.name,
+                domain: b.websiteConfig.domain,
+                port: b.websiteConfig.port,
+                mode: b.websiteConfig.mode,
+                sslEnabled: b.websiteConfig.sslEnabled ?? false,
+                pm2Name: b.pm2Name,
+            }));
+        res.json(domains);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * GET /api/bots
  * Returns all bots enriched with live PM2 status.
  */
@@ -201,6 +225,7 @@ router.post("/", async (req, res, next) => {
             // Website-specific
             projectType = "discord",
             websiteConfig: rawWebsiteConfig,
+            serviceConfig: rawServiceConfig,
         } = req.body;
 
         // Validate required fields
@@ -214,6 +239,11 @@ router.post("/", async (req, res, next) => {
                 return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
             if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
                 return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
+        }
+        if (projectType === "service" && rawServiceConfig?.port) {
+            const p = parseInt(rawServiceConfig.port, 10);
+            if (isNaN(p) || p < 1 || p > 65535)
+                return res.status(400).json({ error: "Invalid serviceConfig.port" });
         }
 
         // Prevent duplicate botID under same buyer
@@ -239,6 +269,7 @@ router.post("/", async (req, res, next) => {
 
         // 3. Build step (website only)
         let websiteConfig = null;
+        let serviceConfig = null;
         if (projectType === "website") {
             if (rawWebsiteConfig.buildCommand) {
                 console.log(`[Bots] Running build command for ${botID}`);
@@ -254,6 +285,8 @@ router.post("/", async (req, res, next) => {
                 domain: null,
                 sslEnabled: false,
             };
+        } else if (projectType === "service" && rawServiceConfig?.port) {
+            serviceConfig = { port: parseInt(rawServiceConfig.port, 10) };
         }
 
         // 4. Save to DB
@@ -276,13 +309,17 @@ router.post("/", async (req, res, next) => {
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
             projectType,
             websiteConfig,
+            serviceConfig,
             createdAt: Date.now(),
         });
 
-        // 5. Website infra: nginx + UFW
+        // 5. Post-creation infra
         if (projectType === "website") {
             await applyWebsiteInfra(botRecord, dir);
             console.log(`[Bots] Website infra applied for "${name}" on port ${websiteConfig.port}`);
+        } else if (projectType === "service" && serviceConfig?.port) {
+            await ufwService.openPort(serviceConfig.port);
+            console.log(`[Bots] UFW opened port ${serviceConfig.port} for service "${name}"`);
         }
 
         console.log(`[Bots] Created ${projectType} "${name}" (${pm2Name})`);
@@ -329,6 +366,7 @@ router.post("/import-local", async (req, res, next) => {
             tags = [],
             projectType = "discord",
             websiteConfig: rawWebsiteConfig,
+            serviceConfig: rawServiceConfig,
         } = req.body;
 
         if (!buyerID || !botID || !name || !localPath) {
@@ -341,6 +379,11 @@ router.post("/import-local", async (req, res, next) => {
                 return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
             if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
                 return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
+        }
+        if (projectType === "service" && rawServiceConfig?.port) {
+            const p = parseInt(rawServiceConfig.port, 10);
+            if (isNaN(p) || p < 1 || p > 65535)
+                return res.status(400).json({ error: "Invalid serviceConfig.port" });
         }
 
         // Validate the path exists on disk
@@ -382,6 +425,15 @@ router.post("/import-local", async (req, res, next) => {
             };
         }
 
+        // Build serviceConfig
+        let serviceConfig = null;
+        if (projectType === "service" && rawServiceConfig?.port) {
+            serviceConfig = {
+                port: parseInt(rawServiceConfig.port, 10),
+                startCommand: rawServiceConfig.startCommand || null,
+            };
+        }
+
         // Check if it's a git repo (for informational field)
         let repoUrl = null;
         let branch = null;
@@ -413,11 +465,15 @@ router.post("/import-local", async (req, res, next) => {
             expiresAt: expiresAt ? new Date(expiresAt).getTime() : null,
             projectType,
             websiteConfig,
+            serviceConfig,
             createdAt: Date.now(),
         });
 
         if (projectType === "website") {
             await applyWebsiteInfra(botRecord, localPath);
+        }
+        if (projectType === "service" && serviceConfig?.port) {
+            await ufwService.openPort(serviceConfig.port);
         }
 
         console.log(`[Bots] Imported local ${projectType} "${name}" (${pm2Name}) from ${localPath}`);
@@ -499,10 +555,12 @@ router.delete("/:id", async (req, res, next) => {
         // Stop & unregister from PM2
         await pm2Service.deleteBot(bot.pm2Name);
 
-        // Website cleanup: remove nginx config + close UFW port
+        // Project-type cleanup
         if (bot.projectType === "website" && bot.websiteConfig) {
             await nginxService.removeConfig(bot.pm2Name);
             await ufwService.closePort(bot.websiteConfig.port);
+        } else if (bot.projectType === "service" && bot.serviceConfig?.port) {
+            await ufwService.closePort(bot.serviceConfig.port);
         }
 
         // Only delete source files for git-managed bots
