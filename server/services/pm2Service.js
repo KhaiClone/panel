@@ -283,6 +283,13 @@ const flushLogs = async () => {
     }
 };
 
+/**
+ * Flush logs for a specific PM2 process by name.
+ */
+const flushBotLogs = async (pm2Name) => {
+    await execAsync(`pm2 flush "${pm2Name}"`);
+};
+
 module.exports = {
     startBot,
     stopBot,
@@ -294,4 +301,5 @@ module.exports = {
     streamBotLogs,
     getProcessList,
     flushLogs,
+    flushBotLogs,
 };

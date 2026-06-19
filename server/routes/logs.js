@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { getBotLogs, streamBotLogs } = require("../services/pm2Service");
+const { getBotLogs, streamBotLogs, flushBotLogs } = require("../services/pm2Service");
 
 /**
  * GET /api/logs/:botId?lines=100
@@ -80,6 +80,22 @@ router.get("/:botId/stream", async (req, res, next) => {
             clearInterval(keepAlive);
             proc.kill("SIGTERM");
         });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * DELETE /api/logs/:botId
+ * Flush (clear) PM2 logs for a specific bot.
+ */
+router.delete("/:botId", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.botId });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        await flushBotLogs(bot.pm2Name);
+        res.json({ message: "Logs cleared" });
     } catch (err) {
         next(err);
     }

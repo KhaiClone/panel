@@ -5,6 +5,7 @@ export default function LogViewer({ botId }) {
     const [lines, setLines] = useState([]);
     const [live, setLive] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [clearing, setClearing] = useState(false);
     const bottomRef = useRef(null);
     const esRef = useRef(null); // EventSource ref
 
@@ -66,6 +67,19 @@ export default function LogViewer({ botId }) {
 
     const toggleLive = () => (live ? stopLive() : startLive());
 
+    const clearLogs = async () => {
+        if (!window.confirm("Xoá toàn bộ lịch sử log của project này?")) return;
+        setClearing(true);
+        try {
+            await api.delete(`/logs/${botId}`);
+            setLines([]);
+        } catch {
+            // silently ignore
+        } finally {
+            setClearing(false);
+        }
+    };
+
     // ── Color coding ──────────────────────────────────────────────────────────
     const colorLine = (line) => {
         if (/error|err|fail|fatal/i.test(line)) return "var(--danger)";
@@ -93,6 +107,14 @@ export default function LogViewer({ botId }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <button className="btn-ghost" onClick={fetchSnapshot} disabled={loading || live} style={{ padding: "6px 12px" }}>
                         🔄 Refresh
+                    </button>
+                    <button
+                        className="btn-ghost"
+                        onClick={clearLogs}
+                        disabled={clearing || live}
+                        style={{ padding: "6px 12px", color: "var(--danger)", border: "1px solid var(--danger-border)", background: "rgba(239,68,68,0.05)" }}
+                    >
+                        {clearing ? "Clearing…" : "🗑 Clear Logs"}
                     </button>
                     <button className={live ? "btn-danger" : "btn-success"} onClick={toggleLive} style={{ padding: "6px 14px", fontWeight: 700 }}>
                         {live ? "⏹ Stop Stream" : "▶ Start Live Stream"}
