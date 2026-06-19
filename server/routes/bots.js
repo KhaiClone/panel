@@ -18,8 +18,8 @@ const BOTS_ROOT = () => process.env.BOTS_ROOT_DIR;
 
 // ─── Restart rate limiter ───────────────────────────────────────────────────
 // Tracks timestamps of recent restart attempts per bot id.
-// If a bot is restarted >= 5 times within 10 s it is auto-stopped.
-const RESTART_WINDOW_MS = 10_000;
+// If a bot is restarted >= 5 times within 60 s it is auto-stopped.
+const RESTART_WINDOW_MS = 60_000;
 const RESTART_MAX = 5;
 const restartTimestamps = new Map(); // botId → number[]
 
