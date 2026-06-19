@@ -131,7 +131,7 @@ export default function OverviewPage() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 32, justifyItems: "center" }}>
                     <RingMeter percent={cpu?.usagePercent}  color={cpuColor}  label="CPU"  sub={cpu?.temperature ? `${cpu.temperature}°C` : "Usage"} />
-                    <RingMeter percent={mem?.usedPercent}   color={memColor}  label="RAM"  sub={mem ? `${fmtBytes(mem.usedBytes * 1024 * 1024)} / ${fmtBytes(mem.totalBytes * 1024 * 1024)}` : "Memory"} />
+                    <RingMeter percent={mem?.usedPercent}   color={memColor}  label="RAM"  sub={mem ? `${fmtBytes(mem.usedBytes)} / ${fmtBytes(mem.totalBytes)}` : "Memory"} />
                     <RingMeter percent={disk?.usedPercent}  color={diskColor} label="Disk" sub={disk ? `${fmtBytes(disk.usedBytes)} / ${fmtBytes(disk.totalBytes)}` : "Storage"} />
 
                     {/* Network card */}
