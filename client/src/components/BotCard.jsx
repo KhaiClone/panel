@@ -306,7 +306,7 @@ export default function BotCard({ bot, onRefresh }) {
                     <button
                         className="btn-primary"
                         style={{ flex: 1, padding: "5px 10px", fontSize: 12 }}
-                        onClick={() => navigate(`/bots/${bot._id}`)}
+                        onClick={() => navigate(`/${bot.projectType === "website" ? "sites" : "bots"}/${bot._id}`)}
                         disabled={busy}
                     >
                         Manage

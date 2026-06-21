@@ -152,12 +152,12 @@ export default function OverviewPage() {
 
             {/* ── Instance summary ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
-                <StatCard icon="✅" label="Online"  value={online}       color="var(--success)" sub={`${stopped} stopped`} onClick={() => navigate("/dashboard")} />
-                <StatCard icon="📦" label="Total"   value={bots.length}  color="var(--accent)"  sub="all projects"        onClick={() => navigate("/dashboard")} />
+                <StatCard icon="✅" label="Online"  value={online}       color="var(--success)" sub={`${stopped} stopped`} onClick={() => navigate("/bots")} />
+                <StatCard icon="📦" label="Total"   value={bots.length}  color="var(--accent)"  sub="all projects"        onClick={() => navigate("/bots")} />
                 <StatCard icon="🔗" label="Domains" value={domains.length} color="#a78bfa"      sub={`${domains.filter(d=>d.sslEnabled).length} with SSL`} onClick={() => navigate("/domains")} />
                 {Object.entries(byType).map(([type, count]) => {
                     const m = TYPE_META[type] || TYPE_META.default;
-                    return <StatCard key={type} icon={m.icon} label={m.label} value={count} color={m.color} sub="instances" onClick={() => navigate("/dashboard")} />;
+                    return <StatCard key={type} icon={m.icon} label={m.label} value={count} color={m.color} sub="instances" onClick={() => navigate("/bots")} />;
                 })}
             </div>
 
@@ -168,13 +168,13 @@ export default function OverviewPage() {
                 <div className="card" style={{ padding: 0, overflow: "hidden" }}>
                     <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Recent Projects</h3>
-                        <button onClick={() => navigate("/dashboard")} className="btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}>View all</button>
+                        <button onClick={() => navigate("/bots")} className="btn-ghost" style={{ fontSize: 12, padding: "4px 10px" }}>View all</button>
                     </div>
                     {bots.slice(0, 6).map(bot => {
                         const m = TYPE_META[bot.projectType || "discord"] || TYPE_META.default;
                         const isOnline = bot.live?.status === "online";
                         return (
-                            <div key={bot._id} onClick={() => navigate(`/bots/${bot._id}`)}
+                            <div key={bot._id} onClick={() => navigate(`/${bot.projectType === "website" ? "sites" : "bots"}/${bot._id}`)}
                                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 20px", borderBottom: "1px solid var(--border-light)", cursor: "pointer", transition: "background 0.15s" }}
                                 onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
                                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}

@@ -54,8 +54,11 @@ function TabBar({ value, onChange, options }) {
     );
 }
 
-export default function CreateBotModal({ onClose, onCreated }) {
-    const [form, setForm] = useState(defaultForm);
+export default function CreateBotModal({ onClose, onCreated, defaultProjectType }) {
+    const [form, setForm] = useState(() => ({
+        ...defaultForm,
+        projectType: defaultProjectType || defaultForm.projectType,
+    }));
     const [groups, setGroups] = useState([]);
     const [availableTags, setAvailableTags] = useState([]);
     const [loading, setLoading] = useState(false);

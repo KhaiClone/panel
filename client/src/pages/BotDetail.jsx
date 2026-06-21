@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/client';
 import LogViewer from '../components/LogViewer';
 import EnvEditor from '../components/EnvEditor';
@@ -123,10 +123,21 @@ const TABS = ['Manage', 'Resources', 'Logs', 'Environment', 'Files'];
 // ── Website Panel ───────────────────────────────────────────────────────────
 function WebsitePanel({ bot, onRefresh }) {
     const wc = bot.websiteConfig;
+
+    // Domain / SSL state
     const [domain, setDomain] = useState(wc.domain || "");
     const [email, setEmail]   = useState("");
-    const [saving, setSaving] = useState(false);
-    const [msg, setMsg]       = useState(null);
+    const [savingDomain, setSavingDomain] = useState(false);
+    const [domainMsg, setDomainMsg] = useState(null);
+
+    // Website config edit state
+    const [editingConfig, setEditingConfig] = useState(false);
+    const [cfgPort, setCfgPort]             = useState(String(wc.port || ""));
+    const [cfgApiPort, setCfgApiPort]       = useState(String(wc.apiPort || ""));
+    const [cfgDistFolder, setCfgDistFolder] = useState(wc.distFolder || "");
+    const [cfgBuildCmd, setCfgBuildCmd]     = useState(wc.buildCommand || "");
+    const [savingConfig, setSavingConfig]   = useState(false);
+    const [configMsg, setConfigMsg]         = useState(null);
 
     const accessUrl = wc.sslEnabled && wc.domain
         ? `https://${wc.domain}`
@@ -137,18 +148,55 @@ function WebsitePanel({ bot, onRefresh }) {
     const handleDomain = async (e) => {
         e.preventDefault();
         if (!domain.trim()) return;
-        setSaving(true); setMsg(null);
+        setSavingDomain(true); setDomainMsg(null);
         try {
             await api.post(`/bots/${bot._id}/domain`, { domain: domain.trim(), email: email.trim() || undefined });
-            setMsg({ type: "success", text: `SSL issued for ${domain.trim()}` });
+            setDomainMsg({ type: "success", text: `SSL issued for ${domain.trim()}` });
             onRefresh();
         } catch (err) {
-            setMsg({ type: "error", text: err.response?.data?.error || "Failed to configure domain" });
-        } finally { setSaving(false); }
+            setDomainMsg({ type: "error", text: err.response?.data?.error || "Failed to configure domain" });
+        } finally { setSavingDomain(false); }
     };
+
+    const handleSaveConfig = async (e) => {
+        e.preventDefault();
+        setSavingConfig(true); setConfigMsg(null);
+        try {
+            await api.put(`/bots/${bot._id}/website-config`, {
+                port: cfgPort || undefined,
+                apiPort: cfgApiPort || undefined,
+                distFolder: cfgDistFolder || undefined,
+                buildCommand: cfgBuildCmd,
+            });
+            setConfigMsg({ type: "success", text: "Website config updated — nginx reloaded." });
+            setEditingConfig(false);
+            onRefresh();
+        } catch (err) {
+            setConfigMsg({ type: "error", text: err.response?.data?.error || "Failed to update config" });
+        } finally { setSavingConfig(false); }
+    };
+
+    const cancelEdit = () => {
+        setCfgPort(String(wc.port || ""));
+        setCfgApiPort(String(wc.apiPort || ""));
+        setCfgDistFolder(wc.distFolder || "");
+        setCfgBuildCmd(wc.buildCommand || "");
+        setEditingConfig(false);
+        setConfigMsg(null);
+    };
+
+    const InfoMsg = ({ msg }) => msg ? (
+        <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500,
+            background: msg.type === "success" ? "var(--success-bg)" : "var(--danger-bg)",
+            color: msg.type === "success" ? "var(--success)" : "var(--danger)",
+            border: `1px solid ${msg.type === "success" ? "var(--success-border)" : "var(--danger-border)"}` }}>
+            {msg.text}
+        </div>
+    ) : null;
 
     return (
         <div className="card" style={{ border: "1px solid rgba(34,197,94,0.2)", background: "rgba(34,197,94,0.03)" }}>
+            {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid rgba(34,197,94,0.15)" }}>
                 <span style={{ fontSize: 18 }}>🌐</span>
                 <div>
@@ -157,40 +205,91 @@ function WebsitePanel({ bot, onRefresh }) {
                         {wc.mode === "static" ? "Static site — served by nginx" : "Full-stack — PM2 API + nginx frontend"}
                     </p>
                 </div>
-                {wc.sslEnabled && (
-                    <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "rgba(34,197,94,0.15)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)" }}>
-                        🔒 SSL Active
-                    </span>
-                )}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                    {wc.sslEnabled && (
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "rgba(34,197,94,0.15)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)" }}>
+                            🔒 SSL Active
+                        </span>
+                    )}
+                    <button
+                        className="btn-ghost"
+                        style={{ padding: "5px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}
+                        onClick={() => { setEditingConfig(v => !v); setConfigMsg(null); }}
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 13, height: 13 }}>
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        Edit Config
+                    </button>
+                </div>
             </div>
 
-            {/* Info grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 20 }}>
-                {[
-                    { label: "Public Port", value: wc.port },
-                    wc.mode === "fullstack" && { label: "API Port", value: wc.apiPort },
-                    { label: "Mode", value: wc.mode === "static" ? "Static" : "Full-Stack" },
-                    { label: "Dist Folder", value: wc.distFolder },
-                    wc.buildCommand && { label: "Build Command", value: wc.buildCommand },
-                    wc.domain && { label: "Domain", value: wc.domain },
-                ].filter(Boolean).map(({ label, value }) => (
-                    <div key={label} style={{ background: "var(--bg-input)", borderRadius: 8, padding: "10px 14px" }}>
-                        <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px" }}>{label}</p>
-                        <p className="mono" style={{ fontSize: 13, color: "var(--text)", margin: 0, wordBreak: "break-all" }}>{value}</p>
+            {/* Info grid (view mode) */}
+            {!editingConfig && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+                    {[
+                        { label: "Public Port", value: wc.port },
+                        wc.mode === "fullstack" && { label: "API Port", value: wc.apiPort },
+                        { label: "Mode", value: wc.mode === "static" ? "Static" : "Full-Stack" },
+                        { label: "Dist Folder", value: wc.distFolder },
+                        wc.buildCommand && { label: "Build Command", value: wc.buildCommand },
+                        wc.domain && { label: "Domain", value: wc.domain },
+                    ].filter(Boolean).map(({ label, value }) => (
+                        <div key={label} style={{ background: "var(--bg-input)", borderRadius: 8, padding: "10px 14px" }}>
+                            <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px" }}>{label}</p>
+                            <p className="mono" style={{ fontSize: 13, color: "var(--text)", margin: 0, wordBreak: "break-all" }}>{value}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Edit config form */}
+            {editingConfig && (
+                <form onSubmit={handleSaveConfig} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20, padding: 16, background: "var(--bg-input)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                    <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Edit Website Config</h4>
+                    <div style={{ display: "grid", gridTemplateColumns: wc.mode === "fullstack" ? "1fr 1fr" : "1fr", gap: 12 }}>
+                        <div>
+                            <label className="label">Public Port</label>
+                            <input className="input mono" type="number" min="1" max="65535" value={cfgPort} onChange={e => setCfgPort(e.target.value)} />
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>nginx listens on this port. UFW updated automatically.</p>
+                        </div>
+                        {wc.mode === "fullstack" && (
+                            <div>
+                                <label className="label">API Port (PM2)</label>
+                                <input className="input mono" type="number" min="1" max="65535" value={cfgApiPort} onChange={e => setCfgApiPort(e.target.value)} />
+                                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Port your backend server listens on internally.</p>
+                            </div>
+                        )}
                     </div>
-                ))}
-            </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                        <div>
+                            <label className="label">Dist Folder *</label>
+                            <input className="input mono" value={cfgDistFolder} onChange={e => setCfgDistFolder(e.target.value)} required placeholder="client/dist" />
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Relative to project root or absolute path.</p>
+                        </div>
+                        <div>
+                            <label className="label">Build Command</label>
+                            <input className="input mono" value={cfgBuildCmd} onChange={e => setCfgBuildCmd(e.target.value)} placeholder="npm run build" />
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Leave blank to skip build step.</p>
+                        </div>
+                    </div>
+                    <InfoMsg msg={configMsg} />
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button type="button" className="btn-ghost" onClick={cancelEdit} disabled={savingConfig} style={{ padding: "8px 16px" }}>Cancel</button>
+                        <button type="submit" className="btn-primary" disabled={savingConfig} style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}>
+                            {savingConfig ? <><BtnSpinner /> Saving…</> : "Save & Reload nginx"}
+                        </button>
+                    </div>
+                </form>
+            )}
+            {!editingConfig && configMsg && <div style={{ marginBottom: 16 }}><InfoMsg msg={configMsg} /></div>}
 
             {/* Access link */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "10px 14px", background: "var(--bg-input)", borderRadius: 8 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Access URL:</span>
                 <span className="mono" style={{ fontSize: 13, color: "var(--accent-hover)", flex: 1, wordBreak: "break-all" }}>{accessUrl}</span>
-                <button
-                    onClick={() => navigator.clipboard?.writeText(accessUrl)}
-                    className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}
-                >
-                    Copy
-                </button>
+                <button onClick={() => navigator.clipboard?.writeText(accessUrl)} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}>Copy</button>
             </div>
 
             {/* Domain / SSL form */}
@@ -210,17 +309,10 @@ function WebsitePanel({ bot, onRefresh }) {
                         <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Optional — for certificate renewal notices.</p>
                     </div>
                 </div>
-                {msg && (
-                    <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500,
-                        background: msg.type === "success" ? "var(--success-bg)" : "var(--danger-bg)",
-                        color: msg.type === "success" ? "var(--success)" : "var(--danger)",
-                        border: `1px solid ${msg.type === "success" ? "var(--success-border)" : "var(--danger-border)"}` }}>
-                        {msg.text}
-                    </div>
-                )}
+                <InfoMsg msg={domainMsg} />
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button type="submit" className="btn-primary" disabled={saving} style={{ padding: "9px 20px", display: "flex", alignItems: "center", gap: 8 }}>
-                        {saving ? <><BtnSpinner /> Issuing SSL…</> : "🔒 Save & Issue SSL"}
+                    <button type="submit" className="btn-primary" disabled={savingDomain} style={{ padding: "9px 20px", display: "flex", alignItems: "center", gap: 8 }}>
+                        {savingDomain ? <><BtnSpinner /> Issuing SSL…</> : "🔒 Save & Issue SSL"}
                     </button>
                 </div>
             </form>
@@ -231,6 +323,8 @@ function WebsitePanel({ bot, onRefresh }) {
 export default function BotDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
+    const backPath = location.pathname.startsWith("/sites/") ? "/sites" : "/bots";
     const { groups, tags: allTags } = useData();
 
     const [bot, setBot]       = useState(null);
@@ -262,7 +356,7 @@ export default function BotDetail() {
             setEditPrice(data.currentPrice || '');
             setEditTags(Array.isArray(data.tags) ? data.tags : []);
             setEditExpiry(data.expiresAt ? toLocalDatetimeInputValue(data.expiresAt) : '');
-        } catch { navigate('/dashboard'); }
+        } catch { navigate(backPath); }
         finally { setLoading(false); }
     };
 
@@ -285,7 +379,7 @@ export default function BotDetail() {
 
     const handleDelete = async () => {
         setConfirm(null); setBusy('delete');
-        try { await api.delete(`/bots/${id}`); navigate('/dashboard'); }
+        try { await api.delete(`/bots/${id}`); navigate(backPath); }
         catch (err) { setActionMsg({ type: 'error', text: err.response?.data?.error || 'Delete failed' }); setBusy(null); }
     };
 
@@ -358,7 +452,7 @@ export default function BotDetail() {
             {/* Header */}
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                    <button onClick={() => navigate('/dashboard')} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)" }}>
+                    <button onClick={() => navigate(backPath)} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)" }}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6"/></svg>
                     </button>
                     <div>

@@ -147,12 +147,15 @@ function SkeletonCard() {
 
 /* ─── Dashboard ───────────────────────────────────────────────────── */
 export default function Dashboard() {
-    const { bots, groups, tags, loading, refresh: fetchAll } = useData();
+    const { bots: allBots, groups, tags, loading, refresh: fetchAll } = useData();
     const [showCreate, setShowCreate] = useState(false);
     const [showGroups, setShowGroups] = useState(false);
     const [search, setSearch]         = useState("");
     const [filter, setFilter]         = useState("all");
     const [selectedTags, setSelectedTags] = useState([]);
+
+    // Only bots and services — websites live under /sites
+    const bots = allBots.filter(b => b.projectType !== "website");
 
     /* ── Stat calculations ── */
     const online       = bots.filter(b => b.live?.status === "online").length;
@@ -195,10 +198,10 @@ export default function Dashboard() {
             <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32 }}>
                 <div>
                     <h1 style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>
-                        Overview
+                        Bots
                     </h1>
                     <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>
-                        Manage and monitor your hosting instances
+                        Manage and monitor your Discord bots & services
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: 12 }}>
@@ -216,7 +219,7 @@ export default function Dashboard() {
                             <line x1="12" y1="5" x2="12" y2="19"/>
                             <line x1="5"  y1="12" x2="19" y2="12"/>
                         </svg>
-                        New Instance
+                        New Bot
                     </button>
                 </div>
             </div>
@@ -224,7 +227,7 @@ export default function Dashboard() {
             {/* ── Stat cards ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 28 }}>
                 <StatCard
-                    label="Total Instances"
+                    label="Total Bots"
                     value={bots.length}
                     color="var(--accent)"
                     gradient="var(--accent)"
@@ -402,11 +405,11 @@ export default function Dashboard() {
                         </svg>
                     </div>
                     <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
-                        {bots.length === 0 ? "No instances yet" : "No matches found"}
+                        {bots.length === 0 ? "No bots yet" : "No matches found"}
                     </h3>
                     <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 24, maxWidth: 360, margin: "0 auto 24px" }}>
                         {bots.length === 0
-                            ? "Get started by creating your first hosting instance."
+                            ? "Get started by creating your first Discord bot or service."
                             : "Try adjusting your search or filter settings."}
                     </p>
                     {bots.length === 0 && (
@@ -415,7 +418,7 @@ export default function Dashboard() {
                                 <line x1="12" y1="5" x2="12" y2="19"/>
                                 <line x1="5" y1="12" x2="19" y2="12"/>
                             </svg>
-                            Create First Instance
+                            Create First Bot
                         </button>
                     )}
                 </div>
@@ -458,7 +461,7 @@ export default function Dashboard() {
             )}
 
             {/* ── Modals ── */}
-            {showCreate && <CreateBotModal onClose={() => setShowCreate(false)} onCreated={() => fetchAll()} />}
+            {showCreate && <CreateBotModal defaultProjectType="discord" onClose={() => setShowCreate(false)} onCreated={() => fetchAll()} />}
             {showGroups && <GroupManager onClose={() => setShowGroups(false)} onChanged={() => fetchAll()} />}
         </div>
     );

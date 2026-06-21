@@ -48,7 +48,7 @@ export default function Login() {
         setLoading(true);
         try {
             await login(username, password);
-            navigate("/dashboard");
+            navigate("/overview");
         } catch (err) {
             setError(err.response?.data?.error || "Invalid credentials. Please try again.");
         } finally {

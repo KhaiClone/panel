@@ -30,7 +30,7 @@ export default function DomainsPage() {
                     <p style={{ fontSize: 32, marginBottom: 12 }}>🌐</p>
                     <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>No domains yet</p>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 20 }}>Create a website project and add a custom domain to see it here.</p>
-                    <button className="btn-primary" style={{ padding: "10px 24px" }} onClick={() => navigate("/dashboard")}>Go to Projects</button>
+                    <button className="btn-primary" style={{ padding: "10px 24px" }} onClick={() => navigate("/sites")}>Go to Sites</button>
                 </div>
             ) : (
                 <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -44,7 +44,7 @@ export default function DomainsPage() {
                     {domains.map((d, i) => (
                         <div
                             key={d._id}
-                            onClick={() => navigate(`/bots/${d._id}`)}
+                            onClick={() => navigate(`/sites/${d._id}`)}
                             style={{
                                 display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
                                 gap: 16, padding: "14px 20px", alignItems: "center",

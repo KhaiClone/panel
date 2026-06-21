@@ -645,6 +645,58 @@ router.post("/:id/stop", async (req, res, next) => {
     }
 });
 
+/**
+ * PUT /api/bots/:id/website-config
+ * Update website infrastructure settings (port, apiPort, distFolder, buildCommand).
+ * Re-applies nginx config and adjusts UFW ports automatically.
+ *
+ * Body: { port?, apiPort?, distFolder?, buildCommand? }
+ */
+router.put("/:id/website-config", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+        if (bot.projectType !== "website") return res.status(400).json({ error: "Only website projects support this" });
+
+        const wc = bot.websiteConfig;
+        const { port, apiPort, distFolder, buildCommand } = req.body;
+
+        const newPort = port ? parseInt(port, 10) : wc.port;
+        if (isNaN(newPort) || newPort < 1 || newPort > 65535)
+            return res.status(400).json({ error: "Invalid port" });
+
+        const newApiPort = apiPort ? parseInt(apiPort, 10) : wc.apiPort;
+        if (wc.mode === "fullstack" && (!newApiPort || isNaN(newApiPort)))
+            return res.status(400).json({ error: "apiPort is required for fullstack" });
+
+        const newDistFolder = distFolder?.trim() || wc.distFolder;
+        const newBuildCommand = buildCommand !== undefined ? (buildCommand.trim() || null) : wc.buildCommand;
+
+        // Adjust UFW if port changed
+        if (newPort !== wc.port) {
+            await ufwService.closePort(wc.port);
+            await ufwService.openPort(newPort);
+        }
+
+        // Re-apply nginx config
+        const distAbs = resolveDistFolder(bot, newDistFolder);
+        await nginxService.writeConfig(bot.pm2Name, {
+            mode: wc.mode,
+            port: newPort,
+            apiPort: newApiPort || null,
+            distFolder: distAbs,
+            domain: wc.domain || null,
+        });
+
+        const newWc = { ...wc, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand };
+        const updated = await db.findOneAndUpdate("bots", { _id: req.params.id }, { websiteConfig: newWc });
+
+        res.json({ message: "Website config updated", bot: updated });
+    } catch (err) {
+        next(err);
+    }
+});
+
 /** POST /api/bots/:id/domain — set custom domain + issue SSL */
 router.post("/:id/domain", async (req, res, next) => {
     try {

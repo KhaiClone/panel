@@ -71,7 +71,10 @@ const writeConfig = async (pm2Name, opts) => {
         ? buildStaticConfig(opts)
         : buildFullstackConfig(opts);
 
-    fs.writeFileSync(configPath(pm2Name), content, "utf8");
+    // Write to /tmp first (panel user has access), then sudo move to nginx dir
+    const tmpPath = `/tmp/panel-${pm2Name}.conf`;
+    fs.writeFileSync(tmpPath, content, "utf8");
+    await execAsync(`sudo mv "${tmpPath}" "${configPath(pm2Name)}"`);
     await reloadNginx();
 };
 
@@ -80,14 +83,22 @@ const writeConfig = async (pm2Name, opts) => {
  */
 const removeConfig = async (pm2Name) => {
     const p = configPath(pm2Name);
-    if (fs.existsSync(p)) {
-        fs.unlinkSync(p);
-        try { await reloadNginx(); } catch { /* nginx might not be running */ }
-    }
+    try {
+        await execAsync(`sudo rm -f "${p}"`);
+        await reloadNginx();
+    } catch { /* nginx might not be running */ }
 };
 
 /** Returns true if the nginx config file exists for this project. */
-const configExists = (pm2Name) => fs.existsSync(configPath(pm2Name));
+const configExists = (pm2Name) => {
+    try {
+        // sudo test because the file may not be readable by the panel user
+        const { status } = require("child_process").spawnSync("sudo", ["test", "-f", configPath(pm2Name)]);
+        return status === 0;
+    } catch {
+        return false;
+    }
+};
 
 /**
  * Run certbot to issue/renew SSL for the given domain.

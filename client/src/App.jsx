@@ -4,6 +4,7 @@ import { DataProvider } from "./context/DataContext";
 import Login from "./pages/Login";
 import OverviewPage from "./pages/OverviewPage";
 import Dashboard from "./pages/Dashboard";
+import SitesPage from "./pages/SitesPage";
 import DomainsPage from "./pages/DomainsPage";
 import BotDetail from "./pages/BotDetail";
 import GroupsPage from "./pages/GroupsPage";
@@ -37,15 +38,19 @@ export default function App() {
                         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
                             <Route index element={<Navigate to="/overview" replace />} />
                             <Route path="overview"      element={<OverviewPage />} />
-                            <Route path="dashboard"     element={<Dashboard />} />
-                            <Route path="domains"       element={<DomainsPage />} />
+                            <Route path="bots"          element={<Dashboard />} />
                             <Route path="bots/:id"      element={<BotDetail />} />
+                            <Route path="sites"         element={<SitesPage />} />
+                            <Route path="sites/:id"     element={<BotDetail />} />
+                            <Route path="domains"       element={<DomainsPage />} />
                             <Route path="groups"        element={<GroupsPage />} />
                             <Route path="multi-manage"  element={<MultiManage />} />
                             <Route path="panel-manage"  element={<PanelManage />} />
                             <Route path="proxy"         element={<ProxyPage />} />
                             <Route path="tags"          element={<TagsPage />} />
                             <Route path="system"        element={<SystemPage />} />
+                            {/* Legacy redirect */}
+                            <Route path="dashboard"     element={<Navigate to="/bots" replace />} />
                         </Route>
                         <Route path="*" element={<Navigate to="/overview" replace />} />
                     </Routes>
