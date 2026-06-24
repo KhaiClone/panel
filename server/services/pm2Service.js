@@ -128,9 +128,11 @@ const startBot = async (
 
     // NOTE: must use actual newline character, NOT a literal backslash-n.
     const NL = "\n";
+    // exec only works for simple commands — shell operators (&& ; | ||) require bash to run the full line
+    const hasShellOps = /[;&|]/.test(effectiveCmd);
     const scriptContent = isWindows
         ? `@echo off${NL}${effectiveCmd}`
-        : `#!/bin/bash${NL}exec ${effectiveCmd}`;
+        : `#!/bin/bash${NL}${hasShellOps ? effectiveCmd : `exec ${effectiveCmd}`}`;
     fs.writeFileSync(scriptPath, scriptContent, "utf8");
     if (!isWindows) {
         try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}

@@ -138,6 +138,27 @@ function WebsitePanel({ bot, onRefresh }) {
     const [cfgBuildCmd, setCfgBuildCmd]     = useState(wc.buildCommand || "");
     const [savingConfig, setSavingConfig]   = useState(false);
     const [configMsg, setConfigMsg]         = useState(null);
+    const [urlCopied, setUrlCopied]         = useState(false);
+
+    const handleCopyUrl = async () => {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(accessUrl);
+            } else {
+                const ta = document.createElement("textarea");
+                ta.value = accessUrl;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+            }
+            setUrlCopied(true);
+            setTimeout(() => setUrlCopied(false), 2000);
+        } catch {}
+    };
 
     const accessUrl = wc.sslEnabled && wc.domain
         ? `https://${wc.domain}`
@@ -289,7 +310,7 @@ function WebsitePanel({ bot, onRefresh }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "10px 14px", background: "var(--bg-input)", borderRadius: 8 }}>
                 <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Access URL:</span>
                 <span className="mono" style={{ fontSize: 13, color: "var(--accent-hover)", flex: 1, wordBreak: "break-all" }}>{accessUrl}</span>
-                <button onClick={() => navigator.clipboard?.writeText(accessUrl)} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}>Copy</button>
+                <button onClick={handleCopyUrl} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}>{urlCopied ? "✓ Copied" : "Copy"}</button>
             </div>
 
             {/* Domain / SSL form */}
