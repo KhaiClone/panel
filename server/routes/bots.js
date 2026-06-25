@@ -15,6 +15,8 @@ const { createNotification } = require("./notifications");
 
 // Root directory where all buyer bot folders live (e.g. /root/bots)
 const BOTS_ROOT = () => process.env.BOTS_ROOT_DIR;
+// Root directory for website projects (e.g. /root/sites); falls back to BOTS_ROOT
+const SITES_ROOT = () => process.env.SITES_ROOT_DIR || BOTS_ROOT();
 
 // ─── Restart rate limiter ───────────────────────────────────────────────────
 // Tracks timestamps of recent restart attempts per bot id.
@@ -116,7 +118,8 @@ const getProxyConf = async (bot) => {
  */
 const botDir = (bot) => {
     if (bot.source === "local" && bot.localPath) return bot.localPath;
-    return path.join(BOTS_ROOT(), bot.buyerID, bot.botID);
+    const root = bot.projectType === "website" ? SITES_ROOT() : BOTS_ROOT();
+    return path.join(root, bot.buyerID, bot.botID);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,7 +238,7 @@ router.post("/", async (req, res, next) => {
             });
         }
         if (projectType === "website") {
-            if (!rawWebsiteConfig?.distFolder)
+            if (rawWebsiteConfig?.mode !== "static" && !rawWebsiteConfig?.distFolder)
                 return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
             if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
                 return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
@@ -254,34 +257,39 @@ router.post("/", async (req, res, next) => {
             });
         }
 
-        const dir = path.join(BOTS_ROOT(), buyerID, botID);
+        const root = projectType === "website" ? SITES_ROOT() : BOTS_ROOT();
+        const dir = path.join(root, buyerID, botID);
 
         // Ensure buyer directory exists
-        fs.mkdirSync(path.join(BOTS_ROOT(), buyerID), { recursive: true });
+        fs.mkdirSync(path.join(root, buyerID), { recursive: true });
 
         // 1. Clone repository
         console.log(`[Bots] Cloning ${repoUrl} → ${dir}`);
         await gitService.cloneRepo(repoUrl, dir, branch);
 
-        // 2. Install dependencies
-        console.log(`[Bots] Installing deps for ${botID}`);
-        await gitService.installDeps(dir, installCommand);
+        // 2. Install dependencies (skip for static websites)
+        const isStaticWebsite = projectType === "website" && rawWebsiteConfig?.mode === "static";
+        if (!isStaticWebsite) {
+            console.log(`[Bots] Installing deps for ${botID}`);
+            await gitService.installDeps(dir, installCommand);
+        }
 
         // 3. Build step (website only)
         let websiteConfig = null;
         let serviceConfig = null;
         if (projectType === "website") {
-            if (rawWebsiteConfig.buildCommand) {
+            const mode = rawWebsiteConfig.mode || "static";
+            if (!isStaticWebsite && rawWebsiteConfig.buildCommand) {
                 console.log(`[Bots] Running build command for ${botID}`);
                 await execAsync(rawWebsiteConfig.buildCommand, { cwd: dir, timeout: 300_000 });
             }
             const port = await assignPort(rawWebsiteConfig.port);
             websiteConfig = {
-                mode: rawWebsiteConfig.mode || "static",
+                mode,
                 port,
                 apiPort: rawWebsiteConfig.apiPort ? parseInt(rawWebsiteConfig.apiPort, 10) : null,
-                buildCommand: rawWebsiteConfig.buildCommand || null,
-                distFolder: rawWebsiteConfig.distFolder,
+                buildCommand: isStaticWebsite ? null : (rawWebsiteConfig.buildCommand || null),
+                distFolder: rawWebsiteConfig.distFolder || (isStaticWebsite ? "." : "dist"),
                 domain: null,
                 sslEnabled: false,
             };
@@ -375,7 +383,7 @@ router.post("/import-local", async (req, res, next) => {
             });
         }
         if (projectType === "website") {
-            if (!rawWebsiteConfig?.distFolder)
+            if (rawWebsiteConfig?.mode !== "static" && !rawWebsiteConfig?.distFolder)
                 return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
             if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
                 return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
@@ -401,25 +409,27 @@ router.post("/import-local", async (req, res, next) => {
             });
         }
 
-        // Run install command if provided (skip if explicitly empty/null)
-        if (installCommand !== null && installCommand !== "") {
+        // Run install command if provided (skip if explicitly empty/null or static website)
+        const isStaticWebsite = projectType === "website" && rawWebsiteConfig?.mode === "static";
+        if (!isStaticWebsite && installCommand !== null && installCommand !== "") {
             console.log(`[Bots] Installing deps for local bot ${botID}`);
             await gitService.installDeps(localPath, installCommand);
         }
 
-        // Build step (website only)
+        // Build step (website only, skip for static)
         let websiteConfig = null;
         if (projectType === "website") {
-            if (rawWebsiteConfig.buildCommand) {
+            const mode = rawWebsiteConfig.mode || "static";
+            if (mode !== "static" && rawWebsiteConfig.buildCommand) {
                 await execAsync(rawWebsiteConfig.buildCommand, { cwd: localPath, timeout: 300_000 });
             }
             const port = await assignPort(rawWebsiteConfig.port);
             websiteConfig = {
-                mode: rawWebsiteConfig.mode || "static",
+                mode,
                 port,
                 apiPort: rawWebsiteConfig.apiPort ? parseInt(rawWebsiteConfig.apiPort, 10) : null,
-                buildCommand: rawWebsiteConfig.buildCommand || null,
-                distFolder: rawWebsiteConfig.distFolder,
+                buildCommand: mode === "static" ? null : (rawWebsiteConfig.buildCommand || null),
+                distFolder: rawWebsiteConfig.distFolder || (mode === "static" ? "." : "dist"),
                 domain: null,
                 sslEnabled: false,
             };

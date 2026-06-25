@@ -28,7 +28,7 @@ const defaultForm = {
     websitePort: "",
     websiteApiPort: "",
     buildCommand: "npm run build",
-    distFolder: "dist",
+    distFolder: ".",
     // service-only
     servicePort: "",
 };
@@ -94,8 +94,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                       mode: form.websiteMode,
                       port: form.websitePort || undefined,
                       apiPort: form.websiteMode === "fullstack" ? form.websiteApiPort : undefined,
-                      buildCommand: form.buildCommand || null,
-                      distFolder: form.distFolder,
+                      buildCommand: isStatic ? null : (form.buildCommand || null),
+                      distFolder: form.distFolder || (isStatic ? "." : "dist"),
                   }
                 : undefined;
 
@@ -110,7 +110,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                 startScript: form.projectType === "website" && form.websiteMode === "static"
                     ? undefined
                     : (form.startScript || "npm start"),
-                installCommand: form.installCommand || null,
+                installCommand: isStatic ? null : (form.installCommand || null),
                 expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
                 groupId: form.groupId || null,
                 maxMemory: form.maxMemory || null,
@@ -184,7 +184,12 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                             <label className="label" style={{ color: "var(--success)" }}>Website Mode</label>
                             <TabBar
                                 value={form.websiteMode}
-                                onChange={(v) => setForm((f) => ({ ...f, websiteMode: v }))}
+                                onChange={(v) => setForm((f) => ({
+                                ...f,
+                                websiteMode: v,
+                                distFolder: v === "static" ? "." : "dist",
+                                installCommand: v === "static" ? "" : "npm install --omit=dev",
+                            }))}
                                 options={[
                                     { key: "static", label: "📄 Static (nginx serves dist)" },
                                     { key: "fullstack", label: "⚙️ Full-Stack (PM2 + nginx)" },
@@ -247,11 +252,13 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                     </div>
                                 )}
                             </div>
-                            <div>
-                                <label className="label">Install Command</label>
-                                <input className="input mono" placeholder="npm install --omit=dev" value={form.installCommand} onChange={set("installCommand")} />
-                                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Executed after git pull.</p>
-                            </div>
+                            {!isStatic && (
+                                <div>
+                                    <label className="label">Install Command</label>
+                                    <input className="input mono" placeholder="npm install --omit=dev" value={form.installCommand} onChange={set("installCommand")} />
+                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Executed after git pull.</p>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -262,18 +269,20 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 <label className="label">Absolute Path on Server *</label>
                                 <input className="input mono" placeholder="/root/bots/my-project" value={form.localPath} onChange={set("localPath")} required={!isGit} />
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                                {(!isWebsite || isFullstack) && (
+                            {(!isStatic) && (
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                    {(!isWebsite || isFullstack) && (
+                                        <div>
+                                            <label className="label">Start Command</label>
+                                            <input className="input mono" placeholder="npm start" value={form.startScript} onChange={set("startScript")} />
+                                        </div>
+                                    )}
                                     <div>
-                                        <label className="label">Start Command</label>
-                                        <input className="input mono" placeholder="npm start" value={form.startScript} onChange={set("startScript")} />
+                                        <label className="label">Install Command</label>
+                                        <input className="input mono" placeholder="npm install --omit=dev" value={form.installCommand} onChange={set("installCommand")} />
                                     </div>
-                                )}
-                                <div>
-                                    <label className="label">Install Command</label>
-                                    <input className="input mono" placeholder="npm install --omit=dev" value={form.installCommand} onChange={set("installCommand")} />
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
 
@@ -297,15 +306,21 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 )}
                             </div>
 
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: isStatic ? "1fr" : "1fr 1fr", gap: 16 }}>
+                                {!isStatic && (
+                                    <div>
+                                        <label className="label">Build Command</label>
+                                        <input className="input mono" placeholder="npm run build" value={form.buildCommand} onChange={set("buildCommand")} />
+                                    </div>
+                                )}
                                 <div>
-                                    <label className="label">Build Command</label>
-                                    <input className="input mono" placeholder="npm run build" value={form.buildCommand} onChange={set("buildCommand")} />
-                                </div>
-                                <div>
-                                    <label className="label">Dist Folder *</label>
-                                    <input className="input mono" placeholder="dist" value={form.distFolder} onChange={set("distFolder")} required={isWebsite} />
-                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Relative to project root or absolute path.</p>
+                                    <label className="label">Dist Folder</label>
+                                    <input className="input mono" placeholder={isStatic ? "." : "dist"} value={form.distFolder} onChange={set("distFolder")} />
+                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+                                        {isStatic
+                                            ? 'Folder nginx serves. Use "." for the project root.'
+                                            : "Relative to project root or absolute path."}
+                                    </p>
                                 </div>
                             </div>
 
@@ -392,7 +407,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     {loading && (
                         <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--accent-dim)", color: "var(--accent-hover)", border: "1px solid var(--accent)", display: "flex", alignItems: "center", gap: 12 }}>
                             <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--accent-hover)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
-                            {isWebsite ? "Cloning, installing and building…"
+                            {isStatic ? (isGit ? "Cloning repository…" : "Registering site…")
+                                : isWebsite ? "Cloning, installing and building…"
                                 : isService ? "Cloning and setting up service…"
                                 : isGit ? "Cloning repository and installing dependencies…"
                                 : "Registering instance…"}

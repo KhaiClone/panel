@@ -318,6 +318,152 @@ function GitHubSection() {
     );
 }
 
+// ── EnvEditor ─────────────────────────────────────────────────────────────────
+
+const SENSITIVE_RE = /password|secret|token|hash|webhook/i;
+
+function EnvEditor({ onRestart }) {
+    const [entries, setEntries] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [dirty, setDirty] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [error, setError] = useState("");
+    const [revealed, setRevealed] = useState(new Set());
+
+    useEffect(() => {
+        api.get("/panel/env")
+            .then(r => setEntries(r.data.map((e, i) => ({ ...e, id: i }))))
+            .catch(() => setError("Failed to load .env file"));
+    }, []);
+
+    const mark = () => { setDirty(true); setSaved(false); };
+
+    const updateEntry = (id, field, val) => {
+        setEntries(prev => prev.map(e => e.id === id ? { ...e, [field]: val } : e));
+        mark();
+    };
+
+    const addRow = () => {
+        setEntries(prev => [...prev, { key: "", value: "", id: Date.now() }]);
+        mark();
+    };
+
+    const removeRow = (id) => {
+        setEntries(prev => prev.filter(e => e.id !== id));
+        mark();
+    };
+
+    const toggleReveal = (id) => setRevealed(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+    });
+
+    const handleSave = async () => {
+        setError(""); setSaving(true);
+        try {
+            await api.put("/panel/env", { entries: entries.filter(e => e.key.trim()) });
+            setSaved(true); setDirty(false);
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to save .env");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (entries === null) {
+        return (
+            <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                {error || "Loading…"}
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Restart-required banner */}
+            {saved && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b", fontSize: 13 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16, flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    .env saved — restart the panel for new values to take effect.
+                    <button onClick={onRestart} className="btn-warning" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 12, flexShrink: 0 }}>Restart Now</button>
+                </div>
+            )}
+
+            {error && !entries && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 13 }}>{error}</div>
+            )}
+
+            {/* Table */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", background: "var(--bg-input)", borderBottom: "1px solid var(--border)", padding: "8px 12px", gap: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Key</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Value</span>
+                    <span />
+                </div>
+
+                {entries.length === 0 && (
+                    <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No entries found. Click "+ Add Variable" to start.</div>
+                )}
+
+                {entries.map((entry) => {
+                    const isSensitive = SENSITIVE_RE.test(entry.key);
+                    const isRevealed = revealed.has(entry.id);
+                    return (
+                        <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border-light)", alignItems: "center" }}>
+                            <input
+                                className="input mono"
+                                style={{ fontSize: 12, padding: "5px 8px" }}
+                                placeholder="KEY_NAME"
+                                value={entry.key}
+                                onChange={e => updateEntry(entry.id, "key", e.target.value)}
+                                spellCheck={false}
+                            />
+                            <div style={{ display: "flex", gap: 4 }}>
+                                <input
+                                    className="input mono"
+                                    style={{ fontSize: 12, padding: "5px 8px", flex: 1 }}
+                                    type={isSensitive && !isRevealed ? "password" : "text"}
+                                    placeholder="value"
+                                    value={entry.value}
+                                    onChange={e => updateEntry(entry.id, "value", e.target.value)}
+                                    spellCheck={false}
+                                />
+                                {isSensitive && (
+                                    <button type="button" onClick={() => toggleReveal(entry.id)} className="btn-ghost" style={{ padding: "4px 7px", fontSize: 13, flexShrink: 0 }} title={isRevealed ? "Hide" : "Reveal"}>
+                                        {isRevealed
+                                            ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                                            : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        }
+                                    </button>
+                                )}
+                            </div>
+                            <button type="button" onClick={() => removeRow(entry.id)} className="btn-ghost" style={{ padding: "4px 8px", color: "var(--danger)", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }} title="Delete">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {error && entries && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 13 }}>{error}</div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button type="button" onClick={addRow} className="btn-ghost" style={{ fontSize: 13 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add Variable
+                </button>
+                {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)", fontStyle: "italic" }}>Unsaved changes</span>}
+                <button type="button" onClick={handleSave} disabled={saving || !dirty} className="btn-primary" style={{ marginLeft: "auto", fontSize: 13 }}>
+                    {saving ? "Saving…" : "Save .env"}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export default function PanelManage() {
     const [status, setStatus] = useState(null);
     const [logs, setLogs] = useState("");
@@ -470,6 +616,19 @@ export default function PanelManage() {
                         Logs are hidden. Click "Load Logs" to view.
                     </div>
                 )}
+            </div>
+
+            {/* Environment Variables Editor */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16, color: "var(--text-muted)" }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Environment Variables</h2>
+                    <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 4 }}>.env</span>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>Requires restart to apply</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <EnvEditor onRestart={handleRestart} />
+                </div>
             </div>
         </div>
     );
