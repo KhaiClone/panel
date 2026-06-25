@@ -80,6 +80,10 @@ const applyWebsiteInfra = async (bot, dir) => {
         domain: wc.domain || null,
     });
     await ufwService.openPort(wc.port);
+    // When a domain is configured, the nginx config adds a second block on port 80
+    if (wc.domain && wc.port !== 80) {
+        await ufwService.openPort(80);
+    }
 };
 
 /**

@@ -15,9 +15,12 @@ const reloadNginx = async () => {
 // ─── Config generators ────────────────────────────────────────────────────────
 
 const buildStaticConfig = ({ port, distFolder, domain }) => {
-    const serverName = domain ? `\n    server_name ${domain};` : "";
-    return `server {
-    listen ${port};${serverName}
+    const gzip = `    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;`;
+
+    const makeBlock = (listenPort, serverName) => `server {
+    listen ${listenPort};
+    server_name ${serverName};
     root ${distFolder};
     index index.html;
 
@@ -25,16 +28,27 @@ const buildStaticConfig = ({ port, distFolder, domain }) => {
         try_files $uri $uri/ /index.html;
     }
 
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
-}
-`;
+${gzip}
+}`;
+
+    // Always expose on the configured port (accessible by IP:port)
+    let config = makeBlock(port, "_") + "\n";
+
+    // If a domain is configured, also expose on port 80 for domain-based access
+    if (domain) {
+        config += "\n" + makeBlock(80, domain) + "\n";
+    }
+
+    return config;
 };
 
 const buildFullstackConfig = ({ port, apiPort, distFolder, domain }) => {
-    const serverName = domain ? `\n    server_name ${domain};` : "";
-    return `server {
-    listen ${port};${serverName}
+    const gzip = `    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;`;
+
+    const makeBlock = (listenPort, serverName) => `server {
+    listen ${listenPort};
+    server_name ${serverName};
     root ${distFolder};
     index index.html;
 
@@ -52,10 +66,18 @@ const buildFullstackConfig = ({ port, apiPort, distFolder, domain }) => {
         try_files $uri $uri/ /index.html;
     }
 
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
-}
-`;
+${gzip}
+}`;
+
+    // Always expose on the configured port (accessible by IP:port)
+    let config = makeBlock(port, "_") + "\n";
+
+    // If a domain is configured, also expose on port 80 for domain-based access
+    if (domain) {
+        config += "\n" + makeBlock(80, domain) + "\n";
+    }
+
+    return config;
 };
 
 // ─── Public API ───────────────────────────────────────────────────────────────
