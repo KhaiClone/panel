@@ -164,6 +164,41 @@ const setMemoryLimit = async (pm2Name, maxMemory) => {
     return result;
 };
 
+/**
+ * Start a static website using http-server via PM2.
+ * Serves the given distFolder on the given port — no nginx needed.
+ *
+ * @param {string} pm2Name    - Unique PM2 name
+ * @param {string} distFolder - Absolute path to the static files directory
+ * @param {number} port       - TCP port to listen on
+ */
+const startHttpServer = async (pm2Name, distFolder, port) => {
+    const list = await getProcessList();
+    const existing = list.find((p) => p.name === pm2Name);
+    if (existing) {
+        await runPM2(`delete "${pm2Name}"`);
+    }
+
+    // Prefer the local binary shipped with the panel; fall back to global
+    const localBin = path.resolve(__dirname, "../../node_modules/.bin/http-server");
+    const bin = fs.existsSync(localBin) ? localBin : "http-server";
+
+    // Write a minimal shell wrapper so PM2 manages it like any other process
+    const scriptPath = `/tmp/panel-site-${pm2Name}.sh`;
+    fs.writeFileSync(
+        scriptPath,
+        `#!/bin/bash\nexec "${bin}" "${distFolder}" -p ${port} -a 0.0.0.0 --silent\n`,
+        "utf8",
+    );
+    fs.chmodSync(scriptPath, 0o755);
+
+    const result = await runPM2(
+        `start "${scriptPath}" --name "${pm2Name}" --interpreter bash`,
+    );
+    await pm2Save();
+    return result;
+};
+
 /** Stop a running bot (keeps it in PM2 list) */
 const stopBot = async (pm2Name) => {
     const result = await runPM2(`stop "${pm2Name}"`);
@@ -294,6 +329,7 @@ const flushBotLogs = async (pm2Name) => {
 
 module.exports = {
     startBot,
+    startHttpServer,
     stopBot,
     restartBot,
     deleteBot,

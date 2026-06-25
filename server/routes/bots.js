@@ -65,13 +65,26 @@ const assignPort = async (requestedPort) => {
 };
 
 /**
- * Apply nginx config + UFW for a website project.
+ * Apply the correct serving infrastructure for a website project:
+ *   - static, no domain → http-server via PM2 on wc.port (works with IP:port)
+ *   - static, domain    → nginx on port 80 for domain access
+ *   - fullstack         → nginx on wc.port (+ port 80 if domain is set)
+ *
  * @param {Object} bot  - Full bot record (must have pm2Name, websiteConfig)
- * @param {string} dir  - Absolute botDir
+ * @param {string} dir  - Absolute botDir (unused here but kept for signature consistency)
  */
 const applyWebsiteInfra = async (bot, dir) => {
     const wc = bot.websiteConfig;
-    const distAbs = resolveDistFolder({ ...bot, source: bot.source, localPath: bot.localPath }, wc.distFolder);
+    const distAbs = resolveDistFolder(bot, wc.distFolder);
+
+    if (wc.mode === "static" && !wc.domain) {
+        // http-server mode: runs as a PM2 process, no nginx needed
+        await pm2Service.startHttpServer(bot.pm2Name, distAbs, wc.port);
+        await ufwService.openPort(wc.port);
+        return;
+    }
+
+    // nginx mode: static+domain (listen 80) or fullstack (listen wc.port)
     await nginxService.writeConfig(bot.pm2Name, {
         mode: wc.mode,
         port: wc.port,
@@ -79,20 +92,26 @@ const applyWebsiteInfra = async (bot, dir) => {
         distFolder: distAbs,
         domain: wc.domain || null,
     });
-    await ufwService.openPort(wc.port);
-    // When a domain is configured, the nginx config adds a second block on port 80
-    if (wc.domain && wc.port !== 80) {
+
+    if (wc.mode === "static") {
+        // Domain-based static site → nginx handles port 80
         await ufwService.openPort(80);
+    } else {
+        await ufwService.openPort(wc.port);
+        if (wc.domain && wc.port !== 80) {
+            await ufwService.openPort(80);
+        }
     }
 };
 
 /**
  * Get live status for any project type.
- * - discord / fullstack website → PM2 status
- * - static website → nginx config existence
+ * - static, no domain → http-server runs via PM2 → PM2 status
+ * - static, domain    → nginx config existence
+ * - discord / fullstack → PM2 status
  */
 const getLiveStatus = async (bot, pm2List) => {
-    if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
+    if (bot.projectType === "website" && bot.websiteConfig?.mode === "static" && bot.websiteConfig?.domain) {
         const online = nginxService.configExists(bot.pm2Name);
         return { status: online ? "online" : "stopped", cpu: 0, memory: 0, restarts: 0, uptime: null };
     }
@@ -572,7 +591,11 @@ router.delete("/:id", async (req, res, next) => {
         // Project-type cleanup
         if (bot.projectType === "website" && bot.websiteConfig) {
             await nginxService.removeConfig(bot.pm2Name);
-            await ufwService.closePort(bot.websiteConfig.port);
+            // Static+domain uses nginx on port 80 (shared — don't close it)
+            const isStaticWithDomain = bot.websiteConfig.mode === "static" && bot.websiteConfig.domain;
+            if (!isStaticWithDomain) {
+                await ufwService.closePort(bot.websiteConfig.port);
+            }
         } else if (bot.projectType === "service" && bot.serviceConfig?.port) {
             await ufwService.closePort(bot.serviceConfig.port);
         }
@@ -611,7 +634,7 @@ router.post("/:id/start", async (req, res, next) => {
 
         const dir = botDir(bot);
 
-        // Static website: rebuild + re-apply nginx config (no PM2)
+        // Static website: rebuild if needed, then start via http-server or nginx
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
             const wc = bot.websiteConfig;
             if (wc.buildCommand) {
@@ -619,7 +642,8 @@ router.post("/:id/start", async (req, res, next) => {
             }
             await applyWebsiteInfra(bot, dir);
             await createNotification(`Website "${bot.name}" was started.`, "start");
-            return res.json({ message: "Website started", output: "nginx config applied" });
+            const output = wc.domain ? "nginx config applied" : "http-server started";
+            return res.json({ message: "Website started", output });
         }
 
         // Discord bot or fullstack website: use PM2
@@ -644,11 +668,16 @@ router.post("/:id/stop", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        // Static website: remove nginx config (no PM2 to stop)
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
-            await nginxService.removeConfig(bot.pm2Name);
+            if (bot.websiteConfig.domain) {
+                // Domain mode: remove nginx config
+                await nginxService.removeConfig(bot.pm2Name);
+            } else {
+                // http-server mode: stop PM2 process
+                await pm2Service.stopBot(bot.pm2Name);
+            }
             await createNotification(`Website "${bot.name}" was stopped.`, "stop");
-            return res.json({ message: "Website stopped", output: "nginx config removed" });
+            return res.json({ message: "Website stopped" });
         }
 
         const output = await pm2Service.stopBot(bot.pm2Name);
@@ -685,26 +714,32 @@ router.put("/:id/website-config", async (req, res, next) => {
 
         const newDistFolder = distFolder?.trim() || wc.distFolder;
         const newBuildCommand = buildCommand !== undefined ? (buildCommand.trim() || null) : wc.buildCommand;
+        const newWc = { ...wc, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand };
+        const distAbs = resolveDistFolder({ ...bot, websiteConfig: newWc }, newDistFolder);
 
-        // Adjust UFW if port changed
-        if (newPort !== wc.port) {
-            await ufwService.closePort(wc.port);
-            await ufwService.openPort(newPort);
+        if (wc.mode === "static" && !wc.domain) {
+            // http-server mode: adjust UFW port if changed, then restart http-server
+            if (newPort !== wc.port) {
+                await ufwService.closePort(wc.port);
+                await ufwService.openPort(newPort);
+            }
+            await pm2Service.startHttpServer(bot.pm2Name, distAbs, newPort);
+        } else {
+            // nginx mode: adjust UFW port if changed, then rewrite config
+            if (newPort !== wc.port) {
+                await ufwService.closePort(wc.port);
+                await ufwService.openPort(newPort);
+            }
+            await nginxService.writeConfig(bot.pm2Name, {
+                mode: wc.mode,
+                port: newPort,
+                apiPort: newApiPort || null,
+                distFolder: distAbs,
+                domain: wc.domain || null,
+            });
         }
 
-        // Re-apply nginx config
-        const distAbs = resolveDistFolder(bot, newDistFolder);
-        await nginxService.writeConfig(bot.pm2Name, {
-            mode: wc.mode,
-            port: newPort,
-            apiPort: newApiPort || null,
-            distFolder: distAbs,
-            domain: wc.domain || null,
-        });
-
-        const newWc = { ...wc, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand };
         const updated = await db.findOneAndUpdate("bots", { _id: req.params.id }, { websiteConfig: newWc });
-
         res.json({ message: "Website config updated", bot: updated });
     } catch (err) {
         next(err);
@@ -724,7 +759,13 @@ router.post("/:id/domain", async (req, res, next) => {
         const dir = botDir(bot);
         const wc = bot.websiteConfig;
 
-        // Regenerate nginx config with new domain
+        // If static site was running via http-server (no domain), stop it and close its port
+        if (wc.mode === "static" && !wc.domain) {
+            await pm2Service.deleteBot(bot.pm2Name);
+            await ufwService.closePort(wc.port);
+        }
+
+        // Write nginx config with new domain
         const distAbs = resolveDistFolder(bot, wc.distFolder);
         await nginxService.writeConfig(bot.pm2Name, {
             mode: wc.mode,
@@ -776,15 +817,14 @@ router.post("/:id/restart", async (req, res, next) => {
 
         const dir = botDir(bot);
 
-        // Static website: rebuild + re-apply nginx (no PM2 restart)
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
             const wc = bot.websiteConfig;
             if (wc.buildCommand) {
                 await execAsync(wc.buildCommand, { cwd: dir, timeout: 300_000 });
             }
             await applyWebsiteInfra(bot, dir);
-            await createNotification(`Website "${bot.name}" was restarted (rebuilt).`, "restart");
-            return res.json({ message: "Website rebuilt and restarted" });
+            await createNotification(`Website "${bot.name}" was restarted.`, "restart");
+            return res.json({ message: "Website restarted" });
         }
 
         // Use startBot (which deletes + re-registers) so the wrapper script
