@@ -874,6 +874,22 @@ router.post("/:id/update", async (req, res, next) => {
             pullOutput = `(pull failed or skipped: ${err.message || 'unknown error'})`;
         }
 
+        // Static website: skip install, run build if configured, then apply serving infra
+        if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
+            const wc = bot.websiteConfig;
+            if (wc.buildCommand) {
+                await execAsync(wc.buildCommand, { cwd: dir, timeout: 300_000 });
+            }
+            await applyWebsiteInfra(bot, dir);
+            await createNotification(`Bot "${bot.name}" was updated / reinstalled.`, "reinstall");
+            console.log(`[Bots] Updated static website "${bot.name}"`);
+            return res.json({
+                message: "Website updated and restarted",
+                pullOutput,
+                restartOutput: wc.domain ? "nginx config applied" : "http-server started",
+            });
+        }
+
         await gitService.installDeps(dir, bot.installCommand);
 
         // Use startBot so wrapper script is refreshed with current proxy settings
