@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../context/DataContext";
+import { useAuth } from "../context/AuthContext";
 import api from "../api/client";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -88,12 +89,17 @@ const TYPE_META = {
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function OverviewPage() {
     const { stats, bots } = useData();
+    const { isAdmin } = useAuth();
     const [domains, setDomains] = useState([]);
+    const [myInfo, setMyInfo] = useState(null); // slot + usage for regular users
     const navigate = useNavigate();
 
     useEffect(() => {
         api.get("/bots/domains").then(r => setDomains(r.data)).catch(() => {});
-    }, []);
+        if (!isAdmin) {
+            api.get("/admin/users/me").then(r => setMyInfo(r.data)).catch(() => {});
+        }
+    }, [isAdmin]);
 
     const online  = bots.filter(b => b.live?.status === "online").length;
     const stopped = bots.filter(b => b.live?.status !== "online").length;
@@ -122,7 +128,50 @@ export default function OverviewPage() {
                 <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Real-time health and resource summary of your VPS</p>
             </div>
 
-            {/* ── VPS Resource rings ── */}
+            {/* ── Slot info (regular users only) ── */}
+            {!isAdmin && myInfo?.slot && (
+                <div className="card" style={{ padding: "16px 20px", marginBottom: 20, borderLeft: "3px solid var(--accent)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                        <div>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
+                                Your Slot {myInfo.slot.label ? `— ${myInfo.slot.label}` : ""}
+                            </p>
+                            {myInfo.slot.expiresAt && (
+                                <p style={{ margin: "3px 0 0", fontSize: 11, color: myInfo.slot.expiresAt < Date.now() ? "var(--danger)" : "var(--text-muted)" }}>
+                                    {myInfo.slot.expiresAt < Date.now() ? "Expired" : `Expires ${new Date(myInfo.slot.expiresAt).toLocaleDateString()}`}
+                                </p>
+                            )}
+                        </div>
+                        <div style={{ display: "flex", gap: 20 }}>
+                            {[
+                                { label: "Bots", used: myInfo.usage?.bots || 0, max: myInfo.slot.maxBots },
+                                { label: "Sites", used: myInfo.usage?.sites || 0, max: myInfo.slot.maxSites },
+                            ].map(({ label, used, max }) => (
+                                <div key={label} style={{ textAlign: "center" }}>
+                                    <p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: max !== null && used >= max ? "var(--danger)" : "var(--accent-hover)" }}>
+                                        {used}<span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>/{max ?? "∞"}</span>
+                                    </p>
+                                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{label}</p>
+                                </div>
+                            ))}
+                            {myInfo.slot.maxRamPerBot && (
+                                <div style={{ textAlign: "center" }}>
+                                    <p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--text)" }}>{myInfo.slot.maxRamPerBot}</p>
+                                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-dim)" }}>RAM / bot</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {!isAdmin && !myInfo?.slot && myInfo && (
+                <div className="card" style={{ padding: "12px 16px", marginBottom: 20, borderLeft: "3px solid var(--warning)" }}>
+                    <p style={{ margin: 0, fontSize: 13, color: "var(--warning)" }}>No slot assigned to your account yet. Contact the administrator.</p>
+                </div>
+            )}
+
+            {/* ── VPS Resource rings (admin only) ── */}
+            {isAdmin && (
             <div className="card" style={{ padding: "28px 32px", marginBottom: 24 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
                     <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>VPS Resources</h2>
@@ -149,6 +198,7 @@ export default function OverviewPage() {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* ── Instance summary ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>

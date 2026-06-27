@@ -13,19 +13,30 @@ import PanelManage from "./pages/PanelManage";
 import SystemPage from "./pages/SystemPage";
 import ProxyPage from "./pages/ProxyPage";
 import TagsPage from "./pages/TagsPage";
+import AdminUsersPage from "./pages/AdminUsersPage";
 import Layout from "./components/Layout";
+
+function Spinner() {
+    return (
+        <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg)", flexDirection: "column", gap: 12 }}>
+            <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 0.8s linear infinite" }} />
+            <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading…</p>
+        </div>
+    );
+}
 
 function PrivateRoute({ children }) {
     const { user, loading } = useAuth();
-    if (loading) {
-        return (
-            <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg)", flexDirection: "column", gap: 12 }}>
-                <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 0.8s linear infinite" }} />
-                <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading…</p>
-            </div>
-        );
-    }
+    if (loading) return <Spinner />;
     return user ? children : <Navigate to="/login" replace />;
+}
+
+function AdminRoute({ children }) {
+    const { user, loading } = useAuth();
+    if (loading) return <Spinner />;
+    if (!user) return <Navigate to="/login" replace />;
+    if (user.role !== "admin") return <Navigate to="/overview" replace />;
+    return children;
 }
 
 export default function App() {
@@ -45,10 +56,12 @@ export default function App() {
                             <Route path="domains"       element={<DomainsPage />} />
                             <Route path="groups"        element={<GroupsPage />} />
                             <Route path="multi-manage"  element={<MultiManage />} />
-                            <Route path="panel-manage"  element={<PanelManage />} />
-                            <Route path="proxy"         element={<ProxyPage />} />
                             <Route path="tags"          element={<TagsPage />} />
-                            <Route path="system"        element={<SystemPage />} />
+                            {/* Admin-only routes */}
+                            <Route path="panel-manage"  element={<AdminRoute><PanelManage /></AdminRoute>} />
+                            <Route path="proxy"         element={<AdminRoute><ProxyPage /></AdminRoute>} />
+                            <Route path="system"        element={<AdminRoute><SystemPage /></AdminRoute>} />
+                            <Route path="admin/users"   element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
                             {/* Legacy redirect */}
                             <Route path="dashboard"     element={<Navigate to="/bots" replace />} />
                         </Route>

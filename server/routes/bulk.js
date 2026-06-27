@@ -43,8 +43,9 @@ router.post("/:action", async (req, res, next) => {
             return res.status(400).json({ error: "botIds must be a non-empty array" });
         }
 
-        // Fetch all requested bots from DB
-        const allBots = await db.find("bots");
+        // Fetch bots — users can only bulk-act on their own bots
+        const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
+        const allBots = await db.find("bots", query);
         const botMap = Object.fromEntries(allBots.map((b) => [b._id, b]));
 
         const results = await Promise.allSettled(
