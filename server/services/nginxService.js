@@ -16,7 +16,8 @@ const reloadNginx = async () => {
 
 // Static sites without domain are served by http-server (PM2), not nginx.
 // This config is only written when a domain is assigned to a static site.
-const buildStaticConfig = ({ distFolder, domain }) => {
+const buildStaticConfig = ({ distFolder, domain, extraConfig }) => {
+    const extra = extraConfig?.trim() ? `\n${extraConfig.trim()}\n` : "";
     return `server {
     listen 80;
     server_name ${domain};
@@ -26,18 +27,20 @@ const buildStaticConfig = ({ distFolder, domain }) => {
     location / {
         try_files $uri $uri/ /index.html;
     }
-
+${extra}
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
 }
 `;
 };
 
-const buildFullstackConfig = ({ port, apiPort, distFolder, domain }) => {
+const buildFullstackConfig = ({ port, apiPort, distFolder, domain, extraConfig }) => {
     const gzip = `    gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;`;
 
-    const makeBlock = (listenPort, serverName) => `server {
+    const makeBlock = (listenPort, serverName, includeExtra = false) => {
+        const extra = includeExtra && extraConfig?.trim() ? `\n${extraConfig.trim()}\n` : "";
+        return `server {
     listen ${listenPort};
     server_name ${serverName};
     root ${distFolder};
@@ -56,16 +59,17 @@ const buildFullstackConfig = ({ port, apiPort, distFolder, domain }) => {
     location / {
         try_files $uri $uri/ /index.html;
     }
-
+${extra}
 ${gzip}
 }`;
+    };
 
-    // Always expose on the configured port (accessible by IP:port)
-    let config = makeBlock(port, "_") + "\n";
+    // Always expose on the configured port (accessible by IP:port) — no extra config here
+    let config = makeBlock(port, "_", false) + "\n";
 
     // If a domain is configured, also add a block on port 80 for domain access
     if (domain) {
-        config += "\n" + makeBlock(80, domain) + "\n";
+        config += "\n" + makeBlock(80, domain, true) + "\n";
     }
 
     return config;
@@ -84,10 +88,20 @@ const writeConfig = async (pm2Name, opts) => {
         ? buildStaticConfig(opts)
         : buildFullstackConfig(opts);
 
-    // Write to /tmp first (panel user has access), then sudo move to nginx dir
     const tmpPath = `/tmp/panel-${pm2Name}.conf`;
+    const destPath = configPath(pm2Name);
     fs.writeFileSync(tmpPath, content, "utf8");
-    await execAsync(`sudo mv "${tmpPath}" "${configPath(pm2Name)}"`);
+    await execAsync(`sudo mv "${tmpPath}" "${destPath}"`);
+
+    // Validate before reloading — if invalid, remove the bad config and bail
+    try {
+        await execAsync("sudo nginx -t");
+    } catch (err) {
+        await execAsync(`sudo rm -f "${destPath}"`).catch(() => {});
+        const detail = (err.stderr || err.message || "").trim().split("\n").slice(0, 4).join(" | ");
+        throw new Error(`nginx config test failed: ${detail}`);
+    }
+
     await reloadNginx();
 };
 

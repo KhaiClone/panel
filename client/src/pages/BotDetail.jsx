@@ -140,6 +140,12 @@ function WebsitePanel({ bot, onRefresh }) {
     const [configMsg, setConfigMsg]         = useState(null);
     const [urlCopied, setUrlCopied]         = useState(false);
 
+    // Custom nginx config state
+    const [nginxExpanded, setNginxExpanded]   = useState(false);
+    const [cfgNginx, setCfgNginx]             = useState(wc.extraNginxConfig || "");
+    const [savingNginx, setSavingNginx]       = useState(false);
+    const [nginxMsg, setNginxMsg]             = useState(null);
+
     const handleCopyUrl = async () => {
         try {
             if (navigator.clipboard && window.isSecureContext) {
@@ -204,6 +210,20 @@ function WebsitePanel({ bot, onRefresh }) {
         setCfgBuildCmd(wc.buildCommand || "");
         setEditingConfig(false);
         setConfigMsg(null);
+    };
+
+    const handleSaveNginx = async (e) => {
+        e.preventDefault();
+        setSavingNginx(true); setNginxMsg(null);
+        try {
+            await api.put(`/bots/${bot._id}/website-config`, {
+                extraNginxConfig: cfgNginx,
+            });
+            setNginxMsg({ type: "success", text: "Custom nginx config saved — nginx reloaded." });
+            onRefresh();
+        } catch (err) {
+            setNginxMsg({ type: "error", text: err.response?.data?.error || "Failed to save nginx config" });
+        } finally { setSavingNginx(false); }
     };
 
     const InfoMsg = ({ msg }) => msg ? (
@@ -337,6 +357,61 @@ function WebsitePanel({ bot, onRefresh }) {
                     </button>
                 </div>
             </form>
+
+            {/* Custom nginx config — only shown when domain is set (nginx mode) */}
+            {wc.domain && (
+                <div style={{ marginTop: 20, borderTop: "1px solid rgba(34,197,94,0.15)", paddingTop: 16 }}>
+                    <button
+                        type="button"
+                        onClick={() => { setNginxExpanded(v => !v); setNginxMsg(null); }}
+                        style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", padding: 0, width: "100%" }}
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                            style={{ width: 14, height: 14, color: "var(--text-muted)", transform: nginxExpanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                        <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+                            Custom Nginx Config
+                        </h4>
+                        {wc.extraNginxConfig && (
+                            <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(96,165,250,0.15)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.25)" }}>
+                                Active
+                            </span>
+                        )}
+                    </button>
+
+                    {nginxExpanded && (
+                        <form onSubmit={handleSaveNginx} style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                                Extra directives injected inside the <code style={{ background: "var(--bg-input)", padding: "1px 5px", borderRadius: 4 }}>server {"{}"}</code> block — e.g. <code style={{ background: "var(--bg-input)", padding: "1px 5px", borderRadius: 4 }}>location /api {"{ proxy_pass ... }"}</code>.
+                                Config is validated with <code style={{ background: "var(--bg-input)", padding: "1px 5px", borderRadius: 4 }}>nginx -t</code> before applying.
+                            </p>
+                            <textarea
+                                className="input mono"
+                                value={cfgNginx}
+                                onChange={e => setCfgNginx(e.target.value)}
+                                rows={8}
+                                spellCheck={false}
+                                placeholder={`    location /api {\n        proxy_pass http://127.0.0.1:3001;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n    }`}
+                                style={{ resize: "vertical", fontSize: 12, lineHeight: 1.6, whiteSpace: "pre", overflowWrap: "normal", overflowX: "auto" }}
+                            />
+                            <InfoMsg msg={nginxMsg} />
+                            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                                {cfgNginx.trim() && (
+                                    <button type="button" className="btn-ghost" style={{ padding: "7px 14px", fontSize: 12, color: "var(--danger)" }}
+                                        onClick={() => { setCfgNginx(""); setNginxMsg(null); }}
+                                        disabled={savingNginx}>
+                                        Clear
+                                    </button>
+                                )}
+                                <button type="submit" className="btn-primary" disabled={savingNginx} style={{ padding: "7px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                                    {savingNginx ? <><BtnSpinner /> Applying…</> : "Apply & Reload nginx"}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

@@ -91,6 +91,7 @@ const applyWebsiteInfra = async (bot, dir) => {
         apiPort: wc.apiPort || null,
         distFolder: distAbs,
         domain: wc.domain || null,
+        extraConfig: wc.extraNginxConfig || null,
     });
 
     if (wc.mode === "static") {
@@ -101,6 +102,14 @@ const applyWebsiteInfra = async (bot, dir) => {
         if (wc.domain && wc.port !== 80) {
             await ufwService.openPort(80);
         }
+    }
+
+    // Restore SSL if it was previously configured — certbot detects the existing
+    // cert and updates the nginx config without re-issuing, so this is safe to
+    // call on every start/restart.
+    if (wc.domain && wc.sslEnabled) {
+        await nginxService.enableSSL(wc.domain, null);
+        await ufwService.openPort(443);
     }
 };
 
@@ -702,7 +711,7 @@ router.put("/:id/website-config", async (req, res, next) => {
         if (bot.projectType !== "website") return res.status(400).json({ error: "Only website projects support this" });
 
         const wc = bot.websiteConfig;
-        const { port, apiPort, distFolder, buildCommand } = req.body;
+        const { port, apiPort, distFolder, buildCommand, extraNginxConfig } = req.body;
 
         const newPort = port ? parseInt(port, 10) : wc.port;
         if (isNaN(newPort) || newPort < 1 || newPort > 65535)
@@ -714,7 +723,8 @@ router.put("/:id/website-config", async (req, res, next) => {
 
         const newDistFolder = distFolder?.trim() || wc.distFolder;
         const newBuildCommand = buildCommand !== undefined ? (buildCommand.trim() || null) : wc.buildCommand;
-        const newWc = { ...wc, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand };
+        const newExtraNginx = extraNginxConfig !== undefined ? (extraNginxConfig.trim() || null) : (wc.extraNginxConfig || null);
+        const newWc = { ...wc, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand, extraNginxConfig: newExtraNginx };
         const distAbs = resolveDistFolder({ ...bot, websiteConfig: newWc }, newDistFolder);
 
         if (wc.mode === "static" && !wc.domain) {
@@ -736,7 +746,12 @@ router.put("/:id/website-config", async (req, res, next) => {
                 apiPort: newApiPort || null,
                 distFolder: distAbs,
                 domain: wc.domain || null,
+                extraConfig: newExtraNginx,
             });
+            if (wc.domain && wc.sslEnabled) {
+                await nginxService.enableSSL(wc.domain, null);
+                await ufwService.openPort(443);
+            }
         }
 
         const updated = await db.findOneAndUpdate("bots", { _id: req.params.id }, { websiteConfig: newWc });
