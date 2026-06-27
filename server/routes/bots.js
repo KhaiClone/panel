@@ -225,7 +225,8 @@ const botDir = (bot) => {
  */
 router.get("/domains", async (req, res, next) => {
     try {
-        const bots = await db.find("bots");
+        const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
+        const bots = await db.find("bots", query);
         const domains = bots
             .filter((b) => b.projectType === "website" && b.websiteConfig?.domain)
             .map((b) => ({

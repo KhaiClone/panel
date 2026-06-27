@@ -5,27 +5,24 @@ import { useAuth } from "./AuthContext";
 const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
-    const { user } = useAuth();
+    const { user, isAdmin } = useAuth();
     const [bots, setBots] = useState([]);
     const [groups, setGroups] = useState([]);
     const [tags, setTags] = useState([]);
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchAll = useCallback(async () => {
+    const fetchBots = useCallback(async () => {
         if (!user) return;
         try {
-            const [botsRes, groupsRes, tagsRes, statsRes] = await Promise.allSettled([
+            const [botsRes, groupsRes, tagsRes] = await Promise.allSettled([
                 api.get("/bots"),
                 api.get("/groups"),
                 api.get("/tags"),
-                api.get("/system/stats"),
             ]);
-            
-            if (botsRes.status === 'fulfilled') setBots(botsRes.value.data);
-            if (groupsRes.status === 'fulfilled') setGroups(groupsRes.value.data);
-            if (tagsRes.status === 'fulfilled') setTags(tagsRes.value.data);
-            if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
+            if (botsRes.status === "fulfilled") setBots(botsRes.value.data);
+            if (groupsRes.status === "fulfilled") setGroups(groupsRes.value.data);
+            if (tagsRes.status === "fulfilled") setTags(tagsRes.value.data);
         } catch (err) {
             console.error("Data fetch error:", err);
         } finally {
@@ -33,22 +30,23 @@ export function DataProvider({ children }) {
         }
     }, [user]);
 
+    const fetchStats = useCallback(async () => {
+        if (!user || !isAdmin) return; // system stats are admin-only
+        try {
+            const res = await api.get("/system/stats");
+            setStats(res.data);
+        } catch {}
+    }, [user, isAdmin]);
+
     useEffect(() => {
         if (user) {
-            fetchAll();
-            // Bots and Groups: 10s
-            const botInterval = setInterval(fetchAll, 10000);
-            // System Stats: 5s (more frequent)
-            const statsInterval = setInterval(async () => {
-                try {
-                    const res = await api.get("/system/stats");
-                    setStats(res.data);
-                } catch {}
-            }, 5000);
-            
+            fetchBots();
+            fetchStats();
+            const botInterval   = setInterval(fetchBots,  10000);
+            const statsInterval = isAdmin ? setInterval(fetchStats, 5000) : null;
             return () => {
                 clearInterval(botInterval);
-                clearInterval(statsInterval);
+                if (statsInterval) clearInterval(statsInterval);
             };
         } else {
             setBots([]);
@@ -57,10 +55,10 @@ export function DataProvider({ children }) {
             setStats(null);
             setLoading(true);
         }
-    }, [user, fetchAll]);
+    }, [user, isAdmin, fetchBots, fetchStats]);
 
     return (
-        <DataContext.Provider value={{ bots, groups, tags, stats, loading, refresh: fetchAll }}>
+        <DataContext.Provider value={{ bots, groups, tags, stats, loading, refresh: fetchBots }}>
             {children}
         </DataContext.Provider>
     );
