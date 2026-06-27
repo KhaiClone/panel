@@ -105,9 +105,16 @@ const removeConfig = async (pm2Name) => {
 /** Returns true if the nginx config file exists for this project. */
 const configExists = (pm2Name) => {
     try {
-        // sudo test because the file may not be readable by the panel user
-        const { status } = require("child_process").spawnSync("sudo", ["test", "-f", configPath(pm2Name)]);
-        return status === 0;
+        const p = configPath(pm2Name);
+        // Try direct fs access first; fall back to sudo ls if the panel user
+        // can't read /etc/nginx/sites-enabled/ directly.
+        try {
+            fs.accessSync(p, fs.constants.F_OK);
+            return true;
+        } catch {
+            const { status } = require("child_process").spawnSync("sudo", ["ls", p], { stdio: "pipe" });
+            return status === 0;
+        }
     } catch {
         return false;
     }
