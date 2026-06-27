@@ -440,25 +440,27 @@ export default function BotDetail() {
     const [editTags,           setEditTags]           = useState([]);
     const [savingMeta,         setSavingMeta]         = useState(false);
 
-    const fetchBot = async () => {
+    const fetchBot = async ({ updateForm = false } = {}) => {
         try {
             const { data } = await api.get(`/bots/${id}`);
             setBot(data);
-            setEditName(data.name);
-            setEditScript(data.startScript || 'npm start');
-            setEditInstallCommand(data.installCommand || '');
-            setEditGroupId(data.groupId || '');
-            setEditMaxMemory(data.maxMemory || '');
-            setEditPrice(data.currentPrice || '');
-            setEditTags(Array.isArray(data.tags) ? data.tags : []);
-            setEditExpiry(data.expiresAt ? toLocalDatetimeInputValue(data.expiresAt) : '');
+            if (updateForm) {
+                setEditName(data.name);
+                setEditScript(data.startScript || 'npm start');
+                setEditInstallCommand(data.installCommand || '');
+                setEditGroupId(data.groupId || '');
+                setEditMaxMemory(data.maxMemory || '');
+                setEditPrice(data.currentPrice || '');
+                setEditTags(Array.isArray(data.tags) ? data.tags : []);
+                setEditExpiry(data.expiresAt ? toLocalDatetimeInputValue(data.expiresAt) : '');
+            }
         } catch { navigate(backPath); }
         finally { setLoading(false); }
     };
 
     useEffect(() => {
-        fetchBot();
-        const interval = setInterval(fetchBot, 8_000);
+        fetchBot({ updateForm: true });
+        const interval = setInterval(() => fetchBot(), 8_000);
         return () => clearInterval(interval);
     }, [id]);
 
@@ -491,7 +493,7 @@ export default function BotDetail() {
                 expiresAt: editExpiry ? new Date(editExpiry).toISOString() : null,
             });
             setActionMsg({ type: 'success', text: 'Settings saved' });
-            fetchBot();
+            fetchBot({ updateForm: true });
         } catch (err) {
             setActionMsg({ type: 'error', text: err.response?.data?.error || 'Save failed' });
         } finally { setSavingMeta(false); }

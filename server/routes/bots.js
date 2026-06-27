@@ -365,13 +365,23 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
 
         // 1. Clone repository
         console.log(`[Bots] Cloning ${repoUrl} → ${dir}`);
-        await gitService.cloneRepo(repoUrl, dir, branch);
+        try {
+            await gitService.cloneRepo(repoUrl, dir, branch);
+        } catch (cloneErr) {
+            if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+            throw cloneErr;
+        }
 
         // 2. Install dependencies (skip for static websites)
         const isStaticWebsite = projectType === "website" && rawWebsiteConfig?.mode === "static";
         if (!isStaticWebsite) {
             console.log(`[Bots] Installing deps for ${botID}`);
-            await gitService.installDeps(dir, installCommand);
+            try {
+                await gitService.installDeps(dir, installCommand);
+            } catch (installErr) {
+                fs.rmSync(dir, { recursive: true, force: true });
+                throw installErr;
+            }
         }
 
         // 3. Build step (website only)
@@ -381,7 +391,12 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             const mode = rawWebsiteConfig.mode || "static";
             if (!isStaticWebsite && rawWebsiteConfig.buildCommand) {
                 console.log(`[Bots] Running build command for ${botID}`);
-                await execAsync(rawWebsiteConfig.buildCommand, { cwd: dir, timeout: 300_000 });
+                try {
+                    await execAsync(rawWebsiteConfig.buildCommand, { cwd: dir, timeout: 300_000 });
+                } catch (buildErr) {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                    throw buildErr;
+                }
             }
             const port = await assignPort(rawWebsiteConfig.port);
             websiteConfig = {
