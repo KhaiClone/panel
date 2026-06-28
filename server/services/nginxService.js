@@ -151,4 +151,55 @@ const enableSSL = async (domain, email = null) => {
     );
 };
 
-module.exports = { writeConfig, removeConfig, configExists, enableSSL, reloadNginx };
+// ─── Panel Self-Domain Config ─────────────────────────────────────────────────
+
+const PANEL_CONF = path.join(NGINX_SITES, "panel-self.conf");
+
+const buildPanelConfig = (domains, port) => {
+    return domains.map(domain => `server {
+    listen 80;
+    server_name ${domain};
+
+    location / {
+        proxy_pass http://127.0.0.1:${port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_cache_bypass $http_upgrade;
+    }
+}`).join("\n\n") + "\n";
+};
+
+/**
+ * Write (or clear) the nginx reverse-proxy config for the panel's own domains.
+ * Pass an empty array to remove the config file entirely.
+ *
+ * @param {string[]} domains - list of domain names
+ * @param {number}   port    - panel HTTP port (e.g. 3000)
+ */
+const writePanelConfig = async (domains, port) => {
+    if (!domains || domains.length === 0) {
+        await execAsync(`sudo rm -f "${PANEL_CONF}"`).catch(() => {});
+        await reloadNginx().catch(() => {});
+        return;
+    }
+
+    const content = buildPanelConfig(domains, port);
+    const tmpPath = `/tmp/panel-self.conf`;
+    fs.writeFileSync(tmpPath, content, "utf8");
+    await execAsync(`sudo mv "${tmpPath}" "${PANEL_CONF}"`);
+
+    try {
+        await execAsync("sudo nginx -t");
+    } catch (err) {
+        await execAsync(`sudo rm -f "${PANEL_CONF}"`).catch(() => {});
+        const detail = (err.stderr || err.message || "").trim().split("\n").slice(0, 4).join(" | ");
+        throw new Error(`nginx config test failed: ${detail}`);
+    }
+
+    await reloadNginx();
+};
+
+module.exports = { writeConfig, removeConfig, configExists, enableSSL, reloadNginx, writePanelConfig };

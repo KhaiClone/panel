@@ -318,6 +318,141 @@ function GitHubSection() {
     );
 }
 
+// ── PanelDomainsSection ───────────────────────────────────────────────────────
+
+function PanelDomainsSection() {
+    const [domains, setDomains] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [newDomain, setNewDomain] = useState("");
+    const [adding, setAdding] = useState(false);
+    const [sslLoading, setSslLoading] = useState({});
+    const [deleteConfirm, setDeleteConfirm] = useState(null);
+    const [error, setError] = useState("");
+
+    const fetchDomains = useCallback(async () => {
+        try { const { data } = await api.get("/panel/domains"); setDomains(data); }
+        catch { /* ignore */ }
+        finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => { fetchDomains(); }, [fetchDomains]);
+
+    const handleAdd = async (e) => {
+        e.preventDefault();
+        if (!newDomain.trim()) return;
+        setAdding(true); setError("");
+        try {
+            const { data } = await api.post("/panel/domains", { domain: newDomain.trim() });
+            setDomains(d => [...d, data]);
+            setNewDomain("");
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to add domain");
+        } finally { setAdding(false); }
+    };
+
+    const handleDelete = async (domain) => {
+        try {
+            await api.delete(`/panel/domains/${encodeURIComponent(domain)}`);
+            setDomains(d => d.filter(x => x.domain !== domain));
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to remove domain");
+        } finally { setDeleteConfirm(null); }
+    };
+
+    const handleSSL = async (domain) => {
+        setSslLoading(s => ({ ...s, [domain]: true })); setError("");
+        try {
+            await api.post(`/panel/domains/${encodeURIComponent(domain)}/ssl`);
+            setDomains(d => d.map(x => x.domain === domain ? { ...x, sslEnabled: true } : x));
+        } catch (err) {
+            setError(err.response?.data?.error || "SSL issuance failed — ensure domain points to this server");
+        } finally { setSslLoading(s => ({ ...s, [domain]: false })); }
+    };
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {deleteConfirm && (
+                <ConfirmModal
+                    title={`Remove Domain "${deleteConfirm}"`}
+                    message={`This will remove the nginx config for "${deleteConfirm}" and reload nginx. The domain will no longer point to this panel.`}
+                    confirmText="Remove"
+                    onConfirm={() => handleDelete(deleteConfirm)}
+                    onCancel={() => setDeleteConfirm(null)}
+                />
+            )}
+
+            {/* Add domain form */}
+            <form onSubmit={handleAdd} style={{ display: "flex", gap: 8 }}>
+                <input
+                    className="input mono"
+                    style={{ flex: 1, fontSize: 13 }}
+                    placeholder="panel.example.com"
+                    value={newDomain}
+                    onChange={e => { setNewDomain(e.target.value); setError(""); }}
+                    disabled={adding}
+                    spellCheck={false}
+                />
+                <button type="submit" className="btn-primary" disabled={adding || !newDomain.trim()} style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+                    {adding ? "Adding…" : "+ Add Domain"}
+                </button>
+            </form>
+
+            {error && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)", fontSize: 13 }}>
+                    {error}
+                </div>
+            )}
+
+            {loading ? (
+                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>Loading…</div>
+            ) : domains.length === 0 ? (
+                <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
+                    No domains configured. Add one above to access the panel via a custom domain.
+                </div>
+            ) : (
+                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                    {domains.map((d, i) => (
+                        <div
+                            key={d.domain}
+                            style={{
+                                display: "flex", alignItems: "center", gap: 12,
+                                padding: "12px 14px",
+                                borderBottom: i < domains.length - 1 ? "1px solid var(--border-light)" : "none",
+                            }}
+                        >
+                            <span style={{ fontSize: 15, flexShrink: 0 }}>🌐</span>
+                            <span className="mono" style={{ flex: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {d.sslEnabled ? `https://${d.domain}` : `http://${d.domain}`}
+                            </span>
+                            {d.sslEnabled ? (
+                                <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 SSL</span>
+                            ) : (
+                                <button
+                                    onClick={() => handleSSL(d.domain)}
+                                    disabled={sslLoading[d.domain]}
+                                    className="btn-ghost"
+                                    style={{ fontSize: 11, padding: "3px 8px", color: "var(--text-muted)", whiteSpace: "nowrap", flexShrink: 0 }}
+                                    title="Enable HTTPS via Let's Encrypt"
+                                >
+                                    {sslLoading[d.domain] ? "Issuing…" : "Enable SSL"}
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setDeleteConfirm(d.domain)}
+                                className="btn-ghost"
+                                style={{ padding: "4px 8px", color: "var(--danger)", fontSize: 13, flexShrink: 0 }}
+                                title="Remove domain"
+                            >
+                                🗑️
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── EnvEditor ─────────────────────────────────────────────────────────────────
 
 const SENSITIVE_RE = /password|secret|token|hash|webhook/i;
@@ -591,6 +726,18 @@ export default function PanelManage() {
 
                 {/* GitHub Keys */}
                 <GitHubSection />
+            </div>
+
+            {/* Panel Domains */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🌐</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Custom Domains</h2>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>Reverse-proxied via nginx</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <PanelDomainsSection />
+                </div>
             </div>
 
             {/* Logs Viewer */}

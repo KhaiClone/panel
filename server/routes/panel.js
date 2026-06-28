@@ -2,7 +2,12 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const panelService = require("../services/panelService");
+const nginxService = require("../services/nginxService");
+const db = require("../db");
 const router = express.Router();
+
+const PANEL_DOMAINS_KEY = "panel_domains";
+const panelPort = () => parseInt(process.env.PORT) || 3000;
 
 const ENV_PATH = path.resolve(__dirname, "../../.env");
 
@@ -144,6 +149,105 @@ router.put("/env", async (req, res, next) => {
         const content = outLines.join("\n").replace(/\n+$/, "") + "\n";
         fs.writeFileSync(ENV_PATH, content, "utf8");
         res.json({ ok: true });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GET /api/panel/domains
+//  List all custom domains configured for this panel.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/domains", async (req, res, next) => {
+    try {
+        const domains = (await db.get(PANEL_DOMAINS_KEY)) || [];
+        res.json(domains);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  POST /api/panel/domains
+//  Add a custom domain for the panel. Writes an nginx reverse-proxy config.
+//  Body: { domain: string }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/domains", async (req, res, next) => {
+    try {
+        const { domain } = req.body;
+        if (!domain || typeof domain !== "string") {
+            return res.status(400).json({ error: "domain is required" });
+        }
+        const clean = domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+        if (!clean || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(clean)) {
+            return res.status(400).json({ error: "Invalid domain name" });
+        }
+
+        const existing = (await db.get(PANEL_DOMAINS_KEY)) || [];
+        if (existing.find(d => d.domain === clean)) {
+            return res.status(409).json({ error: "Domain already added" });
+        }
+
+        const newEntry = { domain: clean, sslEnabled: false, addedAt: Date.now() };
+        const updated = [...existing, newEntry];
+
+        await nginxService.writePanelConfig(updated.map(d => d.domain), panelPort());
+        await db.set(PANEL_DOMAINS_KEY, updated);
+
+        console.log(`[Panel] Domain added: ${clean}`);
+        res.json(newEntry);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DELETE /api/panel/domains/:domain
+//  Remove a custom domain and update the nginx config.
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete("/domains/:domain", async (req, res, next) => {
+    try {
+        const domain = decodeURIComponent(req.params.domain);
+        const existing = (await db.get(PANEL_DOMAINS_KEY)) || [];
+        const filtered = existing.filter(d => d.domain !== domain);
+
+        if (filtered.length === existing.length) {
+            return res.status(404).json({ error: "Domain not found" });
+        }
+
+        await nginxService.writePanelConfig(filtered.map(d => d.domain), panelPort());
+        await db.set(PANEL_DOMAINS_KEY, filtered);
+
+        console.log(`[Panel] Domain removed: ${domain}`);
+        res.json({ ok: true });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  POST /api/panel/domains/:domain/ssl
+//  Run certbot to issue SSL for the given panel domain.
+//  Body: { email?: string }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/domains/:domain/ssl", async (req, res, next) => {
+    try {
+        const domain = decodeURIComponent(req.params.domain);
+        const existing = (await db.get(PANEL_DOMAINS_KEY)) || [];
+        const entry = existing.find(d => d.domain === domain);
+
+        if (!entry) {
+            return res.status(404).json({ error: "Domain not found" });
+        }
+
+        const { email } = req.body;
+        await nginxService.enableSSL(domain, email || null);
+
+        const updated = existing.map(d => d.domain === domain ? { ...d, sslEnabled: true } : d);
+        await db.set(PANEL_DOMAINS_KEY, updated);
+
+        console.log(`[Panel] SSL enabled for domain: ${domain}`);
+        res.json({ ok: true, domain, sslEnabled: true });
     } catch (err) {
         next(err);
     }
