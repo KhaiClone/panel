@@ -331,6 +331,14 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             ? (req.body.buyerID || req.user.id)
             : req.user.id;
 
+        // ownerId: when admin creates a bot for another panel user (buyerID = targetUser._id),
+        // assign ownership to that user so they can manage the bot themselves.
+        let ownerId = req.user.id;
+        if (req.user.role === "admin" && buyerID !== req.user.id) {
+            const targetUser = await db.findOne("users", { _id: buyerID });
+            if (targetUser) ownerId = targetUser._id;
+        }
+
         // Validate required fields
         if (!botID || !name || !repoUrl) {
             return res.status(400).json({
@@ -433,7 +441,7 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             projectType,
             websiteConfig,
             serviceConfig,
-            ownerId: req.user.id,
+            ownerId,
             createdAt: Date.now(),
         });
 
@@ -495,6 +503,12 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
         const buyerID = req.user.role === "admin"
             ? (req.body.buyerID || req.user.id)
             : req.user.id;
+
+        let ownerId = req.user.id;
+        if (req.user.role === "admin" && buyerID !== req.user.id) {
+            const targetUser = await db.findOne("users", { _id: buyerID });
+            if (targetUser) ownerId = targetUser._id;
+        }
 
         if (!botID || !name || !localPath) {
             return res.status(400).json({
@@ -595,7 +609,7 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
             projectType,
             websiteConfig,
             serviceConfig,
-            ownerId: req.user.id,
+            ownerId,
             createdAt: Date.now(),
         });
 
@@ -969,12 +983,16 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
 
         const dir = botDir(bot);
         let pullOutput = "(skipped — no git remote)";
+        let pullFailed = false;
 
         // Attempt git pull
         try {
             pullOutput = await gitService.pullRepo(dir);
+            console.log(`[Bots] git pull for "${bot.name}": ${pullOutput.trim().split('\n')[0]}`);
         } catch (err) {
-            pullOutput = `(pull failed or skipped: ${err.message || 'unknown error'})`;
+            pullFailed = true;
+            pullOutput = err.message || "unknown error";
+            console.warn(`[Bots] git pull failed for "${bot.name}": ${pullOutput}`);
         }
 
         // Static website: skip install, run build if configured, then apply serving infra
@@ -989,6 +1007,7 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
             return res.json({
                 message: "Website updated and restarted",
                 pullOutput,
+                pullFailed,
                 restartOutput: wc.domain ? "nginx config applied" : "http-server started",
             });
         }
@@ -1010,6 +1029,7 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
         res.json({
             message: "Bot updated and restarted",
             pullOutput,
+            pullFailed,
             restartOutput,
         });
     } catch (err) {

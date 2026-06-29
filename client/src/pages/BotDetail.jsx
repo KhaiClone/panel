@@ -468,7 +468,11 @@ export default function BotDetail() {
         setBusy(name); setActionMsg(null);
         try {
             const { data } = await api[method](`/bots/${id}/${endpoint}`);
-            setActionMsg({ type: 'success', text: data.message || `${name} successful` });
+            if (data.pullFailed) {
+                setActionMsg({ type: 'error', text: `Git pull failed: ${data.pullOutput}` });
+            } else {
+                setActionMsg({ type: 'success', text: data.message || `${name} successful` });
+            }
             fetchBot();
         } catch (err) {
             setActionMsg({ type: 'error', text: err.response?.data?.error || `${name} failed` });
