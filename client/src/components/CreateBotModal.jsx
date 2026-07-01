@@ -146,7 +146,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
 
     return createPortal(
         <div className="modal-overlay">
-            <div className="card slide-up" style={{ width: "100%", maxWidth: 680, maxHeight: "92vh", overflowY: "auto", padding: 0, display: "flex", flexDirection: "column" }}>
+            <div className="card slide-up modal-card-mobile" style={{ width: "100%", maxWidth: 680, maxHeight: "92vh", overflowY: "auto", padding: 0, display: "flex", flexDirection: "column" }}>
 
                 {/* Header */}
                 <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid var(--border-light)", background: "var(--bg-surface)", position: "sticky", top: 0, zIndex: 10 }}>
@@ -217,7 +217,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     </div>
 
                     {/* ── Identity ──────────────────────────────────────── */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                         <div>
                             <label className="label">Client / Owner ID *</label>
                             <input className="input" placeholder="Discord ID or owner identifier" value={form.buyerID} onChange={set("buyerID")} required />
@@ -240,7 +240,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 <label className="label" style={{ color: "var(--accent-hover)" }}>Git Repository URL *</label>
                                 <input className="input" placeholder="https://github.com/user/repo.git" value={form.repoUrl} onChange={set("repoUrl")} required={isGit} />
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                 <div>
                                     <label className="label">Branch</label>
                                     <input className="input" placeholder="main" value={form.branch} onChange={set("branch")} />
@@ -270,7 +270,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 <input className="input mono" placeholder="/root/bots/my-project" value={form.localPath} onChange={set("localPath")} required={!isGit} />
                             </div>
                             {(!isStatic) && (
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                     {(!isWebsite || isFullstack) && (
                                         <div>
                                             <label className="label">Start Command</label>
@@ -291,7 +291,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                         <div style={{ padding: 20, background: "rgba(34,197,94,0.05)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
                             <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--success)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Website Configuration</h3>
 
-                            <div style={{ display: "grid", gridTemplateColumns: isFullstack ? "1fr 1fr" : "1fr", gap: 16 }}>
+                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: isFullstack ? "1fr 1fr" : "1fr", gap: 16 }}>
                                 <div>
                                     <label className="label">Public Port</label>
                                     <input className="input mono" placeholder="Auto-assign" value={form.websitePort} onChange={set("websitePort")} type="number" min="1" max="65535" />
@@ -306,7 +306,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 )}
                             </div>
 
-                            <div style={{ display: "grid", gridTemplateColumns: isStatic ? "1fr" : "1fr 1fr", gap: 16 }}>
+                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: isStatic ? "1fr" : "1fr 1fr", gap: 16 }}>
                                 {!isStatic && (
                                     <div>
                                         <label className="label">Build Command</label>
@@ -337,7 +337,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     {isService && (
                         <div style={{ padding: 20, background: "rgba(167,139,250,0.05)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
                             <h3 style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Service Configuration</h3>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                 <div>
                                     <label className="label">Service Port</label>
                                     <input className="input mono" placeholder="e.g. 2333" value={form.servicePort} onChange={set("servicePort")} type="number" min="1" max="65535" />
@@ -352,7 +352,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     )}
 
                     {/* ── Meta ─────────────────────────────────────────── */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
                         <div>
                             <label className="label">Group</label>
                             <select className="input" value={form.groupId} onChange={set("groupId")}>

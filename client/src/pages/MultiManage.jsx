@@ -218,12 +218,12 @@ export default function MultiManage() {
         <div className="fade-in page-compact" style={{ maxWidth: 960 }}>
 
             {/* Page Header */}
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
-                <div>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+                <div className="min-w-0">
                     <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>Multi-Manage</h1>
                     <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "6px 0 0 0" }}>Bulk operations on {bots.length} instances</p>
                 </div>
-                <button onClick={allFilteredSelected ? deselectAll : selectAll} className="btn-ghost" style={{ fontSize: 12, padding: "8px 16px" }}>
+                <button onClick={allFilteredSelected ? deselectAll : selectAll} className="btn-ghost btn-full-mobile" style={{ fontSize: 12, padding: "8px 16px" }}>
                     {allFilteredSelected ? "Deselect All" : "Select All"}
                 </button>
             </div>
@@ -281,7 +281,7 @@ export default function MultiManage() {
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                 />
-                <select className="input" style={{ width: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <select className="input w-full-mobile" style={{ width: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                     <option value="all">All Status</option>
                     <option value="online">Online Only</option>
                     <option value="stopped">Offline Only</option>

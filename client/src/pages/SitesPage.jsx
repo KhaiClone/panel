@@ -198,8 +198,8 @@ export default function SitesPage() {
         <div className="fade-in page" style={{ maxWidth: 1600 }}>
 
             {/* Header */}
-            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32 }}>
-                <div>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
+                <div className="min-w-0" style={{ flex: 1 }}>
                     <h1 style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>
                         Sites
                     </h1>
@@ -207,8 +207,8 @@ export default function SitesPage() {
                         Manage and monitor your hosted websites
                     </p>
                 </div>
-                <div style={{ display: "flex", gap: 12 }}>
-                    <button className="btn-ghost" onClick={() => setShowGroups(true)}>
+                <div className="mobile-wrap" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <button className="btn-ghost btn-full-mobile" onClick={() => setShowGroups(true)}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}>
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
                             <circle cx="9" cy="7" r="4"/>
@@ -217,7 +217,7 @@ export default function SitesPage() {
                         </svg>
                         Manage Groups
                     </button>
-                    <button className="btn-primary" onClick={() => setShowCreate(true)}>
+                    <button className="btn-primary btn-full-mobile" onClick={() => setShowCreate(true)}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16 }}>
                             <line x1="12" y1="5" x2="12" y2="19"/>
                             <line x1="5" y1="12" x2="19" y2="12"/>
@@ -228,7 +228,7 @@ export default function SitesPage() {
             </div>
 
             {/* Stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
+            <div className="grid-2-mobile gap-sm-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
                 <StatCard label="Total Sites" value={sites.length} color="var(--accent)" gradient="var(--accent)"
                     icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>}
                 />

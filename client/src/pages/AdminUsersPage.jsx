@@ -135,7 +135,7 @@ function SlotForm({ userId, initial, onSave, onCancel }) {
 
     return (
         <form onSubmit={handle} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
                     <label className="label">Max Bots</label>
                     <input className="input" type="number" min="0" value={form.maxBots} onChange={e => set("maxBots", e.target.value)} />
@@ -248,12 +248,12 @@ export default function AdminUsersPage() {
 
     return (
         <div className="page fade-in" style={{ maxWidth: 900 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <div>
+            <div className="mobile-wrap" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+                <div className="min-w-0">
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>User Management</h1>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>{users.length} user{users.length !== 1 ? "s" : ""} registered</p>
                 </div>
-                <button className="btn btn-primary" onClick={() => setModal({ type: "createUser" })}>+ New User</button>
+                <button className="btn btn-primary btn-full-mobile" onClick={() => setModal({ type: "createUser" })}>+ New User</button>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -265,7 +265,7 @@ export default function AdminUsersPage() {
                     return (
                         <div key={u._id} className="card" style={{ padding: 0, overflow: "hidden" }}>
                             {/* User row */}
-                            <div style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+                            <div className="mobile-wrap" style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                                 {/* Avatar */}
                                 <div style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), #8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
                                     {u.username[0].toUpperCase()}
@@ -293,7 +293,7 @@ export default function AdminUsersPage() {
                                 )}
 
                                 {/* Actions */}
-                                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
                                     <button className="btn btn-ghost" style={{ fontSize: 12, padding: "5px 10px" }}
                                         onClick={() => setModal({ type: "editSlot", data: { userId: u._id, username: u.username, slot } })}>
                                         {slot ? "Edit Slot" : "+ Slot"}

@@ -7,6 +7,10 @@ const execAsync = util.promisify(exec);
 // Timeout for git operations (ms) — large repos may need more
 const GIT_TIMEOUT = 120_000;
 
+// Fresh installs (after removing node_modules + lockfile) can take much longer
+// than a git pull — especially with heavy native modules. 10 minutes.
+const INSTALL_TIMEOUT = 600_000;
+
 /**
  * Clone a git repository into the target directory.
  * Uses --depth 1 for a shallow clone (faster, saves disk space).
@@ -40,10 +44,16 @@ const pullRepo = async (botPath) => {
 };
 
 /**
- * Detect and remove the package folder for a given install command.
- * Supports npm / yarn / pnpm / bun → node_modules
- *          composer                → vendor
- *          pip / pip3              → venv (best-effort)
+ * Detect and remove the package folder AND lockfile for a given install command.
+ * The lockfile has to go too — otherwise npm/yarn/pnpm resolve against the pinned
+ * versions and never actually pick up updates in package.json.
+ *
+ * Supports npm      → node_modules + package-lock.json
+ *          yarn     → node_modules + yarn.lock
+ *          pnpm     → node_modules + pnpm-lock.yaml
+ *          bun      → node_modules + bun.lockb / bun.lock
+ *          composer → vendor       + composer.lock
+ *          pip      → venv (best-effort; no lockfile)
  *
  * @param {string} botPath   - Absolute path to the bot's directory
  * @param {string} cmd       - The install command that will be run
@@ -52,16 +62,23 @@ const cleanPackageFolder = (botPath, cmd) => {
     const cmdLower = cmd.toLowerCase().trim();
 
     let folderName = null;
+    let lockFiles = [];
 
-    if (
-        cmdLower.startsWith("npm ") ||
-        cmdLower.startsWith("yarn") ||
-        cmdLower.startsWith("pnpm ") ||
-        cmdLower.startsWith("bun ")
-    ) {
+    if (cmdLower.startsWith("npm ") || cmdLower === "npm") {
         folderName = "node_modules";
+        lockFiles = ["package-lock.json", "npm-shrinkwrap.json"];
+    } else if (cmdLower.startsWith("yarn")) {
+        folderName = "node_modules";
+        lockFiles = ["yarn.lock"];
+    } else if (cmdLower.startsWith("pnpm ") || cmdLower === "pnpm") {
+        folderName = "node_modules";
+        lockFiles = ["pnpm-lock.yaml"];
+    } else if (cmdLower.startsWith("bun ") || cmdLower === "bun") {
+        folderName = "node_modules";
+        lockFiles = ["bun.lockb", "bun.lock"];
     } else if (cmdLower.startsWith("composer ")) {
         folderName = "vendor";
+        lockFiles = ["composer.lock"];
     } else if (cmdLower.startsWith("pip ") || cmdLower.startsWith("pip3 ")) {
         folderName = "venv";
     }
@@ -72,6 +89,14 @@ const cleanPackageFolder = (botPath, cmd) => {
     if (fs.existsSync(targetPath)) {
         console.log(`[Git] Removing old ${folderName} at ${targetPath}`);
         fs.rmSync(targetPath, { recursive: true, force: true });
+    }
+
+    for (const lockName of lockFiles) {
+        const lockPath = path.join(botPath, lockName);
+        if (fs.existsSync(lockPath)) {
+            console.log(`[Git] Removing stale lockfile ${lockName}`);
+            fs.rmSync(lockPath, { force: true });
+        }
     }
 };
 
@@ -96,12 +121,13 @@ const installDeps = async (botPath, installCommand = undefined) => {
         ? installCommand.trim()
         : `npm install --omit=dev`;
 
-    // Remove old package folder before reinstalling
+    // Remove old package folder + lockfile so the reinstall actually picks up
+    // updated versions from package.json (npm respects the lock otherwise).
     cleanPackageFolder(botPath, cmd);
 
     const { stdout, stderr } = await execAsync(
         cmd,
-        { cwd: botPath, timeout: GIT_TIMEOUT },
+        { cwd: botPath, timeout: INSTALL_TIMEOUT, maxBuffer: 10 * 1024 * 1024 },
     );
     return stdout || stderr;
 };

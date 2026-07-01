@@ -142,7 +142,7 @@ export default function OverviewPage() {
                                 </p>
                             )}
                         </div>
-                        <div style={{ display: "flex", gap: 20 }}>
+                        <div className="mobile-wrap" style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
                             {[
                                 { label: "Bots", used: myInfo.usage?.bots || 0, max: myInfo.slot.maxBots },
                                 { label: "Sites", used: myInfo.usage?.sites || 0, max: myInfo.slot.maxSites },
@@ -212,7 +212,7 @@ export default function OverviewPage() {
             </div>
 
             {/* ── Bottom grid: recent projects + domains ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
                 {/* Recent projects */}
                 <div className="card" style={{ padding: 0, overflow: "hidden" }}>

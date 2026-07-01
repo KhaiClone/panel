@@ -153,8 +153,8 @@ export default function SystemPage() {
         <div className="fade-in page-compact" style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: 28 }}>
 
             {/* Page Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                <div className="min-w-0">
                     <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>System Monitor</h1>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
                         <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>Host server resource utilization.</p>
@@ -197,7 +197,7 @@ export default function SystemPage() {
 
             {/* Tabbed Detailed Metrics */}
             <div className="card slide-up" style={{ padding: 24 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+                <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
                     <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: 0 }}>Detailed Metrics</h3>
                     <div className="tab-bar" style={{ display: "inline-flex" }}>
                         {["CPU", "Memory", "Disk"].map(t => (

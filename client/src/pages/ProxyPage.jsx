@@ -373,11 +373,11 @@ export default function ProxyPage() {
                                         ))}
                                     </div>
                                 </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
+                                <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
                                     <InputField id="host" label="Host / IP Address" value={config.host} onChange={v => setConfig(c => ({ ...c, host: v }))} placeholder="e.g. 127.0.0.1" />
                                     <InputField id="port" label="Port" type="number" value={config.port} onChange={v => setConfig(c => ({ ...c, port: v }))} placeholder="1080" />
                                 </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                     <InputField id="user" label="Authentication Username" value={config.username} onChange={v => setConfig(c => ({ ...c, username: v }))} placeholder="Optional" />
                                     <InputField id="pass" label="Authentication Password" type="password" value={config.password} onChange={v => setConfig(c => ({ ...c, password: v }))} placeholder="Optional" />
                                 </div>

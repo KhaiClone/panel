@@ -33,9 +33,9 @@ export default function DomainsPage() {
                     <button className="btn-primary" style={{ padding: "10px 24px" }} onClick={() => navigate("/sites")}>Go to Sites</button>
                 </div>
             ) : (
-                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div className="card scroll-x" style={{ padding: 0, overflow: "auto" }}>
                     {/* Table header */}
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 16, padding: "12px 20px", borderBottom: "1px solid var(--border-light)", background: "var(--bg-input)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 16, padding: "12px 20px", borderBottom: "1px solid var(--border-light)", background: "var(--bg-input)", minWidth: 640 }}>
                         {["Domain", "Project", "Port", "Mode", "SSL"].map(h => (
                             <span key={h} style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{h}</span>
                         ))}
@@ -50,6 +50,7 @@ export default function DomainsPage() {
                                 gap: 16, padding: "14px 20px", alignItems: "center",
                                 borderBottom: i < domains.length - 1 ? "1px solid var(--border-light)" : "none",
                                 cursor: "pointer", transition: "background 0.15s",
+                                minWidth: 640,
                             }}
                             onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
                             onMouseLeave={e => e.currentTarget.style.background = "transparent"}

@@ -196,7 +196,7 @@ export default function Dashboard() {
 
             {/* ── Page header ── */}
             <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32 }}>
-                <div>
+                <div className="min-w-0" style={{ flex: 1 }}>
                     <h1 style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>
                         Bots
                     </h1>
@@ -204,8 +204,8 @@ export default function Dashboard() {
                         Manage and monitor your Discord bots & services
                     </p>
                 </div>
-                <div style={{ display: "flex", gap: 12 }}>
-                    <button className="btn-ghost" onClick={() => setShowGroups(true)}>
+                <div className="mobile-wrap" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <button className="btn-ghost btn-full-mobile" onClick={() => setShowGroups(true)}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}>
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
                             <circle cx="9" cy="7" r="4"/>
@@ -214,7 +214,7 @@ export default function Dashboard() {
                         </svg>
                         Manage Groups
                     </button>
-                    <button className="btn-primary" onClick={() => setShowCreate(true)}>
+                    <button className="btn-primary btn-full-mobile" onClick={() => setShowCreate(true)}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16 }}>
                             <line x1="12" y1="5" x2="12" y2="19"/>
                             <line x1="5"  y1="12" x2="19" y2="12"/>
@@ -225,7 +225,7 @@ export default function Dashboard() {
             </div>
 
             {/* ── Stat cards ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 28 }}>
+            <div className="grid-2-mobile gap-sm-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 28 }}>
                 <StatCard
                     label="Total Bots"
                     value={bots.length}

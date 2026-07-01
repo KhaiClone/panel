@@ -289,7 +289,7 @@ function WebsitePanel({ bot, onRefresh }) {
             {editingConfig && (
                 <form onSubmit={handleSaveConfig} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20, padding: 16, background: "var(--bg-input)", borderRadius: 10, border: "1px solid var(--border)" }}>
                     <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Edit Website Config</h4>
-                    <div style={{ display: "grid", gridTemplateColumns: wc.mode === "fullstack" ? "1fr 1fr" : "1fr", gap: 12 }}>
+                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: wc.mode === "fullstack" ? "1fr 1fr" : "1fr", gap: 12 }}>
                         <div>
                             <label className="label">Public Port</label>
                             <input className="input mono" type="number" min="1" max="65535" value={cfgPort} onChange={e => setCfgPort(e.target.value)} />
@@ -303,7 +303,7 @@ function WebsitePanel({ bot, onRefresh }) {
                             </div>
                         )}
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                         <div>
                             <label className="label">Dist Folder *</label>
                             <input className="input mono" value={cfgDistFolder} onChange={e => setCfgDistFolder(e.target.value)} required placeholder="client/dist" />
@@ -338,7 +338,7 @@ function WebsitePanel({ bot, onRefresh }) {
                 <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
                     {wc.domain ? "Update Domain & SSL" : "Add Custom Domain + SSL"}
                 </h4>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
                         <label className="label">Domain *</label>
                         <input className="input mono" placeholder="example.com" value={domain} onChange={e => setDomain(e.target.value)} required />
@@ -552,9 +552,9 @@ export default function BotDetail() {
             )}
 
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                    <button onClick={() => navigate(backPath)} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)" }}>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 12, flexWrap: "wrap" }}>
+                <div className="min-w-0" style={{ display: "flex", alignItems: "center", gap: 16, flex: 1 }}>
+                    <button onClick={() => navigate(backPath)} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)", flexShrink: 0 }}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6"/></svg>
                     </button>
                     <div>
@@ -592,7 +592,7 @@ export default function BotDetail() {
             <div style={{ height: 2, background: `linear-gradient(90deg, ${s.color}, transparent)`, marginBottom: 28, borderRadius: 1 }} />
 
             {/* Summary stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 32 }}>
+            <div className="grid-2-mobile gap-sm-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 32 }}>
                 {[
                     { label: "CPU Usage",  value: `${bot.live?.cpu ?? 0}%`,                        color: "var(--accent-hover)", Icon: IconCpu },
                     { label: "Memory",     value: fmt(bot.live?.memory),                            color: "#60A5FA",             Icon: IconMemory },
@@ -625,7 +625,7 @@ export default function BotDetail() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
                         {/* Section 1: Runtime Controls + Metadata side by side */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
+                        <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
                             {/* Runtime Controls card */}
                             <div className="card">
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
@@ -638,7 +638,7 @@ export default function BotDetail() {
                                     </span>
                                 </div>
                                 
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                     {isStopped && (
                                         <button className="btn-success" style={{ padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => runAction('start', 'start')}>
                                             {busy === 'start' ? (
@@ -714,7 +714,7 @@ export default function BotDetail() {
 
                         {/* Section 2: Configuration form */}
                         <div className="card">
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 32 }}>
+                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 32 }}>
                                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                                     <div>
                                         <label className="label">Instance Name</label>
@@ -765,7 +765,7 @@ export default function BotDetail() {
                                 </div>
 
                                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                         <div>
                                             <label className="label">Memory Limit</label>
                                             <input className="input mono" placeholder="e.g. 500M, 1G" value={editMaxMemory} onChange={e => setEditMaxMemory(e.target.value)} />
@@ -825,7 +825,7 @@ export default function BotDetail() {
                 {/* Resources Tab */}
                 {tab === 'Resources' && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                        <div className="card" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+                        <div className="card grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
                                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Current Status</p>
                                 <span className="status-pill" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, fontSize: 15, padding: "8px 20px" }}>

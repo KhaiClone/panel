@@ -530,8 +530,8 @@ function EnvEditor({ onRestart }) {
             )}
 
             {/* Table */}
-            <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", background: "var(--bg-input)", borderBottom: "1px solid var(--border)", padding: "8px 12px", gap: 8 }}>
+            <div className="scroll-x" style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "auto" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", background: "var(--bg-input)", borderBottom: "1px solid var(--border)", padding: "8px 12px", gap: 8, minWidth: 480 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Key</span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Value</span>
                     <span />
@@ -545,7 +545,7 @@ function EnvEditor({ onRestart }) {
                     const isSensitive = SENSITIVE_RE.test(entry.key);
                     const isRevealed = revealed.has(entry.id);
                     return (
-                        <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border-light)", alignItems: "center" }}>
+                        <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border-light)", alignItems: "center", minWidth: 480 }}>
                             <input
                                 className="input mono"
                                 style={{ fontSize: 12, padding: "5px 8px" }}

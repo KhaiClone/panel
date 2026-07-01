@@ -111,7 +111,7 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
 function Overlay({ children, onClose }) {
     return createPortal(
         <div className="modal-overlay" onClick={(e) => { e.stopPropagation(); onClose(); }}>
-            <div className="card slide-up" style={{ width: "100%", maxWidth: 640, padding: 0 }} onClick={(e) => e.stopPropagation()}>
+            <div className="card slide-up modal-card-mobile" style={{ width: "100%", maxWidth: 640, padding: 0 }} onClick={(e) => e.stopPropagation()}>
                 {children}
             </div>
         </div>,

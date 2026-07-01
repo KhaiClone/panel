@@ -92,7 +92,7 @@ export default function LogViewer({ botId }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 20, background: "var(--bg-card)", height: 600 }}>
             {/* Toolbar */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
                         Console Output
@@ -104,7 +104,7 @@ export default function LogViewer({ botId }) {
                         </span>
                     )}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <button className="btn-ghost" onClick={fetchSnapshot} disabled={loading || live} style={{ padding: "6px 12px" }}>
                         🔄 Refresh
                     </button>

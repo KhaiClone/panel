@@ -435,9 +435,6 @@
         background: var(--accent);
         color: #fff;
         box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
-        .w-full-mobile {
-            width: 100% !important;
-        }
     }
 
     /* ── Animation classes ── */
@@ -530,17 +527,18 @@
     @media (max-width: 768px) {
         .page,
         .page-compact {
-            padding: 16px !important;
+            padding: 14px !important;
         }
         .card,
         .card-glass {
-            padding: 16px !important;
+            padding: 14px !important;
         }
         .form-group {
             width: 100% !important;
         }
         .mobile-stack {
             flex-direction: column !important;
+            align-items: stretch !important;
         }
         .mobile-wrap {
             flex-wrap: wrap !important;
@@ -551,10 +549,79 @@
         .w-full-mobile {
             width: 100% !important;
         }
+
+        /* Grid collapse (overrides inline gridTemplateColumns) */
+        .grid-1-mobile {
+            grid-template-columns: 1fr !important;
+        }
+        .grid-2-mobile {
+            grid-template-columns: repeat(2, 1fr) !important;
+        }
+
+        /* Gap / spacing shrinks */
+        .gap-sm-mobile {
+            gap: 8px !important;
+        }
+        .p-0-mobile {
+            padding: 0 !important;
+        }
+        .px-0-mobile {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* Buttons expand full-width in stacked toolbars */
+        .btn-full-mobile {
+            width: 100% !important;
+            justify-content: center !important;
+        }
+
+        /* Auto full-width for input/select/textarea children on mobile */
+        .full-mobile,
+        .full-mobile .input {
+            width: 100% !important;
+        }
+
+        /* Modal card shrinks to fit narrow screens */
+        .modal-card-mobile {
+            width: 100% !important;
+            max-width: 100% !important;
+            max-height: calc(100dvh - 24px) !important;
+            border-radius: 14px !important;
+        }
+
+        /* Hide labels on very small toolbars, keep icons */
+        .label-hide-mobile {
+            display: none !important;
+        }
+
+        /* Disable hover-lift on touch devices */
+        .card-hover:hover {
+            transform: none;
+        }
+    }
+
+    /* Desktop-only helper (opposite of hide-mobile) */
+    @media (min-width: 769px) {
+        .hide-desktop {
+            display: none !important;
+        }
     }
 
     .overflow-x-auto {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+    }
+
+    /* Horizontal scroll container for tables/tabs */
+    .scroll-x {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    /* Allow flex children to shrink & truncate */
+    .min-w-0 {
+        min-width: 0;
     }
 }
