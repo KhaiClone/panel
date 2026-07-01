@@ -22,6 +22,31 @@ const sendWebhook = async (webhookUrl, payload) => {
     }
 };
 
+/**
+ * Send a Discord DM to a buyer via the arnto-auto DM API.
+ * No-op if ARNTO_DM_URL or ARNTO_DM_API_KEY is not configured.
+ * Errors never crash the caller — webhook alerts remain the source of truth.
+ *
+ * @param {string} buyerID - Discord user ID
+ * @param {Object} payload - { content?, embeds?, components? }
+ */
+const sendDM = async (buyerID, payload) => {
+    const url = process.env.ARNTO_DM_URL;
+    const key = process.env.ARNTO_DM_API_KEY;
+    if (!url || !key || !buyerID) return;
+
+    try {
+        await axios.post(
+            `${url.replace(/\/$/, "")}/api/dm`,
+            { buyerID, ...payload },
+            { headers: { "x-api-key": key }, timeout: 5000 },
+        );
+    } catch (err) {
+        const detail = err.response?.data?.error || err.message;
+        console.warn(`[Discord] DM to ${buyerID} failed: ${detail}`);
+    }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Expiry Notifications
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,40 +65,39 @@ const sendExpiryWarning = async (bot, hoursLeft) => {
     const color =
         hoursLeft <= 24 ? 0xff4444 : hoursLeft <= 72 ? 0xff8c00 : 0xffd700;
 
-    await sendWebhook(webhookUrl, {
-        content: `<@${bot.buyerID}>`,
-        embeds: [
+    const embed = {
+        title: "⚠️ Bot Expiry Warning",
+        color,
+        description: "**Bot is expiring soon!**",
+        fields: [
+            { name: "🤖 Bot Name", value: bot.name, inline: true },
+            { name: "🆔 Bot ID", value: `\`${bot.botID}\``, inline: true },
             {
-                title: "⚠️ Bot Expiry Warning",
-                color,
-                description: "**Bot is expiring soon!**",
-                fields: [
-                    { name: "🤖 Bot Name", value: bot.name, inline: true },
-                    {
-                        name: "🆔 Bot ID",
-                        value: `\`${bot.botID}\``,
-                        inline: true,
-                    },
-                    {
-                        name: "⏳ Time Left",
-                        value: `**${hoursLeft}** hour(s)`,
-                        inline: true,
-                    },
-                    {
-                        name: "📅 Expires At",
-                        value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
-                        inline: true,
-                    },
-                    {
-                        name: "🔗 Extend This Bot",
-                        value: `<#1480431381808152586> or create ticket at <#1246028759597846650> for a support.`,
-                        inline: false,
-                    },
-                ],
-                timestamp: new Date().toISOString(),
+                name: "⏳ Time Left",
+                value: `**${hoursLeft}** hour(s)`,
+                inline: true,
+            },
+            {
+                name: "📅 Expires At",
+                value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
+                inline: true,
+            },
+            {
+                name: "🔗 Extend This Bot",
+                value: `<#1480431381808152586> or create ticket at <#1246028759597846650> for a support.`,
+                inline: false,
             },
         ],
-    });
+        timestamp: new Date().toISOString(),
+    };
+
+    await Promise.all([
+        sendWebhook(webhookUrl, {
+            content: `<@${bot.buyerID}>`,
+            embeds: [embed],
+        }),
+        sendDM(bot.buyerID, { embeds: [embed] }),
+    ]);
 };
 
 /**
@@ -84,32 +108,31 @@ const sendExpiryWarning = async (bot, hoursLeft) => {
 const sendExpiryRemoval = async (bot) => {
     const webhookUrl = process.env.DISCORD_ALERT_WEBHOOK;
 
-    await sendWebhook(webhookUrl, {
-        embeds: [
+    const embed = {
+        title: "🗑️ Bot Expired & Auto-Removed",
+        color: 0xff0000,
+        fields: [
+            { name: "🤖 Bot Name", value: bot.name, inline: true },
+            { name: "🆔 Bot ID", value: bot.botID, inline: true },
             {
-                title: "🗑️ Bot Expired & Auto-Removed",
-                color: 0xff0000,
-                fields: [
-                    { name: "🤖 Bot Name", value: bot.name, inline: true },
-                    { name: "🆔 Bot ID", value: bot.botID, inline: true },
-                    {
-                        name: "👤 Buyer ID",
-                        value: `\`${bot.buyerID}\``,
-                        inline: true,
-                    },
-                    {
-                        name: "📅 Expired At",
-                        value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
-                        inline: false,
-                    },
-                ],
-                timestamp: new Date().toISOString(),
-                footer: {
-                    text: "Bot folder has been deleted from the server.",
-                },
+                name: "👤 Buyer ID",
+                value: `\`${bot.buyerID}\``,
+                inline: true,
+            },
+            {
+                name: "📅 Expired At",
+                value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
+                inline: false,
             },
         ],
-    });
+        timestamp: new Date().toISOString(),
+        footer: { text: "Bot folder has been deleted from the server." },
+    };
+
+    await Promise.all([
+        sendWebhook(webhookUrl, { embeds: [embed] }),
+        sendDM(bot.buyerID, { embeds: [embed] }),
+    ]);
 };
 
 /**
@@ -120,31 +143,35 @@ const sendExpiryRemoval = async (bot) => {
 const sendExpirySuspended = async (bot) => {
     const webhookUrl = process.env.DISCORD_ALERT_WEBHOOK;
 
-    await sendWebhook(webhookUrl, {
-        content: `<@${bot.buyerID}>`,
-        embeds: [
+    const embed = {
+        title: "🛑 Bot Expired & Suspended",
+        color: 0xff0000,
+        description:
+            "**Your bot has expired and has been stopped.** Please extend the expiry within 7 days to avoid permanent deletion.",
+        fields: [
+            { name: "🤖 Bot Name", value: bot.name, inline: true },
+            { name: "🆔 Bot ID", value: `\`${bot.botID}\``, inline: true },
             {
-                title: "🛑 Bot Expired & Suspended",
-                color: 0xff0000,
-                description: "**Your bot has expired and has been stopped.** Please extend the expiry within 7 days to avoid permanent deletion.",
-                fields: [
-                    { name: "🤖 Bot Name", value: bot.name, inline: true },
-                    { name: "🆔 Bot ID", value: `\`${bot.botID}\``, inline: true },
-                    {
-                        name: "📅 Expired At",
-                        value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
-                        inline: true,
-                    },
-                    {
-                        name: "🔗 Extend This Bot",
-                        value: `<#1480431381808152586> or create ticket at <#1246028759597846650> for a support.`,
-                        inline: false,
-                    },
-                ],
-                timestamp: new Date().toISOString(),
+                name: "📅 Expired At",
+                value: `<t:${Math.floor(bot.expiresAt / 1000)}:F>`,
+                inline: true,
+            },
+            {
+                name: "🔗 Extend This Bot",
+                value: `<#1480431381808152586> or create ticket at <#1246028759597846650> for a support.`,
+                inline: false,
             },
         ],
-    });
+        timestamp: new Date().toISOString(),
+    };
+
+    await Promise.all([
+        sendWebhook(webhookUrl, {
+            content: `<@${bot.buyerID}>`,
+            embeds: [embed],
+        }),
+        sendDM(bot.buyerID, { embeds: [embed] }),
+    ]);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,6 +229,7 @@ const sendBackup = async (filePath) => {
 
 module.exports = {
     sendWebhook,
+    sendDM,
     sendExpiryWarning,
     sendExpiryRemoval,
     sendExpirySuspended,
