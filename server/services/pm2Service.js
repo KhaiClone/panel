@@ -3,6 +3,7 @@ const util = require("util");
 const execAsync = util.promisify(exec);
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
@@ -19,17 +20,89 @@ const runPM2 = async (args) => {
     return stdout || stderr;
 };
 
+// ── dump.pm2 integrity guard ─────────────────────────────────────────────────
+// `pm2 save` can write a truncated or empty dump.pm2 without reporting an
+// error when the disk is full. On the next reboot PM2 fails to parse that
+// file, DELETES it, and comes up with an empty process list — every bot is
+// gone. To prevent that, every save is validated afterwards; a known-good
+// copy is kept and restored whenever the fresh dump turns out corrupt.
+
+const PM2_HOME = process.env.PM2_HOME || path.join(os.homedir(), ".pm2");
+const DUMP_PATH = path.join(PM2_HOME, "dump.pm2");
+const GOOD_DUMP_PATH = path.join(PM2_HOME, "dump.pm2.panel-good");
+
+// Rate-limit corruption alerts so back-to-back saves don't spam the admin
+const ALERT_COOLDOWN_MS = 60 * 60 * 1000;
+let lastDumpAlertAt = 0;
+
+/** A dump is valid when it exists and parses to a JSON array. */
+const isDumpValid = (file) => {
+    try {
+        const raw = fs.readFileSync(file, "utf8");
+        return Array.isArray(JSON.parse(raw));
+    } catch {
+        return false;
+    }
+};
+
+/** Notify the admin through the panel's notification feed (best-effort). */
+const alertDumpCorruption = async (message) => {
+    const now = Date.now();
+    if (now - lastDumpAlertAt < ALERT_COOLDOWN_MS) return;
+    lastDumpAlertAt = now;
+    try {
+        // Required lazily to avoid a require cycle at module load time
+        const { createNotification } = require("../routes/notifications");
+        await createNotification(message, "error");
+    } catch (err) {
+        console.error("[PM2] Could not create dump-corruption notification:", err.message);
+    }
+};
+
 /**
  * Persist the current PM2 process list so it survives reboots.
- * Errors are silenced — a failed save should never break the caller.
+ * Never throws — but a corrupt dump is no longer ignored: the last
+ * known-good copy is restored and the admin is alerted.
  */
 const pm2Save = async () => {
+    let saveError = null;
     try {
         await execAsync("pm2 save --no-color");
-    } catch {
-        // non-critical — log but don't throw
-        console.warn("[PM2] pm2 save failed (non-critical)");
+    } catch (err) {
+        saveError = err;
     }
+
+    if (!saveError && isDumpValid(DUMP_PATH)) {
+        // Save succeeded and the file parses — refresh the known-good copy.
+        try {
+            fs.copyFileSync(DUMP_PATH, GOOD_DUMP_PATH);
+        } catch (err) {
+            // Copy can fail on a full disk; the real dump is still fine.
+            console.warn("[PM2] Could not refresh known-good dump copy:", err.message);
+        }
+        return;
+    }
+
+    // Save failed or produced garbage (typical cause: disk full).
+    const reason = saveError ? saveError.message.split("\n")[0] : "dump.pm2 is empty or unparseable";
+    console.error(`[PM2] pm2 save produced a corrupt dump (${reason})`);
+
+    if (isDumpValid(GOOD_DUMP_PATH)) {
+        try {
+            fs.copyFileSync(GOOD_DUMP_PATH, DUMP_PATH);
+            console.error("[PM2] Restored last known-good dump.pm2 — process list may be slightly stale");
+            await alertDumpCorruption(
+                "pm2 save failed (disk full?) — restored the last known-good dump.pm2. Recent start/stop changes may not survive a reboot until the disk issue is fixed.",
+            );
+            return;
+        } catch (err) {
+            console.error("[PM2] Could not restore known-good dump:", err.message);
+        }
+    }
+
+    await alertDumpCorruption(
+        "pm2 save failed and no known-good dump.pm2 backup exists — processes will NOT be restored after a reboot. Check disk space immediately.",
+    );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -15,18 +15,5 @@ module.exports = {
                 NODE_ENV: "production",
             },
         },
-        {
-            // ── Buyer Discord Bot ──────────────────────
-            name: "buyer-bot",
-            script: "discord-bot/index.js",
-            cwd: __dirname,
-            instances: 1,
-            autorestart: true,
-            watch: false,
-            max_memory_restart: "200M",
-            env: {
-                NODE_ENV: "production",
-            },
-        },
     ],
 };
