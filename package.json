@@ -11,7 +11,8 @@
     "build": "cd client && npm run build",
     "reinstall": "node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install --include=dev",
     "reinstall:client": "cd client && node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install --include=dev",
-    "reinstall:all": "node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install --include=dev && cd client && node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install --include=dev"
+    "reinstall:all": "node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install --include=dev && cd client && node -e \"fs.rmSync('node_modules', {recursive:true, force:true})\" && npm install --include=dev",
+    "update:deps": "npm install --include=dev && cd client && npm install --include=dev"
   },
   "dependencies": {
     "axios": "^1.6.0",

@@ -148,9 +148,23 @@ const restartPanel = async () => {
     return { message: `Panel "${name}" will restart in ~1.5 seconds` };
 };
 
+// Guard so two rebuilds can never run concurrently — a second rebuild used to
+// delete node_modules while the first one was still installing, leaving the
+// panel unable to boot after the restart.
+let _rebuildInProgress = false;
+
 const rebuildPanel = async () => {
     const name = await getPanelPM2Name();
     const panelRoot = path.resolve(__dirname, "../..");
+
+    if (_rebuildInProgress) {
+        return {
+            success: false,
+            buildOutput: "",
+            message: "A rebuild is already in progress — wait for it to finish before starting another.",
+        };
+    }
+    _rebuildInProgress = true;
 
     let accumulatedOutput = [];
 
@@ -163,10 +177,13 @@ const rebuildPanel = async () => {
         );
         accumulatedOutput.push(pullOut, pullErr);
 
-        // ── 2. Reinstall all deps ────────────────────────────────────────────
-        console.log("[Panel] Reinstalling all dependencies…");
+        // ── 2. Update deps in place ──────────────────────────────────────────
+        // Deliberately NOT `reinstall:all`: deleting node_modules first would
+        // leave the running panel without deps if the install fails (e.g.
+        // registry unreachable). An in-place install fails safe.
+        console.log("[Panel] Updating dependencies…");
         const { stdout: installOut, stderr: installErr } = await execAsync(
-            "npm run reinstall:all",
+            "npm run update:deps",
             { cwd: panelRoot, timeout: 300_000, maxBuffer: 10 * 1024 * 1024 },
         );
         accumulatedOutput.push(installOut, installErr);
@@ -179,9 +196,16 @@ const rebuildPanel = async () => {
         );
         accumulatedOutput.push(buildOut, buildErr);
 
+        // ── 4. Sanity check: every server dep must resolve before we restart ─
+        console.log("[Panel] Verifying server dependencies…");
+        await execAsync(
+            `node -e "Object.keys(require('./package.json').dependencies).forEach(d => require.resolve(d))"`,
+            { cwd: panelRoot, timeout: 30_000 },
+        );
+
         const buildOutput = accumulatedOutput.filter(Boolean).join("\n").trim();
 
-        // ── 4. Restart panel ─────────────────────────────────────────────────
+        // ── 5. Restart panel ─────────────────────────────────────────────────
         setTimeout(() => {
             exec(`pm2 restart "${name}" --no-color`, (err) => {
                 if (err) console.error("[Panel] Post-build restart failed:", err.message);
@@ -212,6 +236,8 @@ const rebuildPanel = async () => {
             buildOutput: accumulatedOutput.filter(Boolean).join("\n").trim(),
             message: "Build failed — panel was NOT restarted",
         };
+    } finally {
+        _rebuildInProgress = false;
     }
 };
 
