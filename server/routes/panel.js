@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const panelService = require("../services/panelService");
 const nginxService = require("../services/nginxService");
+const logrotateService = require("../services/logrotateService");
 const db = require("../db");
 const router = express.Router();
 
@@ -221,6 +222,50 @@ router.delete("/domains/:domain", async (req, res, next) => {
         console.log(`[Panel] Domain removed: ${domain}`);
         res.json({ ok: true });
     } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GET /api/panel/logrotate
+//  Install state, PM2 status and current settings of pm2-logrotate.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/logrotate", async (req, res, next) => {
+    try {
+        res.json(await logrotateService.getStatus());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  POST /api/panel/logrotate/install
+//  Install pm2-logrotate and apply default limits (50M / keep 7 / gzip).
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/logrotate/install", async (req, res, next) => {
+    try {
+        console.log("[LogRotate] Installing pm2-logrotate…");
+        const status = await logrotateService.install();
+        console.log("[LogRotate] Installed and configured");
+        res.json(status);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PUT /api/panel/logrotate
+//  Update settings. Body: { max_size?, retain?, compress?, rotateInterval?,
+//  workerInterval?, rotateModule? } — values are validated by the service.
+// ─────────────────────────────────────────────────────────────────────────────
+router.put("/logrotate", async (req, res, next) => {
+    try {
+        const status = await logrotateService.setConfig(req.body || {});
+        res.json(status);
+    } catch (err) {
+        if (/Unknown setting|Invalid value|No settings/.test(err.message)) {
+            return res.status(400).json({ error: err.message });
+        }
         next(err);
     }
 });

@@ -453,6 +453,125 @@ function PanelDomainsSection() {
     );
 }
 
+// ── LogRotateSection ──────────────────────────────────────────────────────────
+
+const LOGROTATE_FIELDS = [
+    { key: "max_size", label: "Max size", hint: "Rotate when a log reaches this size (e.g. 50M, 1G)", placeholder: "50M", width: 90 },
+    { key: "retain", label: "Retain", hint: "How many rotated files to keep per process", placeholder: "7", width: 60 },
+    { key: "rotateInterval", label: "Rotate at (cron)", hint: "Forced rotation schedule — default is midnight daily", placeholder: "0 0 * * *", width: 110 },
+];
+
+function LogRotateSection() {
+    const [info, setInfo] = useState(null);
+    const [form, setForm] = useState({});
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const [saved, setSaved] = useState(false);
+
+    const load = useCallback(() => {
+        api.get("/panel/logrotate")
+            .then(r => {
+                setInfo(r.data);
+                const c = r.data.config || {};
+                setForm({
+                    max_size: c.max_size ?? "50M",
+                    retain: String(c.retain ?? "7"),
+                    rotateInterval: c.rotateInterval ?? "0 0 * * *",
+                    compress: String(c.compress ?? "true") === "true",
+                });
+            })
+            .catch(() => setError("Failed to load log rotation status"));
+    }, []);
+    useEffect(() => { load(); }, [load]);
+
+    const handleInstall = async () => {
+        setBusy(true); setError("");
+        try {
+            const { data } = await api.post("/panel/logrotate/install", {}, { timeout: 300_000 });
+            setInfo(data); load();
+        } catch (err) {
+            setError(err.response?.data?.error || "Install failed — check panel logs");
+        } finally { setBusy(false); }
+    };
+
+    const handleSave = async () => {
+        setBusy(true); setError(""); setSaved(false);
+        try {
+            const { data } = await api.put("/panel/logrotate", {
+                max_size: form.max_size.trim(),
+                retain: form.retain.trim(),
+                rotateInterval: form.rotateInterval.trim(),
+                compress: String(form.compress),
+            });
+            setInfo(data); setSaved(true);
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to save settings");
+        } finally { setBusy(false); }
+    };
+
+    if (info === null) {
+        return <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>{error || "Loading…"}</div>;
+    }
+
+    if (!info.installed) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+                    pm2-logrotate is not installed. Without it PM2 logs grow forever and can
+                    fill the disk — which corrupts PM2's saved process list and loses every
+                    bot on the next reboot.
+                </p>
+                {error && <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)", fontSize: 13 }}>{error}</div>}
+                <button onClick={handleInstall} disabled={busy} className="btn-primary" style={{ alignSelf: "flex-start", fontSize: 13 }}>
+                    {busy ? "Installing… (may take a minute)" : "Install pm2-logrotate"}
+                </button>
+            </div>
+        );
+    }
+
+    const online = info.status === "online";
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: online ? "var(--success)" : "var(--danger)", flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                    Module {online ? "running" : `status: ${info.status}`} — logs rotate automatically when they hit the size limit.
+                </span>
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
+                {LOGROTATE_FIELDS.map(f => (
+                    <label key={f.key} style={{ display: "flex", flexDirection: "column", gap: 4 }} title={f.hint}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{f.label}</span>
+                        <input
+                            className="input mono"
+                            style={{ fontSize: 13, width: f.width }}
+                            placeholder={f.placeholder}
+                            value={form[f.key] ?? ""}
+                            onChange={e => { setForm(prev => ({ ...prev, [f.key]: e.target.value })); setSaved(false); }}
+                            spellCheck={false}
+                        />
+                    </label>
+                ))}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, paddingBottom: 8, cursor: "pointer" }} title="Gzip rotated log files">
+                    <input
+                        type="checkbox"
+                        checked={!!form.compress}
+                        onChange={e => { setForm(prev => ({ ...prev, compress: e.target.checked })); setSaved(false); }}
+                    />
+                    <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Compress</span>
+                </label>
+                <button onClick={handleSave} disabled={busy} className="btn-primary" style={{ fontSize: 13, marginBottom: 2 }}>
+                    {busy ? "Saving…" : "Save"}
+                </button>
+            </div>
+
+            {saved && <div style={{ fontSize: 12, color: "#4ade80" }}>✓ Settings applied</div>}
+            {error && <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)", fontSize: 13 }}>{error}</div>}
+        </div>
+    );
+}
+
 // ── EnvEditor ─────────────────────────────────────────────────────────────────
 
 const SENSITIVE_RE = /password|secret|token|hash|webhook/i;
@@ -737,6 +856,18 @@ export default function PanelManage() {
                 </div>
                 <div style={{ padding: 16 }}>
                     <PanelDomainsSection />
+                </div>
+            </div>
+
+            {/* Log Rotation */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>♻️</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Log Rotation</h2>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>pm2-logrotate — keeps PM2 logs from filling the disk</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <LogRotateSection />
                 </div>
             </div>
 
