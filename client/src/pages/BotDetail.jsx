@@ -566,6 +566,11 @@ export default function BotDetail() {
                                     Local
                                 </span>
                             )}
+                            {bot.nodeName && (
+                                <span className="badge" title={`Running on node "${bot.nodeName}"`} style={{ background: "rgba(6,182,212,0.12)", border: "1px solid rgba(6,182,212,0.3)", color: "#22d3ee" }}>
+                                    ⬡ {bot.nodeName}
+                                </span>
+                            )}
                             {currentGroup && (
                                 <span className="badge" style={{ background: `${currentGroup.color}20`, border: `1px solid ${currentGroup.color}40`, color: currentGroup.color }}>{currentGroup.name}</span>
                             )}

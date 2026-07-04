@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,8 @@ const defaultForm = {
     distFolder: ".",
     // service-only
     servicePort: "",
+    // placement
+    nodeId: "auto",
 };
 
 const MEM_HINT = 'e.g. "300M", "1G" — leave blank for no limit';
@@ -55,19 +58,22 @@ function TabBar({ value, onChange, options }) {
 }
 
 export default function CreateBotModal({ onClose, onCreated, defaultProjectType }) {
+    const { isAdmin } = useAuth();
     const [form, setForm] = useState(() => ({
         ...defaultForm,
         projectType: defaultProjectType || defaultForm.projectType,
     }));
     const [groups, setGroups] = useState([]);
     const [availableTags, setAvailableTags] = useState([]);
+    const [nodes, setNodes] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
     useEffect(() => {
         api.get("/groups").then((r) => setGroups(r.data)).catch(() => {});
         api.get("/tags").then((r) => setAvailableTags(r.data)).catch(() => {});
-    }, []);
+        if (isAdmin) api.get("/nodes").then((r) => setNodes(r.data)).catch(() => {});
+    }, [isAdmin]);
 
     const set = (field) => (e) => {
         const val = e.target.type === "checkbox" ? e.target.checked : e.target.value;
@@ -119,6 +125,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                 projectType: form.projectType,
                 websiteConfig,
                 serviceConfig,
+                // Node placement — only meaningful for admin + git-deployed Discord bots
+                nodeId: form.projectType === "discord" && form.source === "git" ? form.nodeId : undefined,
             };
 
             const payload = form.source === "git"
@@ -215,6 +223,29 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                             ]}
                         />
                     </div>
+
+                    {/* ── Node Placement (admin, git-deployed Discord bots) ── */}
+                    {isAdmin && form.projectType === "discord" && form.source === "git" && nodes.length > 1 && (
+                        <div>
+                            <label className="label">Node (VPS)</label>
+                            <select className="input" value={form.nodeId} onChange={set("nodeId")}>
+                                <option value="auto">⚡ Auto — panel picks the least-loaded node</option>
+                                {nodes.map((n) => {
+                                    const ramFree = n.stats?.memory ? `${Math.round(100 - n.stats.memory.usedPercent)}% RAM free` : "no stats";
+                                    const diskFree = n.stats?.disk ? `${(n.stats.disk.freeBytes / 1073741824).toFixed(0)}GB disk free` : "";
+                                    const offline = n.status !== "online";
+                                    return (
+                                        <option key={n._id} value={n._id} disabled={offline}>
+                                            {n.name}{offline ? " (offline)" : ` — ${ramFree}${diskFree ? `, ${diskFree}` : ""}`}
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+                                Websites and local imports always run on the panel VPS.
+                            </p>
+                        </div>
+                    )}
 
                     {/* ── Identity ──────────────────────────────────────── */}
                     <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>

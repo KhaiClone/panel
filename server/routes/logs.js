@@ -1,7 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { getBotLogs, streamBotLogs, flushBotLogs } = require("../services/pm2Service");
+const { streamBotLogs } = require("../services/pm2Service");
+const executor = require("../services/executor");
 
 const checkLogOwnership = async (req, decoded) => {
     const bot = await db.findOne("bots", { _id: req.params.botId });
@@ -31,7 +32,7 @@ router.get("/:botId", async (req, res, next) => {
         if (!allowed) return res.status(403).json({ error: "Access denied" });
 
         const lines = Math.min(parseInt(req.query.lines) || 100, 500);
-        const logs = await getBotLogs(bot.pm2Name, lines);
+        const logs = await executor.getBotLogs(bot, lines);
 
         res.json({ logs });
     } catch (err) {
@@ -64,6 +65,28 @@ router.get("/:botId/stream", async (req, res, next) => {
         res.flushHeaders();
 
         const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 15_000);
+
+        if (executor.isRemote(bot)) {
+            // Remote bot: the agent already emits SSE — pipe its bytes through
+            let upstream;
+            try {
+                upstream = await executor.streamRemoteLogs(bot, 50);
+            } catch (err) {
+                clearInterval(keepAlive);
+                res.write(`data: [panel] Cannot reach node: ${err.message}\n\n`);
+                return res.end();
+            }
+
+            upstream.data.pipe(res);
+            upstream.data.on("error", () => res.end());
+
+            req.on("close", () => {
+                clearInterval(keepAlive);
+                upstream.data.destroy();
+            });
+            return;
+        }
+
         const proc = streamBotLogs(bot.pm2Name, 50);
 
         const sendData = (chunk) => {
@@ -105,7 +128,7 @@ router.delete("/:botId", async (req, res, next) => {
         if (!bot) return res.status(404).json({ error: "Bot not found" });
         if (!allowed) return res.status(403).json({ error: "Access denied" });
 
-        await flushBotLogs(bot.pm2Name);
+        await executor.flushBotLogs(bot);
         res.json({ message: "Logs cleared" });
     } catch (err) {
         next(err);

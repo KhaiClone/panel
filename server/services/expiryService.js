@@ -2,7 +2,8 @@ const cron = require("node-cron");
 const path = require("path");
 const fs = require("fs");
 const db = require("../db");
-const { deleteBot, stopBot, getBotStatus, flushLogs } = require("./pm2Service");
+const { flushLogs } = require("./pm2Service");
+const executor = require("./executor");
 const { sendExpiryWarning, sendExpiryRemoval, sendExpirySuspended } = require("./discordService");
 const { createNotification } = require("../routes/notifications");
 
@@ -41,18 +42,24 @@ const checkExpiry = async () => {
                     `[Expiry] Bot "${bot.botID}" (buyer: ${bot.buyerID}) expired 7 days ago. Removing...`,
                 );
 
-                // 1. Stop & unregister from PM2
-                await deleteBot(bot.pm2Name);
+                // 1. Stop & unregister from PM2 (on whichever node the bot lives)
+                await executor.deleteBot(bot);
 
-                // 2. Delete source directory
-                const botDir = path.join(
-                    process.env.BOTS_ROOT_DIR,
-                    bot.buyerID,
-                    bot.botID,
-                );
-                if (fs.existsSync(botDir)) {
-                    fs.rmSync(botDir, { recursive: true, force: true });
-                    console.log(`[Expiry] Deleted folder: ${botDir}`);
+                // 2. Delete source directory (never touch imported local folders)
+                if (executor.isRemote(bot)) {
+                    await executor.removeBotFiles(bot).catch((err) =>
+                        console.error(`[Expiry] Could not delete remote folder: ${err.message}`),
+                    );
+                } else {
+                    const botDir = path.join(
+                        process.env.BOTS_ROOT_DIR,
+                        bot.buyerID,
+                        bot.botID,
+                    );
+                    if (fs.existsSync(botDir)) {
+                        fs.rmSync(botDir, { recursive: true, force: true });
+                        console.log(`[Expiry] Deleted folder: ${botDir}`);
+                    }
                 }
 
                 // 3. Remove record from DB
@@ -62,12 +69,12 @@ const checkExpiry = async () => {
                 await sendExpiryRemoval(bot);
             } else if (msLeft <= 0) {
                 // ── JUST EXPIRED: stop bot but keep data ─────────────────────────
-                const live = await getBotStatus(bot.pm2Name);
+                const live = await executor.getBotStatus(bot);
                 if (live.status === "online" || live.status === "launching") {
                     console.log(
                         `[Expiry] Bot "${bot.botID}" (buyer: ${bot.buyerID}) expired. Stopping...`,
                     );
-                    await stopBot(bot.pm2Name);
+                    await executor.stopBot(bot);
                     await sendExpirySuspended(bot);
                     await createNotification(`Bot "${bot.name}" has expired and was stopped.`, "expired");
                 }

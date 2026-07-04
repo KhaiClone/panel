@@ -285,6 +285,21 @@ All data is stored in `data/panel.sqlite` via QuickDB (SQLite).
   expiresAt:     number|null,   // Unix timestamp (ms) or null = no expiry
   createdAt:     number,        // Unix timestamp (ms)
   websiteConfig: object|null,   // Only set for website projects (see below)
+  nodeId:        string,        // "local" or a Node _id — which VPS runs this bot
+}
+```
+
+### `nodes` collection
+
+```js
+{
+  _id:       string,  // nanoid(24)
+  name:      string,  // e.g. "VPS 2"
+  host:      string,  // Agent IP/host
+  port:      number,  // Agent port
+  apiKey:    string,  // Shared secret for the agent (never sent to the client)
+  enabled:   boolean, // Disabled nodes are skipped by the scheduler
+  createdAt: number,
 }
 ```
 
@@ -334,6 +349,47 @@ All data is stored in `data/panel.sqlite` via QuickDB (SQLite).
   createdAt: number,
 }
 ```
+
+---
+
+## 🖧 Multi-VPS (Nodes)
+
+The panel can spread **Discord bots** across multiple VPS. Each worker VPS runs
+the lightweight **agent** (`agent/` in this repo) that executes PM2/git/file/log
+operations on behalf of the panel.
+
+- **Placement**: when creating a git-deployed Discord bot, choose a node in the
+  create form or leave it on **Auto** — the scheduler scores every online node
+  (free RAM 50%, free CPU 30%, free disk 20%; nodes under 5 GB free disk are
+  excluded) and picks the best one. `POST /api/bots` also accepts an optional
+  `nodeId` ("auto", "local", or a node `_id`; admin only).
+- **Websites, services, and local imports always run on the panel VPS** —
+  they depend on nginx/UFW/DNS there.
+- **Existing bots** are migrated to `nodeId: "local"` on first startup and
+  behave exactly as before.
+
+### Setting up a worker node
+
+```bash
+# On the fresh worker VPS (Ubuntu 22.04/24.04), as root:
+curl -fsSL https://raw.githubusercontent.com/<your-repo>/main/agent/setup-agent.sh -o setup-agent.sh
+sudo bash setup-agent.sh <PANEL_IP> [AGENT_PORT] [REPO_URL]
+# → installs Node 22 + PM2 + git, clones the repo, generates an API key,
+#   restricts the agent port to the panel's IP via UFW, starts the agent under PM2.
+```
+
+Then in the panel: **Admin → Nodes → Add Node**, paste the host/port/API key the
+script printed. The connection is verified before the node is saved.
+
+### Node API summary
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/nodes` | All nodes with live status/stats/bot counts |
+| `POST` | `/api/nodes` | Register node (connection-tested first) |
+| `PUT` | `/api/nodes/:id` | Update node (enable/disable, key rotation) |
+| `DELETE` | `/api/nodes/:id` | Remove node (blocked while bots live on it) |
+| `POST` | `/api/nodes/:id/test` | Live connection + stats check |
 
 ---
 

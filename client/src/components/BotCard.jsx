@@ -141,6 +141,11 @@ export default function BotCard({ bot, onRefresh }) {
                                         Service
                                     </span>
                                 )}
+                                {bot.nodeName && (
+                                    <span title={`Running on node "${bot.nodeName}"`} style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "2px 6px", borderRadius: 4, background: "rgba(6,182,212,0.12)", color: "#22d3ee", border: "1px solid rgba(6,182,212,0.25)", flexShrink: 0 }}>
+                                        ⬡ {bot.nodeName}
+                                    </span>
+                                )}
                             </div>
                             <p className="mono" style={{
                                 fontSize: 11, color: "var(--text-dim)", marginTop: 2,

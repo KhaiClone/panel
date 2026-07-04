@@ -11,6 +11,9 @@ const pm2Service = require("../services/pm2Service");
 const gitService = require("../services/gitService");
 const nginxService = require("../services/nginxService");
 const ufwService = require("../services/ufwService");
+const executor = require("../services/executor");
+const schedulerService = require("../services/schedulerService");
+const nodeService = require("../services/nodeService");
 const { createNotification } = require("./notifications");
 
 // Root directory where all buyer bot folders live (e.g. /root/bots)
@@ -178,14 +181,18 @@ const applyWebsiteInfra = async (bot, dir) => {
  * Get live status for any project type.
  * - static, no domain → http-server runs via PM2 → PM2 status
  * - static, domain    → nginx config existence
- * - discord / fullstack → PM2 status
+ * - discord / fullstack → PM2 status (routed to the bot's node)
+ *
+ * `resolver` (from executor.getStatusResolver) batches PM2 list fetches per
+ * node — pass it when enriching many bots; omit it for a single bot.
  */
-const getLiveStatus = async (bot, pm2List) => {
+const getLiveStatus = async (bot, resolver = null) => {
     if (bot.projectType === "website" && bot.websiteConfig?.mode === "static" && bot.websiteConfig?.domain) {
         const online = nginxService.configExists(bot.pm2Name);
         return { status: online ? "online" : "stopped", cpu: 0, memory: 0, restarts: 0, uptime: null };
     }
-    return pm2Service.getBotStatus(bot.pm2Name, pm2List);
+    if (resolver) return resolver.statusFor(bot);
+    return executor.getBotStatus(bot);
 };
 
 /**
@@ -253,12 +260,16 @@ router.get("/", async (req, res, next) => {
         // Admin sees all bots; users see only their own
         const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
         const bots = await db.find("bots", query);
-        const pm2List = await pm2Service.getProcessList();
+        // One PM2 list fetch per node (local + each agent) instead of per bot
+        const resolver = await executor.getStatusResolver(bots);
+        const nodes = await nodeService.getNodes();
+        const nodeNames = Object.fromEntries(nodes.map((n) => [n._id, n.name]));
 
         const enriched = await Promise.all(
             bots.map(async (bot) => {
-                const live = await getLiveStatus(bot, pm2List);
-                return { ...bot, live };
+                const live = await getLiveStatus(bot, resolver);
+                const nodeName = executor.isRemote(bot) ? (nodeNames[bot.nodeId] || "unknown node") : null;
+                return { ...bot, live, nodeName };
             }),
         );
 
@@ -277,9 +288,13 @@ router.get("/:id", requireOwnership, async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const pm2List = await pm2Service.getProcessList();
-        const live = await getLiveStatus(bot, pm2List);
-        res.json({ ...bot, live });
+        const live = await getLiveStatus(bot);
+        let nodeName = null;
+        if (executor.isRemote(bot)) {
+            const node = await db.findOne("nodes", { _id: bot.nodeId });
+            nodeName = node?.name || "unknown node";
+        }
+        res.json({ ...bot, live, nodeName });
     } catch (err) {
         next(err);
     }
@@ -365,30 +380,58 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             });
         }
 
+        // Decide which node this project lands on ("auto" → scheduler picks;
+        // websites/services are pinned to local — see schedulerService).
+        // Only admins may target a specific node; users always go through auto.
+        let placement;
+        try {
+            const requestedNodeId = req.user.role === "admin" ? (req.body.nodeId || null) : null;
+            placement = await schedulerService.pickNode({ requestedNodeId, projectType });
+        } catch (schedErr) {
+            return res.status(400).json({ error: schedErr.message });
+        }
+        const nodeId = placement.nodeId;
+        const isRemoteNode = nodeId !== nodeService.LOCAL_NODE_ID;
+        console.log(`[Bots] Placement for "${botID}": node=${placement.nodeName} (${placement.reason})`);
+
+        const isStaticWebsite = projectType === "website" && rawWebsiteConfig?.mode === "static";
         const root = projectType === "website" ? SITES_ROOT() : BOTS_ROOT();
         const dir = path.join(root, buyerID, botID);
+        const nodeRef = { nodeId, buyerID, botID, projectType };
 
-        // Ensure buyer directory exists
-        fs.mkdirSync(path.join(root, buyerID), { recursive: true });
-
-        // 1. Clone repository
-        console.log(`[Bots] Cloning ${repoUrl} → ${dir}`);
-        try {
-            await gitService.cloneRepo(repoUrl, dir, branch);
-        } catch (cloneErr) {
-            if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-            throw cloneErr;
-        }
-
-        // 2. Install dependencies (skip for static websites)
-        const isStaticWebsite = projectType === "website" && rawWebsiteConfig?.mode === "static";
-        if (!isStaticWebsite) {
-            console.log(`[Bots] Installing deps for ${botID}`);
+        if (isRemoteNode) {
+            // 1+2. Clone + install on the target node via its agent
+            console.log(`[Bots] Cloning ${repoUrl} on node "${placement.nodeName}"`);
+            await executor.cloneRepo(nodeRef, repoUrl, branch);
             try {
-                await gitService.installDeps(dir, installCommand);
+                console.log(`[Bots] Installing deps for ${botID} on node "${placement.nodeName}"`);
+                await executor.installDeps(nodeRef, installCommand);
             } catch (installErr) {
-                fs.rmSync(dir, { recursive: true, force: true });
+                await executor.fsDelete(nodeRef, "").catch(() => {});
                 throw installErr;
+            }
+        } else {
+            // Ensure buyer directory exists
+            fs.mkdirSync(path.join(root, buyerID), { recursive: true });
+
+            // 1. Clone repository
+            console.log(`[Bots] Cloning ${repoUrl} → ${dir}`);
+            try {
+                await gitService.cloneRepo(repoUrl, dir, branch);
+            } catch (cloneErr) {
+                if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+                throw cloneErr;
+            }
+
+            // 2. Install dependencies (skip for static websites)
+            if (!isStaticWebsite) {
+                console.log(`[Bots] Installing deps for ${botID}`);
+                try {
+                    await gitService.installDeps(dir, installCommand);
+                } catch (installErr) {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                    throw installErr;
+                }
             }
         }
 
@@ -433,6 +476,7 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             pm2Name,
             source: "git",
             localPath: null,
+            nodeId,
             groupId,
             maxMemory,
             currentPrice,
@@ -601,6 +645,8 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
             pm2Name,
             source: "local",
             localPath,
+            // Imported folders physically live on this VPS — always the local node
+            nodeId: nodeService.LOCAL_NODE_ID,
             groupId,
             maxMemory,
             currentPrice,
@@ -670,9 +716,9 @@ router.put("/:id", requireOwnership, async (req, res, next) => {
 
         // If maxMemory changed and the bot is running, apply the new limit live
         if (maxMemory !== undefined) {
-            const live = await pm2Service.getBotStatus(bot.pm2Name);
+            const live = await executor.getBotStatus(bot);
             if (live.status === "online") {
-                await pm2Service.setMemoryLimit(bot.pm2Name, maxMemory || null);
+                await executor.setMemoryLimit(bot, maxMemory || null);
             }
         }
 
@@ -696,10 +742,10 @@ router.delete("/:id", requireOwnership, async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        // Stop & unregister from PM2
-        await pm2Service.deleteBot(bot.pm2Name);
+        // Stop & unregister from PM2 (on whichever node the bot lives)
+        await executor.deleteBot(bot);
 
-        // Project-type cleanup
+        // Project-type cleanup (websites/services always run on the local node)
         if (bot.projectType === "website" && bot.websiteConfig) {
             await nginxService.removeConfig(bot.pm2Name);
             // Static+domain uses nginx on port 80 (shared — don't close it)
@@ -713,10 +759,7 @@ router.delete("/:id", requireOwnership, async (req, res, next) => {
 
         // Only delete source files for git-managed bots
         if (bot.source !== "local") {
-            const dir = botDir(bot);
-            if (fs.existsSync(dir)) {
-                fs.rmSync(dir, { recursive: true, force: true });
-            }
+            await executor.removeBotFiles(bot);
         }
 
         // Remove from DB
@@ -757,15 +800,9 @@ router.post("/:id/start", requireOwnership, async (req, res, next) => {
             return res.json({ message: "Website started", output });
         }
 
-        // Discord bot or fullstack website: use PM2
+        // Discord bot or fullstack website: use PM2 (routed to the bot's node)
         const proxyConf = await getProxyConf(bot);
-        const output = await pm2Service.startBot(
-            bot.pm2Name,
-            dir,
-            bot.startScript,
-            bot.maxMemory || null,
-            proxyConf,
-        );
+        const output = await executor.startBot(bot, proxyConf);
         await createNotification(`Bot "${bot.name}" was started.`, "start");
         res.json({ message: "Bot started", output });
     } catch (err) {
@@ -791,7 +828,7 @@ router.post("/:id/stop", requireOwnership, async (req, res, next) => {
             return res.json({ message: "Website stopped" });
         }
 
-        const output = await pm2Service.stopBot(bot.pm2Name);
+        const output = await executor.stopBot(bot);
         await createNotification(`Bot "${bot.name}" was stopped.`, "stop");
         res.json({ message: "Bot stopped", output });
     } catch (err) {
@@ -922,7 +959,7 @@ router.post("/:id/restart", requireOwnership, async (req, res, next) => {
         // Auto-stop if the bot has been restarted too many times in a short window.
         if (shouldAutoStop(req.params.id)) {
             restartTimestamps.delete(req.params.id); // reset counter after stopping
-            await pm2Service.stopBot(bot.pm2Name);
+            await executor.stopBot(bot);
             await createNotification(
                 `Bot "${bot.name}" was auto-stopped after ${RESTART_MAX} restarts within ${RESTART_WINDOW_MS / 1000}s.`,
                 "restart",
@@ -947,13 +984,7 @@ router.post("/:id/restart", requireOwnership, async (req, res, next) => {
         // Use startBot (which deletes + re-registers) so the wrapper script
         // is always regenerated with the current proxy settings.
         const proxyConf = await getProxyConf(bot);
-        const output = await pm2Service.startBot(
-            bot.pm2Name,
-            dir,
-            bot.startScript,
-            bot.maxMemory || null,
-            proxyConf,
-        );
+        const output = await executor.startBot(bot, proxyConf);
         await createNotification(`Bot "${bot.name}" was restarted.`, "restart");
         res.json({ message: "Bot restarted", output });
     } catch (err) {
@@ -985,9 +1016,9 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
         let pullOutput = "(skipped — no git remote)";
         let pullFailed = false;
 
-        // Attempt git pull
+        // Attempt git pull (on the bot's node)
         try {
-            pullOutput = await gitService.pullRepo(dir);
+            pullOutput = await executor.pullRepo(bot);
             console.log(`[Bots] git pull for "${bot.name}": ${pullOutput.trim().split('\n')[0]}`);
         } catch (err) {
             pullFailed = true;
@@ -1012,17 +1043,11 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
             });
         }
 
-        await gitService.installDeps(dir, bot.installCommand);
+        await executor.installDeps(bot, bot.installCommand);
 
         // Use startBot so wrapper script is refreshed with current proxy settings
         const proxyConf = await getProxyConf(bot);
-        const restartOutput = await pm2Service.startBot(
-            bot.pm2Name,
-            dir,
-            bot.startScript,
-            bot.maxMemory || null,
-            proxyConf,
-        );
+        const restartOutput = await executor.startBot(bot, proxyConf);
 
         await createNotification(`Bot "${bot.name}" was updated / reinstalled.`, "reinstall");
         console.log(`[Bots] Updated bot "${bot.name}"`);
@@ -1050,6 +1075,16 @@ router.get("/:id/env", requireOwnership, async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
+        if (executor.isRemote(bot)) {
+            try {
+                const data = await executor.fsRead(bot, ".env");
+                return res.json({ content: data.content });
+            } catch (err) {
+                if (err.status === 404) return res.json({ content: "" });
+                throw err;
+            }
+        }
+
         const envPath = path.join(botDir(bot), ".env");
         const content = fs.existsSync(envPath)
             ? fs.readFileSync(envPath, "utf8")
@@ -1074,6 +1109,11 @@ router.put("/:id/env", requireOwnership, async (req, res, next) => {
         const { content } = req.body;
         if (content === undefined)
             return res.status(400).json({ error: "content is required" });
+
+        if (executor.isRemote(bot)) {
+            await executor.fsWrite(bot, ".env", content);
+            return res.json({ message: ".env saved successfully" });
+        }
 
         const envPath = path.join(botDir(bot), ".env");
         fs.writeFileSync(envPath, content, "utf8");
@@ -1109,6 +1149,24 @@ router.get("/:id/fs/download", requireOwnership, async (req, res, next) => {
         if (!bot) {
             console.error(`[FS] Bot not found: ${req.params.id}`);
             return res.status(404).json({ error: "Bot not found" });
+        }
+
+        if (executor.isRemote(bot)) {
+            try {
+                const upstream = await executor.fsDownloadStream(bot, req.query.path);
+                if (upstream.headers["content-disposition"]) {
+                    res.setHeader("Content-Disposition", upstream.headers["content-disposition"]);
+                }
+                if (upstream.headers["content-type"]) {
+                    res.setHeader("Content-Type", upstream.headers["content-type"]);
+                }
+                upstream.data.pipe(res);
+                upstream.data.on("error", () => res.end());
+            } catch (err) {
+                const status = err.response?.status || 500;
+                return res.status(status).json({ error: status === 404 ? "File not found" : "Download failed on remote node" });
+            }
+            return;
         }
 
         const baseDir = botDir(bot);
@@ -1151,6 +1209,10 @@ router.get("/:id/fs/list", requireOwnership, async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        if (executor.isRemote(bot)) {
+            return res.json(await executor.fsList(bot, req.query.path));
+        }
 
         const baseDir = botDir(bot);
         if (!fs.existsSync(baseDir)) return res.json({ files: [] });
@@ -1198,6 +1260,10 @@ router.get("/:id/fs/read", requireOwnership, async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        if (executor.isRemote(bot)) {
+            return res.json(await executor.fsRead(bot, req.query.path, req.query.binary === "true"));
+        }
 
         const baseDir = botDir(bot);
         let targetFile;
@@ -1255,6 +1321,14 @@ router.put("/:id/fs/write", requireOwnership, async (req, res, next) => {
             return res.status(400).json({ error: "path and content are required" });
         }
 
+        // Check if this is a binary file based on extension or explicit binary flag
+        const isBinaryFile = binary === true || /\.(db|sqlite|sqlite3|wasm|bin|exe|dll|so|dylib)$/i.test(reqPath);
+
+        if (executor.isRemote(bot)) {
+            await executor.fsWrite(bot, reqPath, content, isBinaryFile);
+            return res.json({ message: "File saved successfully" });
+        }
+
         const baseDir = botDir(bot);
         let targetFile;
         try {
@@ -1262,9 +1336,6 @@ router.put("/:id/fs/write", requireOwnership, async (req, res, next) => {
         } catch (e) {
             return res.status(400).json({ error: "Invalid path" });
         }
-
-        // Check if this is a binary file based on extension or explicit binary flag
-        const isBinaryFile = binary === true || /\.(db|sqlite|sqlite3|wasm|bin|exe|dll|so|dylib)$/i.test(reqPath);
 
         if (isBinaryFile && typeof content === 'string') {
             // Convert base64 back to buffer for binary files
@@ -1283,29 +1354,13 @@ router.put("/:id/fs/write", requireOwnership, async (req, res, next) => {
 
 const multer = require("multer");
 
-const storage = multer.diskStorage({
-    destination: async (req, file, cb) => {
-        try {
-            const bot = await db.findOne("bots", { _id: req.params.id });
-            if (!bot) return cb(new Error("Bot not found"));
-            
-            const baseDir = botDir(bot);
-            const targetDir = resolveSafePath(baseDir, req.body.path || "");
-            
-            if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
-                return cb(new Error("Directory not found"));
-            }
-            cb(null, targetDir);
-        } catch (e) {
-            cb(e);
-        }
-    },
-    filename: (req, file, cb) => {
-        cb(null, file.originalname);
-    }
+// Memory storage: the destination depends on the bot's node, which is only
+// known after the multipart body is parsed — buffer first, then write locally
+// or forward to the agent.
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 },
 });
-
-const upload = multer({ storage });
 
 /**
  * POST /api/bots/:id/fs/create
@@ -1320,6 +1375,11 @@ router.post("/:id/fs/create", requireOwnership, async (req, res, next) => {
         const { path: reqPath, type } = req.body;
         if (!reqPath || !type) {
             return res.status(400).json({ error: "path and type are required" });
+        }
+
+        if (executor.isRemote(bot)) {
+            await executor.fsCreate(bot, reqPath, type === "dir");
+            return res.json({ message: `${type === 'dir' ? 'Directory' : 'File'} created successfully` });
         }
 
         const baseDir = botDir(bot);
@@ -1361,6 +1421,11 @@ router.delete("/:id/fs/delete", requireOwnership, async (req, res, next) => {
             return res.status(400).json({ error: "path is required" });
         }
 
+        if (executor.isRemote(bot)) {
+            await executor.fsDelete(bot, reqPath);
+            return res.json({ message: "Deleted successfully" });
+        }
+
         const baseDir = botDir(bot);
         let targetPath;
         try {
@@ -1397,6 +1462,11 @@ router.put("/:id/fs/rename", requireOwnership, async (req, res, next) => {
         const { oldPath, newPath } = req.body;
         if (!oldPath || !newPath) {
             return res.status(400).json({ error: "oldPath and newPath are required" });
+        }
+
+        if (executor.isRemote(bot)) {
+            await executor.fsRename(bot, oldPath, newPath);
+            return res.json({ message: "Renamed successfully" });
         }
 
         const baseDir = botDir(bot);
@@ -1437,6 +1507,28 @@ router.post("/:id/fs/upload", requireOwnership, upload.single("file"), async (re
         if (!req.file) {
             return res.status(400).json({ error: "No file uploaded" });
         }
+
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        if (executor.isRemote(bot)) {
+            await executor.fsUpload(bot, req.body.path || "", req.file.buffer, req.file.originalname);
+            return res.json({ message: "File uploaded successfully", file: req.file.originalname });
+        }
+
+        const baseDir = botDir(bot);
+        let targetDir;
+        try {
+            targetDir = resolveSafePath(baseDir, req.body.path || "");
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid path" });
+        }
+
+        if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+            return res.status(400).json({ error: "Directory not found" });
+        }
+
+        fs.writeFileSync(path.join(targetDir, req.file.originalname), req.file.buffer);
         res.json({ message: "File uploaded successfully", file: req.file.originalname });
     } catch (err) {
         next(err);

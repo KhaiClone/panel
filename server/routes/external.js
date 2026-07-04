@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const db = require("../db");
-const pm2Service = require("../services/pm2Service");
+const executor = require("../services/executor");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  External API for Discord Bot (ArnTo-Auto)
@@ -21,10 +21,11 @@ router.get("/bots", async (req, res, next) => {
         const bots = await db.find("bots");
         const userBots = bots.filter(b => b.buyerID === buyerID);
 
-        // Fetch live PM2 status for each bot in parallel
+        // Fetch live PM2 status for each bot (one list fetch per node)
+        const resolver = await executor.getStatusResolver(userBots);
         const enriched = await Promise.all(
             userBots.map(async (bot) => {
-                const live = await pm2Service.getBotStatus(bot.pm2Name);
+                const live = await resolver.statusFor(bot);
                 return { ...bot, live };
             }),
         );
@@ -52,21 +53,11 @@ router.post("/bots/:id/action", async (req, res, next) => {
 
         let output;
         if (action === "start") {
-            const path = require("path");
-            const botDir = bot.source === "local" && bot.localPath 
-                ? bot.localPath 
-                : path.join(process.env.BOTS_ROOT_DIR, bot.buyerID, bot.botID);
-                
-            output = await pm2Service.startBot(
-                bot.pm2Name,
-                botDir,
-                bot.startScript,
-                bot.maxMemory || null,
-            );
+            output = await executor.startBot(bot);
         } else if (action === "stop") {
-            output = await pm2Service.stopBot(bot.pm2Name);
+            output = await executor.stopBot(bot);
         } else if (action === "restart") {
-            output = await pm2Service.restartBot(bot.pm2Name);
+            output = await executor.restartBot(bot);
         } else {
             return res.status(400).json({ error: "Invalid action" });
         }
@@ -149,9 +140,9 @@ router.post("/bots/:id/upgrade", async (req, res, next) => {
         );
 
         // Apply new limit to PM2 if running
-        const live = await pm2Service.getBotStatus(bot.pm2Name);
+        const live = await executor.getBotStatus(bot);
         if (live.status === "online") {
-            await pm2Service.setMemoryLimit(bot.pm2Name, maxMemoryString);
+            await executor.setMemoryLimit(bot, maxMemoryString);
         }
 
         res.json({ message: "Bot upgraded successfully", bot: updated });

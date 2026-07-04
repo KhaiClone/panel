@@ -1,18 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const path = require("path");
-const fs = require("fs");
 
 const db = require("../db");
-const pm2Service = require("../services/pm2Service");
-const gitService = require("../services/gitService");
-
-const BOTS_ROOT = () => process.env.BOTS_ROOT_DIR;
-
-const botDir = (bot) => {
-    if (bot.source === "local" && bot.localPath) return bot.localPath;
-    return path.join(BOTS_ROOT(), bot.buyerID, bot.botID);
-};
+const executor = require("../services/executor");
 
 const getProxyConf = async (bot) => {
     if (!bot.proxyEnabled) return null;
@@ -58,14 +48,13 @@ router.post("/:action", async (req, res, next) => {
                         if (bot.expiresAt && bot.expiresAt <= Date.now()) {
                             throw new Error("Bot is expired");
                         }
-                        const dir = botDir(bot);
                         const proxyConf = await getProxyConf(bot);
-                        await pm2Service.startBot(bot.pm2Name, dir, bot.startScript, bot.maxMemory || null, proxyConf);
+                        await executor.startBot(bot, proxyConf);
                         return "Started successfully";
                     }
 
                     case "stop": {
-                        await pm2Service.stopBot(bot.pm2Name);
+                        await executor.stopBot(bot);
                         return "Stopped successfully";
                     }
 
@@ -74,15 +63,13 @@ router.post("/:action", async (req, res, next) => {
                             throw new Error("Bot is expired");
                         }
                         // Use startBot so the wrapper script is regenerated with current proxy settings
-                        const dir = botDir(bot);
                         const proxyConf = await getProxyConf(bot);
-                        await pm2Service.startBot(bot.pm2Name, dir, bot.startScript, bot.maxMemory || null, proxyConf);
+                        await executor.startBot(bot, proxyConf);
                         return "Restarted successfully";
                     }
 
                     case "install": {
-                        const dir = botDir(bot);
-                        await gitService.installDeps(dir, bot.installCommand);
+                        await executor.installDeps(bot, bot.installCommand);
                         return "Dependencies installed";
                     }
 
@@ -90,27 +77,23 @@ router.post("/:action", async (req, res, next) => {
                         if (bot.expiresAt && bot.expiresAt <= Date.now()) {
                             throw new Error("Bot is expired");
                         }
-                        const dir = botDir(bot);
                         let pullOutput = "(skipped — no git remote)";
                         try {
-                            pullOutput = await gitService.pullRepo(dir);
+                            pullOutput = await executor.pullRepo(bot);
                         } catch (err) {
                             pullOutput = `(pull failed or skipped: ${err.message || 'unknown error'})`;
                         }
-                        await gitService.installDeps(dir, bot.installCommand);
-                        
+                        await executor.installDeps(bot, bot.installCommand);
+
                         const proxyConf = await getProxyConf(bot);
-                        await pm2Service.startBot(bot.pm2Name, dir, bot.startScript, bot.maxMemory || null, proxyConf);
+                        await executor.startBot(bot, proxyConf);
                         return "Updated and restarted";
                     }
 
                     case "remove": {
-                        await pm2Service.deleteBot(bot.pm2Name);
+                        await executor.deleteBot(bot);
                         if (bot.source !== "local") {
-                            const dir = botDir(bot);
-                            if (fs.existsSync(dir)) {
-                                fs.rmSync(dir, { recursive: true, force: true });
-                            }
+                            await executor.removeBotFiles(bot);
                         }
                         await db.findOneAndDelete("bots", { _id: botId });
                         return "Removed successfully";

@@ -19,6 +19,7 @@ const tagRoutes = require("./routes/tags");
 const notificationRoutes = require("./routes/notifications");
 const userRoutes = require("./routes/users");
 const slotRoutes = require("./routes/slots");
+const nodeRoutes = require("./routes/nodes");
 const { authMiddleware } = require("./middleware/auth");
 const { adminOnly } = require("./middleware/adminOnly");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
@@ -26,6 +27,7 @@ const errorHandler = require("./middleware/errorHandler");
 const expiryService = require("./services/expiryService");
 const backupService = require("./services/backupService");
 const memoryMonitorService = require("./services/memoryMonitorService");
+const nodeService = require("./services/nodeService");
 const db = require("./db");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +79,21 @@ async function seedAdminUser() {
                 console.log(`[Server] Migrated ${migrated} existing bot(s) → ownerId: ${admin._id}`);
             }
         }
+
+        // Migrate existing bots that have no nodeId → they run on this VPS
+        {
+            const allBots = await db.find("bots");
+            let nodeMigrated = 0;
+            for (const bot of allBots) {
+                if (!bot.nodeId) {
+                    await db.findOneAndUpdate("bots", { _id: bot._id }, { nodeId: nodeService.LOCAL_NODE_ID });
+                    nodeMigrated++;
+                }
+            }
+            if (nodeMigrated > 0) {
+                console.log(`[Server] Migrated ${nodeMigrated} existing bot(s) → nodeId: "local"`);
+            }
+        }
     } catch (err) {
         console.error("[Server] Seed error:", err.message);
     }
@@ -120,6 +137,7 @@ app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
 app.use("/api/admin/users", authMiddleware, userRoutes);
 app.use("/api/admin/slots", authMiddleware, slotRoutes);
+app.use("/api/nodes", authMiddleware, adminOnly, nodeRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -144,6 +162,7 @@ app.use(errorHandler);
 expiryService.start();
 backupService.start();
 memoryMonitorService.start();
+nodeService.startHealthPolling();
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Listen + Seed
