@@ -78,12 +78,28 @@ const checkExpiry = async () => {
                     await sendExpirySuspended(bot);
                     await createNotification(`Bot "${bot.name}" has expired and was stopped.`, "expired");
                 }
-            } else if (WARNING_HOURS.includes(hoursLeft)) {
-                // ── WARNING: notify but keep bot running ───────────────────────────
-                console.log(
-                    `[Expiry] Sending ${hoursLeft}h warning for bot "${bot.botID}"`,
-                );
-                await sendExpiryWarning(bot, hoursLeft);
+            } else {
+                // ── WARNING: fire each milestone at most once ──────────────────────
+                // Previously this used WARNING_HOURS.includes(hoursLeft), which
+                // re-sent on every checkExpiry() run inside the same hour window —
+                // and checkExpiry() runs immediately on every panel restart, so a
+                // few restarts (e.g. during a deploy) produced duplicate warnings.
+                // Now each threshold that has been reached is recorded on the bot
+                // and never fires twice.
+                const warned = Array.isArray(bot.warnedHours) ? bot.warnedHours : [];
+                const reached = WARNING_HOURS.filter((h) => hoursLeft <= h);
+                const unwarned = reached.filter((h) => !warned.includes(h));
+
+                if (unwarned.length > 0) {
+                    // Announce the most urgent milestone reached (e.g. 24 over 72/47)
+                    const milestone = Math.min(...reached);
+                    console.log(
+                        `[Expiry] Sending ${milestone}h warning for bot "${bot.botID}" (${hoursLeft}h left)`,
+                    );
+                    await sendExpiryWarning(bot, milestone);
+                    // Record every reached threshold so older ones never re-fire either
+                    await db.findOneAndUpdate("bots", { _id: bot._id }, { warnedHours: reached });
+                }
             }
         }
 

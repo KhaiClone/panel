@@ -699,9 +699,11 @@ router.put("/:id", requireOwnership, async (req, res, next) => {
         if (currentPrice !== undefined) updates.currentPrice = currentPrice || null;
         if (tags !== undefined) updates.tags = Array.isArray(tags) ? tags : [];
         if (expiresAt !== undefined) {
-            updates.expiresAt = expiresAt
-                ? new Date(expiresAt).getTime()
-                : null;
+            const newExpiry = expiresAt ? new Date(expiresAt).getTime() : null;
+            updates.expiresAt = newExpiry;
+            // Expiry changed → clear warning history so milestones re-fire as the
+            // new deadline approaches (and don't linger from the old one).
+            if (newExpiry !== bot.expiresAt) updates.warnedHours = [];
         }
 
         const updated = await db.findOneAndUpdate(

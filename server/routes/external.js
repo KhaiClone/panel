@@ -94,7 +94,8 @@ router.post("/bots/:id/extend", async (req, res, next) => {
         const updated = await db.findOneAndUpdate(
             "bots",
             { _id: req.params.id },
-            { expiresAt: newExpiry }
+            // Reset warning history so milestones re-fire against the new deadline
+            { expiresAt: newExpiry, warnedHours: [] }
         );
 
         res.json({ message: "Bot extended successfully", bot: updated });
