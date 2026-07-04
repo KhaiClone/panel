@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import CreateBotModal from "../components/CreateBotModal";
 import GroupManager from "../components/GroupManager";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import NodeFilter, { matchNode } from "../components/NodeFilter";
 
 // ── Status styles ─────────────────────────────────────────────────────────────
 const STATUS_STYLES = {
@@ -171,10 +172,12 @@ function StatCard({ label, value, icon, color, gradient }) {
 // ── SitesPage ─────────────────────────────────────────────────────────────────
 export default function SitesPage() {
     const { bots: allBots, groups, loading, refresh: fetchAll } = useData();
+    const [searchParams] = useSearchParams();
     const [showCreate, setShowCreate] = useState(false);
     const [showGroups, setShowGroups] = useState(false);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
+    const [nodeFilter, setNodeFilter] = useState(searchParams.get("node") || "all");
 
     // Only website projects
     const sites = allBots.filter(b => b.projectType === "website");
@@ -191,7 +194,7 @@ export default function SitesPage() {
         const mf = filter === "all" ||
                    (filter === "online"  && s.live?.status === "online") ||
                    (filter === "stopped" && s.live?.status !== "online");
-        return ms && mf;
+        return ms && mf && matchNode(s, nodeFilter);
     });
 
     return (
@@ -256,6 +259,7 @@ export default function SitesPage() {
                         <button key={f} className={`tab-item ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)} style={{ textTransform: "capitalize" }}>{f}</button>
                     ))}
                 </div>
+                <NodeFilter bots={sites} value={nodeFilter} onChange={setNodeFilter} />
                 <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--text-dim)", fontWeight: 500 }}>
                     {visible.length} / {sites.length}
                 </span>

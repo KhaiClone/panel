@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import StatsWidget from "../components/StatsWidget";
 import BotCard from "../components/BotCard";
 import CreateBotModal from "../components/CreateBotModal";
 import GroupManager from "../components/GroupManager";
+import NodeFilter, { matchNode } from "../components/NodeFilter";
 
 /* ─── Enhanced Stat Card ──────────────────────────────────────────── */
 function StatCard({ label, value, icon, color, gradient }) {
@@ -148,10 +150,12 @@ function SkeletonCard() {
 /* ─── Dashboard ───────────────────────────────────────────────────── */
 export default function Dashboard() {
     const { bots: allBots, groups, tags, loading, refresh: fetchAll } = useData();
+    const [searchParams] = useSearchParams();
     const [showCreate, setShowCreate] = useState(false);
     const [showGroups, setShowGroups] = useState(false);
     const [search, setSearch]         = useState("");
     const [filter, setFilter]         = useState("all");
+    const [nodeFilter, setNodeFilter] = useState(searchParams.get("node") || "all");
     const [selectedTags, setSelectedTags] = useState([]);
 
     // Only bots and services — websites live under /sites
@@ -176,7 +180,8 @@ export default function Dashboard() {
                    (filter === "stopped" && b.live?.status !== "online");
         const mt = selectedTags.length === 0 ||
                    selectedTags.some(tid => (b.tags || []).includes(tid));
-        return ms && mf && mt;
+        const mn = matchNode(b, nodeFilter);
+        return ms && mf && mt && mn;
     });
 
     const toggleTag = (tagId) =>
@@ -189,7 +194,7 @@ export default function Dashboard() {
         .map(g => ({ group: g, bots: visible.filter(b => b.groupId === g._id) }))
         .filter(s => s.bots.length > 0);
     const ungrouped   = visible.filter(b => !b.groupId || !groupMap[b.groupId]);
-    const isFiltering = search.trim() !== "" || filter !== "all" || selectedTags.length > 0;
+    const isFiltering = search.trim() !== "" || filter !== "all" || selectedTags.length > 0 || nodeFilter !== "all";
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1600 }}>
@@ -322,6 +327,9 @@ export default function Dashboard() {
                         </button>
                     ))}
                 </div>
+
+                {/* Node filter (appears once bots span more than one node) */}
+                <NodeFilter bots={bots} value={nodeFilter} onChange={setNodeFilter} />
 
                 {/* Count */}
                 <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--text-dim)", fontWeight: 500 }}>

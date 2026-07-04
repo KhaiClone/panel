@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/client";
+import NodeFilter, { matchNode } from "../components/NodeFilter";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmtBytes = (b) => {
@@ -88,11 +89,15 @@ const TYPE_META = {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function OverviewPage() {
-    const { stats, bots } = useData();
+    const { stats, bots: allBots } = useData();
     const { isAdmin } = useAuth();
     const [domains, setDomains] = useState([]);
     const [myInfo, setMyInfo] = useState(null); // slot + usage for regular users
+    const [nodeFilter, setNodeFilter] = useState("all");
     const navigate = useNavigate();
+
+    // Node filter applies to every count/list on this page
+    const bots = allBots.filter(b => matchNode(b, nodeFilter));
 
     useEffect(() => {
         api.get("/bots/domains").then(r => setDomains(r.data)).catch(() => {});
@@ -123,9 +128,12 @@ export default function OverviewPage() {
         <div className="page fade-in" style={{ maxWidth: 1200 }}>
 
             {/* ── Page title ── */}
-            <div style={{ marginBottom: 28 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Server Overview</h1>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Real-time health and resource summary of your VPS</p>
+            <div className="mobile-wrap" style={{ marginBottom: 28, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                <div>
+                    <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Server Overview</h1>
+                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Real-time health and resource summary of your VPS</p>
+                </div>
+                <NodeFilter bots={allBots} value={nodeFilter} onChange={setNodeFilter} />
             </div>
 
             {/* ── Slot info (regular users only) ── */}

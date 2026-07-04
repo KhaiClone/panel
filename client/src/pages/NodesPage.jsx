@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { useData } from "../context/DataContext";
+import { nodeKey } from "../components/NodeFilter";
 
 const fmtGB = (bytes) => (bytes == null ? "—" : `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`);
 
@@ -10,6 +13,44 @@ const STATUS_STYLES = {
     disabled: { color: "var(--text-dim)", bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.1)", label: "Disabled" },
     unknown:  { color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)", label: "Checking…" },
 };
+
+const TYPE_ICON = { discord: "🤖", website: "🌐", service: "⚙️" };
+
+function NodeBotList({ nodeBots, navigate }) {
+    const MAX_ROWS = 6;
+    return (
+        <div style={{ borderTop: "1px solid var(--border-light)" }}>
+            {nodeBots.slice(0, MAX_ROWS).map((bot) => {
+                const isOnline = bot.live?.status === "online";
+                const ramMB = bot.live?.memory ? Math.round(bot.live.memory / 1_048_576) : 0;
+                return (
+                    <div
+                        key={bot._id}
+                        onClick={() => navigate(`/${bot.projectType === "website" ? "sites" : "bots"}/${bot._id}`)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 18px", borderBottom: "1px solid var(--border-light)", cursor: "pointer", transition: "background 0.15s" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                        <span style={{ fontSize: 14, flexShrink: 0 }}>{TYPE_ICON[bot.projectType] || "📦"}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bot.name}</p>
+                            <p className="mono" style={{ margin: 0, fontSize: 10, color: "var(--text-dim)" }}>{bot.buyerID}</p>
+                        </div>
+                        {isOnline && ramMB > 0 && (
+                            <span className="mono" style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>{ramMB} MB</span>
+                        )}
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: isOnline ? "var(--success)" : "var(--danger)", flexShrink: 0 }} />
+                    </div>
+                );
+            })}
+            {nodeBots.length > MAX_ROWS && (
+                <div style={{ padding: "8px 18px", fontSize: 11, color: "var(--text-dim)", textAlign: "center" }}>
+                    +{nodeBots.length - MAX_ROWS} more…
+                </div>
+            )}
+        </div>
+    );
+}
 
 function UsageBar({ label, pct, detail }) {
     const color = pct == null ? "var(--text-dim)" : pct > 85 ? "var(--danger)" : pct > 60 ? "var(--warning)" : "var(--success)";
@@ -110,11 +151,14 @@ function NodeModal({ node, onClose, onSaved }) {
 }
 
 export default function NodesPage() {
+    const navigate = useNavigate();
+    const { bots } = useData();
     const [nodes, setNodes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [modal, setModal] = useState(null); // null | { node } | { node: null } for create
     const [confirmDelete, setConfirmDelete] = useState(null);
     const [testResult, setTestResult] = useState({}); // nodeId → message
+    const [expanded, setExpanded] = useState({}); // nodeId → bool (bot list open)
 
     const fetchNodes = useCallback(async () => {
         try {
@@ -170,6 +214,8 @@ export default function NodesPage() {
                     {nodes.map((node) => {
                         const s = STATUS_STYLES[node.status] || STATUS_STYLES.unknown;
                         const st = node.stats;
+                        const nodeBots = bots.filter((b) => nodeKey(b) === node._id);
+                        const isOpen = !!expanded[node._id];
                         return (
                             <div key={node._id} className="card" style={{ padding: 0, overflow: "hidden" }}>
                                 <div style={{ height: 3, background: `linear-gradient(90deg, ${s.color}, transparent)` }} />
@@ -204,8 +250,19 @@ export default function NodesPage() {
                                         </div>
                                     )}
 
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
-                                        <span>{node.botCount} bot{node.botCount === 1 ? "" : "s"} on this node</span>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--text-muted)" }}>
+                                        <button
+                                            onClick={() => setExpanded((e) => ({ ...e, [node._id]: !isOpen }))}
+                                            disabled={nodeBots.length === 0}
+                                            style={{ background: "none", border: "none", padding: 0, cursor: nodeBots.length ? "pointer" : "default", color: nodeBots.length ? "var(--accent-hover)" : "var(--text-muted)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}
+                                        >
+                                            {nodeBots.length > 0 && (
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 10, height: 10, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
+                                                    <polyline points="9 18 15 12 9 6" />
+                                                </svg>
+                                            )}
+                                            {node.botCount} bot{node.botCount === 1 ? "" : "s"} on this node
+                                        </button>
                                         {st?.processCount != null && <span>{st.processCount} PM2 processes</span>}
                                     </div>
 
@@ -215,6 +272,22 @@ export default function NodesPage() {
                                         </div>
                                     )}
                                 </div>
+
+                                {isOpen && nodeBots.length > 0 && (
+                                    <>
+                                        <NodeBotList nodeBots={nodeBots} navigate={navigate} />
+                                        <div style={{ display: "flex", gap: 8, padding: "8px 18px", justifyContent: "center" }}>
+                                            <button className="btn-ghost" style={{ padding: "4px 12px", fontSize: 11 }} onClick={() => navigate(`/bots?node=${node._id}`)}>
+                                                View in Bots →
+                                            </button>
+                                            {nodeBots.some((b) => b.projectType === "website") && (
+                                                <button className="btn-ghost" style={{ padding: "4px 12px", fontSize: 11 }} onClick={() => navigate(`/sites?node=${node._id}`)}>
+                                                    View in Sites →
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
 
                                 {!node.local && (
                                     <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border-light)", display: "flex", gap: 6, background: "rgba(0,0,0,0.15)" }}>
