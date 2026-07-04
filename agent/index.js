@@ -13,6 +13,7 @@ app.use(express.json({ limit: "15mb" }));
 app.use(auth);
 
 app.use("/", require("./routes/system"));
+app.use("/self", require("./routes/self"));
 app.use("/pm2", require("./routes/pm2"));
 app.use("/git", require("./routes/git"));
 app.use("/fs", require("./routes/fs"));

@@ -15,6 +15,7 @@ import ProxyPage from "./pages/ProxyPage";
 import TagsPage from "./pages/TagsPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import NodesPage from "./pages/NodesPage";
+import NodeDetailPage from "./pages/NodeDetailPage";
 import Layout from "./components/Layout";
 
 function Spinner() {
@@ -63,6 +64,7 @@ export default function App() {
                             <Route path="proxy"         element={<AdminRoute><ProxyPage /></AdminRoute>} />
                             <Route path="system"        element={<AdminRoute><SystemPage /></AdminRoute>} />
                             <Route path="nodes"         element={<AdminRoute><NodesPage /></AdminRoute>} />
+                            <Route path="nodes/:id"     element={<AdminRoute><NodeDetailPage /></AdminRoute>} />
                             <Route path="admin/users"   element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
                             {/* Legacy redirect */}
                             <Route path="dashboard"     element={<Navigate to="/bots" replace />} />

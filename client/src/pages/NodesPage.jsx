@@ -291,6 +291,7 @@ export default function NodesPage() {
 
                                 {!node.local && (
                                     <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border-light)", display: "flex", gap: 6, background: "rgba(0,0,0,0.15)" }}>
+                                        <button className="btn-primary" style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => navigate(`/nodes/${node._id}`)}>Details</button>
                                         <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => handleTest(node)}>Test</button>
                                         <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} onClick={() => setModal({ node })}>Edit</button>
                                         <div style={{ flex: 1 }} />

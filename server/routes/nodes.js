@@ -125,6 +125,51 @@ router.delete("/:id", async (req, res, next) => {
     }
 });
 
+// ── Agent detail proxies ─────────────────────────────────────────────────────
+// These forward to the node's agent — used by the NodeDetail page and the
+// per-node System Monitor view.
+
+const withNode = (handler) => async (req, res, next) => {
+    try {
+        const node = await db.findOne("nodes", { _id: req.params.id });
+        if (!node) return res.status(404).json({ error: "Node not found" });
+        await handler(node, req, res);
+    } catch (err) {
+        next(err);
+    }
+};
+
+/** GET /api/nodes/:id/stats — live stats of one node (cached ~10s) */
+router.get("/:id/stats", withNode(async (node, req, res) => {
+    res.json(await nodeService.getNodeStats(node._id));
+}));
+
+/** GET /api/nodes/:id/info — agent self-description */
+router.get("/:id/info", withNode(async (node, req, res) => {
+    res.json(await nodeService.agentRequest(node, "get", "/self/info", { timeout: 15_000 }));
+}));
+
+/** GET /api/nodes/:id/logs?lines= — the agent's own PM2 logs */
+router.get("/:id/logs", withNode(async (node, req, res) => {
+    const lines = Math.min(parseInt(req.query.lines) || 100, 500);
+    res.json(await nodeService.agentRequest(node, "get", "/self/logs", { params: { lines }, timeout: 30_000 }));
+}));
+
+/** GET /api/nodes/:id/processes — full PM2 list on the node */
+router.get("/:id/processes", withNode(async (node, req, res) => {
+    res.json(await nodeService.agentRequest(node, "get", "/pm2/list", { timeout: 15_000 }));
+}));
+
+/** POST /api/nodes/:id/restart-agent */
+router.post("/:id/restart-agent", withNode(async (node, req, res) => {
+    res.json(await nodeService.agentRequest(node, "post", "/self/restart", { timeout: 15_000 }));
+}));
+
+/** POST /api/nodes/:id/update-agent — git pull + npm install + restart on the node */
+router.post("/:id/update-agent", withNode(async (node, req, res) => {
+    res.json(await nodeService.agentRequest(node, "post", "/self/update", { timeout: 400_000 }));
+}));
+
 /**
  * POST /api/nodes/:id/test
  * Live connection + stats check.

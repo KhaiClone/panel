@@ -104,34 +104,85 @@ export default function SystemPage() {
     const [stats, setStats] = useState(null);
     const [activeTab, setActiveTab] = useState("CPU");
     const [trendModal, setTrendModal] = useState(null);
+    const [nodesList, setNodesList] = useState([]);
+    const [nodeSel, setNodeSel] = useState("local");
     const [history, setHistory] = useState(() => {
         try { const saved = localStorage.getItem("bp_sys_history"); return saved ? JSON.parse(saved) : []; }
         catch { return []; }
     });
 
-
+    // Node tabs (only rendered when a second node exists)
     useEffect(() => {
-        // Page-local refresh: re-read from localStorage every 4s so UI stays live
-        const sync = () => {
-            try {
-                const saved = localStorage.getItem("bp_sys_history");
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    if (parsed.length > 0) {
-                        setHistory(parsed);
-                        setStats(parsed[parsed.length - 1]);
-                    }
-                }
-            } catch { /* ignore */ }
-        };
-        sync(); // immediate
-        const int = setInterval(sync, 4000);
+        const fetchNodes = () => api.get("/nodes").then(r => setNodesList(r.data)).catch(() => {});
+        fetchNodes();
+        const int = setInterval(fetchNodes, 30_000);
         return () => clearInterval(int);
     }, []);
+
+    useEffect(() => {
+        if (nodeSel === "local") {
+            // Local: re-read from the global poller's localStorage every 4s
+            const sync = () => {
+                try {
+                    const saved = localStorage.getItem("bp_sys_history");
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (parsed.length > 0) {
+                            setHistory(parsed);
+                            setStats(parsed[parsed.length - 1]);
+                        }
+                    }
+                } catch { /* ignore */ }
+            };
+            sync();
+            const int = setInterval(sync, 4000);
+            return () => clearInterval(int);
+        }
+
+        // Remote node: poll its stats through the panel while this page is open;
+        // history is kept per node so sparklines/trends work the same way.
+        const key = `bp_sys_history_${nodeSel}`;
+        let hist = [];
+        try { hist = JSON.parse(localStorage.getItem(key)) || []; } catch { /* fresh */ }
+        setHistory(hist);
+        setStats(hist.length > 0 ? hist[hist.length - 1] : null);
+
+        const poll = () => {
+            api.get(`/nodes/${nodeSel}/stats`).then(r => {
+                const entry = { ...r.data, _ts: Date.now() };
+                setStats(entry);
+                setHistory(prev => {
+                    const next = [...prev.slice(-119), entry];
+                    try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* storage full */ }
+                    return next;
+                });
+            }).catch(() => {});
+        };
+        poll();
+        const int = setInterval(poll, 4000);
+        return () => clearInterval(int);
+    }, [nodeSel]);
+
+    const nodeTabs = nodesList.length > 1 && (
+        <div className="tab-bar" style={{ display: "inline-flex" }}>
+            {nodesList.map(n => (
+                <button
+                    key={n._id}
+                    className={`tab-item${nodeSel === n._id ? " active" : ""}`}
+                    onClick={() => setNodeSel(n._id)}
+                    style={{ fontSize: 13 }}
+                    title={n.local ? "Panel VPS" : `${n.host}:${n.port}`}
+                >
+                    ⬡ {n.local ? "Local" : n.name}
+                </button>
+            ))}
+        </div>
+    );
 
     if (!stats) {
         return (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 16 }}>
+                {nodeTabs}
                 <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
                 <p style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>Establishing telemetry connection…</p>
             </div>
@@ -157,7 +208,9 @@ export default function SystemPage() {
                 <div className="min-w-0">
                     <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>System Monitor</h1>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
-                        <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>Host server resource utilization.</p>
+                        <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
+                            {nodeSel === "local" ? "Host server resource utilization." : `Node "${nodesList.find(n => n._id === nodeSel)?.name || nodeSel}" resource utilization.`}
+                        </p>
                         {stats.hostname && (
                             <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--bg-input)", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)" }}>
                                 {stats.hostname}
@@ -165,6 +218,7 @@ export default function SystemPage() {
                         )}
                     </div>
                 </div>
+                {nodeTabs}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 99 }}>
                     <span className="status-dot" style={{ width: 8, height: 8, background: "var(--success)" }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: "var(--success)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Live Updates</span>

@@ -94,6 +94,7 @@ export default function OverviewPage() {
     const [domains, setDomains] = useState([]);
     const [myInfo, setMyInfo] = useState(null); // slot + usage for regular users
     const [nodeFilter, setNodeFilter] = useState("all");
+    const [nodes, setNodes] = useState([]); // admin: node list with live stats
     const navigate = useNavigate();
 
     // Node filter applies to every count/list on this page
@@ -103,6 +104,11 @@ export default function OverviewPage() {
         api.get("/bots/domains").then(r => setDomains(r.data)).catch(() => {});
         if (!isAdmin) {
             api.get("/admin/users/me").then(r => setMyInfo(r.data)).catch(() => {});
+        } else {
+            const fetchNodes = () => api.get("/nodes").then(r => setNodes(r.data)).catch(() => {});
+            fetchNodes();
+            const int = setInterval(fetchNodes, 10_000);
+            return () => clearInterval(int);
         }
     }, [isAdmin]);
 
@@ -115,10 +121,17 @@ export default function OverviewPage() {
         return acc;
     }, {});
 
-    const cpu  = stats?.cpu;
-    const mem  = stats?.memory;
-    const disk = stats?.disk;
-    const net  = stats?.network;
+    // Resource rings follow the node filter: a specific remote node shows that
+    // node's stats (from /api/nodes); "all"/"local" keep the panel VPS stats.
+    const selectedNode = nodeFilter !== "all" && nodeFilter !== "local"
+        ? nodes.find(n => n._id === nodeFilter)
+        : null;
+    const effStats = selectedNode ? selectedNode.stats : stats;
+
+    const cpu  = effStats?.cpu;
+    const mem  = effStats?.memory;
+    const disk = effStats?.disk;
+    const net  = effStats?.network;
 
     const cpuColor  = !cpu  ? "var(--accent)" : cpu.usagePercent  > 80 ? "var(--danger)" : cpu.usagePercent  > 50 ? "var(--warning)" : "var(--success)";
     const memColor  = !mem  ? "#60A5FA"       : mem.usedPercent   > 85 ? "var(--danger)" : mem.usedPercent   > 65 ? "var(--warning)" : "#60A5FA";
@@ -182,7 +195,9 @@ export default function OverviewPage() {
             {isAdmin && (
             <div className="card" style={{ padding: "28px 32px", marginBottom: 24 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-                    <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>VPS Resources</h2>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>
+                        VPS Resources{selectedNode ? ` — ⬡ ${selectedNode.name}` : ""}
+                    </h2>
                     {cpu?.model && <span style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "monospace" }}>{cpu.model}</span>}
                 </div>
 
