@@ -152,7 +152,27 @@ function GitHubSection() {
         try { const { data } = await api.get("/github/git-config"); setGitConfig(data); setConfigForm(data); } catch { /* ignore */ }
     }, []);
 
-    useEffect(() => { fetchKeys(); fetchGitConfig(); }, [fetchKeys, fetchGitConfig]);
+    const [syncStatus, setSyncStatus] = useState([]);
+    const [syncing, setSyncing] = useState({}); // nodeId → bool
+
+    const fetchSyncStatus = useCallback(async () => {
+        try {
+            const { data } = await api.get("/github/sync-status");
+            // Only remote nodes are relevant (local is always the source of truth)
+            setSyncStatus(data);
+        } catch { /* nodes optional */ }
+    }, []);
+
+    useEffect(() => { fetchKeys(); fetchGitConfig(); fetchSyncStatus(); }, [fetchKeys, fetchGitConfig, fetchSyncStatus]);
+
+    const handleSyncNode = async (nodeId) => {
+        setSyncing(s => ({ ...s, [nodeId]: true }));
+        try {
+            await api.post(`/github/sync/${nodeId}`);
+            await fetchSyncStatus();
+        } catch { /* surfaced by status refresh */ }
+        finally { setSyncing(s => ({ ...s, [nodeId]: false })); }
+    };
 
     const handleTest = async (keyName = null) => {
         const id = keyName || "__default__";
@@ -186,14 +206,14 @@ function GitHubSection() {
     };
 
     const handleDelete = async (keyName) => {
-        try { await api.delete(`/github/keys/${keyName}`); setKeys(k => k.filter(key => key.name !== keyName)); setDeleteConfirm(null); } catch { /* ignore */ }
+        try { await api.delete(`/github/keys/${keyName}`); setKeys(k => k.filter(key => key.name !== keyName)); setDeleteConfirm(null); fetchSyncStatus(); } catch { /* ignore */ }
     };
 
     const handleSaveConfig = async () => {
         setConfigSaving(true);
         try {
             const { data } = await api.put("/github/git-config", configForm);
-            setGitConfig(data); setEditingConfig(false);
+            setGitConfig(data); setEditingConfig(false); fetchSyncStatus();
         } catch { /* ignore */ }
         finally { setConfigSaving(false); }
     };
@@ -205,7 +225,7 @@ function GitHubSection() {
             {deleteConfirm && (
                 <ConfirmModal title={`Delete Key "${deleteConfirm}"`} message={`This will permanently delete the SSH key pair and its SSH config entry.\n\n⚠️ Any GitHub repos using this key will no longer be accessible.`} confirmText="Delete Key" onConfirm={() => handleDelete(deleteConfirm)} onCancel={() => setDeleteConfirm(null)} />
             )}
-            {showAddModal && <AddKeyModal onClose={() => setShowAddModal(false)} onCreated={() => fetchKeys()} />}
+            {showAddModal && <AddKeyModal onClose={() => setShowAddModal(false)} onCreated={() => { fetchKeys(); fetchSyncStatus(); }} />}
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <h2 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>GitHub & SSH Keys</h2>
@@ -254,6 +274,49 @@ function GitHubSection() {
                     </div>
                 )}
             </div>
+
+            {/* Node key sync — only shown once a worker node exists */}
+            {syncStatus.filter(n => n.nodeId !== "local").length > 0 && (
+                <div className="card" style={{ padding: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                        <span>🔄</span>
+                        <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Key Sync to Nodes</h3>
+                        <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: "auto" }}>Keys &amp; git config auto-push to nodes on every change</span>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {syncStatus.filter(n => n.nodeId !== "local").map(n => {
+                            const offline = !n.reachable && n.enabled;
+                            const outOfSync = n.reachable && !n.inSync;
+                            const issues = [
+                                n.missing.length ? `${n.missing.length} missing` : null,
+                                n.mismatched.length ? `${n.mismatched.length} outdated` : null,
+                                !n.gitConfigInSync ? "git config differs" : null,
+                            ].filter(Boolean).join(", ");
+                            return (
+                                <div key={n.nodeId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--bg-input)", borderRadius: 8 }}>
+                                    <span style={{ fontSize: 14 }}>
+                                        {!n.enabled ? "⏸️" : offline ? "❌" : n.inSync ? "✅" : "⚠️"}
+                                    </span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>⬡ {n.name}</p>
+                                        <p style={{ fontSize: 11, color: outOfSync ? "var(--warning)" : "var(--text-dim)", margin: "2px 0 0" }}>
+                                            {!n.enabled ? "Disabled" : offline ? "Offline — cannot sync" : n.inSync ? `In sync (${n.matched.length} key${n.matched.length === 1 ? "" : "s"})` : issues || "Out of sync"}
+                                        </p>
+                                    </div>
+                                    <button
+                                        className="btn-ghost"
+                                        style={{ fontSize: 11, padding: "4px 10px" }}
+                                        disabled={!n.reachable || syncing[n.nodeId]}
+                                        onClick={() => handleSyncNode(n.nodeId)}
+                                    >
+                                        {syncing[n.nodeId] ? "Syncing…" : "Sync now"}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {keysLoading ? (
                 <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading keys…</div>

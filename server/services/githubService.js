@@ -379,6 +379,19 @@ const setGitConfig = async (name, email) => {
     return getGitConfig();
 };
 
+/**
+ * Read the raw private + public key content for a key by name.
+ * Used by keySyncService to push key material to worker nodes.
+ */
+const readKeyMaterial = (name) => {
+    const keyPath = path.join(SSH_DIR, name);
+    if (!fs.existsSync(keyPath)) throw new Error(`Key "${name}" not found`);
+    const privateKey = fs.readFileSync(keyPath, "utf8");
+    const pubPath = keyPath + ".pub";
+    const publicKey = fs.existsSync(pubPath) ? fs.readFileSync(pubPath, "utf8") : null;
+    return { privateKey, publicKey };
+};
+
 module.exports = {
     listKeys,
     generateKey,
@@ -387,4 +400,5 @@ module.exports = {
     testConnection,
     getGitConfig,
     setGitConfig,
+    readKeyMaterial,
 };

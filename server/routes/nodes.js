@@ -66,6 +66,15 @@ router.post("/", async (req, res, next) => {
             createdAt: Date.now(),
         });
 
+        // Mark online right away so key sync targets it without waiting for the poll
+        try { require("../services/nodeService").markOnline(node._id); } catch { /* optional */ }
+
+        // Push all existing SSH keys + git config to the fresh node (best-effort,
+        // don't block registration on it)
+        require("../services/keySyncService")
+            .syncAllToNode(node)
+            .catch((err) => console.error(`[Nodes] Initial key sync to "${node.name}" failed:`, err.message));
+
         const { apiKey: _hidden, ...safe } = node;
         res.status(201).json(safe);
     } catch (err) {

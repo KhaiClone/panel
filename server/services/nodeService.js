@@ -138,6 +138,11 @@ const isNodeOnline = (nodeId) => {
     return nodeStatus.get(nodeId) === "online";
 };
 
+/** Mark a node online immediately (e.g. right after a verified registration). */
+const markOnline = (nodeId) => {
+    if (nodeId && nodeId !== LOCAL_NODE_ID) nodeStatus.set(nodeId, "online");
+};
+
 const checkNodeHealth = async (node) => {
     try {
         const data = await agentRequest(node, "get", "/health", { timeout: 5000 });
@@ -249,4 +254,5 @@ module.exports = {
     checkNodeHealth,
     startHealthPolling,
     getAllNodesWithStats,
+    markOnline,
 };

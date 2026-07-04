@@ -18,6 +18,7 @@ app.use("/pm2", require("./routes/pm2"));
 app.use("/git", require("./routes/git"));
 app.use("/fs", require("./routes/fs"));
 app.use("/logs", require("./routes/logs"));
+app.use("/keys", require("./routes/keys"));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {

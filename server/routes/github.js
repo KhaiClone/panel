@@ -1,5 +1,6 @@
 const express = require("express");
 const githubService = require("../services/githubService");
+const keySyncService = require("../services/keySyncService");
 const router = express.Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +48,11 @@ router.post("/keys", async (req, res, next) => {
             result = await githubService.generateKey(safeName, comment || "");
         }
 
-        res.status(201).json(result);
+        // Push the new key to every online worker node (best-effort)
+        let sync = [];
+        try { sync = await keySyncService.syncKeyToAllNodes(safeName); } catch { /* nodes optional */ }
+
+        res.status(201).json({ ...result, sync });
     } catch (err) {
         if (err.message.includes("already exists")) {
             return res.status(409).json({ error: err.message });
@@ -64,7 +69,12 @@ router.delete("/keys/:name", async (req, res, next) => {
     try {
         const { name } = req.params;
         githubService.deleteKey(name);
-        res.json({ message: `Key "${name}" deleted` });
+
+        // Remove the key from every online worker node too (best-effort)
+        let sync = [];
+        try { sync = await keySyncService.deleteKeyOnAllNodes(name); } catch { /* nodes optional */ }
+
+        res.json({ message: `Key "${name}" deleted`, sync });
     } catch (err) {
         next(err);
     }
@@ -118,7 +128,44 @@ router.put("/git-config", async (req, res, next) => {
     try {
         const { name, email } = req.body;
         const config = await githubService.setGitConfig(name, email);
-        res.json(config);
+
+        // Propagate git identity to every online worker node (best-effort)
+        let sync = [];
+        try { sync = await keySyncService.syncGitConfigToAllNodes(); } catch { /* nodes optional */ }
+
+        res.json({ ...config, sync });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GET /api/github/sync-status
+//  Compares the panel's keys + git config against every node.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/sync-status", async (req, res, next) => {
+    try {
+        res.json(await keySyncService.getSyncStatus());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  POST /api/github/sync/:nodeId
+//  Force a full re-sync of all keys + git config to one node.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/sync/:nodeId", async (req, res, next) => {
+    try {
+        const db = require("../db");
+        const node = await db.findOne("nodes", { _id: req.params.nodeId });
+        if (!node) return res.status(404).json({ error: "Node not found" });
+
+        const healthy = await require("../services/nodeService").checkNodeHealth(node);
+        if (!healthy) return res.status(400).json({ error: `Node "${node.name}" is offline` });
+
+        await keySyncService.syncAllToNode(node);
+        res.json({ message: `Synced all keys + git config to "${node.name}"` });
     } catch (err) {
         next(err);
     }
