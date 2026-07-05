@@ -26,6 +26,42 @@ function StatCard({ label, value, color }) {
     );
 }
 
+const SELLER_COLOR = { "427399742906040333": "#22c55e", "871329074046435338": "#6366f1" };
+
+function Metric({ label, value, color }) {
+    return (
+        <div style={{ textAlign: "center", minWidth: 64 }}>
+            <p style={{ fontSize: 18, fontWeight: 800, color: color || "var(--text)", margin: 0, lineHeight: 1.1 }}>{value}</p>
+            <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "3px 0 0", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</p>
+        </div>
+    );
+}
+
+function SellerCard({ id, data }) {
+    const color = SELLER_COLOR[id] || "var(--accent)";
+    return (
+        <div className="card" style={{ padding: "16px 20px", borderLeft: `3px solid ${color}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: color }} />
+                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{data.name}</h3>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                    <p style={{ fontSize: 20, fontWeight: 800, color, margin: 0, lineHeight: 1 }}>{money(data.revenue)}</p>
+                    <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "2px 0 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Doanh thu</p>
+                </div>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
+                <Metric label="Tổng đơn" value={data.total} />
+                <Metric label="Đang chờ" value={data.pending} color="var(--warning)" />
+                <Metric label="Hoàn thành" value={data.completed} color="var(--success)" />
+                <Metric label="Đã hủy" value={data.cancelled} color="var(--danger)" />
+                <Metric label="Khách" value={data.buyers} />
+            </div>
+        </div>
+    );
+}
+
 export default function OrdersPage() {
     const [orders, setOrders] = useState([]);
     const [stats, setStats] = useState(null);
@@ -36,6 +72,8 @@ export default function OrdersPage() {
     const [search, setSearch] = useState("");
     const [confirm, setConfirm] = useState(null); // { order, action }
     const [busy, setBusy] = useState(null); // orderId being acted on
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
     const fetchData = useCallback(async () => {
         try {
@@ -85,6 +123,13 @@ export default function OrdersPage() {
         return ms && mse && mq;
     });
 
+    // Reset to the first page whenever the filtered set changes
+    useEffect(() => { setPage(1); }, [statusFilter, sellerFilter, search, pageSize]);
+
+    const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const paged = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
+
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 20 }}>
             <div>
@@ -96,7 +141,7 @@ export default function OrdersPage() {
                 <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13 }}>{error}</div>
             )}
 
-            {/* Stats */}
+            {/* Aggregate stats (all sellers) */}
             {stats && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
                     <StatCard label="Tổng đơn" value={stats.total} color="var(--accent)" />
@@ -104,6 +149,18 @@ export default function OrdersPage() {
                     <StatCard label="Hoàn thành" value={stats.completed} color="var(--success)" />
                     <StatCard label="Đã hủy" value={stats.cancelled} color="var(--danger)" />
                     <StatCard label="Doanh thu" value={money(stats.revenue)} color="#a78bfa" />
+                </div>
+            )}
+
+            {/* Per-seller breakdown */}
+            {stats?.bySeller && Object.keys(stats.bySeller).length > 0 && (
+                <div>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>Theo từng seller</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+                        {Object.entries(stats.bySeller).map(([id, data]) => (
+                            <SellerCard key={id} id={id} data={data} />
+                        ))}
+                    </div>
                 </div>
             )}
 
@@ -144,7 +201,7 @@ export default function OrdersPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {visible.map((o) => {
+                                {paged.map((o) => {
                                     const s = st(o.status);
                                     return (
                                         <tr key={o._id || o.orderId} style={{ borderTop: "1px solid var(--border-light)" }}>
@@ -181,6 +238,23 @@ export default function OrdersPage() {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Pagination */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderTop: "1px solid var(--border-light)", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                            {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, visible.length)} / {visible.length}
+                        </span>
+                        <select className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}/trang</option>)}
+                        </select>
+                        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => setPage(1)}>«</button>
+                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>‹ Trước</button>
+                            <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 90, textAlign: "center" }}>Trang {safePage} / {totalPages}</span>
+                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>Sau ›</button>
+                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => setPage(totalPages)}>»</button>
+                        </div>
                     </div>
                 </div>
             )}
