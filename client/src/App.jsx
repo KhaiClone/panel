@@ -17,6 +17,7 @@ import AdminUsersPage from "./pages/AdminUsersPage";
 import NodesPage from "./pages/NodesPage";
 import NodeDetailPage from "./pages/NodeDetailPage";
 import OrdersPage from "./pages/OrdersPage";
+import DecorsPage from "./pages/DecorsPage";
 import Layout from "./components/Layout";
 
 function Spinner() {
@@ -68,6 +69,7 @@ export default function App() {
                             <Route path="nodes/:id"     element={<AdminRoute><NodeDetailPage /></AdminRoute>} />
                             <Route path="admin/users"   element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
                             <Route path="orders"        element={<AdminRoute><OrdersPage /></AdminRoute>} />
+                            <Route path="decors"        element={<AdminRoute><DecorsPage /></AdminRoute>} />
                             {/* Legacy redirect */}
                             <Route path="dashboard"     element={<Navigate to="/bots" replace />} />
                         </Route>

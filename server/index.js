@@ -21,6 +21,7 @@ const userRoutes = require("./routes/users");
 const slotRoutes = require("./routes/slots");
 const nodeRoutes = require("./routes/nodes");
 const shopOrderRoutes = require("./routes/shopOrders");
+const decorRoutes = require("./routes/decors");
 const { authMiddleware } = require("./middleware/auth");
 const { adminOnly } = require("./middleware/adminOnly");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
@@ -140,6 +141,7 @@ app.use("/api/admin/users", authMiddleware, userRoutes);
 app.use("/api/admin/slots", authMiddleware, slotRoutes);
 app.use("/api/nodes", authMiddleware, adminOnly, nodeRoutes);
 app.use("/api/shop", authMiddleware, adminOnly, shopOrderRoutes);
+app.use("/api/decors", authMiddleware, adminOnly, decorRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
