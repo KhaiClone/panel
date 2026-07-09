@@ -62,7 +62,7 @@ function ImportForm({ onImported }) {
             const { data } = await api.post("/decors/preview", payload());
             setPreview(data.decor);
         } catch (err) {
-            setMsg({ ok: false, text: err.response?.data?.error || err.response?.data?.message || "Lỗi xem trước" });
+            setMsg({ ok: false, text: err.response?.data?.error || err.response?.data?.message || "Preview failed" });
         } finally { setBusy(false); }
     };
 
@@ -70,12 +70,12 @@ function ImportForm({ onImported }) {
         setBusy(true); setMsg(null);
         try {
             const { data } = await api.post("/decors/import", payload());
-            setMsg({ ok: true, text: `Đã import "${data.decor?.name}" (${data.decor?.sku_id})` });
+            setMsg({ ok: true, text: `Imported "${data.decor?.name}" (${data.decor?.sku_id})` });
             setForm({ ...emptyForm, type: form.type, summary: SUMMARY_PRESET[form.type] ?? "" });
             setPreview(null);
             onImported();
         } catch (err) {
-            setMsg({ ok: false, text: err.response?.data?.error || err.response?.data?.message || "Lỗi import" });
+            setMsg({ ok: false, text: err.response?.data?.error || err.response?.data?.message || "Import failed" });
         } finally { setBusy(false); }
     };
 
@@ -83,7 +83,7 @@ function ImportForm({ onImported }) {
         <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
             <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Import decor</h3>
 
-            <Field label="Loại decor">
+            <Field label="Decor type">
                 <div className="tab-bar">
                     {TYPES.map((t) => (
                         <button key={t.value} type="button" className={`tab-item ${form.type === t.value ? "active" : ""}`} onClick={() => setType(t.value)}>
@@ -95,17 +95,17 @@ function ImportForm({ onImported }) {
 
             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <Field label="SKU ID *"><input className="input mono" value={form.sku_id} onChange={set("sku_id")} /></Field>
-                <Field label="Tên *"><input className="input" value={form.name} onChange={set("name")} /></Field>
+                <Field label="Name *"><input className="input" value={form.name} onChange={set("name")} /></Field>
             </div>
 
             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <Field label="Giá gốc (không Nitro) *"><input className="input mono" type="number" value={form.withoutNitro} onChange={set("withoutNitro")} /></Field>
-                <Field label="Giá gốc (có Nitro) *"><input className="input mono" type="number" value={form.withNitro} onChange={set("withNitro")} /></Field>
+                <Field label="Base price (without Nitro) *"><input className="input mono" type="number" value={form.withoutNitro} onChange={set("withoutNitro")} /></Field>
+                <Field label="Base price (with Nitro) *"><input className="input mono" type="number" value={form.withNitro} onChange={set("withNitro")} /></Field>
             </div>
 
             {!isBundle && (
                 <>
-                    <Field label="Summary *" hint="Tự điền theo loại, sửa được.">
+                    <Field label="Summary *" hint="Auto-filled based on type, editable.">
                         <input className="input" value={form.summary} onChange={set("summary")} />
                     </Field>
                     <Field label="Label *"><input className="input" value={form.label} onChange={set("label")} /></Field>
@@ -115,9 +115,9 @@ function ImportForm({ onImported }) {
             {usesAsset && (
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                     <Field label="Asset hash" hint={form.type === 0 ? "→ avatar-decoration-presets/{hash}.png" : "→ assets/collectibles/{hash}asset.webm"}>
-                        <input className="input mono" value={form.asset} onChange={set("asset")} placeholder="vd: a1b2c3…" />
+                        <input className="input mono" value={form.asset} onChange={set("asset")} placeholder="e.g. a1b2c3…" />
                     </Field>
-                    <Field label="assetURL (ghi đè)" hint="Điền nếu không có asset hash — dùng URL này trực tiếp.">
+                    <Field label="assetURL (override)" hint="Fill in if there is no asset hash — this URL is used directly.">
                         <input className="input mono" value={form.assetURL} onChange={set("assetURL")} placeholder="https://…" />
                     </Field>
                 </div>
@@ -125,24 +125,24 @@ function ImportForm({ onImported }) {
 
             {isProfile && (
                 <>
-                    <Field label="staticURL (ảnh tĩnh/staticFrameSrc) *">
+                    <Field label="staticURL (static image/staticFrameSrc) *">
                         <input className="input mono" value={form.staticURL} onChange={set("staticURL")} placeholder="https://…" />
                     </Field>
-                    <Field label="effects (JSON, tùy chọn)" hint='Mảng effects nếu có, vd [{"type":1}]'>
+                    <Field label="effects (JSON, optional)" hint='Effects array if any, e.g. [{"type":1}]'>
                         <textarea className="input mono" style={{ height: 70, resize: "vertical", fontSize: 12 }} value={form.effects} onChange={set("effects")} />
                     </Field>
                 </>
             )}
 
             {usesAsset && (
-                <Field label="staticURL (ghi đè, tùy chọn)" hint="Bỏ trống để tự dựng từ sku_id.">
+                <Field label="staticURL (override, optional)" hint="Leave empty to build it from sku_id.">
                     <input className="input mono" value={form.staticURL} onChange={set("staticURL")} placeholder="https://…" />
                 </Field>
             )}
 
             {isBundle && (
                 <>
-                    <Field label="Items (sku_id, phân cách bằng dấu phẩy) *">
+                    <Field label="Items (sku_id, comma-separated) *">
                         <input className="input mono" value={form.items} onChange={set("items")} placeholder="111, 222, 333" />
                     </Field>
                     <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -160,7 +160,7 @@ function ImportForm({ onImported }) {
 
             {preview && (
                 <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", margin: "0 0 6px" }}>Xem trước (đã chuẩn hóa)</p>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", margin: "0 0 6px" }}>Preview (normalized)</p>
                     <pre className="mono" style={{ margin: 0, padding: 12, background: "var(--bg-input)", borderRadius: 8, fontSize: 11, maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                         {JSON.stringify(preview, null, 2)}
                     </pre>
@@ -168,8 +168,8 @@ function ImportForm({ onImported }) {
             )}
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button type="button" className="btn-ghost" disabled={busy} onClick={doPreview}>Xem trước</button>
-                <button type="button" className="btn-primary" disabled={busy} onClick={doImport}>{busy ? "Đang xử lý…" : "Import"}</button>
+                <button type="button" className="btn-ghost" disabled={busy} onClick={doPreview}>Preview</button>
+                <button type="button" className="btn-primary" disabled={busy} onClick={doImport}>{busy ? "Processing…" : "Import"}</button>
             </div>
         </div>
     );
@@ -189,7 +189,7 @@ export default function DecorsPage() {
             setDecors(Array.isArray(data) ? data : []);
             setError("");
         } catch (err) {
-            setError(err.response?.data?.error || err.response?.data?.message || "Không kết nối được ArnTo-assistant");
+            setError(err.response?.data?.error || err.response?.data?.message || "Could not connect to ArnTo-assistant");
         } finally {
             setLoading(false);
         }
@@ -204,7 +204,7 @@ export default function DecorsPage() {
             await api.delete(`/decors/import/${sku}`);
             fetchDecors();
         } catch (err) {
-            alert(err.response?.data?.error || err.response?.data?.message || "Không xóa được");
+            alert(err.response?.data?.error || err.response?.data?.message || "Delete failed");
         }
     };
 
@@ -220,7 +220,7 @@ export default function DecorsPage() {
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 20 }}>
             <div>
                 <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Decor (ArnTo-assistant)</h1>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>Import decor với dữ liệu chuẩn hóa giống <code>/decor-load</code>, và quản lý decor đã import.</p>
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>Import decors with normalized data matching <code>/decor-load</code>, and manage imported decors.</p>
             </div>
 
             {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13 }}>{error}</div>}
@@ -230,20 +230,20 @@ export default function DecorsPage() {
 
                 <div className="card" style={{ padding: 0, overflow: "hidden" }}>
                     <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-light)", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-                        <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Danh sách ({decors.length})</h3>
+                        <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>List ({decors.length})</h3>
                         <span className="badge" style={{ background: "rgba(6,182,212,0.12)", color: "#22d3ee", fontSize: 10 }}>{importedCount} imported</span>
-                        <input className="input" style={{ flex: "1 1 160px", maxWidth: 220, padding: "6px 10px", fontSize: 12 }} placeholder="Tìm sku_id / tên…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                        <input className="input" style={{ flex: "1 1 160px", maxWidth: 220, padding: "6px 10px", fontSize: 12 }} placeholder="Search sku_id / name…" value={search} onChange={(e) => setSearch(e.target.value)} />
                         <select className="input" style={{ width: "auto", padding: "6px 10px", fontSize: 12 }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-                            <option value="all">Tất cả nguồn</option>
+                            <option value="all">All sources</option>
                             <option value="decors">Loaded</option>
                             <option value="importedDecors">Imported</option>
                         </select>
                     </div>
                     <div style={{ maxHeight: 620, overflowY: "auto" }}>
                         {loading ? (
-                            <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Đang tải…</div>
+                            <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading…</div>
                         ) : visible.length === 0 ? (
-                            <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>Không có decor nào.</div>
+                            <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No decors found.</div>
                         ) : (
                             visible.map((d) => {
                                 const img = d.type === 1000 ? (d.assetURL?.[0]) : (d.staticURL || d.assetURL);
@@ -265,7 +265,7 @@ export default function DecorsPage() {
                                             <p className="mono" style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{money(d.prices?.withNitro)}</p>
                                         </div>
                                         {imported && (
-                                            <button className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12, color: "var(--danger)", flexShrink: 0 }} onClick={() => setConfirmDel(d.sku_id)}>Xóa</button>
+                                            <button className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12, color: "var(--danger)", flexShrink: 0 }} onClick={() => setConfirmDel(d.sku_id)}>Delete</button>
                                         )}
                                     </div>
                                 );
@@ -277,9 +277,9 @@ export default function DecorsPage() {
 
             {confirmDel && (
                 <ConfirmModal
-                    title={`Xóa decor "${confirmDel}"?`}
-                    message="Chỉ xóa khỏi importedDecors (decor import thủ công). Không ảnh hưởng tới decor load từ shop."
-                    confirmText="Xóa"
+                    title={`Delete decor "${confirmDel}"?`}
+                    message="Only removes it from importedDecors (manually imported decors). Decors loaded from the shop are not affected."
+                    confirmText="Delete"
                     onConfirm={handleDelete}
                     onCancel={() => setConfirmDel(null)}
                 />

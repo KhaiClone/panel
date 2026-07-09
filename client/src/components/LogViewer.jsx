@@ -68,7 +68,7 @@ export default function LogViewer({ botId }) {
     const toggleLive = () => (live ? stopLive() : startLive());
 
     const clearLogs = async () => {
-        if (!window.confirm("Xoá toàn bộ lịch sử log của project này?")) return;
+        if (!window.confirm("Clear all log history for this project?")) return;
         setClearing(true);
         try {
             await api.delete(`/logs/${botId}`);

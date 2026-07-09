@@ -5,14 +5,14 @@ import ConfirmModal from "../components/ConfirmModal";
 const money = (n) => (typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—");
 
 const STATUS = {
-    pending:   { label: "Đang chờ",   color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)" },
-    completed: { label: "Hoàn thành", color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)" },
-    cancelled: { label: "Đã hủy",     color: "var(--danger)",  bg: "var(--danger-bg)",  border: "var(--danger-border)" },
+    pending:   { label: "Pending",   color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)" },
+    completed: { label: "Completed", color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)" },
+    cancelled: { label: "Cancelled", color: "var(--danger)",  bg: "var(--danger-bg)",  border: "var(--danger-border)" },
 };
 const st = (s) => STATUS[s] || { label: s || "—", color: "var(--text-muted)", bg: "var(--bg-input)", border: "var(--border)" };
 
 const SELLERS = [
-    { id: "all", label: "Tất cả seller" },
+    { id: "all", label: "All sellers" },
     { id: "427399742906040333", label: "ArnTo" },
     { id: "871329074046435338", label: "KhaiDev" },
 ];
@@ -48,15 +48,15 @@ function SellerCard({ id, data }) {
                 </div>
                 <div style={{ textAlign: "right" }}>
                     <p style={{ fontSize: 20, fontWeight: 800, color, margin: 0, lineHeight: 1 }}>{money(data.revenue)}</p>
-                    <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "2px 0 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Doanh thu</p>
+                    <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "2px 0 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Revenue</p>
                 </div>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
-                <Metric label="Tổng đơn" value={data.total} />
-                <Metric label="Đang chờ" value={data.pending} color="var(--warning)" />
-                <Metric label="Hoàn thành" value={data.completed} color="var(--success)" />
-                <Metric label="Đã hủy" value={data.cancelled} color="var(--danger)" />
-                <Metric label="Khách" value={data.buyers} />
+                <Metric label="Orders" value={data.total} />
+                <Metric label="Pending" value={data.pending} color="var(--warning)" />
+                <Metric label="Completed" value={data.completed} color="var(--success)" />
+                <Metric label="Cancelled" value={data.cancelled} color="var(--danger)" />
+                <Metric label="Buyers" value={data.buyers} />
             </div>
         </div>
     );
@@ -85,7 +85,7 @@ export default function OrdersPage() {
             setStats(statsRes.data);
             setError("");
         } catch (err) {
-            setError(err.response?.data?.error || "Không kết nối được ArnTo-Shop");
+            setError(err.response?.data?.error || "Could not connect to ArnTo-Shop");
         } finally {
             setLoading(false);
         }
@@ -105,7 +105,7 @@ export default function OrdersPage() {
             await api.post(`/shop/orders/${order.orderId}/${action}`);
             await fetchData();
         } catch (err) {
-            alert(err.response?.data?.error || `Không thể ${action === "done" ? "hoàn thành" : "hủy"} đơn`);
+            alert(err.response?.data?.error || `Could not ${action === "done" ? "complete" : "cancel"} the order`);
         } finally {
             setBusy(null);
         }
@@ -133,8 +133,8 @@ export default function OrdersPage() {
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 20 }}>
             <div>
-                <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Đơn hàng (ArnTo-Shop)</h1>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>Xem và xử lý đơn hàng từ bot ArnTo-Shop.</p>
+                <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Orders (ArnTo-Shop)</h1>
+                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>View and process orders from the ArnTo-Shop bot.</p>
             </div>
 
             {error && (
@@ -144,18 +144,18 @@ export default function OrdersPage() {
             {/* Aggregate stats (all sellers) */}
             {stats && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-                    <StatCard label="Tổng đơn" value={stats.total} color="var(--accent)" />
-                    <StatCard label="Đang chờ" value={stats.pending} color="var(--warning)" />
-                    <StatCard label="Hoàn thành" value={stats.completed} color="var(--success)" />
-                    <StatCard label="Đã hủy" value={stats.cancelled} color="var(--danger)" />
-                    <StatCard label="Doanh thu" value={money(stats.revenue)} color="#a78bfa" />
+                    <StatCard label="Total orders" value={stats.total} color="var(--accent)" />
+                    <StatCard label="Pending" value={stats.pending} color="var(--warning)" />
+                    <StatCard label="Completed" value={stats.completed} color="var(--success)" />
+                    <StatCard label="Cancelled" value={stats.cancelled} color="var(--danger)" />
+                    <StatCard label="Revenue" value={money(stats.revenue)} color="#a78bfa" />
                 </div>
             )}
 
             {/* Per-seller breakdown */}
             {stats?.bySeller && Object.keys(stats.bySeller).length > 0 && (
                 <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>Theo từng seller</p>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>By seller</p>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
                         {Object.entries(stats.bySeller).map(([id, data]) => (
                             <SellerCard key={id} id={id} data={data} />
@@ -167,12 +167,12 @@ export default function OrdersPage() {
             {/* Filters */}
             <div className="card" style={{ padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
                 <div style={{ position: "relative", flex: "1 1 220px", maxWidth: 340 }}>
-                    <input className="input" placeholder="Tìm mã đơn, tên, khách…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                    <input className="input" placeholder="Search order ID, product, buyer…" value={search} onChange={(e) => setSearch(e.target.value)} />
                 </div>
                 <div className="tab-bar">
                     {["all", "pending", "completed", "cancelled"].map((f) => (
                         <button key={f} className={`tab-item ${statusFilter === f ? "active" : ""}`} onClick={() => setStatusFilter(f)}>
-                            {f === "all" ? "Tất cả" : st(f).label}
+                            {f === "all" ? "All" : st(f).label}
                         </button>
                     ))}
                 </div>
@@ -184,10 +184,10 @@ export default function OrdersPage() {
 
             {/* Table */}
             {loading ? (
-                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Đang tải…</p>
+                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : visible.length === 0 ? (
                 <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-dim)", fontSize: 14, borderStyle: "dashed" }}>
-                    Không có đơn hàng nào khớp.
+                    No orders match.
                 </div>
             ) : (
                 <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -195,7 +195,7 @@ export default function OrdersPage() {
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 720 }}>
                             <thead>
                                 <tr style={{ background: "var(--bg-input)", textAlign: "left" }}>
-                                    {["Mã đơn", "Sản phẩm", "Khách", "Seller", "Giá", "Ngày", "Trạng thái", ""].map((h) => (
+                                    {["Order ID", "Product", "Buyer", "Seller", "Price", "Date", "Status", ""].map((h) => (
                                         <th key={h} style={{ padding: "10px 14px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
                                     ))}
                                 </tr>
@@ -225,10 +225,10 @@ export default function OrdersPage() {
                                                 {o.status === "pending" && (
                                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                                         <button className="btn-success" style={{ padding: "4px 10px", fontSize: 12 }} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
-                                                            {busy === o.orderId ? "…" : "Hoàn thành"}
+                                                            {busy === o.orderId ? "…" : "Complete"}
                                                         </button>
                                                         <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger)" }} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "cancel" })}>
-                                                            Hủy
+                                                            Cancel
                                                         </button>
                                                     </div>
                                                 )}
@@ -246,13 +246,13 @@ export default function OrdersPage() {
                             {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, visible.length)} / {visible.length}
                         </span>
                         <select className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-                            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}/trang</option>)}
+                            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}/page</option>)}
                         </select>
                         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                             <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => setPage(1)}>«</button>
-                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>‹ Trước</button>
-                            <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 90, textAlign: "center" }}>Trang {safePage} / {totalPages}</span>
-                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>Sau ›</button>
+                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>‹ Prev</button>
+                            <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 90, textAlign: "center" }}>Page {safePage} / {totalPages}</span>
+                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>Next ›</button>
                             <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => setPage(totalPages)}>»</button>
                         </div>
                     </div>
@@ -261,13 +261,13 @@ export default function OrdersPage() {
 
             {confirm && (
                 <ConfirmModal
-                    title={confirm.action === "done" ? `Hoàn thành đơn "${confirm.order.orderId}"?` : `Hủy đơn "${confirm.order.orderId}"?`}
+                    title={confirm.action === "done" ? `Complete order "${confirm.order.orderId}"?` : `Cancel order "${confirm.order.orderId}"?`}
                     message={
                         confirm.action === "done"
-                            ? `Sản phẩm: ${confirm.order.name}\nGiá: ${money(confirm.order.price)}\n\nBot sẽ DM khách, gửi thông báo vào ticket, cộng chi tiêu và gán role buyer — y như bấm ✅ trên Discord.`
-                            : `Sản phẩm: ${confirm.order.name}\n\nBot sẽ DM khách báo hủy và gửi thông báo vào ticket — y như bấm ❌ trên Discord.`
+                            ? `Product: ${confirm.order.name}\nPrice: ${money(confirm.order.price)}\n\nThe bot will DM the buyer, post a notice in the ticket, add to their spend total and assign the buyer role — same as pressing ✅ on Discord.`
+                            : `Product: ${confirm.order.name}\n\nThe bot will DM the buyer about the cancellation and post a notice in the ticket — same as pressing ❌ on Discord.`
                     }
-                    confirmText={confirm.action === "done" ? "Hoàn thành" : "Hủy đơn"}
+                    confirmText={confirm.action === "done" ? "Complete" : "Cancel order"}
                     onConfirm={doAction}
                     onCancel={() => setConfirm(null)}
                 />
