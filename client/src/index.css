@@ -73,6 +73,8 @@
         line-height: 1.6;
         margin: 0;
         min-height: 100vh;
+        /* Never let a stray wide child scroll the whole page sideways on mobile */
+        overflow-x: hidden;
     }
 
     ::-webkit-scrollbar {
@@ -598,6 +600,22 @@
         /* Disable hover-lift on touch devices */
         .card-hover:hover {
             transform: none;
+        }
+
+        /* iOS Safari auto-zooms when focusing an input whose font-size < 16px.
+           Bump form controls to 16px on mobile to stop the zoom-in jump. */
+        .input,
+        input.input,
+        select.input,
+        textarea.input {
+            font-size: 16px !important;
+        }
+
+        /* Busy header (title + node switcher + bell): keep the node dropdown
+           compact so the page title always has room to truncate instead of
+           pushing the controls off-screen. */
+        .node-switcher-select {
+            max-width: 92px !important;
         }
     }
 

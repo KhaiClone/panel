@@ -354,12 +354,12 @@ export default function Layout() {
                         </button>
                     )}
 
-                    <div style={{ flex: 1 }}>
-                        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em" }}>{pageTitle}</h2>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pageTitle}</h2>
                     </div>
 
                     {/* Header chips */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }} ref={notifRef}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} ref={notifRef}>
                         {/* Global node switcher (admin, with registered nodes only) */}
                         {isAdmin && <NodeSwitcher />}
 
@@ -465,6 +465,7 @@ function NodeSwitcher() {
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: isRemote ? "var(--accent-hover)" : "var(--text-muted)" }}>⬡</span>
             <select
+                className="node-switcher-select"
                 value={nodeId}
                 onChange={(e) => setNode(e.target.value)}
                 style={{
