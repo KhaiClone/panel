@@ -26,8 +26,16 @@ export default function TerminalPage() {
     const termRef = useRef(null);
     const fitRef = useRef(null);
     const wsRef = useRef(null);
+    const ctrlArmedRef = useRef(false); // sticky Ctrl for the on-screen key bar
     const [status, setStatus] = useState("connecting"); // connecting | connected | closed
+    const [ctrlActive, setCtrlActive] = useState(false);
     const [reconnectKey, setReconnectKey] = useState(0);
+
+    // Send raw bytes to the shell (used by both xterm input and the mobile bar)
+    const sendInput = (data) => {
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "input", data }));
+    };
 
     // Build the xterm instance once
     useEffect(() => {
@@ -97,6 +105,14 @@ export default function TerminalPage() {
         ws.onerror = () => setStatus("closed");
 
         const disposable = term.onData((data) => {
+            // Sticky Ctrl: if armed, fold the next single printable char into its
+            // control code (a→0x01 … z→0x1a, plus @ [ \ ] ^ _) then disarm.
+            if (ctrlArmedRef.current && data.length === 1) {
+                const code = data.toUpperCase().charCodeAt(0);
+                if (code >= 64 && code <= 95) data = String.fromCharCode(code & 0x1f);
+                ctrlArmedRef.current = false;
+                setCtrlActive(false);
+            }
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "input", data }));
         });
         term.focus();
@@ -108,6 +124,38 @@ export default function TerminalPage() {
     }, [nodeId, reconnectKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const dot = status === "connected" ? "var(--success)" : status === "connecting" ? "var(--warning)" : "var(--danger)";
+
+    // Tap → send a control/escape sequence; the Ctrl key arms instead of sending.
+    const toggleCtrl = () => {
+        const next = !ctrlArmedRef.current;
+        ctrlArmedRef.current = next;
+        setCtrlActive(next);
+        termRef.current?.focus();
+    };
+    const tapKey = (data) => {
+        // Some keys are themselves Ctrl combos — honor an armed Ctrl by clearing it
+        if (ctrlArmedRef.current) { ctrlArmedRef.current = false; setCtrlActive(false); }
+        sendInput(data);
+        termRef.current?.focus();
+    };
+
+    const KEYS = [
+        { label: "Esc", data: "\x1b" },
+        { label: "Tab", data: "\t" },
+        { label: "Ctrl", ctrl: true },
+        { label: "↑", data: "\x1b[A" },
+        { label: "↓", data: "\x1b[B" },
+        { label: "←", data: "\x1b[D" },
+        { label: "→", data: "\x1b[C" },
+        { label: "^C", data: "\x03" },
+        { label: "^D", data: "\x04" },
+        { label: "^Z", data: "\x1a" },
+        { label: "^L", data: "\x0c" },
+        { label: "|", data: "|" },
+        { label: "~", data: "~" },
+        { label: "/", data: "/" },
+        { label: "-", data: "-" },
+    ];
 
     return (
         <div className="page fade-in" style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 1400 }}>
@@ -134,12 +182,38 @@ export default function TerminalPage() {
             </div>
 
             {/* Terminal surface */}
-            <div style={{ flex: 1, minHeight: 400, borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", background: TERM_THEME.background, padding: 8 }}>
+            <div style={{ flex: 1, minHeight: 320, borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", background: TERM_THEME.background, padding: 8 }}>
                 <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
             </div>
 
+            {/* Mobile key bar — Esc/Tab/Ctrl/arrows and common symbols the
+                on-screen keyboard hides. Horizontally scrollable on narrow screens. */}
+            <div style={{ display: "flex", gap: 6, marginTop: 10, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+                {KEYS.map((k) => {
+                    const active = k.ctrl && ctrlActive;
+                    return (
+                        <button
+                            key={k.label}
+                            onClick={() => (k.ctrl ? toggleCtrl() : tapKey(k.data))}
+                            style={{
+                                flexShrink: 0, minWidth: 42, padding: "9px 12px",
+                                fontSize: 13, fontWeight: 700, fontFamily: "ui-monospace, monospace",
+                                borderRadius: 8, cursor: "pointer",
+                                border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                                background: active ? "var(--accent-dim)" : "var(--bg-input)",
+                                color: active ? "var(--accent-hover)" : "var(--text)",
+                                userSelect: "none", touchAction: "manipulation",
+                            }}
+                        >
+                            {k.label}
+                        </button>
+                    );
+                })}
+            </div>
+
             <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "10px 2px 0" }}>
-                Switch the node from the ⬡ selector in the header to open a shell on a different machine. Sessions idle-timeout after 30 minutes.
+                Switch the node from the ⬡ selector in the header to open a shell on a different machine.
+                Tap <strong>Ctrl</strong> then a letter for combos (e.g. Ctrl→R for reverse-search). Sessions idle-timeout after 30 minutes.
             </p>
         </div>
     );
