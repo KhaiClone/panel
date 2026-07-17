@@ -3,17 +3,21 @@ const util = require("util");
 const net = require("net");
 const execAsync = util.promisify(exec);
 
-// Port of the panel's ufwService for the agent VPS (runs as root — no sudo).
+// Port of the panel's ufwService for the agent VPS. Works as root (no
+// prefix) or as a regular user with passwordless sudo.
+
+const IS_ROOT = typeof process.getuid === "function" && process.getuid() === 0;
+const SUDO = IS_ROOT ? "" : "sudo ";
 
 /** Open a TCP port in UFW. */
 const openPort = async (port) => {
-    await execAsync(`ufw allow ${port}/tcp`);
+    await execAsync(`${SUDO}ufw allow ${port}/tcp`);
 };
 
 /** Remove a UFW rule for a TCP port. Errors are silenced (rule may not exist). */
 const closePort = async (port) => {
     try {
-        await execAsync(`ufw delete allow ${port}/tcp`);
+        await execAsync(`${SUDO}ufw delete allow ${port}/tcp`);
     } catch { /* rule may not exist */ }
 };
 
@@ -39,7 +43,7 @@ const findFreePort = async (start = 3000, end = 9000) => {
 
 /** Raw `ufw status numbered` output. */
 const status = async () => {
-    const { stdout } = await execAsync("ufw status numbered");
+    const { stdout } = await execAsync(`${SUDO}ufw status numbered`);
     return stdout;
 };
 

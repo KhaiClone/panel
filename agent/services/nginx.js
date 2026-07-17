@@ -4,16 +4,28 @@ const fs = require("fs");
 const path = require("path");
 const execAsync = util.promisify(exec);
 
-// Port of the panel's nginxService for the agent VPS. The agent runs as root,
-// so files are written directly (no sudo). Panel-self config generation is
-// intentionally omitted — the panel only reverse-proxies itself locally.
+// Port of the panel's nginxService for the agent VPS. Works both as root
+// (nothing prefixed) and as a regular user with passwordless sudo (every
+// privileged command/file move goes through sudo). Panel-self config
+// generation is intentionally omitted — the panel only reverse-proxies
+// itself locally.
+
+const IS_ROOT = typeof process.getuid === "function" && process.getuid() === 0;
+const SUDO = IS_ROOT ? "" : "sudo ";
 
 const NGINX_SITES = "/etc/nginx/sites-enabled";
 
 const configPath = (pm2Name) => path.join(NGINX_SITES, `panel-${pm2Name}.conf`);
 
 const reloadNginx = async () => {
-    await execAsync("nginx -s reload");
+    await execAsync(`${SUDO}nginx -s reload`);
+};
+
+/** Place `content` at `destPath` (via /tmp + sudo mv when not root). */
+const putFile = async (destPath, content) => {
+    const tmpPath = `/tmp/agent-nginx-${path.basename(destPath)}`;
+    fs.writeFileSync(tmpPath, content, "utf8");
+    await execAsync(`${SUDO}mv "${tmpPath}" "${destPath}"`);
 };
 
 // ─── Config generators ────────────────────────────────────────────────────────
@@ -98,14 +110,14 @@ const writeConfig = async (pm2Name, opts) => {
     let previous = null;
     try { previous = fs.readFileSync(destPath, "utf8"); } catch { /* new config */ }
 
-    fs.writeFileSync(destPath, content, "utf8");
+    await putFile(destPath, content);
 
     try {
-        await execAsync("nginx -t");
+        await execAsync(`${SUDO}nginx -t`);
     } catch (err) {
         // Roll back so a broken config never lingers in sites-enabled
-        if (previous !== null) fs.writeFileSync(destPath, previous, "utf8");
-        else fs.rmSync(destPath, { force: true });
+        if (previous !== null) await putFile(destPath, previous).catch(() => {});
+        else await execAsync(`${SUDO}rm -f "${destPath}"`).catch(() => {});
         const detail = (err.stderr || err.message || "").trim().split("\n").slice(0, 4).join(" | ");
         throw new Error(`nginx config test failed: ${detail}`);
     }
@@ -118,7 +130,7 @@ const writeConfig = async (pm2Name, opts) => {
  */
 const removeConfig = async (pm2Name) => {
     try {
-        fs.rmSync(configPath(pm2Name), { force: true });
+        await execAsync(`${SUDO}rm -f "${configPath(pm2Name)}"`);
         await reloadNginx();
     } catch { /* nginx might not be running */ }
 };
@@ -156,7 +168,7 @@ const enableSSL = async (domain, email = null) => {
         ? `-m ${email} --agree-tos`
         : "--register-unsafely-without-email --agree-tos";
     await execAsync(
-        `certbot --nginx -d ${domain} ${emailFlag} --non-interactive`,
+        `${SUDO}certbot --nginx -d ${domain} ${emailFlag} --non-interactive`,
         { timeout: 120_000 },
     );
 };
