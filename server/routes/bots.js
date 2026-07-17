@@ -7,10 +7,7 @@ const execAsync = promisify(exec);
 const router = express.Router();
 
 const db = require("../db");
-const pm2Service = require("../services/pm2Service");
 const gitService = require("../services/gitService");
-const nginxService = require("../services/nginxService");
-const ufwService = require("../services/ufwService");
 const executor = require("../services/executor");
 const schedulerService = require("../services/schedulerService");
 const nodeService = require("../services/nodeService");
@@ -105,66 +102,56 @@ const shouldAutoStop = (botId) => {
 // ─── Website helpers ─────────────────────────────────────────────────────────
 
 /**
- * Resolve the distFolder (relative or absolute) to an absolute path.
- * If already absolute, returns as-is. Otherwise resolves relative to botDir.
- */
-const resolveDistFolder = (bot, distFolder) => {
-    if (path.isAbsolute(distFolder)) return distFolder;
-    return path.join(botDir(bot), distFolder);
-};
-
-/**
- * Assign a port for a website project.
- * Uses the user-supplied port or auto-assigns a free one.
+ * Assign a port for a website project on the target node.
+ * Uses the user-supplied port or auto-assigns a free one on that node.
  * @returns {Promise<number>}
  */
-const assignPort = async (requestedPort) => {
+const assignPort = async (requestedPort, nodeId = null) => {
     if (requestedPort) {
         const port = parseInt(requestedPort, 10);
         if (isNaN(port) || port < 1 || port > 65535)
             throw new Error("Invalid port number");
         return port;
     }
-    return ufwService.findFreePort(3000, 9000);
+    return executor.findFreePortOn(nodeId, 3000, 9000);
 };
 
 /**
- * Apply the correct serving infrastructure for a website project:
+ * Apply the correct serving infrastructure for a website project — on
+ * whichever node the bot lives (executor routes nginx/UFW/PM2 calls):
  *   - static, no domain → http-server via PM2 on wc.port (works with IP:port)
  *   - static, domain    → nginx on port 80 for domain access
  *   - fullstack         → nginx on wc.port (+ port 80 if domain is set)
  *
- * @param {Object} bot  - Full bot record (must have pm2Name, websiteConfig)
- * @param {string} dir  - Absolute botDir (unused here but kept for signature consistency)
+ * @param {Object} bot - Full bot record (must have pm2Name, nodeId, websiteConfig)
  */
-const applyWebsiteInfra = async (bot, dir) => {
+const applyWebsiteInfra = async (bot) => {
     const wc = bot.websiteConfig;
-    const distAbs = resolveDistFolder(bot, wc.distFolder);
 
     if (wc.mode === "static" && !wc.domain) {
         // http-server mode: runs as a PM2 process, no nginx needed
-        await pm2Service.startHttpServer(bot.pm2Name, distAbs, wc.port);
-        await ufwService.openPort(wc.port);
+        await executor.startHttpServer(bot, wc.distFolder, wc.port);
+        await executor.ufwOpenPort(bot, wc.port);
         return;
     }
 
     // nginx mode: static+domain (listen 80) or fullstack (listen wc.port)
-    await nginxService.writeConfig(bot.pm2Name, {
+    await executor.nginxWriteConfig(bot, {
         mode: wc.mode,
         port: wc.port,
         apiPort: wc.apiPort || null,
-        distFolder: distAbs,
+        distFolder: wc.distFolder,
         domain: wc.domain || null,
         extraConfig: wc.extraNginxConfig || null,
     });
 
     if (wc.mode === "static") {
         // Domain-based static site → nginx handles port 80
-        await ufwService.openPort(80);
+        await executor.ufwOpenPort(bot, 80);
     } else {
-        await ufwService.openPort(wc.port);
+        await executor.ufwOpenPort(bot, wc.port);
         if (wc.domain && wc.port !== 80) {
-            await ufwService.openPort(80);
+            await executor.ufwOpenPort(bot, 80);
         }
     }
 
@@ -172,24 +159,38 @@ const applyWebsiteInfra = async (bot, dir) => {
     // cert and updates the nginx config without re-issuing, so this is safe to
     // call on every start/restart.
     if (wc.domain && wc.sslEnabled) {
-        await nginxService.enableSSL(wc.domain, null);
-        await ufwService.openPort(443);
+        await executor.nginxEnableSSL(bot, wc.domain, null);
+        await executor.ufwOpenPort(bot, 443);
+    }
+};
+
+/**
+ * Run a website build command on the bot's node. Remote nodes reuse the
+ * agent's /git/install (it runs an arbitrary command in the project dir).
+ */
+const runBuildCommand = async (bot, buildCommand) => {
+    if (!buildCommand) return;
+    if (executor.isRemote(bot)) {
+        await executor.installDeps(bot, buildCommand);
+    } else {
+        await execAsync(buildCommand, { cwd: botDir(bot), timeout: 300_000 });
     }
 };
 
 /**
  * Get live status for any project type.
  * - static, no domain → http-server runs via PM2 → PM2 status
- * - static, domain    → nginx config existence
+ * - static, domain    → nginx config existence (on the bot's node)
  * - discord / fullstack → PM2 status (routed to the bot's node)
  *
- * `resolver` (from executor.getStatusResolver) batches PM2 list fetches per
- * node — pass it when enriching many bots; omit it for a single bot.
+ * `resolver` (from executor.getStatusResolver) batches PM2/nginx list fetches
+ * per node — pass it when enriching many bots; omit it for a single bot.
  */
 const getLiveStatus = async (bot, resolver = null) => {
     if (bot.projectType === "website" && bot.websiteConfig?.mode === "static" && bot.websiteConfig?.domain) {
-        const online = nginxService.configExists(bot.pm2Name);
-        return { status: online ? "online" : "stopped", cpu: 0, memory: 0, restarts: 0, uptime: null };
+        const exists = await executor.nginxConfigExists(bot, resolver ? resolver.nginxListFor(bot) : undefined);
+        if (exists === null) return { status: "node-offline", cpu: 0, memory: 0, restarts: 0, uptime: null };
+        return { status: exists ? "online" : "stopped", cpu: 0, memory: 0, restarts: 0, uptime: null };
     }
     if (resolver) return resolver.statusFor(bot);
     return executor.getBotStatus(bot);
@@ -233,7 +234,9 @@ const botDir = (bot) => {
 router.get("/domains", async (req, res, next) => {
     try {
         const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
-        const bots = await db.find("bots", query);
+        let bots = await db.find("bots", query);
+        // Remote-view context: only domains hosted on the selected node
+        if (req.node) bots = bots.filter((b) => (b.nodeId || "local") === req.nodeId);
         const domains = bots
             .filter((b) => b.projectType === "website" && b.websiteConfig?.domain)
             .map((b) => ({
@@ -259,7 +262,9 @@ router.get("/", async (req, res, next) => {
     try {
         // Admin sees all bots; users see only their own
         const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
-        const bots = await db.find("bots", query);
+        let bots = await db.find("bots", query);
+        // Remote-view context: only bots living on the selected node
+        if (req.node) bots = bots.filter((b) => (b.nodeId || "local") === req.nodeId);
         // One PM2 list fetch per node (local + each agent) instead of per bot
         const resolver = await executor.getStatusResolver(bots);
         const nodes = await nodeService.getNodes();
@@ -380,12 +385,15 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             });
         }
 
-        // Decide which node this project lands on ("auto" → scheduler picks;
-        // websites/services are pinned to local — see schedulerService).
+        // Decide which node this project lands on ("auto" → scheduler picks).
         // Only admins may target a specific node; users always go through auto.
+        // The remote-view context (X-Panel-Node) acts as the default target when
+        // the form doesn't specify one explicitly.
         let placement;
         try {
-            const requestedNodeId = req.user.role === "admin" ? (req.body.nodeId || null) : null;
+            const requestedNodeId = req.user.role === "admin"
+                ? (req.body.nodeId || (req.node ? req.nodeId : null))
+                : null;
             placement = await schedulerService.pickNode({ requestedNodeId, projectType });
         } catch (schedErr) {
             return res.status(400).json({ error: schedErr.message });
@@ -443,13 +451,19 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             if (!isStaticWebsite && rawWebsiteConfig.buildCommand) {
                 console.log(`[Bots] Running build command for ${botID}`);
                 try {
-                    await execAsync(rawWebsiteConfig.buildCommand, { cwd: dir, timeout: 300_000 });
+                    if (isRemoteNode) {
+                        // Agent /git/install runs any command in the project dir
+                        await executor.installDeps(nodeRef, rawWebsiteConfig.buildCommand);
+                    } else {
+                        await execAsync(rawWebsiteConfig.buildCommand, { cwd: dir, timeout: 300_000 });
+                    }
                 } catch (buildErr) {
-                    fs.rmSync(dir, { recursive: true, force: true });
+                    if (isRemoteNode) await executor.fsDelete(nodeRef, "").catch(() => {});
+                    else fs.rmSync(dir, { recursive: true, force: true });
                     throw buildErr;
                 }
             }
-            const port = await assignPort(rawWebsiteConfig.port);
+            const port = await assignPort(rawWebsiteConfig.port, nodeId);
             websiteConfig = {
                 mode,
                 port,
@@ -489,12 +503,12 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             createdAt: Date.now(),
         });
 
-        // 5. Post-creation infra
+        // 5. Post-creation infra (on whichever node the project landed)
         if (projectType === "website") {
-            await applyWebsiteInfra(botRecord, dir);
+            await applyWebsiteInfra(botRecord);
             console.log(`[Bots] Website infra applied for "${name}" on port ${websiteConfig.port}`);
         } else if (projectType === "service" && serviceConfig?.port) {
-            await ufwService.openPort(serviceConfig.port);
+            await executor.ufwOpenPort(botRecord, serviceConfig.port);
             console.log(`[Bots] UFW opened port ${serviceConfig.port} for service "${name}"`);
         }
 
@@ -660,10 +674,10 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
         });
 
         if (projectType === "website") {
-            await applyWebsiteInfra(botRecord, localPath);
+            await applyWebsiteInfra(botRecord);
         }
         if (projectType === "service" && serviceConfig?.port) {
-            await ufwService.openPort(serviceConfig.port);
+            await executor.ufwOpenPort(botRecord, serviceConfig.port);
         }
 
         console.log(`[Bots] Imported local ${projectType} "${name}" (${pm2Name}) from ${localPath}`);
@@ -747,16 +761,16 @@ router.delete("/:id", requireOwnership, async (req, res, next) => {
         // Stop & unregister from PM2 (on whichever node the bot lives)
         await executor.deleteBot(bot);
 
-        // Project-type cleanup (websites/services always run on the local node)
+        // Project-type cleanup (on whichever node the project lives)
         if (bot.projectType === "website" && bot.websiteConfig) {
-            await nginxService.removeConfig(bot.pm2Name);
+            await executor.nginxRemoveConfig(bot);
             // Static+domain uses nginx on port 80 (shared — don't close it)
             const isStaticWithDomain = bot.websiteConfig.mode === "static" && bot.websiteConfig.domain;
             if (!isStaticWithDomain) {
-                await ufwService.closePort(bot.websiteConfig.port);
+                await executor.ufwClosePort(bot, bot.websiteConfig.port);
             }
         } else if (bot.projectType === "service" && bot.serviceConfig?.port) {
-            await ufwService.closePort(bot.serviceConfig.port);
+            await executor.ufwClosePort(bot, bot.serviceConfig.port);
         }
 
         // Only delete source files for git-managed bots
@@ -788,15 +802,11 @@ router.post("/:id/start", requireOwnership, async (req, res, next) => {
             return res.status(403).json({ error: "Bot is expired. Please extend to start." });
         }
 
-        const dir = botDir(bot);
-
         // Static website: rebuild if needed, then start via http-server or nginx
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
             const wc = bot.websiteConfig;
-            if (wc.buildCommand) {
-                await execAsync(wc.buildCommand, { cwd: dir, timeout: 300_000 });
-            }
-            await applyWebsiteInfra(bot, dir);
+            await runBuildCommand(bot, wc.buildCommand);
+            await applyWebsiteInfra(bot);
             await createNotification(`Website "${bot.name}" was started.`, "start");
             const output = wc.domain ? "nginx config applied" : "http-server started";
             return res.json({ message: "Website started", output });
@@ -821,10 +831,10 @@ router.post("/:id/stop", requireOwnership, async (req, res, next) => {
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
             if (bot.websiteConfig.domain) {
                 // Domain mode: remove nginx config
-                await nginxService.removeConfig(bot.pm2Name);
+                await executor.nginxRemoveConfig(bot);
             } else {
                 // http-server mode: stop PM2 process
-                await pm2Service.stopBot(bot.pm2Name);
+                await executor.stopBot(bot);
             }
             await createNotification(`Website "${bot.name}" was stopped.`, "stop");
             return res.json({ message: "Website stopped" });
@@ -866,32 +876,31 @@ router.put("/:id/website-config", requireOwnership, async (req, res, next) => {
         const newBuildCommand = buildCommand !== undefined ? (buildCommand.trim() || null) : wc.buildCommand;
         const newExtraNginx = extraNginxConfig !== undefined ? (extraNginxConfig.trim() || null) : (wc.extraNginxConfig || null);
         const newWc = { ...wc, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand, extraNginxConfig: newExtraNginx };
-        const distAbs = resolveDistFolder({ ...bot, websiteConfig: newWc }, newDistFolder);
 
         if (wc.mode === "static" && !wc.domain) {
             // http-server mode: adjust UFW port if changed, then restart http-server
             if (newPort !== wc.port) {
-                await ufwService.closePort(wc.port);
-                await ufwService.openPort(newPort);
+                await executor.ufwClosePort(bot, wc.port);
+                await executor.ufwOpenPort(bot, newPort);
             }
-            await pm2Service.startHttpServer(bot.pm2Name, distAbs, newPort);
+            await executor.startHttpServer(bot, newDistFolder, newPort);
         } else {
             // nginx mode: adjust UFW port if changed, then rewrite config
             if (newPort !== wc.port) {
-                await ufwService.closePort(wc.port);
-                await ufwService.openPort(newPort);
+                await executor.ufwClosePort(bot, wc.port);
+                await executor.ufwOpenPort(bot, newPort);
             }
-            await nginxService.writeConfig(bot.pm2Name, {
+            await executor.nginxWriteConfig(bot, {
                 mode: wc.mode,
                 port: newPort,
                 apiPort: newApiPort || null,
-                distFolder: distAbs,
+                distFolder: newDistFolder,
                 domain: wc.domain || null,
                 extraConfig: newExtraNginx,
             });
             if (wc.domain && wc.sslEnabled) {
-                await nginxService.enableSSL(wc.domain, null);
-                await ufwService.openPort(443);
+                await executor.nginxEnableSSL(bot, wc.domain, null);
+                await executor.ufwOpenPort(bot, 443);
             }
         }
 
@@ -912,27 +921,30 @@ router.post("/:id/domain", requireOwnership, async (req, res, next) => {
         const { domain, email } = req.body;
         if (!domain) return res.status(400).json({ error: "domain is required" });
 
-        const dir = botDir(bot);
         const wc = bot.websiteConfig;
 
         // If static site was running via http-server (no domain), stop it and close its port
         if (wc.mode === "static" && !wc.domain) {
-            await pm2Service.deleteBot(bot.pm2Name);
-            await ufwService.closePort(wc.port);
+            await executor.deleteBot(bot);
+            await executor.ufwClosePort(bot, wc.port);
         }
 
-        // Write nginx config with new domain
-        const distAbs = resolveDistFolder(bot, wc.distFolder);
-        await nginxService.writeConfig(bot.pm2Name, {
+        // Write nginx config with new domain (on the bot's node)
+        await executor.nginxWriteConfig(bot, {
             mode: wc.mode,
             port: wc.port,
             apiPort: wc.apiPort || null,
-            distFolder: distAbs,
+            distFolder: wc.distFolder,
             domain,
         });
 
+        // certbot's HTTP challenge needs 80 open; 443 serves the cert afterwards.
+        // (Worker nodes start with only SSH + the agent port open.)
+        await executor.ufwOpenPort(bot, 80);
+
         // Issue SSL via certbot
-        await nginxService.enableSSL(domain, email || null);
+        await executor.nginxEnableSSL(bot, domain, email || null);
+        await executor.ufwOpenPort(bot, 443);
 
         // Persist domain + sslEnabled to DB
         const updated = await db.findOneAndUpdate(
@@ -971,14 +983,10 @@ router.post("/:id/restart", requireOwnership, async (req, res, next) => {
             });
         }
 
-        const dir = botDir(bot);
-
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
             const wc = bot.websiteConfig;
-            if (wc.buildCommand) {
-                await execAsync(wc.buildCommand, { cwd: dir, timeout: 300_000 });
-            }
-            await applyWebsiteInfra(bot, dir);
+            await runBuildCommand(bot, wc.buildCommand);
+            await applyWebsiteInfra(bot);
             await createNotification(`Website "${bot.name}" was restarted.`, "restart");
             return res.json({ message: "Website restarted" });
         }
@@ -1014,7 +1022,6 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
             return res.status(403).json({ error: "Bot is expired. Please extend to start." });
         }
 
-        const dir = botDir(bot);
         let pullOutput = "(skipped — no git remote)";
         let pullFailed = false;
 
@@ -1031,10 +1038,8 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
         // Static website: skip install, run build if configured, then apply serving infra
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
             const wc = bot.websiteConfig;
-            if (wc.buildCommand) {
-                await execAsync(wc.buildCommand, { cwd: dir, timeout: 300_000 });
-            }
-            await applyWebsiteInfra(bot, dir);
+            await runBuildCommand(bot, wc.buildCommand);
+            await applyWebsiteInfra(bot);
             await createNotification(`Bot "${bot.name}" was updated / reinstalled.`, "reinstall");
             console.log(`[Bots] Updated static website "${bot.name}"`);
             return res.json({

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useNode } from "../context/NodeContext";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -59,9 +60,12 @@ function TabBar({ value, onChange, options }) {
 
 export default function CreateBotModal({ onClose, onCreated, defaultProjectType }) {
     const { isAdmin } = useAuth();
+    const { nodeId: globalNodeId } = useNode();
     const [form, setForm] = useState(() => ({
         ...defaultForm,
         projectType: defaultProjectType || defaultForm.projectType,
+        // Remote view active → default the placement to the node being viewed
+        nodeId: globalNodeId !== "local" ? globalNodeId : defaultForm.nodeId,
     }));
     const [groups, setGroups] = useState([]);
     const [availableTags, setAvailableTags] = useState([]);
@@ -125,8 +129,9 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                 projectType: form.projectType,
                 websiteConfig,
                 serviceConfig,
-                // Node placement — only meaningful for admin + git-deployed Discord bots
-                nodeId: form.projectType === "discord" && form.source === "git" ? form.nodeId : undefined,
+                // Node placement — admin + git-deployed projects (local imports
+                // physically live on the panel VPS)
+                nodeId: form.source === "git" ? form.nodeId : undefined,
             };
 
             const payload = form.source === "git"
@@ -224,8 +229,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                         />
                     </div>
 
-                    {/* ── Node Placement (admin, git-deployed Discord bots) ── */}
-                    {isAdmin && form.projectType === "discord" && form.source === "git" && nodes.length > 1 && (
+                    {/* ── Node Placement (admin, git-deployed projects) ── */}
+                    {isAdmin && form.source === "git" && nodes.length > 1 && (
                         <div>
                             <label className="label">Node (VPS)</label>
                             <select className="input" value={form.nodeId} onChange={set("nodeId")}>
@@ -242,7 +247,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 })}
                             </select>
                             <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-                                Websites and local imports always run on the panel VPS.
+                                Auto keeps websites/services on the panel VPS; pick a node to place them there explicitly. Local imports always run on the panel VPS.
                             </p>
                         </div>
                     )}

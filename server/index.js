@@ -25,6 +25,7 @@ const decorRoutes = require("./routes/decors");
 const { authMiddleware } = require("./middleware/auth");
 const { adminOnly } = require("./middleware/adminOnly");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
+const nodeContext = require("./middleware/nodeContext");
 const errorHandler = require("./middleware/errorHandler");
 const expiryService = require("./services/expiryService");
 const backupService = require("./services/backupService");
@@ -126,11 +127,11 @@ app.use(express.json({ limit: "2mb" })); // env files could be a bit large
 //  API Routes
 // ─────────────────────────────────────────────────────────────────────────────
 app.use("/api/auth", authRoutes);
-app.use("/api/bots", authMiddleware, botRoutes);
+app.use("/api/bots", authMiddleware, nodeContext, botRoutes);
 app.use("/api/groups", authMiddleware, groupRoutes);
 app.use("/api/bulk", authMiddleware, bulkRoutes);
 app.use("/api/logs", logRoutes); // Auth handled per-route (SSE needs query-param token)
-app.use("/api/system", authMiddleware, adminOnly, systemRoutes);
+app.use("/api/system", authMiddleware, adminOnly, nodeContext, systemRoutes);
 app.use("/api/panel", authMiddleware, adminOnly, panelRoutes);
 app.use("/api/github", authMiddleware, adminOnly, githubRoutes);
 app.use("/api/proxy", authMiddleware, adminOnly, proxyRoutes);

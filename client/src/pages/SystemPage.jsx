@@ -1,13 +1,16 @@
 import { useState, useEffect } from "react";
 import api from "../api/client";
 import TrendModal from "../components/TrendModal";
+import { useNode } from "../context/NodeContext";
 
 // ── Background poller: runs even when SystemPage is unmounted ─────────────────
+// Always pinned to the panel VPS ("local") so the local history never gets
+// polluted while a remote-view node is selected.
 let _bgInterval = null;
 function startGlobalPoller() {
     if (_bgInterval) return; // already running
     const poll = () => {
-        api.get("/system/stats").then(r => {
+        api.get("/system/stats", { headers: { "X-Panel-Node": "local" } }).then(r => {
             const entry = { ...r.data, _ts: Date.now() };
             try {
                 const saved = localStorage.getItem("bp_sys_history");
@@ -101,26 +104,19 @@ function Sparkline({ values, color, samples, onClick }) {
 }
 
 export default function SystemPage() {
+    // The global header switcher (NodeContext) decides which node this page
+    // shows — no page-local node tabs anymore.
+    const { nodeId, selectedNode } = useNode();
     const [stats, setStats] = useState(null);
     const [activeTab, setActiveTab] = useState("CPU");
     const [trendModal, setTrendModal] = useState(null);
-    const [nodesList, setNodesList] = useState([]);
-    const [nodeSel, setNodeSel] = useState("local");
     const [history, setHistory] = useState(() => {
         try { const saved = localStorage.getItem("bp_sys_history"); return saved ? JSON.parse(saved) : []; }
         catch { return []; }
     });
 
-    // Node tabs (only rendered when a second node exists)
     useEffect(() => {
-        const fetchNodes = () => api.get("/nodes").then(r => setNodesList(r.data)).catch(() => {});
-        fetchNodes();
-        const int = setInterval(fetchNodes, 30_000);
-        return () => clearInterval(int);
-    }, []);
-
-    useEffect(() => {
-        if (nodeSel === "local") {
+        if (nodeId === "local") {
             // Local: re-read from the global poller's localStorage every 4s
             const sync = () => {
                 try {
@@ -139,16 +135,17 @@ export default function SystemPage() {
             return () => clearInterval(int);
         }
 
-        // Remote node: poll its stats through the panel while this page is open;
-        // history is kept per node so sparklines/trends work the same way.
-        const key = `bp_sys_history_${nodeSel}`;
+        // Remote node: poll its stats (X-Panel-Node header routes the request)
+        // while this page is open; history is kept per node so sparklines and
+        // trends work the same way.
+        const key = `bp_sys_history_${nodeId}`;
         let hist = [];
         try { hist = JSON.parse(localStorage.getItem(key)) || []; } catch { /* fresh */ }
         setHistory(hist);
         setStats(hist.length > 0 ? hist[hist.length - 1] : null);
 
         const poll = () => {
-            api.get(`/nodes/${nodeSel}/stats`).then(r => {
+            api.get("/system/stats").then(r => {
                 const entry = { ...r.data, _ts: Date.now() };
                 setStats(entry);
                 setHistory(prev => {
@@ -161,28 +158,11 @@ export default function SystemPage() {
         poll();
         const int = setInterval(poll, 4000);
         return () => clearInterval(int);
-    }, [nodeSel]);
-
-    const nodeTabs = nodesList.length > 1 && (
-        <div className="tab-bar" style={{ display: "inline-flex" }}>
-            {nodesList.map(n => (
-                <button
-                    key={n._id}
-                    className={`tab-item${nodeSel === n._id ? " active" : ""}`}
-                    onClick={() => setNodeSel(n._id)}
-                    style={{ fontSize: 13 }}
-                    title={n.local ? "Panel VPS" : `${n.host}:${n.port}`}
-                >
-                    ⬡ {n.local ? "Local" : n.name}
-                </button>
-            ))}
-        </div>
-    );
+    }, [nodeId]);
 
     if (!stats) {
         return (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 16 }}>
-                {nodeTabs}
                 <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
                 <p style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>Establishing telemetry connection…</p>
             </div>
@@ -209,7 +189,7 @@ export default function SystemPage() {
                     <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>System Monitor</h1>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
                         <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
-                            {nodeSel === "local" ? "Host server resource utilization." : `Node "${nodesList.find(n => n._id === nodeSel)?.name || nodeSel}" resource utilization.`}
+                            {nodeId === "local" ? "Host server resource utilization." : `Node "${selectedNode?.name || nodeId}" resource utilization.`}
                         </p>
                         {stats.hostname && (
                             <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--bg-input)", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)" }}>
@@ -218,7 +198,6 @@ export default function SystemPage() {
                         )}
                     </div>
                 </div>
-                {nodeTabs}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "var(--success-bg)", border: "1px solid var(--success-border)", borderRadius: 99 }}>
                     <span className="status-dot" style={{ width: 8, height: 8, background: "var(--success)" }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: "var(--success)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Live Updates</span>

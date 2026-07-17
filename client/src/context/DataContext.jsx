@@ -1,11 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import api from "../api/client";
 import { useAuth } from "./AuthContext";
+import { useNode } from "./NodeContext";
 
 const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
     const { user, isAdmin } = useAuth();
+    const { nodeId } = useNode();
     const [bots, setBots] = useState([]);
     const [groups, setGroups] = useState([]);
     const [tags, setTags] = useState([]);
@@ -28,7 +30,7 @@ export function DataProvider({ children }) {
         } finally {
             setLoading(false);
         }
-    }, [user]);
+    }, [user, nodeId]);
 
     const fetchStats = useCallback(async () => {
         if (!user || !isAdmin) return; // system stats are admin-only
@@ -36,10 +38,14 @@ export function DataProvider({ children }) {
             const res = await api.get("/system/stats");
             setStats(res.data);
         } catch {}
-    }, [user, isAdmin]);
+    }, [user, isAdmin, nodeId]);
 
     useEffect(() => {
         if (user) {
+            // Node switch: show loading and drop the previous node's stats so
+            // stale data never flashes as the newly selected node's.
+            setLoading(true);
+            setStats(null);
             fetchBots();
             fetchStats();
             const botInterval   = setInterval(fetchBots,  10000);

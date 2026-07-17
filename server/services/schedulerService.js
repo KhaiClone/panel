@@ -4,9 +4,9 @@ const nodeService = require("./nodeService");
 //  Scheduler — decides which node a new project lands on.
 //
 //  Rules:
-//   - website/service projects need nginx/UFW/DNS on the panel VPS → always
-//     "local". An explicit remote nodeId for them is rejected with a clear
-//     error rather than silently moved.
+//   - website/service projects: explicit nodeId wins (agent ≥ 1.1.0 provides
+//     nginx/UFW on remote nodes). Auto-placement still pins them to local —
+//     DNS points at a specific VPS, so silently moving a website would break it.
 //   - Discord bots: explicit nodeId wins (validated online), otherwise every
 //     online node (including local) is scored and the best one is picked.
 //
@@ -41,14 +41,15 @@ const diskFreeGB = (stats) =>
 const pickNode = async ({ requestedNodeId = null, projectType = "discord" } = {}) => {
     const wantsAuto = !requestedNodeId || requestedNodeId === "auto";
 
-    // Websites and services are pinned to the panel VPS (nginx/UFW live there)
-    if (projectType !== "discord") {
-        if (!wantsAuto && requestedNodeId !== nodeService.LOCAL_NODE_ID) {
-            throw new Error(
-                `${projectType} projects can only run on the local node (nginx/UFW required) — remote nodes are not supported yet`,
-            );
-        }
-        return { nodeId: nodeService.LOCAL_NODE_ID, nodeName: "Local", reason: `${projectType} is local-only` };
+    // Websites/services: auto stays on the panel VPS (their DNS/ports are
+    // node-specific); an explicit node choice falls through to the shared
+    // validation below.
+    if (projectType !== "discord" && wantsAuto) {
+        return {
+            nodeId: nodeService.LOCAL_NODE_ID,
+            nodeName: "Local",
+            reason: `${projectType} auto-placement stays on the panel VPS`,
+        };
     }
 
     // Explicit choice

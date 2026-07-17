@@ -4,6 +4,8 @@ const fs = require("fs");
 const pm2Service = require("./pm2Service");
 const gitService = require("./gitService");
 const nodeService = require("./nodeService");
+const nginxService = require("./nginxService");
+const ufwService = require("./ufwService");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Executor — routes every bot operation to the right VPS.
@@ -11,9 +13,8 @@ const nodeService = require("./nodeService");
 //  bot.nodeId === "local" (or missing) → call local services, exactly as the
 //  panel always has. Any other nodeId → forward to that node's agent over HTTP.
 //
-//  Remote placement is only supported for plain PM2 projects (Discord bots).
-//  Websites/services depend on nginx/UFW/DNS on the panel VPS and stay local —
-//  the scheduler enforces that; the executor just trusts bot.nodeId.
+//  Websites/services work on remote nodes too (agent ≥ 1.1.0 exposes
+//  nginx/UFW); auto-placement still prefers local — see schedulerService.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const isRemote = (bot) => !!bot.nodeId && bot.nodeId !== nodeService.LOCAL_NODE_ID;
@@ -116,15 +117,29 @@ const getStatusResolver = async (bots) => {
     const localList = await pm2Service.getProcessList();
     const remoteNodeIds = [...new Set(bots.filter(isRemote).map((b) => b.nodeId))];
 
+    // static+domain websites are "online" when their nginx config exists — batch
+    // that lookup too (one /nginx/list per node that actually hosts one)
+    const isNginxStatusBot = (b) =>
+        b.projectType === "website" && b.websiteConfig?.mode === "static" && b.websiteConfig?.domain;
+    const nginxNodeIds = new Set(bots.filter((b) => isRemote(b) && isNginxStatusBot(b)).map((b) => b.nodeId));
+
     const remoteLists = new Map();
+    const nginxLists = new Map();
     await Promise.all(
         remoteNodeIds.map(async (nodeId) => {
             try {
                 const node = await nodeService.getNode(nodeId);
-                const data = await nodeService.agentRequest(node, "get", "/pm2/list", { timeout: 10_000 });
-                remoteLists.set(nodeId, data.processes || []);
+                const [pm2Data, nginxData] = await Promise.all([
+                    nodeService.agentRequest(node, "get", "/pm2/list", { timeout: 10_000 }),
+                    nginxNodeIds.has(nodeId)
+                        ? nodeService.agentRequest(node, "get", "/nginx/list", { timeout: 10_000 }).catch(() => null)
+                        : Promise.resolve(null),
+                ]);
+                remoteLists.set(nodeId, pm2Data.processes || []);
+                nginxLists.set(nodeId, nginxData ? nginxData.configs || [] : null);
             } catch {
                 remoteLists.set(nodeId, null);
+                nginxLists.set(nodeId, null);
             }
         }),
     );
@@ -132,6 +147,7 @@ const getStatusResolver = async (bots) => {
     return {
         localList,
         listFor: (bot) => (isRemote(bot) ? remoteLists.get(bot.nodeId) ?? null : localList),
+        nginxListFor: (bot) => (isRemote(bot) ? nginxLists.get(bot.nodeId) ?? null : undefined),
         statusFor: async (bot) => {
             const list = isRemote(bot) ? remoteLists.get(bot.nodeId) : localList;
             if (isRemote(bot) && list === null) {
@@ -245,6 +261,104 @@ const removeBotFiles = async (bot) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Website infra — nginx + UFW on whichever node the project lives.
+//
+//  distFolder is passed around in its stored (usually relative) form: the
+//  local branch resolves it against the bot's local dir, the remote branch
+//  sends it as-is so the agent resolves it inside its own roots.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const localDistAbs = (bot, distFolder) =>
+    path.isAbsolute(distFolder || "") ? distFolder : path.join(localBotDir(bot), distFolder || "");
+
+const nginxWriteConfig = async (bot, { mode, port, apiPort, distFolder, domain, extraConfig }) => {
+    if (!isRemote(bot)) {
+        return nginxService.writeConfig(bot.pm2Name, {
+            mode, port, apiPort, domain, extraConfig,
+            distFolder: localDistAbs(bot, distFolder),
+        });
+    }
+    await agentCall(bot, "post", "/nginx/config", {
+        data: {
+            pm2Name: bot.pm2Name,
+            root: rootOf(bot),
+            dir: relDir(bot),
+            mode, port, apiPort, domain, extraConfig,
+            distFolder: distFolder || "",
+        },
+        timeout: 30_000,
+    });
+};
+
+const nginxRemoveConfig = async (bot) => {
+    if (!isRemote(bot)) return nginxService.removeConfig(bot.pm2Name);
+    await agentCall(bot, "delete", `/nginx/config/${encodeURIComponent(bot.pm2Name)}`, { timeout: 30_000 })
+        .catch(() => { /* best-effort, like the local variant */ });
+};
+
+/**
+ * Does the bot's nginx config exist on its node?
+ * Returns null when the node is unreachable (callers report "node-offline").
+ * `cachedConfigList` comes from getStatusResolver().nginxListFor(bot).
+ */
+const nginxConfigExists = async (bot, cachedConfigList) => {
+    if (!isRemote(bot)) return nginxService.configExists(bot.pm2Name);
+    if (Array.isArray(cachedConfigList)) return cachedConfigList.includes(bot.pm2Name);
+    if (cachedConfigList === null) return null; // node was unreachable during batch fetch
+    try {
+        const data = await agentCall(bot, "get", `/nginx/config/${encodeURIComponent(bot.pm2Name)}/exists`, { timeout: 10_000 });
+        return data.exists === true;
+    } catch {
+        return null;
+    }
+};
+
+const nginxEnableSSL = async (bot, domain, email = null) => {
+    if (!isRemote(bot)) return nginxService.enableSSL(domain, email);
+    await agentCall(bot, "post", "/nginx/ssl", { data: { domain, email }, timeout: 130_000 });
+};
+
+const ufwOpenPort = async (bot, port) => {
+    if (!isRemote(bot)) return ufwService.openPort(port);
+    await agentCall(bot, "post", "/ufw/open", { data: { port }, timeout: 20_000 });
+};
+
+const ufwClosePort = async (bot, port) => {
+    if (!isRemote(bot)) return ufwService.closePort(port);
+    await agentCall(bot, "post", "/ufw/close", { data: { port }, timeout: 20_000 })
+        .catch(() => { /* rule may not exist / node offline — same silence as local */ });
+};
+
+/** Find a free port on a node — called at create time, before a record exists. */
+const findFreePortOn = async (nodeId, start = 3000, end = 9000) => {
+    if (!nodeId || nodeId === nodeService.LOCAL_NODE_ID) return ufwService.findFreePort(start, end);
+    const node = await nodeService.getNode(nodeId);
+    const data = await nodeService.agentRequest(node, "get", "/ufw/free-port", {
+        params: { start, end },
+        timeout: 20_000,
+    });
+    return data.port;
+};
+
+/** Serve a static site with http-server (PM2) on the bot's node. */
+const startHttpServer = async (bot, distFolder, port) => {
+    if (!isRemote(bot)) {
+        return pm2Service.startHttpServer(bot.pm2Name, localDistAbs(bot, distFolder), port);
+    }
+    const data = await agentCall(bot, "post", "/pm2/start-static", {
+        data: {
+            pm2Name: bot.pm2Name,
+            root: rootOf(bot),
+            dir: relDir(bot),
+            distFolder: distFolder || "",
+            port,
+        },
+        timeout: 60_000,
+    });
+    return data.output;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Logs
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -305,6 +419,14 @@ module.exports = {
     fsDownloadStream,
     fsUpload,
     removeBotFiles,
+    nginxWriteConfig,
+    nginxRemoveConfig,
+    nginxConfigExists,
+    nginxEnableSSL,
+    ufwOpenPort,
+    ufwClosePort,
+    findFreePortOn,
+    startHttpServer,
     getBotLogs,
     streamRemoteLogs,
     flushBotLogs,

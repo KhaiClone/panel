@@ -1,18 +1,33 @@
 const express = require("express");
 const si = require("systeminformation");
+const nodeService = require("../services/nodeService");
 const router = express.Router();
 
 let cachedStats = null;
 let lastFetch = 0;
 const CACHE_TTL = 2000;
 
+// Remote-view stats cache — own 2s TTL per node (nodeService.getNodeStats's
+// 10s cache is too coarse for the System page's 5s poll).
+const remoteCache = new Map(); // nodeId → { at, stats }
+
 /**
  * GET /api/system/stats
  * Returns CPU, RAM, disk, and network I/O.
+ * Honors the X-Panel-Node remote-view context: proxies to the node's agent.
  */
 router.get("/stats", async (req, res, next) => {
     try {
         const now = Date.now();
+
+        if (req.node) {
+            const cached = remoteCache.get(req.nodeId);
+            if (cached && now - cached.at < CACHE_TTL) return res.json(cached.stats);
+            const stats = await nodeService.agentRequest(req.node, "get", "/stats", { timeout: 8000 });
+            remoteCache.set(req.nodeId, { at: Date.now(), stats });
+            return res.json(stats);
+        }
+
         if (cachedStats && now - lastFetch < CACHE_TTL) {
             return res.json(cachedStats);
         }
