@@ -31,6 +31,7 @@ const expiryService = require("./services/expiryService");
 const backupService = require("./services/backupService");
 const memoryMonitorService = require("./services/memoryMonitorService");
 const nodeService = require("./services/nodeService");
+const termService = require("./services/termService");
 const db = require("./db");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,9 +174,12 @@ nodeService.startHealthPolling();
 //  Listen + Seed
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT) || 3000;
-app.listen(PORT, "0.0.0.0", async () => {
+const server = app.listen(PORT, "0.0.0.0", async () => {
     console.log(
         `[Server] Bot Panel running on port ${PORT} (${process.env.NODE_ENV || "development"})`,
     );
     await seedAdminUser();
 });
+
+// Interactive terminal (WebSocket upgrade on /api/term)
+termService.attachTermServer(server);

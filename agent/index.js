@@ -30,7 +30,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = parseInt(process.env.AGENT_PORT) || 4200;
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[Agent] bot-panel agent listening on :${PORT}`);
     console.log(`[Agent] BOTS_ROOT_DIR = ${process.env.BOTS_ROOT_DIR}`);
     console.log(`[Agent] SITES_ROOT_DIR = ${process.env.SITES_ROOT_DIR || "(same as bots)"}`);
@@ -38,3 +38,6 @@ app.listen(PORT, "0.0.0.0", () => {
         console.error("[Agent] WARNING: AGENT_API_KEY is not set — all requests will be rejected");
     }
 });
+
+// Interactive terminal (WebSocket upgrade on /term)
+require("./services/term").createTermSocket(server);
