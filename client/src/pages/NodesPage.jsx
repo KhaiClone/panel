@@ -347,7 +347,7 @@ export default function NodesPage() {
                                             {st.cpu?.model && <div style={{ gridColumn: "1 / -1" }}><Spec label="Processor" value={st.cpu.model} /></div>}
                                             <Spec label="Network" value={st.network ? `↓ ${fmtNet(st.network.rxBytesPerSec)}  ↑ ${fmtNet(st.network.txBytesPerSec)}` : "—"} mono />
                                             <Spec label="Disk mount" value={st.disk ? `${st.disk.mount || "/"} (${st.disk.fs || "—"})` : "—"} mono />
-                                            <Spec label="Uptime" value={fmtUptime(info?.systemUptime)} />
+                                            <Spec label="Uptime" value={fmtUptime(st.uptime ?? info?.systemUptime)} />
                                             <Spec label="Agent" value={info ? `v${info.agentVersion}` : (node.local ? "panel" : "—")} mono />
                                             {info?.platform && <Spec label="OS" value={info.platform} />}
                                             {info?.nodeVersion && <Spec label="Node.js" value={info.nodeVersion} mono />}

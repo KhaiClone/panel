@@ -1,4 +1,5 @@
 const express = require("express");
+const os = require("os");
 const si = require("systeminformation");
 const router = express.Router();
 const { getProcessList } = require("../services/pm2");
@@ -50,9 +51,10 @@ router.get("/stats", async (req, res, next) => {
             cpu: {
                 usagePercent: parseFloat(cpuLoad.currentLoad.toFixed(2)),
                 temperature: temp.main ?? null,
+                // Fall back to Node's os.cpus() — some VMs leave si.cpu().brand empty
                 model: cpuInfo.brand
                     ? `${cpuInfo.manufacturer} ${cpuInfo.brand}`.trim()
-                    : null,
+                    : (os.cpus()[0]?.model || null),
                 cores: cpuLoad.cpus?.length ?? null,
             },
             memory: {
@@ -78,6 +80,7 @@ router.get("/stats", async (req, res, next) => {
                       iface: iface.iface,
                   }
                 : null,
+            uptime: os.uptime(),
             processCount: pm2List.length,
         };
 

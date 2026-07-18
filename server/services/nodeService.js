@@ -67,12 +67,14 @@ const statsCache = new Map(); // nodeId → { at, stats }
 
 /** Stats of the panel's own VPS — same shape the agent's /stats returns. */
 const getLocalStats = async () => {
+    const os = require("os");
     const pm2Service = require("./pm2Service");
-    const [cpuLoad, mem, fsData, cpuInfo, pm2List] = await Promise.all([
+    const [cpuLoad, mem, fsData, cpuInfo, netStats, pm2List] = await Promise.all([
         si.currentLoad(),
         si.mem(),
         si.fsSize().catch(() => []),
         si.cpu().catch(() => ({ brand: null, manufacturer: null })),
+        si.networkStats().catch(() => []),
         pm2Service.getProcessList(),
     ]);
 
@@ -81,10 +83,14 @@ const getLocalStats = async () => {
         fsData.sort((a, b) => b.size - a.size)[0] ||
         null;
 
+    const iface = netStats.find((n) => n.iface && !n.iface.startsWith("lo")) || netStats[0] || null;
+
     return {
         cpu: {
             usagePercent: parseFloat(cpuLoad.currentLoad.toFixed(2)),
-            model: cpuInfo.brand ? `${cpuInfo.manufacturer} ${cpuInfo.brand}`.trim() : null,
+            model: cpuInfo.brand
+                ? `${cpuInfo.manufacturer} ${cpuInfo.brand}`.trim()
+                : (os.cpus()[0]?.model || null),
             cores: cpuLoad.cpus?.length ?? null,
         },
         memory: {
@@ -100,8 +106,17 @@ const getLocalStats = async () => {
                   freeBytes: mainFs.size - mainFs.used,
                   usedPercent: parseFloat(((mainFs.used / mainFs.size) * 100).toFixed(2)),
                   mount: mainFs.mount,
+                  fs: mainFs.type,
               }
             : null,
+        network: iface
+            ? {
+                  rxBytesPerSec: iface.rx_sec ?? 0,
+                  txBytesPerSec: iface.tx_sec ?? 0,
+                  iface: iface.iface,
+              }
+            : null,
+        uptime: os.uptime(),
         processCount: pm2List.length,
     };
 };
