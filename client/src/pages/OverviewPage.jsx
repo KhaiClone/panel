@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useAuth } from "../context/AuthContext";
+import { useNode } from "../context/NodeContext";
 import api from "../api/client";
-import NodeFilter, { matchNode } from "../components/NodeFilter";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmtBytes = (b) => {
@@ -89,26 +89,20 @@ const TYPE_META = {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function OverviewPage() {
-    const { stats, bots: allBots } = useData();
+    // bots + stats already come scoped to the globally-selected node (the ⬡
+    // switcher in the header) — the server filters /bots and /system/stats by
+    // the X-Panel-Node header, so no per-page node filter is needed here.
+    const { stats, bots } = useData();
     const { isAdmin } = useAuth();
+    const { isRemote, selectedNode } = useNode();
     const [domains, setDomains] = useState([]);
     const [myInfo, setMyInfo] = useState(null); // slot + usage for regular users
-    const [nodeFilter, setNodeFilter] = useState("all");
-    const [nodes, setNodes] = useState([]); // admin: node list with live stats
     const navigate = useNavigate();
-
-    // Node filter applies to every count/list on this page
-    const bots = allBots.filter(b => matchNode(b, nodeFilter));
 
     useEffect(() => {
         api.get("/bots/domains").then(r => setDomains(r.data)).catch(() => {});
         if (!isAdmin) {
             api.get("/admin/users/me").then(r => setMyInfo(r.data)).catch(() => {});
-        } else {
-            const fetchNodes = () => api.get("/nodes").then(r => setNodes(r.data)).catch(() => {});
-            fetchNodes();
-            const int = setInterval(fetchNodes, 10_000);
-            return () => clearInterval(int);
         }
     }, [isAdmin]);
 
@@ -121,12 +115,9 @@ export default function OverviewPage() {
         return acc;
     }, {});
 
-    // Resource rings follow the node filter: a specific remote node shows that
-    // node's stats (from /api/nodes); "all"/"local" keep the panel VPS stats.
-    const selectedNode = nodeFilter !== "all" && nodeFilter !== "local"
-        ? nodes.find(n => n._id === nodeFilter)
-        : null;
-    const effStats = selectedNode ? selectedNode.stats : stats;
+    // Resource rings show the selected node's stats (already routed through the
+    // global switcher via /system/stats).
+    const effStats = stats;
 
     const cpu  = effStats?.cpu;
     const mem  = effStats?.memory;
@@ -144,9 +135,10 @@ export default function OverviewPage() {
             <div className="mobile-wrap" style={{ marginBottom: 28, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                 <div>
                     <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Server Overview</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Real-time health and resource summary of your VPS</p>
+                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+                        Real-time health and resource summary of {isRemote ? `node "${selectedNode?.name || "?"}"` : "your VPS"}
+                    </p>
                 </div>
-                <NodeFilter bots={allBots} value={nodeFilter} onChange={setNodeFilter} />
             </div>
 
             {/* ── Slot info (regular users only) ── */}
@@ -196,7 +188,7 @@ export default function OverviewPage() {
             <div className="card" style={{ padding: "28px 32px", marginBottom: 24 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
                     <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>
-                        VPS Resources{selectedNode ? ` — ⬡ ${selectedNode.name}` : ""}
+                        VPS Resources{isRemote && selectedNode ? ` — ⬡ ${selectedNode.name}` : ""}
                     </h2>
                     {cpu?.model && <span style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "monospace" }}>{cpu.model}</span>}
                 </div>
