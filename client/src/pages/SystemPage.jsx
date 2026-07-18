@@ -3,28 +3,14 @@ import api from "../api/client";
 import TrendModal from "../components/TrendModal";
 import { useNode } from "../context/NodeContext";
 
-// ── Background poller: runs even when SystemPage is unmounted ─────────────────
-// Always pinned to the panel VPS ("local") so the local history never gets
-// polluted while a remote-view node is selected.
-let _bgInterval = null;
-function startGlobalPoller() {
-    if (_bgInterval) return; // already running
-    const poll = () => {
-        api.get("/system/stats", { headers: { "X-Panel-Node": "local" } }).then(r => {
-            const entry = { ...r.data, _ts: Date.now() };
-            try {
-                const saved = localStorage.getItem("bp_sys_history");
-                const prev  = saved ? JSON.parse(saved) : [];
-                const next  = [...prev.slice(-119), entry]; // keep 120 samples
-                localStorage.setItem("bp_sys_history", JSON.stringify(next));
-            } catch { /* storage full */ }
-        }).catch(() => {});
-    };
-    poll(); // immediate first poll
-    _bgInterval = setInterval(poll, 4000);
-}
-// Kick off immediately when module is imported
-startGlobalPoller();
+// History now comes from the server-side sampler (24/7, every 15s, kept 1 week)
+// via GET /system/history — no more browser-only localStorage ring buffer.
+const RANGES = [
+    { key: "1h", label: "1H" },
+    { key: "6h", label: "6H" },
+    { key: "24h", label: "24H" },
+    { key: "7d", label: "7D" },
+];
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -107,58 +93,30 @@ export default function SystemPage() {
     // The global header switcher (NodeContext) decides which node this page
     // shows — no page-local node tabs anymore.
     const { nodeId, selectedNode } = useNode();
-    const [stats, setStats] = useState(null);
+    const [stats, setStats] = useState(null);   // live current stats (rings)
+    const [history, setHistory] = useState([]); // server-recorded series
+    const [range, setRange] = useState("6h");
     const [activeTab, setActiveTab] = useState("CPU");
     const [trendModal, setTrendModal] = useState(null);
-    const [history, setHistory] = useState(() => {
-        try { const saved = localStorage.getItem("bp_sys_history"); return saved ? JSON.parse(saved) : []; }
-        catch { return []; }
-    });
 
+    // Live rings — poll the selected node's current stats every 4s
     useEffect(() => {
-        if (nodeId === "local") {
-            // Local: re-read from the global poller's localStorage every 4s
-            const sync = () => {
-                try {
-                    const saved = localStorage.getItem("bp_sys_history");
-                    if (saved) {
-                        const parsed = JSON.parse(saved);
-                        if (parsed.length > 0) {
-                            setHistory(parsed);
-                            setStats(parsed[parsed.length - 1]);
-                        }
-                    }
-                } catch { /* ignore */ }
-            };
-            sync();
-            const int = setInterval(sync, 4000);
-            return () => clearInterval(int);
-        }
-
-        // Remote node: poll its stats (X-Panel-Node header routes the request)
-        // while this page is open; history is kept per node so sparklines and
-        // trends work the same way.
-        const key = `bp_sys_history_${nodeId}`;
-        let hist = [];
-        try { hist = JSON.parse(localStorage.getItem(key)) || []; } catch { /* fresh */ }
-        setHistory(hist);
-        setStats(hist.length > 0 ? hist[hist.length - 1] : null);
-
-        const poll = () => {
-            api.get("/system/stats").then(r => {
-                const entry = { ...r.data, _ts: Date.now() };
-                setStats(entry);
-                setHistory(prev => {
-                    const next = [...prev.slice(-119), entry];
-                    try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* storage full */ }
-                    return next;
-                });
-            }).catch(() => {});
-        };
+        setStats(null);
+        const poll = () => api.get("/system/stats").then(r => setStats(r.data)).catch(() => {});
         poll();
         const int = setInterval(poll, 4000);
         return () => clearInterval(int);
     }, [nodeId]);
+
+    // Persistent history from the server sampler — refetch on node/range change,
+    // then refresh every 30s.
+    useEffect(() => {
+        const load = () => api.get(`/system/history`, { params: { node: nodeId, range } })
+            .then(r => setHistory(r.data)).catch(() => {});
+        load();
+        const int = setInterval(load, 30_000);
+        return () => clearInterval(int);
+    }, [nodeId, range]);
 
     if (!stats) {
         return (
@@ -177,8 +135,8 @@ export default function SystemPage() {
     const ramColor  = ram  > 80 ? "#ef4444" : ram  > 50 ? "#f59e0b" : "#6366f1";
     const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9") : "#64748b";
 
-    const cpuVals = history.map(s => clamp(s.cpu?.usagePercent));
-    const ramVals = history.map(s => clamp(s.memory?.usedPercent));
+    const cpuVals = history.map(s => clamp(s.cpu));
+    const ramVals = history.map(s => clamp(s.ram));
 
     return (
         <div className="fade-in page-compact" style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: 28 }}>
@@ -231,7 +189,16 @@ export default function SystemPage() {
             {/* Tabbed Detailed Metrics */}
             <div className="card slide-up" style={{ padding: 24 }}>
                 <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: 0 }}>Detailed Metrics</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: 0 }}>Detailed Metrics</h3>
+                        <div className="tab-bar" style={{ display: "inline-flex" }}>
+                            {RANGES.map(r => (
+                                <button key={r.key} className={`tab-item${range === r.key ? " active" : ""}`} onClick={() => setRange(r.key)} style={{ fontSize: 12, padding: "5px 12px" }}>
+                                    {r.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     <div className="tab-bar" style={{ display: "inline-flex" }}>
                         {["CPU", "Memory", "Disk"].map(t => (
                             <button
@@ -319,7 +286,7 @@ export default function SystemPage() {
             </div>
 
             {trendModal === "cpu" && <TrendModal title="CPU Utilization History"    color={cpuColor} data={history} valueKey="cpu" onClose={() => setTrendModal(null)} />}
-            {trendModal === "mem" && <TrendModal title="Memory Utilization History" color={ramColor} data={history} valueKey="mem" onClose={() => setTrendModal(null)} />}
+            {trendModal === "mem" && <TrendModal title="Memory Utilization History" color={ramColor} data={history} valueKey="ram" onClose={() => setTrendModal(null)} />}
         </div>
     );
 }

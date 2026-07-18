@@ -1,7 +1,15 @@
 const express = require("express");
 const si = require("systeminformation");
 const nodeService = require("../services/nodeService");
+const sampleStore = require("../services/sampleStore");
 const router = express.Router();
+
+const RANGE_MS = {
+    "1h": 60 * 60 * 1000,
+    "6h": 6 * 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000,
+};
 
 let cachedStats = null;
 let lastFetch = 0;
@@ -85,6 +93,40 @@ router.get("/stats", async (req, res, next) => {
         cachedStats = response;
         lastFetch = Date.now();
         res.json(response);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /api/system/history?node=<id|local>&range=1h|6h|24h|7d
+ * Persistent resource history recorded by samplerService, down-sampled to
+ * ~720 points so charts stay light. node defaults to the remote-view context.
+ */
+router.get("/history", (req, res, next) => {
+    try {
+        const nodeId = req.query.node || req.nodeId || nodeService.LOCAL_NODE_ID;
+        const rangeMs = RANGE_MS[req.query.range] || RANGE_MS["6h"];
+        const rows = sampleStore.query(nodeId, Date.now() - rangeMs);
+
+        const TARGET = 720;
+        if (rows.length <= TARGET) return res.json(rows);
+
+        // Bucket-average down to ~TARGET points
+        const bucket = Math.ceil(rows.length / TARGET);
+        const out = [];
+        for (let i = 0; i < rows.length; i += bucket) {
+            const slice = rows.slice(i, i + bucket);
+            const avg = (k) => {
+                const vals = slice.map((r) => r[k]).filter((v) => v != null);
+                return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+            };
+            out.push({
+                ts: slice[slice.length - 1].ts,
+                cpu: avg("cpu"), ram: avg("ram"), disk: avg("disk"), rx: avg("rx"), tx: avg("tx"),
+            });
+        }
+        res.json(out);
     } catch (err) {
         next(err);
     }

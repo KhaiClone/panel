@@ -1,8 +1,9 @@
 import { createPortal } from "react-dom";
 
 export default function TrendModal({ title, color, data, valueKey, onClose }) {
-    const values = data.map((s) => valueKey === "cpu" ? s.cpu.usagePercent : s.memory.usedPercent);
-    const timestamps = data.map((s) => s._ts);
+    // Server history is flat: { ts, cpu, ram, disk, ... } with numeric values.
+    const round = (v) => (v == null ? 0 : Math.round(v));
+    const values = data.map((s) => round(s[valueKey]));
 
     if (values.length < 2) {
         return (
@@ -54,7 +55,7 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
                             return indices.map((idx) => {
                                 const s = data[idx];
                                 const x = PAD + (idx / (data.length - 1)) * (W - PAD * 2);
-                                const label = s._ts ? new Date(s._ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+                                const label = s.ts ? new Date(s.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
                                 return (
                                     <g key={idx}>
                                         <line x1={x} y1={H - PAD_BOTTOM + 8} x2={x} y2={H - PAD_BOTTOM + 14} stroke="var(--border-light)" strokeWidth="2" />
@@ -86,12 +87,12 @@ export default function TrendModal({ title, color, data, valueKey, onClose }) {
                         </thead>
                         <tbody>
                             {[...data].reverse().map((s, i) => {
-                                const val = valueKey === "cpu" ? s.cpu.usagePercent : s.memory.usedPercent;
+                                const val = round(s[valueKey]);
                                 const rowColor = val > 80 ? "var(--danger)" : val > 50 ? "var(--warning)" : color;
                                 return (
                                     <tr key={i} style={{ borderBottom: "1px solid var(--border-light)" }} onMouseOver={e => e.currentTarget.style.background = "var(--bg-input)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
                                         <td style={{ padding: "8px 16px", color: "var(--text-dim)" }}>{data.length - i}</td>
-                                        <td className="mono" style={{ padding: "8px 16px", color: "var(--text)" }}>{s._ts ? new Date(s._ts).toLocaleTimeString() : "—"}</td>
+                                        <td className="mono" style={{ padding: "8px 16px", color: "var(--text)" }}>{s.ts ? new Date(s.ts).toLocaleTimeString() : "—"}</td>
                                         <td style={{ padding: "8px 16px", textAlign: "right", fontWeight: 700, color: rowColor }}>{val}%</td>
                                     </tr>
                                 );

@@ -32,6 +32,7 @@ const backupService = require("./services/backupService");
 const memoryMonitorService = require("./services/memoryMonitorService");
 const nodeService = require("./services/nodeService");
 const termService = require("./services/termService");
+const samplerService = require("./services/samplerService");
 const db = require("./db");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,6 +170,7 @@ expiryService.start();
 backupService.start();
 memoryMonitorService.start();
 nodeService.startHealthPolling();
+samplerService.start();
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Listen + Seed
