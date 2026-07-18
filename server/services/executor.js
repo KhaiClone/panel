@@ -256,11 +256,14 @@ const fsUpload = async (bot, sub, fileBuffer, fileName) => {
 //  local↔remote combination. Archives folder CONTENTS (name-independent).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const EXCLUDE_ON_ARCHIVE = ["node_modules", ".pm2"];
+// Environment dirs that the install step recreates on the target — carrying
+// them across machines wastes bandwidth and (for venv) bakes in stale absolute
+// paths that break the interpreter. Always safe to drop when we reinstall.
+const REBUILDABLE_DIRS = ["node_modules", "venv", ".venv", "__pycache__"];
 
 /** Stream the project's working dir into `tmpPath` as tar.gz. */
 const archiveToFile = async (ref, tmpPath, { excludeNodeModules = true } = {}) => {
-    const excludes = excludeNodeModules ? EXCLUDE_ON_ARCHIVE : [".pm2"];
+    const excludes = excludeNodeModules ? [...REBUILDABLE_DIRS, ".pm2"] : [".pm2"];
 
     if (!isRemote(ref)) {
         const { spawn } = require("child_process");
