@@ -64,33 +64,67 @@ function StatRow({ label, value, accent, barPercent, barColor }) {
     );
 }
 
-// Minimal live area chart — smooth line, subtle fill, no dots/labels/grid.
-function LiveChart({ values, color, height = 130 }) {
-    if (values.length < 2) {
+// Minimal live area chart with light axes: dashed % gridlines (y) + time
+// ticks (x). Stays clean — faint lines, small muted labels, no dots/table.
+const fmtTick = (ts, spanMs) => {
+    const d = new Date(ts);
+    const p = (v) => String(v).padStart(2, "0");
+    return spanMs > 24 * 3600 * 1000 ? `${d.getDate()}/${d.getMonth() + 1}` : `${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function LiveChart({ points, color }) {
+    if (points.length < 2) {
         return (
-            <div style={{ marginTop: 16, height, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ marginTop: 16, height: 200, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Collecting data…</span>
             </div>
         );
     }
-    const W = 600, H = 100;
-    const n = values.length;
-    const x = (i) => (i / (n - 1)) * W;
-    const y = (v) => H - (clamp(v) / 100) * H;
-    const line = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-    const area = `0,${H} ${line} ${W},${H}`;
+    const W = 680, H = 200, padL = 32, padR = 12, padT = 10, padB = 22;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const n = points.length;
+    const x = (i) => padL + (i / (n - 1)) * plotW;
+    const y = (v) => padT + (1 - clamp(v) / 100) * plotH;
+    const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+    const area = `${padL},${padT + plotH} ${line} ${padL + plotW},${padT + plotH}`;
     const gradId = `g-${color.replace("#", "")}`;
+
+    const spanMs = points[n - 1].ts - points[0].ts;
+    const xCount = Math.min(5, n);
+    const xIdx = Array.from({ length: xCount }, (_, k) => Math.round((k * (n - 1)) / (xCount - 1)));
+
     return (
         <div style={{ marginTop: 16, borderRadius: 10, padding: 12, background: "var(--bg-input)", border: "1px solid var(--border)" }}>
-            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height, display: "block" }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
                 <defs>
                     <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={color} stopOpacity="0.22" />
                         <stop offset="100%" stopColor={color} stopOpacity="0" />
                     </linearGradient>
                 </defs>
+
+                {/* Y axis — % gridlines */}
+                {[0, 25, 50, 75, 100].map((t) => {
+                    const yy = y(t);
+                    return (
+                        <g key={t}>
+                            <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="var(--border-light)" strokeWidth="1" strokeDasharray="3 4" />
+                            <text x={padL - 6} y={yy + 3} textAnchor="end" fontSize="9" fill="var(--text-dim)">{t}%</text>
+                        </g>
+                    );
+                })}
+
+                {/* Area + line */}
                 <polyline points={area} fill={`url(#${gradId})`} stroke="none" />
-                <polyline points={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+                <polyline points={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+
+                {/* X axis — time ticks */}
+                {xIdx.map((idx, k) => (
+                    <text key={k} x={x(idx)} y={H - 6} fontSize="9" fill="var(--text-dim)"
+                        textAnchor={k === 0 ? "start" : k === xIdx.length - 1 ? "end" : "middle"}>
+                        {fmtTick(points[idx].ts, spanMs)}
+                    </text>
+                ))}
             </svg>
         </div>
     );
@@ -155,9 +189,9 @@ export default function SystemPage() {
     const ramColor  = ram  > 80 ? "#ef4444" : ram  > 50 ? "#f59e0b" : "#6366f1";
     const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9") : "#64748b";
 
-    const cpuVals  = series.map(s => clamp(s.cpu));
-    const ramVals  = series.map(s => clamp(s.ram));
-    const diskVals = series.map(s => clamp(s.disk));
+    const cpuPoints  = series.map(s => ({ ts: s.ts, v: clamp(s.cpu) }));
+    const ramPoints  = series.map(s => ({ ts: s.ts, v: clamp(s.ram) }));
+    const diskPoints = series.map(s => ({ ts: s.ts, v: clamp(s.disk) }));
 
     return (
         <div className="fade-in page-compact" style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: 28 }}>
@@ -250,7 +284,7 @@ export default function SystemPage() {
                         <StatRow label="Current Usage"     value={`${cpu}%`}                                          accent={cpuColor} barPercent={cpu} barColor={cpuColor} />
                         <StatRow label="Model Processor"   value={stats.cpu?.model ?? "—"} />
                         <StatRow label="Core Temperature"  value={stats.cpu?.temperature ? `${stats.cpu.temperature}°C` : "Unavailable"} />
-                        <LiveChart values={cpuVals} color={cpuColor} />
+                        <LiveChart points={cpuPoints} color={cpuColor} />
                     </div>
                 )}
 
@@ -269,7 +303,7 @@ export default function SystemPage() {
                         <StatRow label="Allocated / Used" value={fmt(stats.memory?.usedBytes)} />
                         <StatRow label="Available / Free" value={fmt(stats.memory?.freeBytes)} />
                         <StatRow label="Total Capacity"   value={fmt(stats.memory?.totalBytes)} />
-                        <LiveChart values={ramVals} color={ramColor} />
+                        <LiveChart points={ramPoints} color={ramColor} />
                     </div>
                 )}
 
@@ -292,7 +326,7 @@ export default function SystemPage() {
                                 <StatRow label="Space Used"       value={fmt(stats.disk.usedBytes)} />
                                 <StatRow label="Space Free"       value={fmt(stats.disk.freeBytes)} />
                                 <StatRow label="Total Capacity"   value={fmt(stats.disk.totalBytes)} />
-                                <LiveChart values={diskVals} color={diskColor} />
+                                <LiveChart points={diskPoints} color={diskColor} />
                             </>
                         ) : (
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 160, border: "1px dashed var(--border)", borderRadius: 10, background: "var(--bg-input)" }}>
