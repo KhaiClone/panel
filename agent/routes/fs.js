@@ -1,6 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 const multer = require("multer");
 const router = express.Router();
 const { resolveSafe } = require("../utils/paths");
@@ -198,6 +199,67 @@ router.post("/upload", upload.single("file"), (req, res, next) => {
         fs.writeFileSync(dest, req.file.buffer);
 
         res.json({ message: "Uploaded", name: req.file.originalname });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /fs/archive?root&dir&exclude=node_modules,.pm2
+ * Streams a tar.gz of the bot directory (for node migration). The whole
+ * project folder is archived at its parent level so extract restores the same
+ * layout. node_modules etc. can be excluded — they get reinstalled on the target.
+ */
+router.get("/archive", (req, res, next) => {
+    try {
+        const target = resolveSafe(req.query.root, req.query.dir);
+        if (!fs.existsSync(target)) return res.status(404).json({ error: "Directory not found" });
+
+        // Archive the folder CONTENTS (leading ./) so extract is independent of
+        // the folder's name — source and target dirs may be named differently.
+        const excludes = (req.query.exclude || "")
+            .split(",")
+            .map((e) => e.trim())
+            .filter(Boolean)
+            .map((e) => `--exclude=./${e}`);
+
+        res.setHeader("Content-Type", "application/gzip");
+        const tar = spawn("tar", ["czf", "-", "-C", target, ...excludes, "."]);
+        tar.stdout.pipe(res);
+        tar.stderr.on("data", (d) => console.error("[Agent] tar archive:", d.toString().trim()));
+        tar.on("error", (err) => { if (!res.headersSent) next(err); });
+        tar.on("close", (code) => { if (code !== 0 && !res.writableEnded) res.end(); });
+        req.on("close", () => { try { tar.kill(); } catch { /* done */ } });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /fs/extract?root&dir&clear=true
+ * Raw gzip request body is piped into `tar x`, restoring the archived contents
+ * directly into the target bot directory. express.json() ignores non-JSON
+ * bodies, so req is still a readable stream here.
+ */
+router.post("/extract", (req, res, next) => {
+    try {
+        const target = resolveSafe(req.query.root, req.query.dir);
+
+        if (req.query.clear === "true" && fs.existsSync(target)) {
+            fs.rmSync(target, { recursive: true, force: true });
+        }
+        fs.mkdirSync(target, { recursive: true });
+
+        const tar = spawn("tar", ["xzf", "-", "-C", target]);
+        let stderr = "";
+        tar.stderr.on("data", (d) => { stderr += d.toString(); });
+        req.pipe(tar.stdin);
+        tar.stdin.on("error", () => { /* client aborted */ });
+        tar.on("error", (err) => next(err));
+        tar.on("close", (code) => {
+            if (code === 0) return res.json({ message: "Extracted" });
+            next(new Error(`tar extract failed (code ${code}): ${stderr.trim().slice(0, 300)}`));
+        });
     } catch (err) {
         next(err);
     }

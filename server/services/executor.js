@@ -250,6 +250,83 @@ const fsUpload = async (bot, sub, fileBuffer, fileName) => {
     return res.data;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Migration — archive a project's working dir on one node, restore on another.
+//  The panel is the hub: archive → temp file on panel → extract. Works for any
+//  local↔remote combination. Archives folder CONTENTS (name-independent).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EXCLUDE_ON_ARCHIVE = ["node_modules", ".pm2"];
+
+/** Stream the project's working dir into `tmpPath` as tar.gz. */
+const archiveToFile = async (ref, tmpPath, { excludeNodeModules = true } = {}) => {
+    const excludes = excludeNodeModules ? EXCLUDE_ON_ARCHIVE : [".pm2"];
+
+    if (!isRemote(ref)) {
+        const { spawn } = require("child_process");
+        const dir = localBotDir(ref);
+        if (!fs.existsSync(dir)) throw new Error(`Source directory not found: ${dir}`);
+        const args = ["czf", tmpPath, "-C", dir, ...excludes.map((e) => `--exclude=./${e}`), "."];
+        await new Promise((resolve, reject) => {
+            const tar = require("child_process").spawn("tar", args);
+            let err = "";
+            tar.stderr.on("data", (d) => { err += d.toString(); });
+            tar.on("error", reject);
+            tar.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`tar archive failed: ${err.trim().slice(0, 200)}`))));
+        });
+        return;
+    }
+
+    const node = await nodeService.getNode(ref.nodeId);
+    const axios = require("axios");
+    const res = await axios({
+        method: "get",
+        url: `http://${node.host}:${node.port}/fs/archive`,
+        params: { root: rootOf(ref), dir: relDir(ref), exclude: excludes.join(",") },
+        headers: { "x-agent-key": node.apiKey },
+        responseType: "stream",
+        timeout: 0,
+    });
+    await new Promise((resolve, reject) => {
+        const out = fs.createWriteStream(tmpPath);
+        res.data.pipe(out);
+        res.data.on("error", reject);
+        out.on("error", reject);
+        out.on("finish", resolve);
+    });
+};
+
+/** Restore a tar.gz temp file into the project's working dir on `ref`'s node. */
+const extractFromFile = async (ref, tmpPath, { clear = true } = {}) => {
+    if (!isRemote(ref)) {
+        const dir = localBotDir(ref);
+        if (clear && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+        fs.mkdirSync(dir, { recursive: true });
+        const args = ["xzf", tmpPath, "-C", dir];
+        await new Promise((resolve, reject) => {
+            const tar = require("child_process").spawn("tar", args);
+            let err = "";
+            tar.stderr.on("data", (d) => { err += d.toString(); });
+            tar.on("error", reject);
+            tar.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`tar extract failed: ${err.trim().slice(0, 200)}`))));
+        });
+        return;
+    }
+
+    const node = await nodeService.getNode(ref.nodeId);
+    const axios = require("axios");
+    await axios({
+        method: "post",
+        url: `http://${node.host}:${node.port}/fs/extract`,
+        params: { root: rootOf(ref), dir: relDir(ref), clear: clear ? "true" : "false" },
+        headers: { "x-agent-key": node.apiKey, "Content-Type": "application/gzip" },
+        data: fs.createReadStream(tmpPath),
+        timeout: 0,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+    });
+};
+
 /** Delete the bot's whole folder on its node (remote equivalent of rmSync(botDir)). */
 const removeBotFiles = async (bot) => {
     if (!isRemote(bot)) {
@@ -418,6 +495,8 @@ module.exports = {
     fsRename,
     fsDownloadStream,
     fsUpload,
+    archiveToFile,
+    extractFromFile,
     removeBotFiles,
     nginxWriteConfig,
     nginxRemoveConfig,

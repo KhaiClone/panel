@@ -789,6 +789,129 @@ router.delete("/:id", requireOwnership, async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Migrate to another node
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/bots/:id/migrate   body: { targetNodeId }
+ * Move a project (with all its data, keeping .git) to another node:
+ *   stop source → archive → extract on target → reinstall → start → clean source.
+ * The DB record only flips its nodeId on success; on failure the source is
+ * left intact and restarted.
+ */
+router.post("/:id/migrate", requireOwnership, async (req, res, next) => {
+    const os = require("os");
+    const path2 = require("path");
+    const fsp = require("fs");
+    let tmpPath = null;
+    let sourceStopped = false;
+    let bot = null;
+
+    try {
+        if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
+
+        bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const { targetNodeId } = req.body;
+        if (!targetNodeId) return res.status(400).json({ error: "targetNodeId is required" });
+
+        const currentNodeId = bot.nodeId || nodeService.LOCAL_NODE_ID;
+        if (targetNodeId === currentNodeId) return res.status(400).json({ error: "Target node is the same as the current node" });
+
+        // Validate the target (local is always valid; a remote must be online + enabled)
+        if (targetNodeId !== nodeService.LOCAL_NODE_ID) {
+            const target = await nodeService.getNode(targetNodeId); // throws if unknown
+            if (target.enabled === false) return res.status(400).json({ error: `Node "${target.name}" is disabled` });
+            const healthy = await nodeService.checkNodeHealth(target);
+            if (!healthy) return res.status(400).json({ error: `Node "${target.name}" is offline — cannot migrate there` });
+        }
+
+        const sourceRef = { ...bot }; // nodeId = current
+        const targetRef = { ...bot, nodeId: targetNodeId };
+        const isStaticNoDomain = bot.projectType === "website" && bot.websiteConfig?.mode === "static" && !bot.websiteConfig?.domain;
+
+        // 1. Stop on source (+ tear down its nginx/UFW), keep files for now
+        try {
+            if (bot.projectType === "website" && bot.websiteConfig) {
+                await executor.nginxRemoveConfig(sourceRef).catch(() => {});
+                await executor.deleteBot(sourceRef).catch(() => {}); // stops http-server if any
+                const isStaticDomain = bot.websiteConfig.mode === "static" && bot.websiteConfig.domain;
+                if (!isStaticDomain) await executor.ufwClosePort(sourceRef, bot.websiteConfig.port).catch(() => {});
+            } else {
+                await executor.deleteBot(sourceRef).catch(() => {});
+                if (bot.projectType === "service" && bot.serviceConfig?.port) {
+                    await executor.ufwClosePort(sourceRef, bot.serviceConfig.port).catch(() => {});
+                }
+            }
+            sourceStopped = true;
+        } catch (e) {
+            throw new Error(`Failed to stop the project on the source node: ${e.message}`);
+        }
+
+        // 2. Archive source → panel temp file (skip node_modules when reinstallable)
+        const excludeNodeModules = !!bot.installCommand;
+        tmpPath = path2.join(os.tmpdir(), `migrate-${bot._id}-${Date.now()}.tar.gz`);
+        console.log(`[Bots] Migrating "${bot.name}" ${currentNodeId} → ${targetNodeId} (archiving…)`);
+        await executor.archiveToFile(sourceRef, tmpPath, { excludeNodeModules });
+
+        // 3. Extract onto the target
+        console.log(`[Bots] Migrating "${bot.name}" (restoring on target…)`);
+        await executor.extractFromFile(targetRef, tmpPath, { clear: true });
+
+        // 4. Reinstall deps on target (node_modules was excluded) + rebuild websites
+        if (excludeNodeModules && !isStaticNoDomain) {
+            console.log(`[Bots] Migrating "${bot.name}" (installing deps on target…)`);
+            await executor.installDeps(targetRef, bot.installCommand);
+        }
+        if (bot.projectType === "website" && bot.websiteConfig?.mode !== "static") {
+            await runBuildCommand(targetRef, bot.websiteConfig.buildCommand);
+        }
+
+        // 5. Flip the DB record to the new node
+        const updated = await db.findOneAndUpdate("bots", { _id: bot._id }, { nodeId: targetNodeId });
+
+        // 6. Start on the target
+        if (bot.projectType === "website") {
+            await applyWebsiteInfra(updated);
+        } else if (bot.projectType === "service") {
+            const proxyConf = await getProxyConf(updated);
+            await executor.startBot(updated, proxyConf);
+            if (updated.serviceConfig?.port) await executor.ufwOpenPort(updated, updated.serviceConfig.port);
+        } else {
+            const proxyConf = await getProxyConf(updated);
+            await executor.startBot(updated, proxyConf);
+        }
+
+        // 7. Clean up the source node's files (target is confirmed running).
+        //    Local-imported folders live at a user-managed path — never delete
+        //    them, same as the DELETE route.
+        if (bot.source !== "local") {
+            await executor.removeBotFiles(sourceRef).catch((e) => console.warn(`[Bots] Source cleanup warning: ${e.message}`));
+        }
+
+        await createNotification(`"${bot.name}" was migrated to a new node.`, "info");
+        console.log(`[Bots] Migrated "${bot.name}" → ${targetNodeId}`);
+        res.json({ message: "Migration complete", bot: updated });
+    } catch (err) {
+        // Rollback: DB was not changed unless we reached step 5; try to bring the
+        // source back online so the user isn't left with a stopped project.
+        if (bot && sourceStopped) {
+            try {
+                const still = await db.findOne("bots", { _id: bot._id });
+                if (still && (still.nodeId || nodeService.LOCAL_NODE_ID) === (bot.nodeId || nodeService.LOCAL_NODE_ID)) {
+                    if (bot.projectType === "website") await applyWebsiteInfra(bot).catch(() => {});
+                    else await executor.startBot(bot, await getProxyConf(bot)).catch(() => {});
+                }
+            } catch { /* best-effort restore */ }
+        }
+        next(err);
+    } finally {
+        if (tmpPath) { try { require("fs").rmSync(tmpPath, { force: true }); } catch { /* ignore */ } }
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Process Control
 // ─────────────────────────────────────────────────────────────────────────────
 

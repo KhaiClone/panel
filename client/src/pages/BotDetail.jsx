@@ -429,6 +429,9 @@ export default function BotDetail() {
     const [busy, setBusy]     = useState(null);
     const [confirm, setConfirm] = useState(null);
     const [actionMsg, setActionMsg] = useState(null);
+    const [nodes, setNodes] = useState([]);       // migration target options
+    const [migrateTo, setMigrateTo] = useState(""); // selected target node id
+    const [migrating, setMigrating] = useState(false);
 
     const [editName,           setEditName]           = useState('');
     const [editExpiry,         setEditExpiry]         = useState('');
@@ -477,6 +480,26 @@ export default function BotDetail() {
         } catch (err) {
             setActionMsg({ type: 'error', text: err.response?.data?.error || `${name} failed` });
         } finally { setBusy(null); }
+    };
+
+    // Migration target list (admin sees the node picker in Settings)
+    useEffect(() => {
+        api.get("/nodes").then((r) => setNodes(r.data)).catch(() => {});
+    }, []);
+
+    const handleMigrate = async () => {
+        if (!migrateTo) return;
+        setConfirm(null);
+        setMigrating(true);
+        setActionMsg({ type: "info", text: "Migrating… this can take a minute — do not close the page." });
+        try {
+            const { data } = await api.post(`/bots/${id}/migrate`, { targetNodeId: migrateTo }, { timeout: 600_000 });
+            setActionMsg({ type: "success", text: data.message || "Migration complete" });
+            setMigrateTo("");
+            fetchBot();
+        } catch (err) {
+            setActionMsg({ type: "error", text: err.response?.data?.error || "Migration failed" });
+        } finally { setMigrating(false); }
     };
 
     const handleDelete = async () => {
@@ -534,13 +557,15 @@ export default function BotDetail() {
                 <div className="slide-up" style={{
                     display: "flex", alignItems: "center", gap: 12, marginBottom: 24,
                     padding: "12px 20px", borderRadius: 10, fontSize: 14, fontWeight: 500,
-                    background: actionMsg.type === 'success' ? "var(--success-bg)" : "var(--danger-bg)",
-                    border: `1px solid ${actionMsg.type === 'success' ? "var(--success-border)" : "var(--danger-border)"}`,
-                    color: actionMsg.type === 'success' ? "var(--success)" : "var(--danger)",
-                    boxShadow: actionMsg.type === 'success' ? "0 4px 12px rgba(16,185,129,0.2)" : "0 4px 12px rgba(239,68,68,0.2)"
+                    background: actionMsg.type === 'success' ? "var(--success-bg)" : actionMsg.type === 'info' ? "var(--accent-dim)" : "var(--danger-bg)",
+                    border: `1px solid ${actionMsg.type === 'success' ? "var(--success-border)" : actionMsg.type === 'info' ? "var(--accent)" : "var(--danger-border)"}`,
+                    color: actionMsg.type === 'success' ? "var(--success)" : actionMsg.type === 'info' ? "var(--accent-hover)" : "var(--danger)",
+                    boxShadow: actionMsg.type === 'success' ? "0 4px 12px rgba(16,185,129,0.2)" : "none"
                 }}>
                     {actionMsg.type === 'success' ? (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>
+                    ) : actionMsg.type === 'info' ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                     ) : (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     )}
@@ -811,6 +836,42 @@ export default function BotDetail() {
                             </div>
                         </div>
 
+                        {/* Move to another node (admin — /nodes returns [] for non-admins) */}
+                        {(() => {
+                            const currentNodeId = bot.nodeId || "local";
+                            const targets = nodes.filter((n) => n._id !== currentNodeId && n.status === "online" && n.enabled !== false);
+                            if (nodes.length < 2) return null;
+                            const hasDomain = bot.projectType === "website" && bot.websiteConfig?.domain;
+                            return (
+                                <div style={{ padding: 20, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                                    <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 6px" }}>Move to another node</h3>
+                                    <p style={{ fontSize: 12.5, color: "var(--text-dim)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                                        Transfers all files (data, <span className="mono">.env</span>, git history) to the target node and restarts there. The project is briefly offline during the move.
+                                        {hasDomain && <><br /><span style={{ color: "var(--warning)" }}>⚠ This site has a domain — after moving, repoint its DNS A record to the new node's IP.</span></>}
+                                    </p>
+                                    <div className="mobile-stack" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                        <select className="input" style={{ maxWidth: 260 }} value={migrateTo} onChange={(e) => setMigrateTo(e.target.value)} disabled={migrating}>
+                                            <option value="">Select target node…</option>
+                                            {targets.map((n) => (
+                                                <option key={n._id} value={n._id}>{n.name}{n.local ? " (panel VPS)" : ""}</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            className="btn-primary"
+                                            style={{ padding: "9px 18px", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}
+                                            disabled={!migrateTo || migrating}
+                                            onClick={() => setConfirm({ action: "migrate" })}
+                                        >
+                                            {migrating ? <><BtnSpinner /> Migrating…</> : "Migrate"}
+                                        </button>
+                                    </div>
+                                    {targets.length === 0 && (
+                                        <p style={{ fontSize: 11.5, color: "var(--text-dim)", margin: "10px 0 0" }}>No other online node available to move to.</p>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
                         {/* Danger Zone */}
                         <div style={{ padding: 20, borderRadius: 10, background: 'rgba(239,68,68,0.03)', border: '1px solid var(--danger-border)' }}>
                             <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>Danger Zone</h3>
@@ -924,6 +985,15 @@ export default function BotDetail() {
                     message={isLocal ? 'Execute the install command and restart the instance.' : 'Pull latest changes, reinstall dependencies, and restart.'}
                     confirmText="Continue Update" danger={false}
                     onConfirm={() => { setConfirm(null); runAction('update', 'update'); }}
+                    onCancel={() => setConfirm(null)}
+                />
+            )}
+            {confirm?.action === 'migrate' && (
+                <ConfirmModal
+                    title={`Move "${bot.name}" to ${nodes.find(n => n._id === migrateTo)?.name || "another node"}?`}
+                    message={"The project will be stopped on its current node, transferred with all its data, and started on the target. It will be briefly offline.\n\nThe source copy is removed once the target is confirmed running."}
+                    confirmText="Migrate now" danger={false}
+                    onConfirm={handleMigrate}
                     onCancel={() => setConfirm(null)}
                 />
             )}

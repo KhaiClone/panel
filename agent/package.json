@@ -1,6 +1,6 @@
 {
   "name": "bot-panel-agent",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Lightweight node agent for bot-panel — runs on worker VPS, executes PM2/git/fs operations on behalf of the panel",
   "main": "index.js",
   "scripts": {
