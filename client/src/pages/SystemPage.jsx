@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import api from "../api/client";
-import TrendModal from "../components/TrendModal";
 import { useNode } from "../context/NodeContext";
 
 // History now comes from the server-side sampler (24/7, every 15s, kept 1 week)
@@ -65,26 +64,34 @@ function StatRow({ label, value, accent, barPercent, barColor }) {
     );
 }
 
-function Sparkline({ values, color, samples, onClick }) {
-    if (values.length < 2) return null;
-    const W = 200, H = 40;
-    const pts = values.map((v, i) => `${(i / (values.length - 1)) * W},${H - (clamp(v) / 100) * H}`);
-    const gradId = `grad-${color.replace("#", "")}`;
+// Minimal live area chart — smooth line, subtle fill, no dots/labels/grid.
+function LiveChart({ values, color, height = 130 }) {
+    if (values.length < 2) {
+        return (
+            <div style={{ marginTop: 16, height, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Collecting data…</span>
+            </div>
+        );
+    }
+    const W = 600, H = 100;
+    const n = values.length;
+    const x = (i) => (i / (n - 1)) * W;
+    const y = (v) => H - (clamp(v) / 100) * H;
+    const line = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const area = `0,${H} ${line} ${W},${H}`;
+    const gradId = `g-${color.replace("#", "")}`;
     return (
-        <div className="card-hover" onClick={onClick}
-            style={{ marginTop: 16, borderRadius: 10, padding: 14, background: "var(--bg-input)", border: "1px solid var(--border)", cursor: "pointer", transition: "all 0.2s" }}>
-            <svg viewBox="0 0 200 40" style={{ width: "100%", height: 40, overflow: "visible" }}>
+        <div style={{ marginTop: 16, borderRadius: 10, padding: 12, background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height, display: "block" }}>
                 <defs>
                     <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={color} stopOpacity="0.4" />
+                        <stop offset="0%" stopColor={color} stopOpacity="0.22" />
                         <stop offset="100%" stopColor={color} stopOpacity="0" />
                     </linearGradient>
                 </defs>
-                <path d={`M${pts.join("L")} L${W},${H} L0,${H} Z`} fill={`url(#${gradId})`} />
-                <path d={`M${pts.join("L")}`} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                {pts.length > 0 && <circle cx={pts[pts.length - 1].split(",")[0]} cy={pts[pts.length - 1].split(",")[1]} r="4" fill={color} stroke="var(--bg-input)" strokeWidth="1.5" />}
+                <polyline points={area} fill={`url(#${gradId})`} stroke="none" />
+                <polyline points={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
             </svg>
-            <p style={{ fontSize: 11, color: "var(--text-dim)", textAlign: "center", margin: "10px 0 0 0", fontWeight: 500 }}>{samples} samples · Click to view history</p>
         </div>
     );
 }
@@ -97,7 +104,6 @@ export default function SystemPage() {
     const [history, setHistory] = useState([]); // server-recorded series
     const [range, setRange] = useState("6h");
     const [activeTab, setActiveTab] = useState("CPU");
-    const [trendModal, setTrendModal] = useState(null);
 
     // Live rings — poll the selected node's current stats every 4s
     useEffect(() => {
@@ -109,14 +115,28 @@ export default function SystemPage() {
     }, [nodeId]);
 
     // Persistent history from the server sampler — refetch on node/range change,
-    // then refresh every 30s.
+    // then refresh every 10s.
     useEffect(() => {
         const load = () => api.get(`/system/history`, { params: { node: nodeId, range } })
             .then(r => setHistory(r.data)).catch(() => {});
         load();
-        const int = setInterval(load, 30_000);
+        const int = setInterval(load, 10_000);
         return () => clearInterval(int);
     }, [nodeId, range]);
+
+    // Chart series = server history + a live tail point from the 4s poll, so the
+    // line advances in real time instead of only every sampling interval.
+    const series = useMemo(() => {
+        if (!stats) return history;
+        const now = Date.now();
+        if (history.length && now - history[history.length - 1].ts < 8000) return history;
+        return [...history, {
+            ts: now,
+            cpu: stats.cpu?.usagePercent,
+            ram: stats.memory?.usedPercent,
+            disk: stats.disk?.usedPercent,
+        }];
+    }, [history, stats]);
 
     if (!stats) {
         return (
@@ -135,8 +155,9 @@ export default function SystemPage() {
     const ramColor  = ram  > 80 ? "#ef4444" : ram  > 50 ? "#f59e0b" : "#6366f1";
     const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9") : "#64748b";
 
-    const cpuVals = history.map(s => clamp(s.cpu));
-    const ramVals = history.map(s => clamp(s.ram));
+    const cpuVals  = series.map(s => clamp(s.cpu));
+    const ramVals  = series.map(s => clamp(s.ram));
+    const diskVals = series.map(s => clamp(s.disk));
 
     return (
         <div className="fade-in page-compact" style={{ maxWidth: 1000, display: "flex", flexDirection: "column", gap: 28 }}>
@@ -229,9 +250,7 @@ export default function SystemPage() {
                         <StatRow label="Current Usage"     value={`${cpu}%`}                                          accent={cpuColor} barPercent={cpu} barColor={cpuColor} />
                         <StatRow label="Model Processor"   value={stats.cpu?.model ?? "—"} />
                         <StatRow label="Core Temperature"  value={stats.cpu?.temperature ? `${stats.cpu.temperature}°C` : "Unavailable"} />
-                        {history.length > 1 && (
-                            <Sparkline values={cpuVals} color={cpuColor} samples={history.length} onClick={() => setTrendModal("cpu")} />
-                        )}
+                        <LiveChart values={cpuVals} color={cpuColor} />
                     </div>
                 )}
 
@@ -250,9 +269,7 @@ export default function SystemPage() {
                         <StatRow label="Allocated / Used" value={fmt(stats.memory?.usedBytes)} />
                         <StatRow label="Available / Free" value={fmt(stats.memory?.freeBytes)} />
                         <StatRow label="Total Capacity"   value={fmt(stats.memory?.totalBytes)} />
-                        {history.length > 1 && (
-                            <Sparkline values={ramVals} color={ramColor} samples={history.length} onClick={() => setTrendModal("mem")} />
-                        )}
+                        <LiveChart values={ramVals} color={ramColor} />
                     </div>
                 )}
 
@@ -275,6 +292,7 @@ export default function SystemPage() {
                                 <StatRow label="Space Used"       value={fmt(stats.disk.usedBytes)} />
                                 <StatRow label="Space Free"       value={fmt(stats.disk.freeBytes)} />
                                 <StatRow label="Total Capacity"   value={fmt(stats.disk.totalBytes)} />
+                                <LiveChart values={diskVals} color={diskColor} />
                             </>
                         ) : (
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 160, border: "1px dashed var(--border)", borderRadius: 10, background: "var(--bg-input)" }}>
@@ -284,9 +302,6 @@ export default function SystemPage() {
                     </div>
                 )}
             </div>
-
-            {trendModal === "cpu" && <TrendModal title="CPU Utilization History"    color={cpuColor} data={history} valueKey="cpu" onClose={() => setTrendModal(null)} />}
-            {trendModal === "mem" && <TrendModal title="Memory Utilization History" color={ramColor} data={history} valueKey="ram" onClose={() => setTrendModal(null)} />}
         </div>
     );
 }
