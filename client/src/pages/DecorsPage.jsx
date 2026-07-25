@@ -2,29 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 
-const TYPES = [
-    { value: 0, label: "Avatar (0)" },
-    { value: 1, label: "Profile Effect (1)" },
-    { value: 2, label: "Nameplate (2)" },
-    { value: 1000, label: "Bundle (1000)" },
-];
-const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 1000: "Bundle" };
-
-const SUMMARY_PRESET = {
-    0: "Tạo diện mạo mới cho ảnh đại diện của bạn.",
-    1: "Hiển thị hiệu ứng này khi người khác xem hồ sơ của bạn.",
-    2: "Để tên của bạn trở nên nổi bật trên máy chủ và cuộc trò chuyện.",
-};
+const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 3: "Frame", 1000: "Bundle" };
 
 const money = (n) => (typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—");
-
-const emptyForm = {
-    type: 0,
-    sku_id: "", name: "", withoutNitro: "", withNitro: "",
-    summary: SUMMARY_PRESET[0], label: "",
-    asset: "", assetURL: "", staticURL: "", effects: "",
-    items: "", imageFg: "", imageBg: "",
-};
 
 function Field({ label, hint, children }) {
     return (
@@ -37,120 +17,55 @@ function Field({ label, hint, children }) {
 }
 
 function ImportForm({ onImported }) {
-    const [form, setForm] = useState(emptyForm);
+    const [deco, setDeco] = useState("");
     const [preview, setPreview] = useState(null);
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState(null); // { ok, text }
 
-    const set = (f) => (e) => setForm((s) => ({ ...s, [f]: e.target.value }));
-    const setType = (t) => setForm((s) => ({ ...s, type: t, summary: SUMMARY_PRESET[t] ?? s.summary }));
-
-    const isBundle = form.type === 1000;
-    const isProfile = form.type === 1;
-    const usesAsset = form.type === 0 || form.type === 2;
-
-    const payload = () => ({
-        ...form,
-        type: Number(form.type),
-        withoutNitro: Number(form.withoutNitro),
-        withNitro: Number(form.withNitro),
-    });
-
     const doPreview = async () => {
+        if (!deco.trim()) return;
         setBusy(true); setMsg(null); setPreview(null);
         try {
-            const { data } = await api.post("/decors/preview", payload());
+            const { data } = await api.post("/decors/preview", { deco: deco.trim() });
             setPreview(data.decor);
         } catch (err) {
-            setMsg({ ok: false, text: err.response?.data?.error || err.response?.data?.message || "Preview failed" });
+            setMsg({ ok: false, text: err.response?.data?.message || err.response?.data?.error || "Preview failed" });
         } finally { setBusy(false); }
     };
 
     const doImport = async () => {
+        if (!deco.trim()) return;
         setBusy(true); setMsg(null);
         try {
-            const { data } = await api.post("/decors/import", payload());
+            const { data } = await api.post("/decors/import", { deco: deco.trim() });
             setMsg({ ok: true, text: `Imported "${data.decor?.name}" (${data.decor?.sku_id})` });
-            setForm({ ...emptyForm, type: form.type, summary: SUMMARY_PRESET[form.type] ?? "" });
-            setPreview(null);
+            setDeco(""); setPreview(null);
             onImported();
         } catch (err) {
-            setMsg({ ok: false, text: err.response?.data?.error || err.response?.data?.message || "Import failed" });
+            setMsg({ ok: false, text: err.response?.data?.message || err.response?.data?.error || "Import failed" });
         } finally { setBusy(false); }
     };
 
+    const previewImg = preview && (preview.type === 1000 ? preview.assetURL?.[0] : (preview.staticURL || preview.assetURL));
+
     return (
         <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Import decor</h3>
+            <div>
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Import decor</h3>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 0" }}>
+                    Paste a SKU ID or shop link — the bot auto-fetches all details based on the decor type.
+                </p>
+            </div>
 
-            <Field label="Decor type">
-                <div className="tab-bar">
-                    {TYPES.map((t) => (
-                        <button key={t.value} type="button" className={`tab-item ${form.type === t.value ? "active" : ""}`} onClick={() => setType(t.value)}>
-                            {t.label}
-                        </button>
-                    ))}
-                </div>
+            <Field label="SKU ID or shop link" hint="e.g. 1491907428344795276 or https://discord.com/shop#itemSkuId=1491907428344795276">
+                <input
+                    className="input mono"
+                    value={deco}
+                    onChange={(e) => setDeco(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") doPreview(); }}
+                    placeholder="sku_id or link…"
+                />
             </Field>
-
-            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <Field label="SKU ID *"><input className="input mono" value={form.sku_id} onChange={set("sku_id")} /></Field>
-                <Field label="Name *"><input className="input" value={form.name} onChange={set("name")} /></Field>
-            </div>
-
-            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <Field label="Base price (without Nitro) *"><input className="input mono" type="number" value={form.withoutNitro} onChange={set("withoutNitro")} /></Field>
-                <Field label="Base price (with Nitro) *"><input className="input mono" type="number" value={form.withNitro} onChange={set("withNitro")} /></Field>
-            </div>
-
-            {!isBundle && (
-                <>
-                    <Field label="Summary *" hint="Auto-filled based on type, editable.">
-                        <input className="input" value={form.summary} onChange={set("summary")} />
-                    </Field>
-                    <Field label="Label *"><input className="input" value={form.label} onChange={set("label")} /></Field>
-                </>
-            )}
-
-            {usesAsset && (
-                <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                    <Field label="Asset hash" hint={form.type === 0 ? "→ avatar-decoration-presets/{hash}.png" : "→ assets/collectibles/{hash}asset.webm"}>
-                        <input className="input mono" value={form.asset} onChange={set("asset")} placeholder="e.g. a1b2c3…" />
-                    </Field>
-                    <Field label="assetURL (override)" hint="Fill in if there is no asset hash — this URL is used directly.">
-                        <input className="input mono" value={form.assetURL} onChange={set("assetURL")} placeholder="https://…" />
-                    </Field>
-                </div>
-            )}
-
-            {isProfile && (
-                <>
-                    <Field label="staticURL (static image/staticFrameSrc) *">
-                        <input className="input mono" value={form.staticURL} onChange={set("staticURL")} placeholder="https://…" />
-                    </Field>
-                    <Field label="effects (JSON, optional)" hint='Effects array if any, e.g. [{"type":1}]'>
-                        <textarea className="input mono" style={{ height: 70, resize: "vertical", fontSize: 12 }} value={form.effects} onChange={set("effects")} />
-                    </Field>
-                </>
-            )}
-
-            {usesAsset && (
-                <Field label="staticURL (override, optional)" hint="Leave empty to build it from sku_id.">
-                    <input className="input mono" value={form.staticURL} onChange={set("staticURL")} placeholder="https://…" />
-                </Field>
-            )}
-
-            {isBundle && (
-                <>
-                    <Field label="Items (sku_id, comma-separated) *">
-                        <input className="input mono" value={form.items} onChange={set("items")} placeholder="111, 222, 333" />
-                    </Field>
-                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                        <Field label="Image foreground *"><input className="input mono" value={form.imageFg} onChange={set("imageFg")} placeholder="https://…" /></Field>
-                        <Field label="Image background *"><input className="input mono" value={form.imageBg} onChange={set("imageBg")} placeholder="https://…" /></Field>
-                    </div>
-                </>
-            )}
 
             {msg && (
                 <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, background: msg.ok ? "var(--success-bg)" : "var(--danger-bg)", color: msg.ok ? "var(--success)" : "var(--danger)", border: `1px solid ${msg.ok ? "var(--success-border)" : "var(--danger-border)"}` }}>
@@ -159,17 +74,33 @@ function ImportForm({ onImported }) {
             )}
 
             {preview && (
-                <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", margin: "0 0 6px" }}>Preview (normalized)</p>
-                    <pre className="mono" style={{ margin: 0, padding: 12, background: "var(--bg-input)", borderRadius: 8, fontSize: 11, maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                        {JSON.stringify(preview, null, 2)}
-                    </pre>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 56, height: 56, borderRadius: 10, background: "var(--bg-input)", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {previewImg ? <img src={previewImg} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }} /> : <span style={{ fontSize: 20 }}>🎁</span>}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 14, fontWeight: 700 }}>{preview.name}</span>
+                                <span className="badge" style={{ fontSize: 9, background: "var(--bg-input)", color: "var(--text-muted)" }}>{TYPE_LABEL[preview.type] ?? preview.type}</span>
+                            </div>
+                            <p className="mono" style={{ fontSize: 11, color: "var(--text-muted)", margin: "3px 0 0" }}>
+                                {money(preview.prices?.withNitro)} (Nitro) · {money(preview.prices?.withoutNitro)}
+                            </p>
+                        </div>
+                    </div>
+                    <details>
+                        <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", cursor: "pointer" }}>Raw data</summary>
+                        <pre className="mono" style={{ margin: "6px 0 0", padding: 12, background: "var(--bg-input)", borderRadius: 8, fontSize: 11, maxHeight: 220, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                            {JSON.stringify(preview, null, 2)}
+                        </pre>
+                    </details>
                 </div>
             )}
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button type="button" className="btn-ghost" disabled={busy} onClick={doPreview}>Preview</button>
-                <button type="button" className="btn-primary" disabled={busy} onClick={doImport}>{busy ? "Processing…" : "Import"}</button>
+                <button type="button" className="btn-ghost" disabled={busy || !deco.trim()} onClick={doPreview}>Preview</button>
+                <button type="button" className="btn-primary" disabled={busy || !deco.trim()} onClick={doImport}>{busy ? "Processing…" : "Import"}</button>
             </div>
         </div>
     );
