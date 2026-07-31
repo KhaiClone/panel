@@ -22,6 +22,7 @@ const slotRoutes = require("./routes/slots");
 const nodeRoutes = require("./routes/nodes");
 const shopOrderRoutes = require("./routes/shopOrders");
 const decorRoutes = require("./routes/decors");
+const questRoutes = require("./routes/quests");
 const { authMiddleware } = require("./middleware/auth");
 const { adminOnly } = require("./middleware/adminOnly");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
@@ -33,6 +34,7 @@ const memoryMonitorService = require("./services/memoryMonitorService");
 const nodeService = require("./services/nodeService");
 const termService = require("./services/termService");
 const samplerService = require("./services/samplerService");
+const questService = require("./services/questService");
 const db = require("./db");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,6 +147,7 @@ app.use("/api/admin/slots", authMiddleware, slotRoutes);
 app.use("/api/nodes", authMiddleware, adminOnly, nodeRoutes);
 app.use("/api/shop", authMiddleware, adminOnly, shopOrderRoutes);
 app.use("/api/decors", authMiddleware, adminOnly, decorRoutes);
+app.use("/api/quests", authMiddleware, adminOnly, questRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -181,6 +184,8 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
         `[Server] Bot Panel running on port ${PORT} (${process.env.NODE_ENV || "development"})`,
     );
     await seedAdminUser();
+    // Resume any quest accounts that were running before a restart.
+    questService.restore().catch((e) => console.warn("[Quest] restore error:", e.message));
 });
 
 // Interactive terminal (WebSocket upgrade on /api/term)
