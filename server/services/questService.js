@@ -74,7 +74,11 @@ function _dispatchWebhook(accountId, event) {
     if (!hook?.url) return;
     if (!["quest_start", "quest_done", "status", "removed"].includes(event.type)) return;
     axios
-        .post(hook.url, { ...event, accountId, ref: hook.ref ?? null }, { timeout: 8000 })
+        .post(hook.url, { ...event, accountId, ref: hook.ref ?? null }, {
+            timeout: 8000,
+            // arnto-auto's /api/quest-event authenticates with the shared key.
+            headers: { "x-api-key": process.env.PANEL_API_KEY || "" },
+        })
         .catch(() => {});
 }
 

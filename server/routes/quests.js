@@ -51,13 +51,38 @@ router.post("/preview", async (req, res, next) => {
     }
 });
 
-/** POST /api/quests/start { token, mode, selectedQuestIds } — store + run */
+/**
+ * POST /api/quests/start { token, mode, selectedQuestIds, ref, months }
+ * Admin manual add (bypasses arnto-auto). `ref` = the owner's Discord user id so the
+ * bot can tell whose token this is (and DM them). mode "monthly" activates a monthly
+ * plan instead of an immediate run. The webhook back to arnto is taken from the
+ * ARNTO_QUEST_WEBHOOK_URL env so completion DMs reach the owner.
+ */
 router.post("/start", async (req, res, next) => {
     try {
-        const { token, mode, selectedQuestIds } = req.body || {};
+        const { token, mode, selectedQuestIds, ref, months } = req.body || {};
         if (!token) return res.status(400).json({ error: "Thiếu token." });
+        const ownerRef = ref ? String(ref).trim() : null;
+        const webhookUrl = process.env.ARNTO_QUEST_WEBHOOK_URL || null;
+
+        if (mode === "monthly") {
+            return res.status(201).json(
+                await questMonthly.activate({
+                    token,
+                    months: months || 1,
+                    ref: ownerRef,
+                    webhookUrl,
+                }),
+            );
+        }
         res.status(201).json(
-            await questService.startAccount({ token, mode, selectedQuestIds }),
+            await questService.startAccount({
+                token,
+                mode,
+                selectedQuestIds,
+                ref: ownerRef,
+                webhookUrl,
+            }),
         );
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });

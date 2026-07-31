@@ -90,7 +90,10 @@ function AccountRow({ a, live, onOpen }) {
                         <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {a.username}
                         </p>
-                        <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-dim)" }}>{modeLabel(a)}</p>
+                        <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 6 }}>
+                            {modeLabel(a)}
+                            {a.ref && <span title="Owner linked">· 👤</span>}
+                        </p>
                     </div>
                 </div>
                 <StatusPill status={a.status} />
@@ -119,21 +122,40 @@ export default function QuestsPage() {
     const { accounts, live, reload } = useQuestStream();
     const navigate = useNavigate();
 
-    // Temporary manual add-token (admin). Collapsed by default — the panel's main
-    // role now is monitoring; token/run will come from arnto-auto via the API.
+    // Admin manual add — paste a token and assign its owner, bypassing arnto-auto.
     const [showAdd, setShowAdd] = useState(false);
+    const [ownerId, setOwnerId] = useState("");
     const [token, setToken] = useState("");
+    const [mode, setMode] = useState("all"); // "all" | "monthly"
+    const [months, setMonths] = useState(1);
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState(null);
 
-    const runAll = async () => {
-        if (!token.trim()) return;
+    const submitAdd = async () => {
+        const owner = ownerId.trim();
+        if (!/^\d{17,20}$/.test(owner)) {
+            setMsg({ ok: false, text: "Owner ID must be a Discord user ID (17–20 digits)." });
+            return;
+        }
+        if (!token.trim()) {
+            setMsg({ ok: false, text: "Token is required." });
+            return;
+        }
         setBusy(true);
         setMsg(null);
         try {
-            await api.post("/quests/start", { token: token.trim(), mode: "all" });
+            await api.post("/quests/start", {
+                token: token.trim(),
+                ref: owner,
+                mode,
+                ...(mode === "monthly" ? { months: Number(months) || 1 } : {}),
+            });
             setToken("");
-            setMsg({ ok: true, text: "Started." });
+            setOwnerId("");
+            setMsg({
+                ok: true,
+                text: mode === "monthly" ? "Monthly plan activated." : "Started running quests.",
+            });
             reload();
         } catch (err) {
             setMsg({ ok: false, text: err.response?.data?.error || "Failed." });
@@ -183,35 +205,77 @@ export default function QuestsPage() {
                 </div>
             )}
 
-            {/* ── Temporary manual add ── */}
+            {/* ── Manual add (admin) ── */}
             <div style={{ marginTop: 28 }}>
                 <button
                     onClick={() => setShowAdd((s) => !s)}
                     style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 12, cursor: "pointer", padding: 0 }}
                 >
-                    {showAdd ? "▾" : "▸"} Add account manually (temporary)
+                    {showAdd ? "▾" : "▸"} Add account manually
                 </button>
                 {showAdd && (
-                    <div className="card" style={{ marginTop: 10, padding: 16 }}>
-                        <div className="mobile-stack" style={{ display: "flex", gap: 8 }}>
+                    <div className="card" style={{ marginTop: 10, padding: 18, display: "flex", flexDirection: "column", gap: 14, maxWidth: 480 }}>
+                        <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
+                            Paste a Discord token and assign its owner, bypassing the bot. The owner ID is
+                            stored so the bot can identify whose token this is (and DM them) — it is never
+                            shown in the account list.
+                        </p>
+
+                        <div className="form-group">
+                            <label className="label">Owner Discord user ID</label>
                             <input
                                 className="input"
-                                style={{ flex: 1 }}
+                                inputMode="numeric"
+                                placeholder="e.g. 123456789012345678"
+                                value={ownerId}
+                                onChange={(e) => setOwnerId(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label className="label">Discord token</label>
+                            <input
+                                className="input"
                                 type="password"
-                                placeholder="Discord token"
+                                placeholder="Token"
                                 value={token}
                                 onChange={(e) => setToken(e.target.value)}
                             />
-                            <button className="btn-primary btn-full-mobile" disabled={busy || !token.trim()} onClick={runAll}>
-                                {busy ? "Starting…" : "Run all"}
-                            </button>
                         </div>
-                        {msg && (
-                            <p style={{ marginTop: 8, fontSize: 12, color: msg.ok ? "var(--success)" : "var(--danger)" }}>{msg.text}</p>
+
+                        <div className="form-group">
+                            <label className="label">Mode</label>
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <button type="button" className={mode === "all" ? "btn-primary" : "btn-ghost"} onClick={() => setMode("all")}>
+                                    Run all now
+                                </button>
+                                <button type="button" className={mode === "monthly" ? "btn-primary" : "btn-ghost"} onClick={() => setMode("monthly")}>
+                                    Monthly plan
+                                </button>
+                            </div>
+                        </div>
+
+                        {mode === "monthly" && (
+                            <div className="form-group" style={{ maxWidth: 140 }}>
+                                <label className="label">Months</label>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min={1}
+                                    value={months}
+                                    onChange={(e) => setMonths(e.target.value)}
+                                />
+                            </div>
                         )}
-                        <p style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)" }}>
-                            In production, the token and quest run are triggered by arnto-auto via the panel API after payment.
-                        </p>
+
+                        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                            <button type="button" className="btn-primary" disabled={busy} onClick={submitAdd}>
+                                {busy ? "Working…" : mode === "monthly" ? "Activate monthly" : "Add & run"}
+                            </button>
+                            {msg && (
+                                <span style={{ fontSize: 12.5, color: msg.ok ? "var(--success)" : "var(--danger)" }}>{msg.text}</span>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

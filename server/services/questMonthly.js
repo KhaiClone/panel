@@ -56,7 +56,14 @@ function _isActive(r) {
 }
 function _webhook(rec, event) {
     if (!rec.webhookUrl) return;
-    axios.post(rec.webhookUrl, { ...event, accountId: rec.accountId, ref: rec.ref ?? null }, { timeout: 8000 }).catch(() => {});
+    axios
+        .post(
+            rec.webhookUrl,
+            { ...event, accountId: rec.accountId, ref: rec.ref ?? null },
+            // arnto-auto's /api/quest-event authenticates with the shared key.
+            { timeout: 8000, headers: { "x-api-key": process.env.PANEL_API_KEY || "" } },
+        )
+        .catch(() => {});
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────────
