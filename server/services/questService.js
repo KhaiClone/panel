@@ -103,6 +103,22 @@ function _publish(accountId, event) {
     bus.emit("event", { accountId, at: Date.now(), ...event });
 }
 
+// ── External producers (e.g. the monthly batch) ──────────────────────────────────
+// The monthly runner lives in questMonthly.js but its accounts should show the same
+// live quest cards + realtime stream on /quests as single-quest accounts. These let
+// it feed the shared liveState + bus. Unlike _publish this does NOT dispatch the
+// per-account webhook — monthly owns its own webhook delivery to arnto-auto.
+function emitExternalEvent(accountId, event) {
+    _updateLive(accountId, event);
+    bus.emit("event", { accountId, at: Date.now(), ...event });
+}
+function getLive(accountId) {
+    return liveState.get(accountId) ?? {};
+}
+function clearLive(accountId) {
+    liveState.delete(accountId);
+}
+
 // ── DB helpers ───────────────────────────────────────────────────────────────────
 async function _getRec(accountId) {
     return db.findOne(MODEL, { accountId });
@@ -348,4 +364,7 @@ module.exports = {
     stopAccount,
     removeAccount,
     restore,
+    emitExternalEvent,
+    getLive,
+    clearLive,
 };

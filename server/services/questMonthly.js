@@ -12,6 +12,7 @@
 const crypto = require("crypto");
 const axios = require("axios");
 const db = require("../db");
+const questService = require("./questService");
 const {
     QuestAutocompleter,
     resolveDiscordAccount,
@@ -117,10 +118,21 @@ async function runBatch() {
         try {
             const resolved = await resolveDiscordAccount(token);
             if (!resolved.ok) {
-                if (resolved.invalidToken) _webhook(rec, { type: "status", status: "token_dead" });
+                if (resolved.invalidToken) {
+                    questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
+                    _webhook(rec, { type: "status", status: "token_dead" });
+                }
                 continue;
             }
-            const completer = new QuestAutocompleter(resolved.api, { label: rec.username });
+            // Reset this account's live state so /quests shows the current batch, then
+            // feed quest_start/progress/done (with media) into the shared realtime bus
+            // — this is what makes monthly accounts render quest cards like single ones.
+            questService.clearLive(rec.accountId);
+            questService.emitExternalEvent(rec.accountId, { type: "status", status: "running" });
+            const completer = new QuestAutocompleter(resolved.api, {
+                label: rec.username,
+                onEvent: (e) => questService.emitExternalEvent(rec.accountId, e),
+            });
             let guard = 0;
             while (guard++ < 10) {
                 let quests = await completer.fetchQuests();
@@ -136,10 +148,14 @@ async function runBatch() {
                     _webhook(rec, { type: "quest_done", questName: getQuestName(q), taskType: getTaskType(q) });
                 }
             }
+            // Back to the idle "monthly" badge once this account's pass is done.
+            questService.emitExternalEvent(rec.accountId, { type: "status", status: "monthly" });
             processed++;
         } catch (e) {
-            if (isInvalidTokenError(e)) _webhook(rec, { type: "status", status: "token_dead" });
-            else console.error(`[Monthly] ${rec.username} error: ${e.message}`);
+            if (isInvalidTokenError(e)) {
+                questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
+                _webhook(rec, { type: "status", status: "token_dead" });
+            } else console.error(`[Monthly] ${rec.username} error: ${e.message}`);
         }
         await new Promise((r) => setTimeout(r, 3000));
     }

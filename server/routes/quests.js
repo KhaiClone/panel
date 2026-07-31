@@ -9,18 +9,24 @@ const questMonthly = require("../services/questMonthly");
 // Per-quest accounts + monthly subscribers, normalized into one list for the UI.
 async function combinedList() {
     const single = await questService.listAccounts();
-    const monthly = (await questMonthly.list()).map((m) => ({
-        accountId: m.accountId,
-        username: m.username,
-        mode: "monthly",
-        status: m.active ? "monthly" : "expired",
-        monthlyExpiresAt: m.monthlyExpiresAt,
-        selectedQuestIds: [],
-        completedCount: 0,
-        running: false,
-        ref: m.ref ?? null,
-        quests: {},
-    }));
+    const monthly = (await questMonthly.list()).map((m) => {
+        // Monthly runs feed the shared liveState (see questMonthly.runBatch), so the
+        // UI can render the same quest cards + progress as single-quest accounts.
+        const quests = questService.getLive(m.accountId);
+        const completedCount = Object.values(quests).filter((q) => q.state === "done").length;
+        return {
+            accountId: m.accountId,
+            username: m.username,
+            mode: "monthly",
+            status: m.active ? "monthly" : "expired",
+            monthlyExpiresAt: m.monthlyExpiresAt,
+            selectedQuestIds: [],
+            completedCount,
+            running: false,
+            ref: m.ref ?? null,
+            quests,
+        };
+    });
     return [...single, ...monthly];
 }
 
