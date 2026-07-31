@@ -131,6 +131,7 @@ function _publicRec(r) {
         completedCount: r.completedCount ?? 0,
         error: r.error ?? null,
         running: running.has(r.accountId),
+        ref: r.webhookRef ?? null,
         addedAt: r.addedAt,
         updatedAt: r.updatedAt,
         quests: liveState.get(r.accountId) ?? {},

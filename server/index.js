@@ -36,6 +36,7 @@ const nodeService = require("./services/nodeService");
 const termService = require("./services/termService");
 const samplerService = require("./services/samplerService");
 const questService = require("./services/questService");
+const questMonthly = require("./services/questMonthly");
 const db = require("./db");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,6 +189,8 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     await seedAdminUser();
     // Resume any quest accounts that were running before a restart.
     questService.restore().catch((e) => console.warn("[Quest] restore error:", e.message));
+    // Monthly subscription schedulers (Tue/Sat run + daily enroll scan).
+    questMonthly.start();
 });
 
 // Interactive terminal (WebSocket upgrade on /api/term)

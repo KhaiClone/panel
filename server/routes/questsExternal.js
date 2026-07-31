@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const questService = require("../services/questService");
+const questMonthly = require("../services/questMonthly");
 
 // Mounted at /api/external/quests behind apiKeyMiddleware (x-api-key = PANEL_API_KEY).
 // This is how ArnTo-Auto delegates quest execution to the panel: it keeps payment,
@@ -30,6 +31,35 @@ router.post("/start", async (req, res, next) => {
         res.status(201).json(
             await questService.startAccount({ token, mode, selectedQuestIds, webhookUrl, ref }),
         );
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
+/** GET / — accounts (per-quest + monthly), optional ?ref=<userId> filter. Used by
+ *  arnto-auto's /status. */
+router.get("/", async (req, res, next) => {
+    try {
+        const ref = req.query.ref ? String(req.query.ref) : null;
+        let single = await questService.listAccounts();
+        let monthly = await questMonthly.list();
+        if (ref) {
+            single = single.filter((a) => String(a.ref) === ref);
+            monthly = monthly.filter((a) => String(a.ref) === ref);
+        }
+        res.json({ single, monthly });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /monthly { token, months, ref, webhookUrl } — activate/extend a monthly plan */
+router.post("/monthly", async (req, res, next) => {
+    try {
+        const { token, months, ref, webhookUrl } = req.body || {};
+        if (!token) return res.status(400).json({ error: "token required" });
+        res.status(201).json(await questMonthly.activate({ token, months, ref, webhookUrl }));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);
