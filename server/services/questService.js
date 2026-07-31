@@ -13,6 +13,7 @@
 
 const { EventEmitter } = require("events");
 const crypto = require("crypto");
+const axios = require("axios");
 const db = require("../db");
 const {
     QuestAutocompleter,
@@ -64,6 +65,18 @@ const running = new Map();
 // accountId -> { [questId]: { name, taskType, needed, done, percent, state, media } }
 // Kept so the snapshot / list can render rich quest cards even after a page reload.
 const liveState = new Map();
+// accountId -> { url, ref }: caller (arnto-auto) webhook to notify on quest events.
+const webhooks = new Map();
+
+// Forward meaningful events to the account's webhook (arnto-auto → DM the buyer).
+function _dispatchWebhook(accountId, event) {
+    const hook = webhooks.get(accountId);
+    if (!hook?.url) return;
+    if (!["quest_start", "quest_done", "status", "removed"].includes(event.type)) return;
+    axios
+        .post(hook.url, { ...event, accountId, ref: hook.ref ?? null }, { timeout: 8000 })
+        .catch(() => {});
+}
 
 function _updateLive(accountId, evt) {
     if (!["quest_start", "quest_progress", "quest_done"].includes(evt.type)) return;
@@ -86,6 +99,7 @@ function _updateLive(accountId, evt) {
 
 function _publish(accountId, event) {
     _updateLive(accountId, event);
+    _dispatchWebhook(accountId, event);
     bus.emit("event", { accountId, at: Date.now(), ...event });
 }
 
@@ -167,7 +181,7 @@ async function previewToken(token) {
  * mode "all"  → run every available quest.
  * mode "select" → run only selectedQuestIds.
  */
-async function startAccount({ token, mode = "all", selectedQuestIds = [] }) {
+async function startAccount({ token, mode = "all", selectedQuestIds = [], webhookUrl, ref }) {
     const resolved = await resolveDiscordAccount(token);
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
@@ -178,12 +192,18 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [] }) {
     const cleanIds = [...new Set((selectedQuestIds ?? []).map(String).filter(Boolean))];
     const enc = _encrypt(token);
     const existing = await _getRec(accountId);
+    // Preserve an existing webhook if the caller didn't supply a new one.
+    const hookUrl = webhookUrl ?? existing?.webhookUrl ?? null;
+    const hookRef = ref ?? existing?.webhookRef ?? null;
+    if (hookUrl) webhooks.set(accountId, { url: hookUrl, ref: hookRef });
     const record = {
         accountId,
         username: resolved.username,
         ...enc,
         mode: mode === "select" ? "select" : "all",
         selectedQuestIds: mode === "select" ? cleanIds : [],
+        webhookUrl: hookUrl,
+        webhookRef: hookRef,
         status: "running",
         completedCount: existing?.completedCount ?? 0,
         error: null,
@@ -218,6 +238,7 @@ async function removeAccount(accountId) {
     liveState.delete(accountId);
     await db.findOneAndDelete(MODEL, { accountId });
     _publish(accountId, { type: "removed" });
+    webhooks.delete(accountId);
     return true;
 }
 
@@ -288,6 +309,7 @@ async function restore() {
     const recs = (await db.get(MODEL)) || [];
     let restored = 0;
     for (const rec of recs) {
+        if (rec.webhookUrl) webhooks.set(rec.accountId, { url: rec.webhookUrl, ref: rec.webhookRef ?? null });
         if (rec.status !== "running") continue;
         const token = _decrypt(rec);
         if (!token) {
