@@ -17,6 +17,7 @@ const {
     QuestAutocompleter,
     resolveDiscordAccount,
     isInvalidTokenError,
+    summarizeQuest,
     _fields,
 } = require("./questEngine");
 
@@ -133,6 +134,30 @@ async function runBatch() {
                 label: rec.username,
                 onEvent: (e) => questService.emitExternalEvent(rec.accountId, e),
             });
+
+            // Pre-scan: enroll everything up front, then emit a "pending" card for
+            // every quest that will run — so the panel shows the FULL set immediately
+            // (before completing them one by one). Enroll is idempotent, so the loop
+            // below re-enrolling is harmless.
+            let scan = await completer.fetchQuests();
+            if (scan.length) {
+                await completer.autoAccept(scan);
+                scan = await completer.fetchQuests();
+                for (const q of scan) {
+                    if (isEnrolled(q) && !isCompleted(q) && isCompletable(q)) {
+                        const s = summarizeQuest(q);
+                        questService.emitExternalEvent(rec.accountId, {
+                            type: "quest_pending",
+                            questId: s.id,
+                            name: s.name,
+                            taskType: s.taskType,
+                            needed: s.needed,
+                            media: s.media,
+                        });
+                    }
+                }
+            }
+
             let guard = 0;
             while (guard++ < 10) {
                 let quests = await completer.fetchQuests();

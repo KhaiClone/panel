@@ -132,7 +132,11 @@ export default function QuestCard({ q, selectable, selected, onToggle, progress 
                             />
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
-                            {progress.state === "done" ? "✅ Completed" : `${progress.percent || 0}%`}
+                            {progress.state === "done"
+                                ? "✅ Completed"
+                                : progress.state === "pending"
+                                  ? "⏳ Waiting to start"
+                                  : `${progress.percent || 0}%`}
                         </div>
                     </div>
                 )}

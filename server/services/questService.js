@@ -79,7 +79,8 @@ function _dispatchWebhook(accountId, event) {
 }
 
 function _updateLive(accountId, evt) {
-    if (!["quest_start", "quest_progress", "quest_done"].includes(evt.type)) return;
+    if (!["quest_start", "quest_progress", "quest_done", "quest_pending"].includes(evt.type))
+        return;
     let acc = liveState.get(accountId);
     if (!acc) {
         acc = {};
@@ -92,8 +93,16 @@ function _updateLive(accountId, evt) {
     if (evt.done != null) q.done = evt.done;
     if (evt.percent != null) q.percent = evt.percent;
     if (evt.media) q.media = evt.media;
-    q.state = evt.type === "quest_done" ? "done" : "running";
-    if (evt.type === "quest_done") q.percent = 100;
+    if (evt.type === "quest_done") {
+        q.state = "done";
+        q.percent = 100;
+    } else if (evt.type === "quest_pending") {
+        // A pre-run placeholder card; never downgrade one already running/finished.
+        if (q.state !== "running" && q.state !== "done") q.state = "pending";
+        if (q.percent == null) q.percent = 0;
+    } else {
+        q.state = "running";
+    }
     acc[evt.questId] = q;
 }
 

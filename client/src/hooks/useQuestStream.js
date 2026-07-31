@@ -62,7 +62,9 @@ export default function useQuestStream() {
                     delete n[aid];
                     return n;
                 });
-            } else if (["quest_start", "quest_progress", "quest_done"].includes(evt.type)) {
+            } else if (
+                ["quest_start", "quest_progress", "quest_done", "quest_pending"].includes(evt.type)
+            ) {
                 setLive((prev) => {
                     const acc = { ...(prev[aid] || {}) };
                     const q = { ...(acc[evt.questId] || {}) };
@@ -72,8 +74,16 @@ export default function useQuestStream() {
                     if (evt.done != null) q.done = evt.done;
                     if (evt.percent != null) q.percent = evt.percent;
                     if (evt.media) q.media = evt.media;
-                    q.state = evt.type === "quest_done" ? "done" : "running";
-                    if (evt.type === "quest_done") q.percent = 100;
+                    if (evt.type === "quest_done") {
+                        q.state = "done";
+                        q.percent = 100;
+                    } else if (evt.type === "quest_pending") {
+                        // Placeholder card shown before the quest starts.
+                        if (q.state !== "running" && q.state !== "done") q.state = "pending";
+                        if (q.percent == null) q.percent = 0;
+                    } else {
+                        q.state = "running";
+                    }
                     acc[evt.questId] = q;
                     return { ...prev, [aid]: acc };
                 });
