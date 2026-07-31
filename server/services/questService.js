@@ -289,6 +289,40 @@ async function _runLoop(accountId, completer, abort, record) {
     const mode = record.mode;
     const selected = new Set((record.selectedQuestIds ?? []).map(String));
     _publish(accountId, { type: "status", status: "running" });
+
+    // Pre-scan: enroll everything we intend to run, then show every quest that will
+    // run as a "pending" card up front — so the panel loads the FULL set immediately
+    // instead of one-by-one. Enroll is idempotent, so the loop below re-enrolling is
+    // harmless. quest_pending is not forwarded to the arnto webhook (see _dispatchWebhook).
+    try {
+        let scan = await completer.fetchQuests();
+        if (scan.length && !abort.stopped) {
+            if (mode === "select") await completer.enrollSelected([...selected]);
+            else await completer.autoAccept(scan);
+            scan = await completer.fetchQuests();
+            for (const q of scan) {
+                if (
+                    isEnrolled(q) &&
+                    !isCompleted(q) &&
+                    isCompletable(q) &&
+                    (mode === "all" || selected.has(String(q.id)))
+                ) {
+                    const s = summarizeQuest(q);
+                    _publish(accountId, {
+                        type: "quest_pending",
+                        questId: s.id,
+                        name: s.name,
+                        taskType: s.taskType,
+                        needed: s.needed,
+                        media: s.media,
+                    });
+                }
+            }
+        }
+    } catch {
+        // A failed pre-scan is non-fatal — the main loop below re-fetches anyway.
+    }
+
     let guard = 0;
     try {
         while (!abort.stopped && guard++ < 50) {
