@@ -247,18 +247,19 @@ function _isMobileOnlyTask(q) {
     return Boolean(tc?.tasks?.WATCH_VIDEO_ON_MOBILE) && !tc?.tasks?.WATCH_VIDEO;
 }
 
-// Discord serves quest media from this CDN path. Asset values in config.assets are
-// filenames appended here. (Verify against a real quest if an image 404s.)
-function _questAssetUrl(questId, asset) {
-    if (!asset) return null;
+// Asset values in config.assets ALREADY contain the full path (e.g.
+// "quests/{id}/{file}.jpg"), so just prefix the CDN host. Some assets are the
+// literal string "PLACEHOLDER" — treat those as absent.
+function _questAssetUrl(asset) {
+    if (!asset || asset === "PLACEHOLDER") return null;
     if (/^https?:\/\//.test(asset)) return asset;
-    return `https://cdn.discordapp.com/quests/${questId}/${asset}`;
+    return `https://cdn.discordapp.com/${String(asset).replace(/^\/+/, "")}`;
 }
 
 /** Extract the rich media + branding of a quest so the UI can render a card that
- *  looks like Discord's original. Field access is defensive (snake/camel variants).*/
+ *  looks like Discord's original. Field access is defensive (snake/camel + theme
+ *  variants; base logotype/game_tile are often "PLACEHOLDER").*/
 function _questMedia(q) {
-    const id = String(q.id ?? q.config?.id ?? "");
     const cfg = q.config ?? {};
     const a = cfg.assets ?? {};
     const messages = cfg.messages ?? {};
@@ -270,14 +271,23 @@ function _questMedia(q) {
           ? cfg.rewards
           : [];
     const r0 = rewards[0] ?? null;
-    const u = (v) => _questAssetUrl(id, v);
+    const u = _questAssetUrl;
+    const heroIsVideo = a.hero && /\.(mp4|webm)/i.test(a.hero);
+
+    // The compact quest CARD uses the "quest bar hero" banner; fall back to hero.
+    const bannerVideo =
+        u(a.quest_bar_hero_video ?? a.questBarHeroVideo) ||
+        (heroIsVideo ? u(a.hero) : u(a.hero_video ?? a.heroVideo));
+    const bannerImage =
+        u(a.quest_bar_hero ?? a.questBarHero) || (heroIsVideo ? null : u(a.hero));
+
     return {
-        heroImage: u(a.hero),
-        heroVideo: u(a.hero_video ?? a.heroVideo),
-        questBarHero: u(a.quest_bar_hero ?? a.questBarHero),
-        questBarHeroVideo: u(a.quest_bar_hero_video ?? a.questBarHeroVideo),
-        gameTile: u(a.game_tile ?? a.gameTile ?? app.icon),
-        logotype: u(a.logotype),
+        heroImage: bannerImage,
+        heroVideo: bannerVideo,
+        fullHero: heroIsVideo ? null : u(a.hero),
+        fullHeroVideo: heroIsVideo ? u(a.hero) : u(a.hero_video ?? a.heroVideo),
+        gameTile: u(a.game_tile_dark) || u(a.game_tile_light) || u(a.game_tile),
+        logotype: u(a.logotype_dark) || u(a.logotype_light) || u(a.logotype),
         colors: cfg.colors ?? cfg.gradient ?? null,
         gameTitle: messages.game_title ?? messages.gameTitle ?? app.name ?? null,
         gamePublisher: messages.game_publisher ?? messages.gamePublisher ?? null,
@@ -293,10 +303,8 @@ function _questMedia(q) {
                       r0.name ??
                       null,
                   orbs: r0.orb_quantity ?? r0.orbQuantity ?? null,
-                  approxCount: r0.approximate_count ?? null,
               }
             : null,
-        rawAssets: a, // passthrough so unrecognized keys can still be used by the UI
     };
 }
 
