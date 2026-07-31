@@ -95,4 +95,16 @@ router.get("/stream", async (req, res, next) => {
     }
 });
 
+/** GET /api/quests/:accountId — one account + its live quests (defined AFTER
+ *  /stream so that path isn't captured as :accountId). */
+router.get("/:accountId", async (req, res, next) => {
+    try {
+        const acc = await questService.getAccount(req.params.accountId);
+        if (!acc) return res.status(404).json({ error: "Không tìm thấy account." });
+        res.json(acc);
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;

@@ -21,6 +21,7 @@ import NodeDetailPage from "./pages/NodeDetailPage";
 import OrdersPage from "./pages/OrdersPage";
 import DecorsPage from "./pages/DecorsPage";
 import QuestsPage from "./pages/QuestsPage";
+import QuestAccountDetail from "./pages/QuestAccountDetail";
 import Layout from "./components/Layout";
 
 function Spinner() {
@@ -76,6 +77,7 @@ export default function App() {
                             <Route path="orders"        element={<AdminRoute><OrdersPage /></AdminRoute>} />
                             <Route path="decors"        element={<AdminRoute><DecorsPage /></AdminRoute>} />
                             <Route path="quests"        element={<AdminRoute><QuestsPage /></AdminRoute>} />
+                            <Route path="quests/:accountId" element={<AdminRoute><QuestAccountDetail /></AdminRoute>} />
                             {/* Legacy redirect */}
                             <Route path="dashboard"     element={<Navigate to="/bots" replace />} />
                         </Route>

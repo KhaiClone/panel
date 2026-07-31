@@ -128,6 +128,11 @@ async function listAccounts() {
     return recs.map(_publicRec);
 }
 
+async function getAccount(accountId) {
+    const rec = await _getRec(accountId);
+    return rec ? _publicRec(rec) : null;
+}
+
 /** Resolve a token and fetch its quests (for the UI to pick from). No storage. */
 async function previewToken(token) {
     const resolved = await resolveDiscordAccount(token);
@@ -314,6 +319,7 @@ async function restore() {
 module.exports = {
     bus,
     listAccounts,
+    getAccount,
     previewToken,
     startAccount,
     stopAccount,
