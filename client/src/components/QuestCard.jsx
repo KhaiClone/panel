@@ -3,7 +3,7 @@
 
 const fmtDate = (iso) => {
     try {
-        return new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+        return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
     } catch {
         return null;
     }
@@ -83,10 +83,10 @@ export default function QuestCard({ q, selectable, selected, onToggle, progress 
                     }}
                 >
                     <span>
-                        Quảng bá bởi{" "}
+                        Promoted by{" "}
                         <b style={{ color: "var(--text)" }}>{m.gamePublisher || m.gameTitle || "—"}</b>
                     </span>
-                    {m.expiresAt && <span>Kết thúc {fmtDate(m.expiresAt)}</span>}
+                    {m.expiresAt && <span>Ends {fmtDate(m.expiresAt)}</span>}
                 </div>
 
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -99,10 +99,10 @@ export default function QuestCard({ q, selectable, selected, onToggle, progress 
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 10.5, color: "var(--text-dim)", letterSpacing: 0.5 }}>
-                            NHIỆM VỤ {(m.gameTitle || q.name || "").toUpperCase()}
+                            QUEST {(m.gameTitle || q.name || "").toUpperCase()}
                         </div>
                         <div style={{ fontWeight: 700, fontSize: 15 }}>
-                            {orbs ? `◈ Nhận ${orbs} Orbs` : q.name}
+                            {orbs ? `◈ Earn ${orbs} Orbs` : q.name}
                         </div>
                         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                             {q.taskType || "—"}
@@ -132,7 +132,7 @@ export default function QuestCard({ q, selectable, selected, onToggle, progress 
                             />
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
-                            {progress.state === "done" ? "✅ Hoàn thành" : `${progress.percent || 0}%`}
+                            {progress.state === "done" ? "✅ Completed" : `${progress.percent || 0}%`}
                         </div>
                     </div>
                 )}

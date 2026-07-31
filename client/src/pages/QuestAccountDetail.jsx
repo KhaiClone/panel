@@ -4,23 +4,22 @@ import useQuestStream from "../hooks/useQuestStream";
 import QuestCard from "../components/QuestCard";
 
 const STATUS = {
-    running: { label: "Đang chạy", color: "#3b82f6" },
-    done: { label: "Đã xong", color: "#22c55e" },
-    stopped: { label: "Đã dừng", color: "#9ca3af" },
-    token_dead: { label: "Token lỗi", color: "#f59e0b" },
-    error: { label: "Lỗi", color: "#ef4444" },
-    monthly: { label: "Gói tháng", color: "#9b59b6" },
-    expired: { label: "Hết hạn", color: "#9ca3af" },
+    running: { label: "Running", color: "var(--accent)" },
+    done: { label: "Completed", color: "var(--success)" },
+    stopped: { label: "Stopped", color: "var(--text-dim)" },
+    token_dead: { label: "Token error", color: "var(--warning)" },
+    error: { label: "Error", color: "var(--danger)" },
+    monthly: { label: "Monthly", color: "#a78bfa" },
+    expired: { label: "Expired", color: "var(--text-dim)" },
 };
-const btn = (bg) => ({
-    padding: "7px 12px",
-    borderRadius: 8,
-    border: "1px solid var(--border)",
-    background: bg,
-    color: "#fff",
-    fontSize: 13,
-    cursor: "pointer",
-});
+
+const fmtDate = (iso) => {
+    try {
+        return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    } catch {
+        return "—";
+    }
+};
 
 const gridStyle = {
     display: "grid",
@@ -29,6 +28,17 @@ const gridStyle = {
     marginTop: 16,
 };
 
+function MetaItem({ label, children }) {
+    return (
+        <div>
+            <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {label}
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--text)", fontWeight: 600 }}>{children}</p>
+        </div>
+    );
+}
+
 export default function QuestAccountDetail() {
     const { accountId } = useParams();
     const navigate = useNavigate();
@@ -36,7 +46,9 @@ export default function QuestAccountDetail() {
 
     const a = accounts.find((x) => x.accountId === accountId);
     const quests = Object.entries(live[accountId] || {});
-    const st = a ? STATUS[a.status] || { label: a.status, color: "#9ca3af" } : null;
+    const st = a ? STATUS[a.status] || { label: a.status, color: "var(--text-dim)" } : null;
+
+    const doneCount = quests.filter(([, q]) => q.state === "done").length;
 
     const stop = () => api.post(`/quests/${accountId}/stop`).catch(() => {});
     const remove = () =>
@@ -45,65 +57,94 @@ export default function QuestAccountDetail() {
             .then(() => navigate("/quests"))
             .catch(() => {});
 
+    const modeText =
+        a?.mode === "all"
+            ? "All quests"
+            : a?.mode === "monthly"
+              ? "Monthly plan"
+              : `${a?.selectedQuestIds?.length || 0} selected`;
+
     return (
-        <div style={{ padding: 20, maxWidth: 1000, margin: "0 auto" }}>
-            <Link
-                to="/quests"
-                style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "none" }}
-            >
-                ‹ Danh sách account
+        <div className="page fade-in" style={{ maxWidth: 1100 }}>
+            <Link to="/quests" className="btn-ghost" style={{ fontSize: 12.5, padding: "5px 12px" }}>
+                ‹ Back to accounts
             </Link>
 
             {!a ? (
-                <p style={{ marginTop: 20, color: "var(--text-dim)" }}>Đang tải account…</p>
+                <div className="card" style={{ marginTop: 16, padding: "40px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
+                    Loading account…
+                </div>
             ) : (
                 <>
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                            marginTop: 14,
-                            flexWrap: "wrap",
-                        }}
-                    >
-                        <h1 style={{ fontSize: 22 }}>{a.username}</h1>
-                        <span
-                            style={{
-                                fontSize: 12,
-                                padding: "2px 10px",
-                                borderRadius: 20,
-                                background: st.color + "22",
-                                color: st.color,
-                            }}
-                        >
-                            {st.label}
-                        </span>
-                        <span style={{ flex: 1 }} />
-                        {a.status === "running" && (
-                            <button style={btn("#6b7280")} onClick={stop}>
-                                Dừng
-                            </button>
+                    {/* ── Header card ── */}
+                    <div className="card" style={{ marginTop: 16, padding: 20 }}>
+                        <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                            <span
+                                style={{ width: 46, height: 46, borderRadius: 12, background: "var(--bg-input)", border: "1px solid var(--border)", display: "grid", placeItems: "center", fontSize: 20, flexShrink: 0 }}
+                            >
+                                🎮
+                            </span>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                                <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", margin: 0, letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {a.username}
+                                </h1>
+                                <span
+                                    className="status-pill"
+                                    style={{ marginTop: 6, background: st.color + "22", color: st.color, border: `1px solid ${st.color}33` }}
+                                >
+                                    <span className="status-dot" style={{ background: st.color }} />
+                                    {st.label}
+                                </span>
+                            </div>
+                            <div className="mobile-wrap" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                {a.status === "running" && (
+                                    <button className="btn-warning" onClick={stop}>
+                                        ⏸ Stop
+                                    </button>
+                                )}
+                                <button className="btn-danger" onClick={remove}>
+                                    🗑 Remove
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="divider" />
+
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 16 }}>
+                            <MetaItem label="Account ID">
+                                <code className="mono" style={{ color: "var(--text)" }}>{a.accountId}</code>
+                            </MetaItem>
+                            <MetaItem label="Mode">{modeText}</MetaItem>
+                            <MetaItem label="Completed">{a.completedCount ?? 0}</MetaItem>
+                            {a.mode === "monthly" && a.monthlyExpiresAt && (
+                                <MetaItem label="Expires">{fmtDate(a.monthlyExpiresAt)}</MetaItem>
+                            )}
+                        </div>
+
+                        {a.error && (
+                            <div
+                                style={{ marginTop: 14, padding: "10px 14px", borderRadius: 8, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontSize: 12.5 }}
+                            >
+                                ⚠️ {a.error}
+                            </div>
                         )}
-                        <button style={btn("#ef4444")} onClick={remove}>
-                            Xoá
-                        </button>
                     </div>
 
-                    <div style={{ display: "flex", gap: 20, marginTop: 8, fontSize: 13, color: "var(--text-muted)" }}>
-                        <span>ID: <code style={{ color: "var(--text)" }}>{a.accountId}</code></span>
-                        <span>Chế độ: {a.mode === "all" ? "Chạy tất cả" : `${a.selectedQuestIds.length} quest đã chọn`}</span>
-                        <span>Đã hoàn thành: {a.completedCount}</span>
+                    {/* ── Quests ── */}
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 24 }}>
+                        <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: 0 }}>Quests</h2>
+                        <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+                            {quests.length > 0 ? `${doneCount}/${quests.length} completed` : "none"}
+                        </span>
                     </div>
-                    {a.error && (
-                        <p style={{ fontSize: 13, color: "#f59e0b", marginTop: 8 }}>{a.error}</p>
-                    )}
 
-                    <h2 style={{ fontSize: 16, marginTop: 22 }}>Quest ({quests.length})</h2>
                     {quests.length === 0 ? (
-                        <p style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 8 }}>
-                            Chưa có quest nào đang chạy (hoặc đang chờ enroll).
-                        </p>
+                        <div className="card" style={{ marginTop: 12, padding: "36px 20px", textAlign: "center" }}>
+                            <p style={{ fontSize: 24, margin: "0 0 6px" }}>⏳</p>
+                            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
+                                No quests running yet (or still enrolling).
+                            </p>
+                        </div>
                     ) : (
                         <div style={gridStyle}>
                             {quests.map(([qid, q]) => (
