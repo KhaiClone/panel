@@ -61,8 +61,31 @@ const bus = new EventEmitter();
 bus.setMaxListeners(0);
 // accountId -> { abort, completer }
 const running = new Map();
+// accountId -> { [questId]: { name, taskType, needed, done, percent, state, media } }
+// Kept so the snapshot / list can render rich quest cards even after a page reload.
+const liveState = new Map();
+
+function _updateLive(accountId, evt) {
+    if (!["quest_start", "quest_progress", "quest_done"].includes(evt.type)) return;
+    let acc = liveState.get(accountId);
+    if (!acc) {
+        acc = {};
+        liveState.set(accountId, acc);
+    }
+    const q = acc[evt.questId] || {};
+    if (evt.name) q.name = evt.name;
+    if (evt.taskType) q.taskType = evt.taskType;
+    if (evt.needed != null) q.needed = evt.needed;
+    if (evt.done != null) q.done = evt.done;
+    if (evt.percent != null) q.percent = evt.percent;
+    if (evt.media) q.media = evt.media;
+    q.state = evt.type === "quest_done" ? "done" : "running";
+    if (evt.type === "quest_done") q.percent = 100;
+    acc[evt.questId] = q;
+}
 
 function _publish(accountId, event) {
+    _updateLive(accountId, event);
     bus.emit("event", { accountId, at: Date.now(), ...event });
 }
 
@@ -96,6 +119,7 @@ function _publicRec(r) {
         running: running.has(r.accountId),
         addedAt: r.addedAt,
         updatedAt: r.updatedAt,
+        quests: liveState.get(r.accountId) ?? {},
     };
 }
 
@@ -114,6 +138,16 @@ async function previewToken(token) {
     }
     const completer = new QuestAutocompleter(resolved.api, { label: resolved.username });
     const quests = await completer.fetchQuests();
+    // One-time dev aid: log the raw asset/colors of the first quest so the CDN URL
+    // pattern & field names can be verified against a real quest if an image 404s.
+    if (quests[0]?.config) {
+        console.log(
+            "[Quest] sample config.assets:",
+            JSON.stringify(quests[0].config.assets ?? null),
+            "colors:",
+            JSON.stringify(quests[0].config.colors ?? null),
+        );
+    }
     return {
         accountId: resolved.accountId,
         username: resolved.username,
@@ -176,6 +210,7 @@ async function stopAccount(accountId) {
 
 async function removeAccount(accountId) {
     _stopLoop(accountId);
+    liveState.delete(accountId);
     await db.findOneAndDelete(MODEL, { accountId });
     _publish(accountId, { type: "removed" });
     return true;

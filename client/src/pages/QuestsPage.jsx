@@ -20,22 +20,183 @@ const btn = (bg, extra = {}) => ({
     ...extra,
 });
 
+const fmtDate = (iso) => {
+    try {
+        return new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+    } catch {
+        return null;
+    }
+};
+const hexColor = (c) => (typeof c === "string" && c.startsWith("#") ? c : null);
+
+// ── Discord-style quest card ──────────────────────────────────────────────────────
+function QuestCard({ q, selectable, selected, onToggle, progress }) {
+    const m = q.media || {};
+    const accent = hexColor(m.colors?.primary) || "#5865f2";
+    const orbs = m.reward?.orbs;
+    return (
+        <div
+            style={{
+                borderRadius: 14,
+                overflow: "hidden",
+                border: "1px solid var(--border)",
+                background: "var(--bg-card, #16171a)",
+            }}
+        >
+            {/* Hero banner */}
+            <div
+                style={{
+                    position: "relative",
+                    aspectRatio: "16 / 6",
+                    background: m.heroImage
+                        ? `center/cover no-repeat url(${m.heroImage})`
+                        : `linear-gradient(135deg, ${accent}, #111)`,
+                }}
+            >
+                {m.heroVideo && (
+                    <video
+                        src={m.heroVideo}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                        }}
+                    />
+                )}
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: "linear-gradient(to top, rgba(0,0,0,.75), rgba(0,0,0,0) 55%)",
+                    }}
+                />
+                {m.logotype && (
+                    <img
+                        src={m.logotype}
+                        alt=""
+                        style={{
+                            position: "absolute",
+                            left: 14,
+                            bottom: 12,
+                            height: 32,
+                            maxWidth: "60%",
+                            objectFit: "contain",
+                            filter: "drop-shadow(0 2px 5px rgba(0,0,0,.6))",
+                        }}
+                    />
+                )}
+            </div>
+
+            {/* Meta */}
+            <div style={{ padding: 14 }}>
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 12,
+                        color: "var(--text-muted)",
+                        marginBottom: 12,
+                    }}
+                >
+                    <span>
+                        Quảng bá bởi{" "}
+                        <b style={{ color: "var(--text)" }}>
+                            {m.gamePublisher || m.gameTitle || "—"}
+                        </b>
+                    </span>
+                    {m.expiresAt && <span>Kết thúc {fmtDate(m.expiresAt)}</span>}
+                </div>
+
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    {m.gameTile && (
+                        <img
+                            src={m.gameTile}
+                            alt=""
+                            style={{ width: 52, height: 52, borderRadius: 14, objectFit: "cover", flexShrink: 0 }}
+                        />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10.5, color: "var(--text-dim)", letterSpacing: 0.5 }}>
+                            NHIỆM VỤ {(m.gameTitle || q.name || "").toUpperCase()}
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>
+                            {orbs ? `◈ Nhận ${orbs} Orbs` : q.name}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                            {q.taskType || "—"}
+                            {q.needed ? ` · ${q.needed}s` : ""}
+                        </div>
+                    </div>
+                    {selectable && (
+                        <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={onToggle}
+                            style={{ width: 20, height: 20, flexShrink: 0, cursor: "pointer" }}
+                        />
+                    )}
+                </div>
+
+                {progress && (
+                    <div style={{ marginTop: 12 }}>
+                        <div
+                            style={{
+                                height: 6,
+                                borderRadius: 4,
+                                background: "var(--border)",
+                                overflow: "hidden",
+                            }}
+                        >
+                            <div
+                                style={{
+                                    height: "100%",
+                                    width: `${progress.percent || 0}%`,
+                                    background: progress.state === "done" ? "#22c55e" : accent,
+                                    transition: "width .3s",
+                                }}
+                            />
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                            {progress.state === "done" ? "✅ Hoàn thành" : `${progress.percent || 0}%`}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+const gridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+    gap: 14,
+};
+
 export default function QuestsPage() {
     const [accounts, setAccounts] = useState([]);
-    const [live, setLive] = useState({}); // accountId -> { [questId]: {name,taskType,needed,done,percent,state} }
-
-    // Add-token form
+    const [live, setLive] = useState({}); // accountId -> { [questId]: {...,media} }
     const [token, setToken] = useState("");
-    const [preview, setPreview] = useState(null); // { accountId, username, quests }
+    const [preview, setPreview] = useState(null);
     const [selected, setSelected] = useState(() => new Set());
     const [busy, setBusy] = useState(false);
-    const [msg, setMsg] = useState(null); // { ok, text }
+    const [msg, setMsg] = useState(null);
     const esRef = useRef(null);
 
     const load = useCallback(async () => {
         try {
             const { data } = await api.get("/quests");
             setAccounts(data);
+            setLive((prev) => {
+                const n = { ...prev };
+                for (const a of data) n[a.accountId] = { ...(n[a.accountId] || {}), ...(a.quests || {}) };
+                return n;
+            });
         } catch {}
     }, []);
 
@@ -43,7 +204,6 @@ export default function QuestsPage() {
         load();
     }, [load]);
 
-    // Realtime stream
     useEffect(() => {
         const tok = localStorage.getItem("token");
         if (!tok) return;
@@ -58,6 +218,12 @@ export default function QuestsPage() {
             }
             if (evt.type === "snapshot") {
                 setAccounts(evt.accounts || []);
+                setLive((prev) => {
+                    const n = { ...prev };
+                    for (const a of evt.accounts || [])
+                        n[a.accountId] = { ...(n[a.accountId] || {}), ...(a.quests || {}) };
+                    return n;
+                });
                 return;
             }
             const aid = evt.accountId;
@@ -65,12 +231,7 @@ export default function QuestsPage() {
                 setAccounts((prev) =>
                     prev.map((a) =>
                         a.accountId === aid
-                            ? {
-                                  ...a,
-                                  status: evt.status,
-                                  error: evt.error ?? a.error,
-                                  running: evt.status === "running",
-                              }
+                            ? { ...a, status: evt.status, error: evt.error ?? a.error, running: evt.status === "running" }
                             : a,
                     ),
                 );
@@ -85,23 +246,20 @@ export default function QuestsPage() {
                 setLive((prev) => {
                     const acc = { ...(prev[aid] || {}) };
                     const q = { ...(acc[evt.questId] || {}) };
-                    q.name = evt.name ?? q.name;
-                    q.taskType = evt.taskType ?? q.taskType;
+                    if (evt.name) q.name = evt.name;
+                    if (evt.taskType) q.taskType = evt.taskType;
                     if (evt.needed != null) q.needed = evt.needed;
                     if (evt.done != null) q.done = evt.done;
                     if (evt.percent != null) q.percent = evt.percent;
-                    if (evt.type === "quest_done") {
-                        q.state = "done";
-                        q.percent = 100;
-                    } else {
-                        q.state = "running";
-                    }
+                    if (evt.media) q.media = evt.media;
+                    q.state = evt.type === "quest_done" ? "done" : "running";
+                    if (evt.type === "quest_done") q.percent = 100;
                     acc[evt.questId] = q;
                     return { ...prev, [aid]: acc };
                 });
             }
         };
-        es.onerror = () => {}; // browser auto-reconnects
+        es.onerror = () => {};
         return () => es.close();
     }, []);
 
@@ -114,8 +272,7 @@ export default function QuestsPage() {
         try {
             const { data } = await api.post("/quests/preview", { token: token.trim() });
             setPreview(data);
-            if (!data.quests.length)
-                setMsg({ ok: true, text: "Account này hiện không có quest khả dụng." });
+            if (!data.quests.length) setMsg({ ok: true, text: "Account này hiện không có quest khả dụng." });
         } catch (err) {
             setMsg({ ok: false, text: err.response?.data?.error || "Không lấy được quest." });
         } finally {
@@ -144,18 +301,12 @@ export default function QuestsPage() {
         }
     };
 
-    const stopAcc = async (aid) => {
-        try {
-            await api.post(`/quests/${aid}/stop`);
-        } catch {}
-    };
-    const removeAcc = async (aid) => {
-        try {
-            await api.delete(`/quests/${aid}`);
-            setAccounts((prev) => prev.filter((a) => a.accountId !== aid));
-        } catch {}
-    };
-
+    const stopAcc = (aid) => api.post(`/quests/${aid}/stop`).catch(() => {});
+    const removeAcc = (aid) =>
+        api
+            .delete(`/quests/${aid}`)
+            .then(() => setAccounts((prev) => prev.filter((a) => a.accountId !== aid)))
+            .catch(() => {});
     const toggle = (id) =>
         setSelected((prev) => {
             const n = new Set(prev);
@@ -164,14 +315,13 @@ export default function QuestsPage() {
         });
 
     return (
-        <div style={{ padding: 20, maxWidth: 1000, margin: "0 auto" }}>
+        <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
             <h1 style={{ fontSize: 22, marginBottom: 4 }}>Auto Quest</h1>
             <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
-                Nhập token Discord để bot tự làm quest (chọn quest hoặc chạy tất cả). Chạy nền,
-                khôi phục sau khi restart.
+                Nhập token Discord để bot tự làm quest (chọn quest hoặc chạy tất cả). Chạy nền, khôi
+                phục sau restart.
             </p>
 
-            {/* Add token */}
             <div
                 style={{
                     background: "var(--bg-card, var(--bg))",
@@ -212,38 +362,22 @@ export default function QuestsPage() {
 
                 {preview && preview.quests.length > 0 && (
                     <div style={{ marginTop: 16 }}>
-                        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 8 }}>
-                            <b>{preview.username}</b> — chọn quest muốn chạy ({preview.quests.length} quest)
+                        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 10 }}>
+                            <b>{preview.username}</b> — chọn quest muốn chạy ({preview.quests.length})
                         </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={gridStyle}>
                             {preview.quests.map((q) => (
-                                <label
+                                <QuestCard
                                     key={q.id}
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 10,
-                                        padding: "8px 10px",
-                                        border: "1px solid var(--border)",
-                                        borderRadius: 8,
-                                        cursor: "pointer",
-                                        fontSize: 13,
-                                    }}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={selected.has(q.id)}
-                                        onChange={() => toggle(q.id)}
-                                    />
-                                    <span style={{ flex: 1 }}>{q.name}</span>
-                                    <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
-                                        {q.taskType} · {q.needed}s
-                                    </span>
-                                </label>
+                                    q={q}
+                                    selectable
+                                    selected={selected.has(q.id)}
+                                    onToggle={() => toggle(q.id)}
+                                />
                             ))}
                         </div>
                         <button
-                            style={{ ...btn("#5865f2"), marginTop: 12 }}
+                            style={{ ...btn("#5865f2"), marginTop: 14 }}
                             disabled={busy || selected.size === 0}
                             onClick={() => start("select")}
                         >
@@ -253,25 +387,17 @@ export default function QuestsPage() {
                 )}
             </div>
 
-            {/* Accounts */}
-            <h2 style={{ fontSize: 16, marginBottom: 12 }}>Account đang chạy ({accounts.length})</h2>
+            <h2 style={{ fontSize: 16, marginBottom: 12 }}>Account ({accounts.length})</h2>
             {accounts.length === 0 && (
                 <p style={{ color: "var(--text-dim)", fontSize: 13 }}>Chưa có account nào.</p>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                 {accounts.map((a) => {
                     const st = STATUS[a.status] || { label: a.status, color: "#9ca3af" };
                     const quests = Object.entries(live[a.accountId] || {});
                     return (
-                        <div
-                            key={a.accountId}
-                            style={{
-                                border: "1px solid var(--border)",
-                                borderRadius: 12,
-                                padding: 14,
-                            }}
-                        >
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div key={a.accountId}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                                 <span style={{ fontWeight: 600 }}>{a.username}</span>
                                 <span
                                     style={{
@@ -285,8 +411,8 @@ export default function QuestsPage() {
                                     {st.label}
                                 </span>
                                 <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                                    {a.mode === "all" ? "Tất cả" : `${a.selectedQuestIds.length} quest`} · đã
-                                    xong {a.completedCount}
+                                    {a.mode === "all" ? "Tất cả" : `${a.selectedQuestIds.length} quest`} · đã xong{" "}
+                                    {a.completedCount}
                                 </span>
                                 <span style={{ flex: 1 }} />
                                 {a.status === "running" && (
@@ -299,40 +425,12 @@ export default function QuestsPage() {
                                 </button>
                             </div>
                             {a.error && (
-                                <p style={{ fontSize: 12, color: "#f59e0b", marginTop: 6 }}>{a.error}</p>
+                                <p style={{ fontSize: 12, color: "#f59e0b", marginBottom: 8 }}>{a.error}</p>
                             )}
                             {quests.length > 0 && (
-                                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                                <div style={gridStyle}>
                                     {quests.map(([qid, q]) => (
-                                        <div key={qid} style={{ fontSize: 12 }}>
-                                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                                <span>
-                                                    {q.state === "done" ? "✅ " : "▶ "}
-                                                    {q.name}
-                                                </span>
-                                                <span style={{ color: "var(--text-dim)" }}>
-                                                    {q.percent ?? 0}%
-                                                </span>
-                                            </div>
-                                            <div
-                                                style={{
-                                                    height: 5,
-                                                    borderRadius: 4,
-                                                    background: "var(--border)",
-                                                    marginTop: 3,
-                                                    overflow: "hidden",
-                                                }}
-                                            >
-                                                <div
-                                                    style={{
-                                                        height: "100%",
-                                                        width: `${q.percent ?? 0}%`,
-                                                        background: q.state === "done" ? "#22c55e" : "#3b82f6",
-                                                        transition: "width .3s",
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
+                                        <QuestCard key={qid} q={{ ...q, id: qid }} progress={q} />
                                     ))}
                                 </div>
                             )}

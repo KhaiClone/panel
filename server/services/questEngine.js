@@ -247,6 +247,59 @@ function _isMobileOnlyTask(q) {
     return Boolean(tc?.tasks?.WATCH_VIDEO_ON_MOBILE) && !tc?.tasks?.WATCH_VIDEO;
 }
 
+// Discord serves quest media from this CDN path. Asset values in config.assets are
+// filenames appended here. (Verify against a real quest if an image 404s.)
+function _questAssetUrl(questId, asset) {
+    if (!asset) return null;
+    if (/^https?:\/\//.test(asset)) return asset;
+    return `https://cdn.discordapp.com/quests/${questId}/${asset}`;
+}
+
+/** Extract the rich media + branding of a quest so the UI can render a card that
+ *  looks like Discord's original. Field access is defensive (snake/camel variants).*/
+function _questMedia(q) {
+    const id = String(q.id ?? q.config?.id ?? "");
+    const cfg = q.config ?? {};
+    const a = cfg.assets ?? {};
+    const messages = cfg.messages ?? {};
+    const app = cfg.application ?? {};
+    const rewardsCfg = cfg.rewards_config ?? cfg.rewardsConfig ?? {};
+    const rewards = Array.isArray(rewardsCfg.rewards)
+        ? rewardsCfg.rewards
+        : Array.isArray(cfg.rewards)
+          ? cfg.rewards
+          : [];
+    const r0 = rewards[0] ?? null;
+    const u = (v) => _questAssetUrl(id, v);
+    return {
+        heroImage: u(a.hero),
+        heroVideo: u(a.hero_video ?? a.heroVideo),
+        questBarHero: u(a.quest_bar_hero ?? a.questBarHero),
+        questBarHeroVideo: u(a.quest_bar_hero_video ?? a.questBarHeroVideo),
+        gameTile: u(a.game_tile ?? a.gameTile ?? app.icon),
+        logotype: u(a.logotype),
+        colors: cfg.colors ?? cfg.gradient ?? null,
+        gameTitle: messages.game_title ?? messages.gameTitle ?? app.name ?? null,
+        gamePublisher: messages.game_publisher ?? messages.gamePublisher ?? null,
+        questName: messages.quest_name ?? messages.questName ?? null,
+        expiresAt: cfg.expires_at ?? cfg.expiresAt ?? null,
+        startsAt: cfg.starts_at ?? cfg.startsAt ?? null,
+        applicationId: app.id ?? null,
+        reward: r0
+            ? {
+                  name:
+                      r0.messages?.name ??
+                      r0.messages?.name_with_article ??
+                      r0.name ??
+                      null,
+                  orbs: r0.orb_quantity ?? r0.orbQuantity ?? null,
+                  approxCount: r0.approximate_count ?? null,
+              }
+            : null,
+        rawAssets: a, // passthrough so unrecognized keys can still be used by the UI
+    };
+}
+
 function summarizeQuest(q) {
     return {
         id: String(q.id),
@@ -256,6 +309,7 @@ function summarizeQuest(q) {
         done: _getSecondsDone(q),
         enrolled: _isEnrolled(q),
         completed: _isCompleted(q),
+        media: _questMedia(q),
     };
 }
 
@@ -409,7 +463,14 @@ class QuestAutocompleter {
         const needed = _getSecondsNeeded(quest);
         const startedAt = Date.now();
         this._log(`▶ Bắt đầu "${name}" (${taskType})${needed ? ` — cần ${needed}s` : ""}`);
-        this._emit({ type: "quest_start", questId: String(quest.id), name, taskType, needed });
+        this._emit({
+            type: "quest_start",
+            questId: String(quest.id),
+            name,
+            taskType,
+            needed,
+            media: _questMedia(quest),
+        });
         if (["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE"].includes(taskType))
             await this._completeVideo(quest);
         else if (GAME_HEARTBEAT_TASKS.includes(taskType))
