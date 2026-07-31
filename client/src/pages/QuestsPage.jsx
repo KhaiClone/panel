@@ -9,6 +9,16 @@ const STATUS = {
     stopped: { label: "Đã dừng", color: "#9ca3af" },
     token_dead: { label: "Token lỗi", color: "#f59e0b" },
     error: { label: "Lỗi", color: "#ef4444" },
+    monthly: { label: "Gói tháng", color: "#9b59b6" },
+    expired: { label: "Hết hạn", color: "#9ca3af" },
+};
+
+const fmtDate = (iso) => {
+    try {
+        return new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+    } catch {
+        return "—";
+    }
 };
 
 const btn = (bg, extra = {}) => ({
@@ -108,11 +118,19 @@ export default function QuestsPage() {
                                 <span style={{ fontWeight: 600, minWidth: 120 }}>{a.username}</span>
                                 <StatusBadge status={a.status} />
                                 <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                                    {a.mode === "all" ? "Tất cả" : `${a.selectedQuestIds.length} quest`}
+                                    {a.mode === "monthly"
+                                        ? "♾️ Gói tháng"
+                                        : a.mode === "all"
+                                          ? "Tất cả"
+                                          : `${a.selectedQuestIds.length} quest`}
                                 </span>
                                 <span style={{ flex: 1 }} />
                                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                                    {total > 0 ? `${done}/${total} quest` : `đã xong ${a.completedCount}`}
+                                    {a.mode === "monthly"
+                                        ? `Hạn ${fmtDate(a.monthlyExpiresAt)}`
+                                        : total > 0
+                                          ? `${done}/${total} quest`
+                                          : `đã xong ${a.completedCount}`}
                                 </span>
                                 <span style={{ color: "var(--text-dim)", fontSize: 18 }}>›</span>
                             </div>

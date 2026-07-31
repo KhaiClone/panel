@@ -1,14 +1,33 @@
 const express = require("express");
 const router = express.Router();
 const questService = require("../services/questService");
+const questMonthly = require("../services/questMonthly");
 
 // Mounted behind authMiddleware + adminOnly (see index.js). Admin-only Discord
 // Quest runner — standalone (does NOT talk to the ArnTo-Auto bot).
 
-/** GET /api/quests — list stored accounts + live status */
+// Per-quest accounts + monthly subscribers, normalized into one list for the UI.
+async function combinedList() {
+    const single = await questService.listAccounts();
+    const monthly = (await questMonthly.list()).map((m) => ({
+        accountId: m.accountId,
+        username: m.username,
+        mode: "monthly",
+        status: m.active ? "monthly" : "expired",
+        monthlyExpiresAt: m.monthlyExpiresAt,
+        selectedQuestIds: [],
+        completedCount: 0,
+        running: false,
+        ref: m.ref ?? null,
+        quests: {},
+    }));
+    return [...single, ...monthly];
+}
+
+/** GET /api/quests — per-quest + monthly accounts */
 router.get("/", async (req, res, next) => {
     try {
-        res.json(await questService.listAccounts());
+        res.json(await combinedList());
     } catch (err) {
         next(err);
     }
@@ -50,10 +69,11 @@ router.post("/:accountId/stop", async (req, res, next) => {
     }
 });
 
-/** DELETE /api/quests/:accountId — stop + delete the account record */
+/** DELETE /api/quests/:accountId — stop + delete the account (per-quest AND/OR monthly) */
 router.delete("/:accountId", async (req, res, next) => {
     try {
         await questService.removeAccount(req.params.accountId);
+        await questMonthly.remove(req.params.accountId);
         res.json({ ok: true });
     } catch (err) {
         next(err);
@@ -75,7 +95,7 @@ router.get("/stream", async (req, res, next) => {
 
         // Initial snapshot so the UI can render current state immediately.
         res.write(
-            `data: ${JSON.stringify({ type: "snapshot", accounts: await questService.listAccounts() })}\n\n`,
+            `data: ${JSON.stringify({ type: "snapshot", accounts: await combinedList() })}\n\n`,
         );
 
         const onEvent = (evt) => {

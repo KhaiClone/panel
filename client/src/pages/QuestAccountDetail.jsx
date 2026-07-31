@@ -9,6 +9,8 @@ const STATUS = {
     stopped: { label: "Đã dừng", color: "#9ca3af" },
     token_dead: { label: "Token lỗi", color: "#f59e0b" },
     error: { label: "Lỗi", color: "#ef4444" },
+    monthly: { label: "Gói tháng", color: "#9b59b6" },
+    expired: { label: "Hết hạn", color: "#9ca3af" },
 };
 const btn = (bg) => ({
     padding: "7px 12px",
