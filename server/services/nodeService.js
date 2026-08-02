@@ -153,6 +153,12 @@ const isNodeOnline = (nodeId) => {
     return nodeStatus.get(nodeId) === "online";
 };
 
+// Confirmed-offline only: an unpolled/unknown node returns false (treated as usable).
+const isNodeOffline = (nodeId) => {
+    if (!nodeId || nodeId === LOCAL_NODE_ID) return false;
+    return nodeStatus.get(nodeId) === "offline";
+};
+
 /** Mark a node online immediately (e.g. right after a verified registration). */
 const markOnline = (nodeId) => {
     if (nodeId && nodeId !== LOCAL_NODE_ID) nodeStatus.set(nodeId, "online");
@@ -266,6 +272,7 @@ module.exports = {
     getNodeStats,
     getLocalStats,
     isNodeOnline,
+    isNodeOffline,
     checkNodeHealth,
     startHealthPolling,
     getAllNodesWithStats,
