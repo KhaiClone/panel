@@ -13,7 +13,6 @@ import MultiManage from "./pages/MultiManage";
 import PanelManage from "./pages/PanelManage";
 import SystemPage from "./pages/SystemPage";
 import TerminalPage from "./pages/TerminalPage";
-import ProxyPage from "./pages/ProxyPage";
 import TagsPage from "./pages/TagsPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import NodesPage from "./pages/NodesPage";
@@ -68,7 +67,6 @@ export default function App() {
                             <Route path="tags"          element={<TagsPage />} />
                             {/* Admin-only routes */}
                             <Route path="panel-manage"  element={<AdminRoute><PanelManage /></AdminRoute>} />
-                            <Route path="proxy"         element={<AdminRoute><ProxyPage /></AdminRoute>} />
                             <Route path="system"        element={<AdminRoute><SystemPage /></AdminRoute>} />
                             <Route path="terminal"      element={<AdminRoute><TerminalPage /></AdminRoute>} />
                             <Route path="nodes"         element={<AdminRoute><NodesPage /></AdminRoute>} />

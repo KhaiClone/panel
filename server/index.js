@@ -14,7 +14,6 @@ const bulkRoutes = require("./routes/bulk");
 const externalRoutes = require("./routes/external");
 const panelRoutes = require("./routes/panel");
 const githubRoutes = require("./routes/github");
-const proxyRoutes = require("./routes/proxy");
 const tagRoutes = require("./routes/tags");
 const notificationRoutes = require("./routes/notifications");
 const userRoutes = require("./routes/users");
@@ -140,7 +139,6 @@ app.use("/api/logs", logRoutes); // Auth handled per-route (SSE needs query-para
 app.use("/api/system", authMiddleware, adminOnly, nodeContext, systemRoutes);
 app.use("/api/panel", authMiddleware, adminOnly, panelRoutes);
 app.use("/api/github", authMiddleware, adminOnly, githubRoutes);
-app.use("/api/proxy", authMiddleware, adminOnly, proxyRoutes);
 app.use("/api/external/quests", apiKeyMiddleware, questExternalRoutes);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
