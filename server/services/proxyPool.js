@@ -30,7 +30,12 @@ async function proxyNodes() {
     if (!want.length) return [];
     const nodes = await nodeService.getNodes();
     return nodes
-        .filter((n) => n.enabled !== false && want.includes(String(n.name).toLowerCase()))
+        .filter((n) => {
+            if (n.enabled === false) return false;
+            const name = String(n.name).toLowerCase();
+            // Match exact name OR a short alias contained in it (e.g. "dio" ~ "VPS dio").
+            return want.some((w) => name === w || name.includes(w));
+        })
         .sort((a, b) => String(a._id).localeCompare(String(b._id)));
 }
 
