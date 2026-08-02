@@ -140,12 +140,16 @@ function _makeSuperProperties(buildNumber, isAndroid) {
 }
 
 class DiscordAPI {
-    constructor(token, buildNumber) {
+    constructor(token, buildNumber, httpsAgent = null) {
         this.token = token;
         this.buildNumber = buildNumber;
+        // Optional egress proxy (agent VPS). Kept on the instance so the few direct
+        // discordsays.com calls can reuse the same IP.
+        this.httpsAgent = httpsAgent || null;
         this.client = axios.create({
             baseURL: API_BASE,
             timeout: 20000,
+            ...(httpsAgent ? { httpsAgent, proxy: false } : {}),
             headers: {
                 Authorization: token,
                 "Content-Type": "application/json",
@@ -677,10 +681,14 @@ class QuestAutocompleter {
                 Referer: activityReferrer,
                 "User-Agent": DESKTOP_USER_AGENT,
             };
+            // Route through the same egress proxy as the account's main API client.
+            const proxyCfg = this.api.httpsAgent
+                ? { httpsAgent: this.api.httpsAgent, proxy: false }
+                : {};
             const authorizeRes = await axios.post(
                 `https://${applicationId}.discordsays.com/.proxy/acf/authorize`,
                 { code: authCode },
-                { headers: activityHeaders, validateStatus: () => true },
+                { headers: activityHeaders, validateStatus: () => true, ...proxyCfg },
             );
             const activityToken = authorizeRes.data?.token;
             if (!activityToken) return;
@@ -691,6 +699,7 @@ class QuestAutocompleter {
                 {
                     headers: { ...activityHeaders, "X-Auth-Token": activityToken },
                     validateStatus: () => true,
+                    ...proxyCfg,
                 },
             );
 
@@ -708,12 +717,14 @@ class QuestAutocompleter {
     }
 }
 
-/** Validate a token and resolve its Discord account (id + username). */
-async function resolveDiscordAccount(rawToken) {
+/** Validate a token and resolve its Discord account (id + username).
+ *  Pass an httpsAgent to route this account's traffic through an egress proxy — the
+ *  resolved `api` reuses it for the whole run loop. */
+async function resolveDiscordAccount(rawToken, httpsAgent = null) {
     const token = String(rawToken ?? "").trim();
     if (!token) return { ok: false, invalidToken: false, reason: "Token trống." };
     const buildNumber = await getBuildNumber();
-    const api = new DiscordAPI(token, buildNumber);
+    const api = new DiscordAPI(token, buildNumber, httpsAgent);
     try {
         const res = await api.get("/users/@me");
         if (res.status !== 200)

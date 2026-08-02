@@ -38,7 +38,10 @@ function ImportForm({ onImported }) {
         setBusy(true); setMsg(null);
         try {
             const { data } = await api.post("/decors/import", { deco: deco.trim() });
-            setMsg({ ok: true, text: `Imported "${data.decor?.name}" (${data.decor?.sku_id})` });
+            const parts = [`Imported "${data.decor?.name}" (${data.decor?.sku_id})`];
+            if (data.importedMembers?.length) parts.push(`+${data.importedMembers.length} bundle member(s) auto-imported`);
+            if (data.failedMembers?.length) parts.push(`⚠ ${data.failedMembers.length} member(s) failed to resolve`);
+            setMsg({ ok: true, text: parts.join(" · ") });
             setDeco(""); setPreview(null);
             onImported();
         } catch (err) {

@@ -13,6 +13,7 @@ const crypto = require("crypto");
 const axios = require("axios");
 const db = require("../db");
 const questService = require("./questService");
+const proxyPool = require("./proxyPool");
 const {
     QuestAutocompleter,
     resolveDiscordAccount,
@@ -68,7 +69,7 @@ function _webhook(rec, event) {
 
 // ── Public API ───────────────────────────────────────────────────────────────────
 async function activate({ token, months = 1, ref, webhookUrl }) {
-    const resolved = await resolveDiscordAccount(token);
+    const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
         e.status = resolved.invalidToken ? 401 : 502;
@@ -124,7 +125,7 @@ async function runBatch() {
         const token = _decrypt(rec);
         if (!token) continue;
         try {
-            const resolved = await resolveDiscordAccount(token);
+            const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
             if (!resolved.ok) {
                 if (resolved.invalidToken) {
                     questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
@@ -202,7 +203,7 @@ async function runEnrollScan() {
         const token = _decrypt(rec);
         if (!token) continue;
         try {
-            const resolved = await resolveDiscordAccount(token);
+            const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
             if (!resolved.ok) continue;
             const completer = new QuestAutocompleter(resolved.api, { label: rec.username });
             const quests = await completer.fetchQuests();

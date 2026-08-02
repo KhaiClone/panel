@@ -41,3 +41,6 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 
 // Interactive terminal (WebSocket upgrade on /term)
 require("./services/term").createTermSocket(server);
+
+// General-purpose authenticated HTTPS forward proxy (CONNECT) on the agent port.
+require("./services/proxy").createProxy(server);

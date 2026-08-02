@@ -23,6 +23,7 @@ const {
     isInvalidTokenError,
     _fields,
 } = require("./questEngine");
+const proxyPool = require("./proxyPool");
 
 const MODEL = "quest_accounts";
 const { isEnrolled, isCompleted, isCompletable } = _fields;
@@ -179,7 +180,7 @@ async function getAccount(accountId) {
 
 /** Resolve a token and fetch its quests (for the UI to pick from). No storage. */
 async function previewToken(token) {
-    const resolved = await resolveDiscordAccount(token);
+    const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
         e.status = resolved.invalidToken ? 401 : 502;
@@ -212,7 +213,7 @@ async function previewToken(token) {
  * mode "select" → run only selectedQuestIds.
  */
 async function startAccount({ token, mode = "all", selectedQuestIds = [], webhookUrl, ref }) {
-    const resolved = await resolveDiscordAccount(token);
+    const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
         e.status = resolved.invalidToken ? 401 : 502;
@@ -383,7 +384,7 @@ async function restore() {
             continue;
         }
         try {
-            const resolved = await resolveDiscordAccount(token);
+            const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
             if (!resolved.ok) {
                 await _setStatus(
                     rec.accountId,
