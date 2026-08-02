@@ -41,7 +41,35 @@ const agentCall = async (bot, method, urlPath, opts = {}) => {
 //  PM2 control
 // ─────────────────────────────────────────────────────────────────────────────
 
-const startBot = async (bot, proxyConf = null) => {
+/**
+ * Egress proxy: route a bot's outbound traffic through its assigned VPS
+ * (bot.egressNodeId) via that node's agent CONNECT proxy, so the bot's public IP
+ * follows the chosen VPS no matter which node runs the process. null = egress from
+ * the run host directly (native IP). proxychains4 on the run host applies it.
+ */
+const buildEgressProxyConf = async (bot) => {
+    const egressId = bot.egressNodeId;
+    if (!egressId) return null;
+    // Egress node == the node the bot already runs on → native IP, no tunnel needed.
+    if (egressId === (bot.nodeId || nodeService.LOCAL_NODE_ID)) return null;
+    try {
+        const node = await nodeService.getNode(egressId);
+        if (!node) return null;
+        return {
+            type: "http",
+            host: node.host,
+            port: node.port,
+            username: "proxy",
+            password: node.apiKey,
+        };
+    } catch (err) {
+        console.warn(`[Egress] bot ${bot.pm2Name} node ${egressId}: ${err.message}`);
+        return null;
+    }
+};
+
+const startBot = async (bot) => {
+    const proxyConf = await buildEgressProxyConf(bot);
     if (!isRemote(bot)) {
         return pm2Service.startBot(bot.pm2Name, localBotDir(bot), bot.startScript, bot.maxMemory || null, proxyConf);
     }
@@ -480,6 +508,7 @@ module.exports = {
     relDir,
     rootOf,
     localBotDir,
+    buildEgressProxyConf,
     startBot,
     stopBot,
     restartBot,
