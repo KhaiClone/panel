@@ -33,6 +33,7 @@ async function proxyNodes() {
     return nodes
         .filter((n) => {
             if (n.enabled === false) return false;
+            if (n.questProxy === false) return false; // opted out of the quest pool
             if (nodeService.isNodeOffline(n._id)) return false; // skip confirmed-down
             if (!restrict.length) return true; // default: every agent is a proxy
             const name = String(n.name).toLowerCase();
