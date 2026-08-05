@@ -120,6 +120,8 @@ async function applyConfig(iface, peers) {
     } else {
         await _sh(`${SUDO}wg-quick up ${IFACE}`);
     }
+    // Survive reboots: bring wg0 up automatically on boot from the saved conf.
+    await _sh(`${SUDO}systemctl enable wg-quick@${IFACE}`).catch(() => {});
     return { ok: true };
 }
 
