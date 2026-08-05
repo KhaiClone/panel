@@ -203,6 +203,21 @@ export default function NodesPage() {
     const [confirmDelete, setConfirmDelete] = useState(null);
     const [testResult, setTestResult] = useState({}); // nodeId → message
     const [expanded, setExpanded] = useState({}); // nodeId → bool (bot list open)
+    const [wgSync, setWgSync] = useState({ busy: false, msg: null }); // WireGuard mesh sync
+
+    const handleSyncWg = async () => {
+        setWgSync({ busy: true, msg: null });
+        try {
+            const { data } = await api.post("/nodes/wg/sync");
+            const results = data.results || [];
+            const okN = results.filter((r) => r.ok).length;
+            const failN = results.length - okN;
+            setWgSync({ busy: false, msg: failN ? `${okN} ok · ${failN} failed` : `Synced ${okN} node(s)` });
+            fetchNodes();
+        } catch (err) {
+            setWgSync({ busy: false, msg: err.response?.data?.error || "Sync failed" });
+        }
+    };
 
     const fetchNodes = useCallback(async () => {
         try {
@@ -273,7 +288,18 @@ export default function NodesPage() {
                         Worker VPS across your infrastructure — live health, specs, and the projects running on each.
                     </p>
                 </div>
-                <button className="btn-primary" onClick={() => setModal({ node: null })}>+ Add Node</button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    {wgSync.msg && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{wgSync.msg}</span>}
+                    <button
+                        className="btn-ghost"
+                        onClick={handleSyncWg}
+                        disabled={wgSync.busy}
+                        title="Rebuild the WireGuard overlay and push it to every node"
+                    >
+                        {wgSync.busy ? "Syncing…" : "⇄ Sync WireGuard"}
+                    </button>
+                    <button className="btn-primary" onClick={() => setModal({ node: null })}>+ Add Node</button>
+                </div>
             </div>
 
             {/* ── Fleet summary ── */}
@@ -319,6 +345,7 @@ export default function NodesPage() {
                                             </div>
                                             <p className="mono" style={{ fontSize: 11, color: "var(--text-dim)", margin: "3px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                                 {node.local ? "this VPS" : `${node.host}:${node.port}`}
+                                                {node.wgOverlayIp ? ` · wg ${node.wgOverlayIp}` : ""}
                                                 {info?.hostname ? ` · ${info.hostname}` : ""}
                                             </p>
                                         </div>

@@ -198,6 +198,11 @@ const pollAllNodes = async () => {
                 const { createNotification } = require("../routes/notifications");
                 await createNotification(`Node "${node.name}" (${node.host}) is back online.`, "info");
             } catch (err) { /* best-effort */ }
+            // Re-push the WireGuard mesh to the recovered node in case it missed peer
+            // changes while it was down (its own conf persists across reboot).
+            try {
+                require("./wgService").pushToNode(node, nodes).catch(() => {});
+            } catch { /* wgService optional */ }
         }
     }
 };
@@ -257,6 +262,7 @@ const getAllNodesWithStats = async () => {
             enabled: node.enabled !== false,
             status,
             stats,
+            wgOverlayIp: node.wgOverlayIp ?? null,
             createdAt: node.createdAt,
         });
     }
