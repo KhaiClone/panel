@@ -37,8 +37,10 @@ const request = async (method, path, { data, timeout, needsKey = true } = {}) =>
 
 // GET /api/decors is public on the assistant, but we still send the key harmlessly.
 const listDecors = () => request("get", "/api/decors", { needsKey: false });
+const listCategories = () => request("get", "/api/decors/categories", { needsKey: false });
 const previewDecor = (fields) => request("post", "/api/decors/preview", { data: fields });
 const importDecor = (fields) => request("post", "/api/decors/import", { data: fields, timeout: 20_000 });
+const updateDecor = (skuId, fields) => request("patch", `/api/decors/import/${encodeURIComponent(skuId)}`, { data: fields });
 const deleteDecor = (skuId) => request("delete", `/api/decors/import/${encodeURIComponent(skuId)}`);
 
-module.exports = { listDecors, previewDecor, importDecor, deleteDecor };
+module.exports = { listDecors, listCategories, previewDecor, importDecor, updateDecor, deleteDecor };

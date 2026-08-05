@@ -14,6 +14,15 @@ router.get("/", async (req, res, next) => {
     }
 });
 
+/** GET /api/decors/categories — theme list (with banners) for the theme picker */
+router.get("/categories", async (req, res, next) => {
+    try {
+        res.json(await assistantService.listCategories());
+    } catch (err) {
+        next(err);
+    }
+});
+
 /** POST /api/decors/preview — normalize form fields without saving */
 router.post("/preview", async (req, res, next) => {
     try {
@@ -27,6 +36,15 @@ router.post("/preview", async (req, res, next) => {
 router.post("/import", async (req, res, next) => {
     try {
         res.status(201).json(await assistantService.importDecor(req.body));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** PATCH /api/decors/import/:sku_id — update theme / gift flag of an imported decor */
+router.patch("/import/:sku_id", async (req, res, next) => {
+    try {
+        res.json(await assistantService.updateDecor(req.params.sku_id, req.body));
     } catch (err) {
         next(err);
     }

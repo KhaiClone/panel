@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -111,6 +111,7 @@ function ImportForm({ onImported }) {
 
 export default function DecorsPage() {
     const [decors, setDecors] = useState([]);
+    const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [search, setSearch] = useState("");
@@ -131,6 +132,12 @@ export default function DecorsPage() {
 
     useEffect(() => { fetchDecors(); }, [fetchDecors]);
 
+    useEffect(() => {
+        api.get("/decors/categories")
+            .then(({ data }) => setCategories(Array.isArray(data) ? data : []))
+            .catch(() => setCategories([]));
+    }, []);
+
     const handleDelete = async () => {
         const sku = confirmDel;
         setConfirmDel(null);
@@ -141,6 +148,24 @@ export default function DecorsPage() {
             alert(err.response?.data?.error || err.response?.data?.message || "Delete failed");
         }
     };
+
+    // Patch an imported decor (theme / gift), then refresh so recomputed gift shows.
+    const patchDecor = async (sku, patch) => {
+        try {
+            await api.patch(`/decors/import/${sku}`, patch);
+            fetchDecors();
+        } catch (err) {
+            alert(err.response?.data?.error || err.response?.data?.message || "Update failed");
+        }
+    };
+
+    // Dedupe categories by sku_id + sort by name for the theme picker.
+    const categoryOptions = useMemo(() => {
+        const seen = new Set();
+        return categories
+            .filter((c) => { if (seen.has(c.sku_id)) return false; seen.add(c.sku_id); return true; })
+            .sort((a, b) => (a.name || "").localeCompare(b.name || "", "vi"));
+    }, [categories]);
 
     const visible = decors.filter((d) => {
         const mSrc = sourceFilter === "all" || d.decorFrom === sourceFilter;
@@ -183,11 +208,11 @@ export default function DecorsPage() {
                                 const img = d.type === 1000 ? (d.assetURL?.[0]) : (d.staticURL || d.assetURL);
                                 const imported = d.decorFrom === "importedDecors";
                                 return (
-                                    <div key={d.sku_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid var(--border-light)" }}>
+                                    <div key={d.sku_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid var(--border-light)", flexWrap: "wrap" }}>
                                         <div style={{ width: 40, height: 40, borderRadius: 8, background: "var(--bg-input)", flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                             {img ? <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { e.target.style.display = "none"; }} /> : <span style={{ fontSize: 16 }}>🎁</span>}
                                         </div>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ flex: 1, minWidth: 140 }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                                 <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{d.name}</span>
                                                 <span className="badge" style={{ fontSize: 9, background: "var(--bg-input)", color: "var(--text-muted)" }}>{TYPE_LABEL[d.type] || d.type}</span>
@@ -199,7 +224,25 @@ export default function DecorsPage() {
                                             <p className="mono" style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{money(d.prices?.withNitro)}</p>
                                         </div>
                                         {imported && (
-                                            <button className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12, color: "var(--danger)", flexShrink: 0 }} onClick={() => setConfirmDel(d.sku_id)}>Delete</button>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                                <select
+                                                    className="input"
+                                                    style={{ width: "auto", maxWidth: 150, padding: "4px 8px", fontSize: 11 }}
+                                                    title="Theme"
+                                                    value={d.category_sku_id ?? ""}
+                                                    onChange={(e) => patchDecor(d.sku_id, { category_sku_id: e.target.value || null })}
+                                                >
+                                                    <option value="">— Other —</option>
+                                                    {categoryOptions.map((c) => (
+                                                        <option key={c.sku_id} value={c.sku_id}>{c.name}</option>
+                                                    ))}
+                                                </select>
+                                                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }} title="Hide the gift price for this decor">
+                                                    <input type="checkbox" checked={!!d.noGift} onChange={(e) => patchDecor(d.sku_id, { noGift: e.target.checked })} />
+                                                    No gift
+                                                </label>
+                                                <button className="btn-ghost" style={{ padding: "4px 8px", fontSize: 12, color: "var(--danger)" }} onClick={() => setConfirmDel(d.sku_id)}>Delete</button>
+                                            </div>
                                         )}
                                     </div>
                                 );
