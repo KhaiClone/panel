@@ -75,6 +75,12 @@ router.post("/", async (req, res, next) => {
             .syncAllToNode(node)
             .catch((err) => console.error(`[Nodes] Initial key sync to "${node.name}" failed:`, err.message));
 
+        // Auto-join the WireGuard overlay: set up this node then re-push the mesh to
+        // all (best-effort — the agent may need the /wg-capable code deployed first).
+        require("../services/wgService")
+            .syncMesh()
+            .catch((err) => console.error(`[Nodes] WG mesh sync after adding "${node.name}" failed:`, err.message));
+
         const { apiKey: _hidden, ...safe } = node;
         res.status(201).json(safe);
     } catch (err) {
@@ -104,6 +110,14 @@ router.put("/:id", async (req, res, next) => {
         if (enabled !== undefined) updates.enabled = !!enabled;
 
         const updated = await db.findOneAndUpdate("nodes", { _id: req.params.id }, updates);
+
+        // Enable/disable or endpoint (host/port) changes affect the mesh — re-push.
+        if (enabled !== undefined || host !== undefined || port !== undefined) {
+            require("../services/wgService")
+                .syncMesh()
+                .catch((err) => console.error(`[Nodes] WG mesh sync after updating "${updated.name}" failed:`, err.message));
+        }
+
         const { apiKey: _hidden, ...safe } = updated;
         res.json(safe);
     } catch (err) {
@@ -128,7 +142,25 @@ router.delete("/:id", async (req, res, next) => {
         }
 
         await db.findOneAndDelete("nodes", { _id: req.params.id });
+
+        // Re-push the WG mesh so the remaining nodes drop the deleted peer.
+        require("../services/wgService")
+            .syncMesh()
+            .catch((err) => console.error(`[Nodes] WG mesh sync after deleting "${node.name}" failed:`, err.message));
+
         res.json({ message: `Node "${node.name}" deleted` });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/nodes/wg/sync — (re)build the WireGuard overlay: assign identities/IPs to
+ * any node missing them and push the full mesh to every reachable node.
+ */
+router.post("/wg/sync", async (req, res, next) => {
+    try {
+        res.json({ results: await require("../services/wgService").syncMesh() });
     } catch (err) {
         next(err);
     }
