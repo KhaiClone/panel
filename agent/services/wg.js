@@ -78,6 +78,15 @@ async function _isUp() {
     }
 }
 
+/** Current wg0 address (e.g. "10.88.0.3/24") or "" if not set. */
+async function _currentAddress() {
+    try {
+        return await _sh(`ip -o -4 addr show ${IFACE} | awk '{print $4}'`);
+    } catch {
+        return "";
+    }
+}
+
 /**
  * Apply the mesh: write the conf and bring up (or live-reload) the interface.
  * @param {{address:string, listenPort?:number}} iface
@@ -99,8 +108,15 @@ async function applyConfig(iface, peers) {
     await _sh(`${SUDO}ufw allow ${iface.listenPort || DEFAULT_PORT}/udp`).catch(() => {});
 
     if (await _isUp()) {
-        // Live-reload peers without tearing the interface down (keeps sessions alive).
-        await _sh(`${SUDO}bash -c 'wg syncconf ${IFACE} <(wg-quick strip ${IFACE})'`);
+        const cur = await _currentAddress();
+        if (cur && cur !== iface.address) {
+            // Overlay address changed → full restart (syncconf can't change Address).
+            await _sh(`${SUDO}wg-quick down ${IFACE}`).catch(() => {});
+            await _sh(`${SUDO}wg-quick up ${IFACE}`);
+        } else {
+            // Live-reload peers without tearing the interface down (keeps sessions alive).
+            await _sh(`${SUDO}bash -c 'wg syncconf ${IFACE} <(wg-quick strip ${IFACE})'`);
+        }
     } else {
         await _sh(`${SUDO}wg-quick up ${IFACE}`);
     }

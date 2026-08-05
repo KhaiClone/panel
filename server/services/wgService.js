@@ -39,6 +39,9 @@ async function setupNode(node, allNodes = null) {
     const patch = { wgPubKey: id.pubKey, wgPort: id.listenPort || 51820 };
     if (!node.wgOverlayIp) patch.wgOverlayIp = _assignIp(nodes);
     const updated = await db.findOneAndUpdate("nodes", { _id: node._id }, patch);
+    // Reflect on the in-memory object so sequential allocation in the same syncMesh
+    // pass sees this IP as taken (otherwise every node grabs the same address).
+    Object.assign(node, patch);
     return updated;
 }
 
