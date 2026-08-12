@@ -205,7 +205,7 @@ export default function DecorsPage() {
                             <div style={{ padding: 24, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No decors found.</div>
                         ) : (
                             visible.map((d) => {
-                                const img = d.type === 1000 ? (d.assetURL?.[0]) : (d.staticURL || d.assetURL);
+                                const img = d.type === 1000 ? (d.assetURL?.[0]) : d.type === 3 ? (d.frameURL || d.staticURL) : (d.staticURL || d.assetURL);
                                 const imported = d.decorFrom === "importedDecors";
                                 return (
                                     <div key={d.sku_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid var(--border-light)", flexWrap: "wrap" }}>
