@@ -6,9 +6,7 @@ const execAsync = util.promisify(exec);
 
 // Port of the panel's nginxService for the agent VPS. Works both as root
 // (nothing prefixed) and as a regular user with passwordless sudo (every
-// privileged command/file move goes through sudo). Panel-self config
-// generation is intentionally omitted — the panel only reverse-proxies
-// itself locally.
+// privileged command/file move goes through sudo).
 
 const IS_ROOT = typeof process.getuid === "function" && process.getuid() === 0;
 const SUDO = IS_ROOT ? "" : "sudo ";
@@ -16,6 +14,8 @@ const SUDO = IS_ROOT ? "" : "sudo ";
 const NGINX_SITES = "/etc/nginx/sites-enabled";
 
 const configPath = (pm2Name) => path.join(NGINX_SITES, `panel-${pm2Name}.conf`);
+// The panel's OWN vhost, separate from any project's config
+const PANEL_CONF = path.join(NGINX_SITES, "panel-self.conf");
 
 const reloadNginx = async () => {
     await execAsync(`${SUDO}nginx -s reload`);
@@ -173,4 +173,49 @@ const enableSSL = async (domain, email = null) => {
     );
 };
 
-module.exports = { writeConfig, removeConfig, configExists, listConfigs, enableSSL, reloadNginx };
+/**
+ * Reverse-proxy the panel itself on this node. An empty domain list removes the
+ * vhost entirely. The generated config is tested with `nginx -t` before the
+ * reload; a bad config is rolled back rather than left to break every site on
+ * the box.
+ */
+const writePanelConfig = async (domains, port) => {
+    if (!domains || domains.length === 0) {
+        await execAsync(`${SUDO}rm -f "${PANEL_CONF}"`).catch(() => {});
+        await reloadNginx().catch(() => {});
+        return;
+    }
+
+    const content = domains
+        .map(
+            (domain) => `server {
+    listen 80;
+    server_name ${domain};
+
+    location / {
+        proxy_pass http://127.0.0.1:${port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_cache_bypass $http_upgrade;
+    }
+}`,
+        )
+        .join("\n\n") + "\n";
+
+    await putFile(PANEL_CONF, content);
+
+    try {
+        await execAsync(`${SUDO}nginx -t`);
+    } catch (err) {
+        await execAsync(`${SUDO}rm -f "${PANEL_CONF}"`).catch(() => {});
+        const detail = (err.stderr || err.message || "").trim().split("\n").slice(0, 4).join(" | ");
+        throw new Error(`nginx config test failed: ${detail}`);
+    }
+
+    await reloadNginx();
+};
+
+module.exports = { writeConfig, removeConfig, configExists, listConfigs, enableSSL, reloadNginx, writePanelConfig };

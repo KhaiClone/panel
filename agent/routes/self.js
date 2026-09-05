@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const os = require("os");
 const { exec } = require("child_process");
 const util = require("util");
@@ -134,6 +135,196 @@ router.post("/update", async (req, res, next) => {
         }
     } catch (err) {
         next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Panel self-management
+//
+//  The panel is a control plane and runs no shell of its own, so the machine it
+//  lives on manages it through these endpoints. Only meaningful on the node that
+//  actually hosts the panel: PANEL_DIR must point at the panel repo.
+//
+//  SECURITY: none of these takes a path from the request. They operate on the
+//  fixed PANEL_DIR from this agent's env. Accepting a caller-supplied path here
+//  would turn a leaked agent key into arbitrary file write on the host — the
+//  root-jail in utils/paths.js exists for exactly that reason.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PANEL_DIR = process.env.PANEL_DIR || null;
+const PANEL_PM2_NAME = process.env.PANEL_PM2_NAME || "bot-panel";
+
+/** Guard every panel endpoint: unconfigured means "this node does not host it". */
+const requirePanelDir = (req, res, next) => {
+    if (!PANEL_DIR) {
+        return res.status(503).json({
+            error: "PANEL_DIR is not configured on this agent — it does not host the panel",
+        });
+    }
+    if (!fs.existsSync(PANEL_DIR)) {
+        return res.status(503).json({ error: `PANEL_DIR "${PANEL_DIR}" does not exist` });
+    }
+    next();
+};
+
+/**
+ * GET /self/panel-status
+ * PM2 status of the panel process.
+ */
+router.get("/panel-status", requirePanelDir, async (req, res, next) => {
+    try {
+        const live = await getBotStatus(PANEL_PM2_NAME);
+        res.json({ pm2Name: PANEL_PM2_NAME, panelDir: PANEL_DIR, ...live });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /self/panel-logs?lines=100
+ */
+router.get("/panel-logs", requirePanelDir, async (req, res, next) => {
+    try {
+        const lines = Math.min(parseInt(req.query.lines) || 100, 500);
+        res.json({ logs: await getBotLogs(PANEL_PM2_NAME, lines) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /self/panel-restart
+ * Restart the panel. Answered first, then restarted ~1.5s later so the response
+ * reaches the browser before its server goes away.
+ */
+router.post("/panel-restart", requirePanelDir, (req, res) => {
+    res.json({ message: `Panel "${PANEL_PM2_NAME}" will restart in ~1.5 seconds` });
+    setTimeout(() => {
+        exec(`pm2 restart "${PANEL_PM2_NAME}" --no-color`, (err) => {
+            if (err) console.error("[Agent] Panel restart failed:", err.message);
+        });
+    }, 1500);
+});
+
+/**
+ * GET /self/env
+ * The panel's .env, verbatim. Reachable only with the agent key.
+ */
+router.get("/env", requirePanelDir, (req, res, next) => {
+    try {
+        const envPath = path.join(PANEL_DIR, ".env");
+        const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+        res.json({ content });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * PUT /self/env   body: { content }
+ * Overwrite the panel's .env. The previous file is always kept as
+ * .env.bak-<timestamp> first — this is the panel's own credentials file and a
+ * bad write would lock everyone out.
+ */
+router.put("/env", requirePanelDir, (req, res, next) => {
+    try {
+        const { content } = req.body;
+        if (typeof content !== "string") {
+            return res.status(400).json({ error: "content is required" });
+        }
+        const envPath = path.join(PANEL_DIR, ".env");
+        let backup = null;
+        if (fs.existsSync(envPath)) {
+            backup = `${envPath}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+            fs.copyFileSync(envPath, backup);
+        }
+        fs.writeFileSync(envPath, content, "utf8");
+        res.json({ message: ".env saved", backup });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// One rebuild at a time: two overlapping `npm install` runs in the same tree
+// leave node_modules in a state neither of them expects.
+let _rebuildInProgress = false;
+
+/**
+ * POST /self/rebuild-app
+ * git pull → update deps → build client → verify every dependency resolves →
+ * only then restart. A failed build must never restart the panel: it would come
+ * back up against a half-installed tree.
+ */
+router.post("/rebuild-app", requirePanelDir, async (req, res) => {
+    if (_rebuildInProgress) {
+        return res.status(409).json({
+            success: false,
+            buildOutput: "",
+            message: "A rebuild is already in progress — wait for it to finish.",
+        });
+    }
+    _rebuildInProgress = true;
+
+    const out = [];
+    const run = async (cmd, timeout) => {
+        const { stdout, stderr } = await execAsync(cmd, {
+            cwd: PANEL_DIR,
+            timeout,
+            maxBuffer: 10 * 1024 * 1024,
+        });
+        out.push(stdout, stderr);
+    };
+
+    try {
+        console.log("[Agent] Panel rebuild: git pull");
+        await run("git pull", 60_000);
+
+        // Deliberately NOT a clean reinstall: deleting node_modules first would
+        // leave the running panel without deps if the install fails (e.g. the
+        // registry is unreachable). An in-place install fails safe.
+        console.log("[Agent] Panel rebuild: updating dependencies");
+        await run("npm run update:deps", 300_000);
+
+        console.log("[Agent] Panel rebuild: building client");
+        await run("npm run build", 180_000);
+
+        console.log("[Agent] Panel rebuild: verifying dependencies");
+        await run(
+            `node -e "Object.keys(require('./package.json').dependencies).forEach(d => require.resolve(d))"`,
+            30_000,
+        );
+
+        const buildOutput = out.filter(Boolean).join("\n").trim();
+        res.json({
+            success: true,
+            buildOutput,
+            message: `Build successful. Panel "${PANEL_PM2_NAME}" will restart in ~1.5 seconds`,
+        });
+
+        setTimeout(() => {
+            exec(`pm2 restart "${PANEL_PM2_NAME}" --no-color`, (err) => {
+                if (err) console.error("[Agent] Post-build restart failed:", err.message);
+            });
+        }, 1500);
+    } catch (err) {
+        if (err.stdout) out.push(err.stdout);
+        if (err.stderr) out.push(err.stderr);
+
+        let reason = err.message;
+        if (err.killed && err.signal === "SIGTERM") reason = "Process timed out.";
+        else if (err.killed && err.signal === "SIGKILL")
+            reason = "Process was killed by the OS (likely out of memory — the vite build is memory hungry).";
+        else if (err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER")
+            reason = "Process exceeded the max output buffer.";
+        out.push(`\n[ERROR] ${reason}`);
+
+        res.status(500).json({
+            success: false,
+            buildOutput: out.filter(Boolean).join("\n").trim(),
+            message: "Build failed — the panel was NOT restarted",
+        });
+    } finally {
+        _rebuildInProgress = false;
     }
 });
 

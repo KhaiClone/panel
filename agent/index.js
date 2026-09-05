@@ -22,6 +22,7 @@ app.use("/keys", require("./routes/keys"));
 app.use("/nginx", require("./routes/nginx"));
 app.use("/ufw", require("./routes/ufw"));
 app.use("/wg", require("./routes/wg"));
+app.use("/logrotate", require("./routes/logrotate"));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {

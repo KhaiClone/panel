@@ -86,4 +86,26 @@ router.post("/ssl", async (req, res, next) => {
     }
 });
 
+/**
+ * POST /nginx/panel-config
+ * body: { domains: string[], port: number }
+ * Reverse-proxy the panel itself. An empty array removes the vhost.
+ */
+router.post("/panel-config", async (req, res, next) => {
+    try {
+        const { domains, port } = req.body;
+        if (!Array.isArray(domains)) return res.status(400).json({ error: "domains must be an array" });
+        for (const d of domains) {
+            if (!validDomain(d)) return res.status(400).json({ error: `Invalid domain: "${d}"` });
+        }
+        const p = parseInt(port, 10);
+        if (!p || p < 1 || p > 65535) return res.status(400).json({ error: "Valid port is required" });
+
+        await nginx.writePanelConfig(domains, p);
+        res.json({ message: domains.length ? `panel vhost written for ${domains.join(", ")}` : "panel vhost removed" });
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;

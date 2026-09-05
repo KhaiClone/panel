@@ -1,16 +1,53 @@
 const express = require("express");
-const fs = require("fs");
-const path = require("path");
 const panelService = require("../services/panelService");
-const nginxService = require("../services/nginxService");
-const logrotateService = require("../services/logrotateService");
 const db = require("../db");
 const router = express.Router();
 
+// This router runs no shell and touches no filesystem. Everything it does to
+// the panel's own machine goes through that machine's agent (services/panelService).
 const PANEL_DOMAINS_KEY = "panel_domains";
 const panelPort = () => parseInt(process.env.PORT) || 3000;
 
-const ENV_PATH = path.resolve(__dirname, "../../.env");
+/** Parse .env text into the {key, value} rows the editor expects. */
+const parseEnv = (raw) => {
+    const entries = [];
+    for (const line of String(raw).split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const idx = line.indexOf("=");
+        if (idx === -1) continue;
+        const key = line.slice(0, idx).trim();
+        if (key) entries.push({ key, value: line.slice(idx + 1) });
+    }
+    return entries;
+};
+
+/**
+ * Merge edited rows back into the original text, keeping comments and blank
+ * lines exactly where they were. Keys absent from `entries` are dropped; new
+ * ones are appended.
+ */
+const mergeEnv = (raw, entries) => {
+    const newMap = new Map(entries.map((e) => [e.key.trim(), e.value]));
+    const existingKeys = new Set();
+    const outLines = [];
+
+    for (const line of String(raw).split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) { outLines.push(line); continue; }
+        const idx = line.indexOf("=");
+        if (idx === -1) { outLines.push(line); continue; }
+        const key = line.slice(0, idx).trim();
+        existingKeys.add(key);
+        if (newMap.has(key)) outLines.push(`${key}=${newMap.get(key)}`);
+        // a key missing from newMap was deleted in the editor — omit it
+    }
+    for (const { key, value } of entries) {
+        const k = key.trim();
+        if (!existingKeys.has(k)) outLines.push(`${k}=${value}`);
+    }
+    return outLines.join("\n").replace(/\n+$/, "") + "\n";
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GET /api/panel/status
@@ -76,21 +113,7 @@ router.get("/logs", async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/env", async (req, res, next) => {
     try {
-        if (!fs.existsSync(ENV_PATH)) {
-            return res.json([]);
-        }
-        const raw = fs.readFileSync(ENV_PATH, "utf8");
-        const entries = [];
-        for (const line of raw.split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith("#")) continue;
-            const idx = line.indexOf("=");
-            if (idx === -1) continue;
-            const key = line.slice(0, idx).trim();
-            const value = line.slice(idx + 1);
-            if (key) entries.push({ key, value });
-        }
-        res.json(entries);
+        res.json(parseEnv(await panelService.readEnv()));
     } catch (err) {
         next(err);
     }
@@ -113,43 +136,11 @@ router.put("/env", async (req, res, next) => {
             }
         }
 
-        const newMap = new Map(entries.map((e) => [e.key.trim(), e.value]));
-        const raw = fs.existsSync(ENV_PATH) ? fs.readFileSync(ENV_PATH, "utf8") : "";
-        const existingKeys = new Set();
-        const outLines = [];
+        // Read-modify-write through the agent; it keeps a .env.bak-<ts> for us.
+        const raw = await panelService.readEnv();
+        const { backup } = await panelService.writeEnv(mergeEnv(raw, entries));
 
-        for (const line of raw.split("\n")) {
-            const trimmed = line.trim();
-            // Preserve blank lines and comments as-is
-            if (!trimmed || trimmed.startsWith("#")) {
-                outLines.push(line);
-                continue;
-            }
-            const idx = line.indexOf("=");
-            if (idx === -1) {
-                outLines.push(line);
-                continue;
-            }
-            const key = line.slice(0, idx).trim();
-            existingKeys.add(key);
-            if (newMap.has(key)) {
-                outLines.push(`${key}=${newMap.get(key)}`);
-            }
-            // If key was deleted (not in newMap) — skip it (omit from output)
-        }
-
-        // Append brand-new keys
-        for (const { key, value } of entries) {
-            const k = key.trim();
-            if (!existingKeys.has(k)) {
-                outLines.push(`${k}=${value}`);
-            }
-        }
-
-        // Ensure trailing newline
-        const content = outLines.join("\n").replace(/\n+$/, "") + "\n";
-        fs.writeFileSync(ENV_PATH, content, "utf8");
-        res.json({ ok: true });
+        res.json({ ok: true, backup });
     } catch (err) {
         next(err);
     }
@@ -192,7 +183,7 @@ router.post("/domains", async (req, res, next) => {
         const newEntry = { domain: clean, sslEnabled: false, addedAt: Date.now() };
         const updated = [...existing, newEntry];
 
-        await nginxService.writePanelConfig(updated.map(d => d.domain), panelPort());
+        await panelService.writePanelVhost(updated.map(d => d.domain), panelPort());
         await db.set(PANEL_DOMAINS_KEY, updated);
 
         console.log(`[Panel] Domain added: ${clean}`);
@@ -216,7 +207,7 @@ router.delete("/domains/:domain", async (req, res, next) => {
             return res.status(404).json({ error: "Domain not found" });
         }
 
-        await nginxService.writePanelConfig(filtered.map(d => d.domain), panelPort());
+        await panelService.writePanelVhost(filtered.map(d => d.domain), panelPort());
         await db.set(PANEL_DOMAINS_KEY, filtered);
 
         console.log(`[Panel] Domain removed: ${domain}`);
@@ -232,7 +223,7 @@ router.delete("/domains/:domain", async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/logrotate", async (req, res, next) => {
     try {
-        res.json(await logrotateService.getStatus());
+        res.json(await panelService.logrotateStatus());
     } catch (err) {
         next(err);
     }
@@ -245,7 +236,7 @@ router.get("/logrotate", async (req, res, next) => {
 router.post("/logrotate/install", async (req, res, next) => {
     try {
         console.log("[LogRotate] Installing pm2-logrotate…");
-        const status = await logrotateService.install();
+        const status = await panelService.logrotateInstall();
         console.log("[LogRotate] Installed and configured");
         res.json(status);
     } catch (err) {
@@ -260,7 +251,7 @@ router.post("/logrotate/install", async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.put("/logrotate", async (req, res, next) => {
     try {
-        const status = await logrotateService.setConfig(req.body || {});
+        const status = await panelService.logrotateSet(req.body || {});
         res.json(status);
     } catch (err) {
         if (/Unknown setting|Invalid value|No settings/.test(err.message)) {
@@ -286,7 +277,7 @@ router.post("/domains/:domain/ssl", async (req, res, next) => {
         }
 
         const { email } = req.body;
-        await nginxService.enableSSL(domain, email || null);
+        await panelService.enablePanelSSL(domain, email || null);
 
         const updated = existing.map(d => d.domain === domain ? { ...d, sslEnabled: true } : d);
         await db.set(PANEL_DOMAINS_KEY, updated);
