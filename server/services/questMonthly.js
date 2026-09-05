@@ -175,8 +175,16 @@ async function runBatch() {
                     (q) => isEnrolled(q) && !isCompleted(q) && isCompletable(q) && !completer.completedIds.has(q.id),
                 );
                 if (!actionable.length) break;
+                // The batch runs for hours, so take the soonest-expiring quest first —
+                // otherwise a quest can expire while it is still waiting its turn.
+                actionable.sort((a, b) => {
+                    const ea = new Date(a.config?.expires_at ?? a.config?.expiresAt ?? 8.64e15).getTime();
+                    const eb = new Date(b.config?.expires_at ?? b.config?.expiresAt ?? 8.64e15).getTime();
+                    return ea - eb;
+                });
                 for (const q of actionable) {
-                    await completer.processQuest(q);
+                    const r = await completer.processQuest(q);
+                    if (r?.skipped) continue;
                     completed++;
                     _webhook(rec, { type: "quest_done", questName: getQuestName(q), taskType: getTaskType(q) });
                 }

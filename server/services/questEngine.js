@@ -42,6 +42,35 @@ function _throwIfUnauthorized(res, ctx) {
     }
 }
 
+// Vòng hoàn thành quest BẮT BUỘC phải tiến triển. Nếu Discord ngừng tăng counter
+// (quest hết hạn giữa chừng, heartbeat bị từ chối, task không còn hợp lệ) thì phải
+// bỏ cuộc — trước đây vòng lặp không có đường thoát nào ngoài "done >= needed".
+const NO_PROGRESS_TIMEOUT_MS = 5 * 60_000;
+
+function _stalled(msg) {
+    const e = new Error(msg);
+    e.questStalled = true;
+    return e;
+}
+
+function _throwIfExpired(quest, name) {
+    const exp = _getExpiresAt(quest);
+    if (exp && new Date(exp) <= new Date())
+        throw _stalled(`"${name}" đã hết hạn lúc ${exp}`);
+}
+
+function _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed }) {
+    const now = Date.now();
+    if (now - lastProgressAt > NO_PROGRESS_TIMEOUT_MS)
+        throw _stalled(
+            `"${name}" đứng yên ${Math.round((now - lastProgressAt) / 60000)} phút ở ${done}/${needed}s`,
+        );
+    if (now - startedAt > maxRunMs)
+        throw _stalled(
+            `"${name}" quá ${Math.round(maxRunMs / 60000)} phút mà chưa xong (${done}/${needed}s)`,
+        );
+}
+
 const BUILD_FALLBACK = 539951;
 async function fetchLatestBuildNumber() {
     try {
@@ -326,11 +355,14 @@ function summarizeQuest(q) {
 }
 
 class QuestAutocompleter {
-    /** @param {DiscordAPI} api  @param {{label?:string,onEvent?:Function}} opts */
+    /** @param {DiscordAPI} api  @param {{label?:string,onEvent?:Function,abort?:{stopped:boolean}}} opts */
     constructor(api, opts = {}) {
         this.api = api;
         this.label = opts.label ?? "";
         this.onEvent = typeof opts.onEvent === "function" ? opts.onEvent : null;
+        // Shared with the caller's run loop so a stop/remove can break an in-flight
+        // completion loop, not just the gap between two quests.
+        this.abort = opts.abort ?? null;
         this.completedIds = new Set();
         this._cachedChannelId = null;
         this._lastFetched = null;
@@ -338,6 +370,13 @@ class QuestAutocompleter {
 
     _log(msg) {
         console.log(`[Quest]${this.label ? ` ${this.label}` : ""} ${msg}`);
+    }
+    _throwIfAborted() {
+        if (this.abort?.stopped) {
+            const e = new Error("Đã dừng theo yêu cầu.");
+            e.aborted = true;
+            throw e;
+        }
     }
     _emit(event) {
         if (this.onEvent) {
@@ -483,17 +522,33 @@ class QuestAutocompleter {
             needed,
             media: _questMedia(quest),
         });
-        if (["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE"].includes(taskType))
-            await this._completeVideo(quest);
-        else if (GAME_HEARTBEAT_TASKS.includes(taskType))
-            await this._completeGameHeartbeat(quest, taskType);
-        else if (taskType === "PLAY_ACTIVITY") await this._completeActivity(quest);
-        else if (taskType === "ACHIEVEMENT_IN_ACTIVITY")
-            await this._completeAchievement(quest);
+        try {
+            if (["WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE"].includes(taskType))
+                await this._completeVideo(quest);
+            else if (GAME_HEARTBEAT_TASKS.includes(taskType))
+                await this._completeGameHeartbeat(quest, taskType);
+            else if (taskType === "PLAY_ACTIVITY") await this._completeActivity(quest);
+            else if (taskType === "ACHIEVEMENT_IN_ACTIVITY")
+                await this._completeAchievement(quest);
+        } catch (err) {
+            // A stalled quest is this quest's problem, not the account's: skip it and
+            // move on. invalidToken / aborted still bubble up to the caller's loop.
+            if (!err?.questStalled) throw err;
+            this.completedIds.add(quest.id); // don't retry it in the same session
+            this._log(`⏭ Bỏ qua ${err.message}`);
+            this._emit({
+                type: "quest_skipped",
+                questId: String(quest.id),
+                name,
+                reason: err.message,
+            });
+            return { skipped: true, reason: err.message };
+        }
         this.completedIds.add(quest.id);
         const secs = Math.round((Date.now() - startedAt) / 1000);
         this._log(`✓ Hoàn thành "${name}" (mất ${secs}s)`);
         this._emit({ type: "quest_done", questId: String(quest.id), name, took: secs });
+        return { skipped: false };
     }
 
     _emitProgress(questId, name, done, needed) {
@@ -516,7 +571,14 @@ class QuestAutocompleter {
         const enrolledTs =
             (_getEnrolledAt(quest) ? new Date(_getEnrolledAt(quest)).getTime() : Date.now()) /
             1000;
+        const startedAt = Date.now();
+        const maxRunMs = needed * 2000 + 10 * 60_000;
+        let lastDone = done,
+            lastProgressAt = startedAt;
+
         while (done < needed) {
+            this._throwIfAborted();
+            _throwIfExpired(quest, name);
             const maxAllowed = Date.now() / 1000 - enrolledTs + 10;
             if (maxAllowed - done >= 7) {
                 try {
@@ -529,12 +591,27 @@ class QuestAutocompleter {
                         done = Math.min(needed, done + 7);
                     } else if (res.status === 429) {
                         await sleep((res.data?.retry_after ?? 5) + 1);
+                        // `continue` skips the check at the bottom of the loop, so a
+                        // permanent rate-limit needs its own way out.
+                        _throwIfStalled(name, {
+                            lastProgressAt,
+                            startedAt,
+                            maxRunMs,
+                            done,
+                            needed,
+                        });
                         continue;
                     }
                 } catch (err) {
-                    if (err?.invalidToken) throw err;
+                    // Never swallow control-flow errors — that is what kept this loop alive.
+                    if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
                 }
             }
+            if (done > lastDone) {
+                lastDone = done;
+                lastProgressAt = Date.now();
+            }
+            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
             if (Date.now() - lastLog > 30000) {
                 this._log(`   "${name}": ${Math.round(done)}/${needed}s`);
                 this._emitProgress(qid, name, done, needed);
@@ -560,7 +637,14 @@ class QuestAutocompleter {
         let done = _getSecondsDone(quest);
         let lastLog = 0;
         const applicationId = _getApplicationId(quest);
+        const startedAt = Date.now();
+        const maxRunMs = needed * 2000 + 10 * 60_000; // 900s -> 40 phút
+        let lastDone = done,
+            lastProgressAt = startedAt;
+
         while (done < needed) {
+            this._throwIfAborted();
+            _throwIfExpired(quest, name);
             try {
                 const res = await this.api.post(`/quests/${qid}/heartbeat`, {
                     application_id: applicationId,
@@ -572,11 +656,25 @@ class QuestAutocompleter {
                     if (res.data.completed_at || done >= needed) break;
                 } else if (res.status === 429) {
                     await sleep((res.data?.retry_after ?? 10) + 1);
+                    // `continue` skips the check at the bottom of the loop, so a
+                    // permanent rate-limit needs its own way out.
+                    _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
                     continue;
+                } else {
+                    // This branch used to fall through silently — that was the livelock.
+                    this._log(
+                        `⚠ "${name}" heartbeat HTTP ${res.status}: ${JSON.stringify(res.data ?? "").slice(0, 200)}`,
+                    );
                 }
             } catch (err) {
-                if (err?.invalidToken) throw err;
+                // Never swallow control-flow errors — that is what kept this loop alive.
+                if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
             }
+            if (done > lastDone) {
+                lastDone = done;
+                lastProgressAt = Date.now();
+            }
+            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
             if (Date.now() - lastLog > 30000) {
                 this._log(`   "${name}": ${Math.round(done)}/${needed}s`);
                 this._emitProgress(qid, name, done, needed);
@@ -598,10 +696,19 @@ class QuestAutocompleter {
     async _completeActivity(quest) {
         const qid = quest.id,
             needed = _getSecondsNeeded(quest);
+        const name = _getQuestName(quest);
         let done = _getSecondsDone(quest);
+        let lastLog = 0;
         const channelId = await this._getValidChannelId();
         const streamKey = `call:${channelId}:1`;
+        const startedAt = Date.now();
+        const maxRunMs = needed * 2000 + 10 * 60_000;
+        let lastDone = done,
+            lastProgressAt = startedAt;
+
         while (done < needed) {
+            this._throwIfAborted();
+            _throwIfExpired(quest, name);
             try {
                 const res = await this.api.post(`/quests/${qid}/heartbeat`, {
                     stream_key: streamKey,
@@ -613,10 +720,28 @@ class QuestAutocompleter {
                     if (res.data.completed_at || done >= needed) break;
                 } else if (res.status === 429) {
                     await sleep((res.data?.retry_after ?? 10) + 1);
+                    // `continue` skips the check at the bottom of the loop, so a
+                    // permanent rate-limit needs its own way out.
+                    _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
                     continue;
+                } else {
+                    this._log(
+                        `⚠ "${name}" activity heartbeat HTTP ${res.status}: ${JSON.stringify(res.data ?? "").slice(0, 200)}`,
+                    );
                 }
             } catch (err) {
-                if (err?.invalidToken) throw err;
+                // Never swallow control-flow errors — that is what kept this loop alive.
+                if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
+            }
+            if (done > lastDone) {
+                lastDone = done;
+                lastProgressAt = Date.now();
+            }
+            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
+            if (Date.now() - lastLog > 30000) {
+                this._log(`   "${name}": ${Math.round(done)}/${needed}s`);
+                this._emitProgress(qid, name, done, needed);
+                lastLog = Date.now();
             }
             await sleep(HEARTBEAT_INTERVAL);
         }

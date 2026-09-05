@@ -84,7 +84,11 @@ function _dispatchWebhook(accountId, event) {
 }
 
 function _updateLive(accountId, evt) {
-    if (!["quest_start", "quest_progress", "quest_done", "quest_pending"].includes(evt.type))
+    if (
+        !["quest_start", "quest_progress", "quest_done", "quest_pending", "quest_skipped"].includes(
+            evt.type,
+        )
+    )
         return;
     let acc = liveState.get(accountId);
     if (!acc) {
@@ -101,6 +105,9 @@ function _updateLive(accountId, evt) {
     if (evt.type === "quest_done") {
         q.state = "done";
         q.percent = 100;
+    } else if (evt.type === "quest_skipped") {
+        q.state = "skipped";
+        q.error = evt.reason ?? null;
     } else if (evt.type === "quest_pending") {
         // A pre-run placeholder card; never downgrade one already running/finished.
         if (q.state !== "running" && q.state !== "done") q.state = "pending";
@@ -278,6 +285,7 @@ function _launch(accountId, resolved, record) {
     const abort = { stopped: false };
     const completer = new QuestAutocompleter(resolved.api, {
         label: resolved.username,
+        abort,
         onEvent: (e) => _publish(accountId, e),
     });
     running.set(accountId, { abort, completer });
@@ -340,13 +348,27 @@ async function _runLoop(accountId, completer, abort, record) {
                     isEnrolled(q) &&
                     !isCompleted(q) &&
                     isCompletable(q) &&
+                    !completer.completedIds.has(q.id) &&
                     (mode === "all" || selected.has(String(q.id))),
             );
             if (!actionable.length) break; // nothing left → done
 
+            // A pass can run for hours, so take the soonest-expiring quest first —
+            // otherwise a quest can expire while it is still waiting its turn.
+            actionable.sort((a, b) => {
+                const ea = new Date(
+                    a.config?.expires_at ?? a.config?.expiresAt ?? 8.64e15,
+                ).getTime();
+                const eb = new Date(
+                    b.config?.expires_at ?? b.config?.expiresAt ?? 8.64e15,
+                ).getTime();
+                return ea - eb;
+            });
+
             for (const q of actionable) {
                 if (abort.stopped) break;
-                await completer.processQuest(q);
+                const r = await completer.processQuest(q);
+                if (r?.skipped) continue;
                 const cur = (await _getRec(accountId))?.completedCount ?? 0;
                 await _updateRec(accountId, { completedCount: cur + 1 });
             }
@@ -357,6 +379,7 @@ async function _runLoop(accountId, completer, abort, record) {
         }
     } catch (err) {
         running.delete(accountId);
+        if (err?.aborted) return;
         if (isInvalidTokenError(err)) {
             await _setStatus(accountId, "token_dead", {
                 error: "Token không hợp lệ / đã hết hạn.",
