@@ -4,24 +4,27 @@ const path = require("path");
 const { spawn } = require("child_process");
 const multer = require("multer");
 const router = express.Router();
-const { resolveSafe } = require("../utils/paths");
+const { resolveTarget } = require("../utils/paths");
 
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 100 * 1024 * 1024 },
 });
 
-// Every endpoint takes { root, dir, path } — dir is the bot's folder relative
-// to the node's root (e.g. "buyerID/botID"), path is inside that folder.
-// resolveSafe guards both segments against traversal.
+// Every endpoint addresses a project one of two ways, both guarded against
+// traversal by resolveTarget (see utils/paths.js):
+//   { root, dir, path }  — dir is the project folder relative to the node's
+//                          root (e.g. "buyerID/botID"), path is inside it.
+//   { absPath, path }    — an absolute project path, accepted only when it
+//                          resolves inside BOTS/SITES_ROOT_DIR or EXTRA_ROOTS.
 
 /**
- * GET /fs/exists?root&dir
+ * GET /fs/exists?root&dir  |  ?absPath
  * Whether the bot directory exists on this node.
  */
 router.get("/exists", (req, res, next) => {
     try {
-        const target = resolveSafe(req.query.root, req.query.dir);
+        const target = resolveTarget(req.query);
         res.json({ exists: fs.existsSync(target) });
     } catch (err) {
         next(err);
@@ -29,16 +32,15 @@ router.get("/exists", (req, res, next) => {
 });
 
 /**
- * GET /fs/list?root&dir&path
+ * GET /fs/list?root&dir&path  |  ?absPath&path
  * Same item shape as the panel's fs/list.
  */
 router.get("/list", (req, res, next) => {
     try {
-        const { root, dir } = req.query;
-        const baseDir = resolveSafe(root, dir);
+        const baseDir = resolveTarget(req.query);
         if (!fs.existsSync(baseDir)) return res.json({ files: [] });
 
-        const targetDir = resolveSafe(root, dir, req.query.path);
+        const targetDir = resolveTarget(req.query, req.query.path);
         if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
             return res.status(400).json({ error: "Directory not found" });
         }
@@ -67,12 +69,12 @@ router.get("/list", (req, res, next) => {
 });
 
 /**
- * GET /fs/read?root&dir&path&binary
+ * GET /fs/read?root&dir&path&binary  |  ?absPath&path&binary
  * binary=true → base64. Max 10MB, same as the panel.
  */
 router.get("/read", (req, res, next) => {
     try {
-        const targetFile = resolveSafe(req.query.root, req.query.dir, req.query.path);
+        const targetFile = resolveTarget(req.query, req.query.path);
 
         if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
             return res.status(404).json({ error: "File not found" });
@@ -95,17 +97,17 @@ router.get("/read", (req, res, next) => {
 
 /**
  * PUT /fs/write
- * body: { root, dir, path, content, binary }
+ * body: { root, dir | absPath, path, content, binary }
  * binary=true → content is base64.
  */
 router.put("/write", (req, res, next) => {
     try {
-        const { root, dir, path: sub, content, binary } = req.body;
+        const { path: sub, content, binary } = req.body;
         if (sub === undefined || content === undefined) {
             return res.status(400).json({ error: "path and content are required" });
         }
 
-        const targetFile = resolveSafe(root, dir, sub);
+        const targetFile = resolveTarget(req.body, sub);
         fs.mkdirSync(path.dirname(targetFile), { recursive: true });
 
         if (binary) {
@@ -122,14 +124,14 @@ router.put("/write", (req, res, next) => {
 
 /**
  * POST /fs/create
- * body: { root, dir, path, isDir }
+ * body: { root, dir | absPath, path, isDir }
  */
 router.post("/create", (req, res, next) => {
     try {
-        const { root, dir, path: sub, isDir } = req.body;
+        const { path: sub, isDir } = req.body;
         if (!sub) return res.status(400).json({ error: "path is required" });
 
-        const target = resolveSafe(root, dir, sub);
+        const target = resolveTarget(req.body, sub);
         if (fs.existsSync(target)) return res.status(409).json({ error: "Already exists" });
 
         if (isDir) {
@@ -146,12 +148,12 @@ router.post("/create", (req, res, next) => {
 });
 
 /**
- * DELETE /fs/delete?root&dir&path
+ * DELETE /fs/delete?root&dir&path  |  ?absPath&path
  * path="" deletes the bot directory itself — used when the panel removes a bot.
  */
 router.delete("/delete", (req, res, next) => {
     try {
-        const target = resolveSafe(req.query.root, req.query.dir, req.query.path);
+        const target = resolveTarget(req.query, req.query.path);
         if (!fs.existsSync(target)) return res.json({ message: "Already gone" });
 
         fs.rmSync(target, { recursive: true, force: true });
@@ -163,15 +165,15 @@ router.delete("/delete", (req, res, next) => {
 
 /**
  * PUT /fs/rename
- * body: { root, dir, from, to }
+ * body: { root, dir | absPath, from, to }
  */
 router.put("/rename", (req, res, next) => {
     try {
-        const { root, dir, from, to } = req.body;
+        const { from, to } = req.body;
         if (!from || !to) return res.status(400).json({ error: "from and to are required" });
 
-        const source = resolveSafe(root, dir, from);
-        const dest = resolveSafe(root, dir, to);
+        const source = resolveTarget(req.body, from);
+        const dest = resolveTarget(req.body, to);
         if (!fs.existsSync(source)) return res.status(404).json({ error: "Source not found" });
 
         fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -184,18 +186,18 @@ router.put("/rename", (req, res, next) => {
 
 /**
  * POST /fs/upload  (multipart)
- * fields: root, dir, path (destination folder inside the bot dir)
+ * fields: root, dir | absPath, path (destination folder inside the project dir)
  * file field name: "file"
  */
 router.post("/upload", upload.single("file"), (req, res, next) => {
     try {
         if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-        const { root, dir, path: sub } = req.body;
-        const destDir = resolveSafe(root, dir, sub || "");
+        const { path: sub } = req.body;
+        const destDir = resolveTarget(req.body, sub || "");
         fs.mkdirSync(destDir, { recursive: true });
 
-        const dest = resolveSafe(root, dir, path.join(sub || "", req.file.originalname));
+        const dest = resolveTarget(req.body, path.join(sub || "", req.file.originalname));
         fs.writeFileSync(dest, req.file.buffer);
 
         res.json({ message: "Uploaded", name: req.file.originalname });
@@ -205,14 +207,14 @@ router.post("/upload", upload.single("file"), (req, res, next) => {
 });
 
 /**
- * GET /fs/archive?root&dir&exclude=node_modules,.pm2
+ * GET /fs/archive?root&dir&exclude=node_modules,.pm2  |  ?absPath&exclude=…
  * Streams a tar.gz of the bot directory (for node migration). The whole
  * project folder is archived at its parent level so extract restores the same
  * layout. node_modules etc. can be excluded — they get reinstalled on the target.
  */
 router.get("/archive", (req, res, next) => {
     try {
-        const target = resolveSafe(req.query.root, req.query.dir);
+        const target = resolveTarget(req.query);
         if (!fs.existsSync(target)) return res.status(404).json({ error: "Directory not found" });
 
         // Archive the folder CONTENTS (leading ./) so extract is independent of
@@ -236,14 +238,14 @@ router.get("/archive", (req, res, next) => {
 });
 
 /**
- * POST /fs/extract?root&dir&clear=true
+ * POST /fs/extract?root&dir&clear=true  |  ?absPath&clear=true
  * Raw gzip request body is piped into `tar x`, restoring the archived contents
  * directly into the target bot directory. express.json() ignores non-JSON
  * bodies, so req is still a readable stream here.
  */
 router.post("/extract", (req, res, next) => {
     try {
-        const target = resolveSafe(req.query.root, req.query.dir);
+        const target = resolveTarget(req.query);
 
         if (req.query.clear === "true" && fs.existsSync(target)) {
             fs.rmSync(target, { recursive: true, force: true });
@@ -266,11 +268,11 @@ router.post("/extract", (req, res, next) => {
 });
 
 /**
- * GET /fs/download?root&dir&path
+ * GET /fs/download?root&dir&path  |  ?absPath&path
  */
 router.get("/download", (req, res, next) => {
     try {
-        const targetFile = resolveSafe(req.query.root, req.query.dir, req.query.path);
+        const targetFile = resolveTarget(req.query, req.query.path);
 
         if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
             return res.status(404).json({ error: "File not found" });

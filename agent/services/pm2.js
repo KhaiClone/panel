@@ -256,6 +256,16 @@ const flushBotLogs = async (pm2Name) => {
     await execAsync(`pm2 flush "${pm2Name}"`);
 };
 
+/** Flush the logs of EVERY process on this node (panel's pm2Service.flushLogs). */
+const flushLogs = async () => {
+    try {
+        return await runPM2("flush");
+    } catch (err) {
+        console.error("[PM2] Failed to flush logs:", err.message);
+        throw err;
+    }
+};
+
 module.exports = {
     startBot,
     startHttpServer,
@@ -268,4 +278,5 @@ module.exports = {
     streamBotLogs,
     getProcessList,
     flushBotLogs,
+    flushLogs,
 };

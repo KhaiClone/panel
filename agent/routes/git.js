@@ -2,12 +2,14 @@ const express = require("express");
 const fs = require("fs");
 const router = express.Router();
 const git = require("../services/git");
-const { resolveSafe } = require("../utils/paths");
+const { resolveSafe, resolveTarget } = require("../utils/paths");
 
 /**
  * POST /git/clone
  * body: { repoUrl, branch, root, dir }
  * Clones into {root}/{dir} — parent directories are created automatically.
+ * Deliberately does NOT accept absPath: a fresh clone always belongs under a
+ * configured root, and EXTRA_ROOTS exists for pre-existing folders only.
  */
 router.post("/clone", async (req, res, next) => {
     try {
@@ -29,14 +31,14 @@ router.post("/clone", async (req, res, next) => {
 
 /**
  * POST /git/pull
- * body: { root, dir }
+ * body: { root, dir } | { absPath }
  */
 router.post("/pull", async (req, res, next) => {
     try {
-        const { root, dir } = req.body;
-        if (!dir) return res.status(400).json({ error: "dir is required" });
+        const { dir, absPath } = req.body;
+        if (!dir && !absPath) return res.status(400).json({ error: "dir or absPath is required" });
 
-        const botPath = resolveSafe(root, dir);
+        const botPath = resolveTarget(req.body);
         if (!fs.existsSync(botPath)) return res.status(404).json({ error: "Directory not found" });
 
         const output = await git.pullRepo(botPath);
@@ -48,15 +50,15 @@ router.post("/pull", async (req, res, next) => {
 
 /**
  * POST /git/install
- * body: { root, dir, installCommand }
+ * body: { root, dir, installCommand } | { absPath, installCommand }
  * installCommand === null/"" skips the install (pre-built projects).
  */
 router.post("/install", async (req, res, next) => {
     try {
-        const { root, dir, installCommand } = req.body;
-        if (!dir) return res.status(400).json({ error: "dir is required" });
+        const { dir, absPath, installCommand } = req.body;
+        if (!dir && !absPath) return res.status(400).json({ error: "dir or absPath is required" });
 
-        const botPath = resolveSafe(root, dir);
+        const botPath = resolveTarget(req.body);
         if (!fs.existsSync(botPath)) return res.status(404).json({ error: "Directory not found" });
 
         const output = await git.installDeps(botPath, installCommand);

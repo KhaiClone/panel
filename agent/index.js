@@ -31,10 +31,16 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = parseInt(process.env.AGENT_PORT) || 4200;
-const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Agent] bot-panel agent listening on :${PORT}`);
+// Default 0.0.0.0 keeps every already-deployed agent behaving exactly as before.
+// Set AGENT_BIND=127.0.0.1 on a node that only ever serves a panel on the same
+// machine — but NOT on a node other machines reach for its CONNECT proxy.
+const BIND = process.env.AGENT_BIND || "0.0.0.0";
+const server = app.listen(PORT, BIND, () => {
+    console.log(`[Agent] bot-panel agent listening on ${BIND}:${PORT}`);
     console.log(`[Agent] BOTS_ROOT_DIR = ${process.env.BOTS_ROOT_DIR}`);
     console.log(`[Agent] SITES_ROOT_DIR = ${process.env.SITES_ROOT_DIR || "(same as bots)"}`);
+    const extra = require("./utils/paths").extraRoots();
+    console.log(`[Agent] EXTRA_ROOTS = ${extra.length ? extra.join(", ") : "(none)"}`);
     if (!process.env.AGENT_API_KEY) {
         console.error("[Agent] WARNING: AGENT_API_KEY is not set — all requests will be rejected");
     }
