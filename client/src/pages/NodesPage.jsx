@@ -118,6 +118,7 @@ function NodeModal({ node, onClose, onSaved }) {
         host: node?.host || "",
         port: node?.port || 4200,
         apiKey: "",
+        controlHost: node?.controlHost || "",
         enabled: node ? node.enabled : true,
     });
     const [loading, setLoading] = useState(false);
@@ -172,6 +173,15 @@ function NodeModal({ node, onClose, onSaved }) {
                     <div>
                         <label className="label">Agent API Key {isEdit ? "(leave blank to keep current)" : "*"}</label>
                         <input className="input mono" placeholder="printed by setup-agent.sh" value={form.apiKey} onChange={set("apiKey")} required={!isEdit} />
+                    </div>
+                    <div>
+                        <label className="label">Control Host (optional)</label>
+                        <input className="input mono" placeholder="leave blank to use Host / IP" value={form.controlHost} onChange={set("controlHost")} />
+                        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
+                            Address the panel uses to reach this agent. Set <span className="mono">127.0.0.1</span> only
+                            on the node that runs the panel, so its control traffic never leaves the machine.
+                            Host / IP above stays the public address — WireGuard and the egress proxy depend on it.
+                        </p>
                     </div>
                     {isEdit && (
                         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)", cursor: "pointer" }}>

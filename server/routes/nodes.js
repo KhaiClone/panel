@@ -37,7 +37,7 @@ router.get("/", async (req, res, next) => {
  */
 router.post("/", async (req, res, next) => {
     try {
-        const { name, host, port, apiKey } = req.body;
+        const { name, host, port, apiKey, controlHost } = req.body;
         if (!name || !host || !port || !apiKey) {
             return res.status(400).json({ error: "name, host, port, and apiKey are required" });
         }
@@ -52,8 +52,11 @@ router.post("/", async (req, res, next) => {
             return res.status(409).json({ error: `A node at ${host}:${parsedPort} already exists ("${existing.name}")` });
         }
 
-        // Verify the agent is reachable with this key before saving
-        const candidate = { name, host, port: parsedPort, apiKey };
+        // Verify the agent is reachable with this key before saving.
+        // controlHost is included so the health check uses the very address the
+        // panel will actually call — testing the public IP and then talking to
+        // loopback would validate the wrong path.
+        const candidate = { name, host, port: parsedPort, apiKey, controlHost: controlHost || undefined };
         const healthy = await nodeService.checkNodeHealth(candidate);
         if (!healthy) {
             return res.status(400).json({
@@ -66,6 +69,9 @@ router.post("/", async (req, res, next) => {
             host,
             port: parsedPort,
             apiKey,
+            // Optional: address for panel → agent traffic only. host stays the
+            // public address (WireGuard endpoint + egress proxy use it).
+            ...(controlHost ? { controlHost } : {}),
             enabled: true,
             createdAt: Date.now(),
         });
@@ -94,17 +100,24 @@ router.post("/", async (req, res, next) => {
 
 /**
  * PUT /api/nodes/:id
- * Body: { name?, host?, port?, apiKey?, enabled? }
+ * Body: { name?, host?, port?, apiKey?, enabled?, controlHost? }
+ *
+ * controlHost is the address the panel uses to reach this node's agent, and
+ * nothing else. Sending "" clears it, falling back to host. Never confuse it
+ * with host: wgService._peersFor() publishes host as the WireGuard endpoint to
+ * every other node, and executor.buildEgressProxyConf() uses host as the proxy
+ * address — pointing either of those at a loopback address breaks them.
  */
 router.put("/:id", async (req, res, next) => {
     try {
         const node = await db.findOne("nodes", { _id: req.params.id });
         if (!node) return res.status(404).json({ error: "Node not found" });
 
-        const { name, host, port, apiKey, enabled } = req.body;
+        const { name, host, port, apiKey, enabled, controlHost } = req.body;
         const updates = {};
         if (name !== undefined) updates.name = name;
         if (host !== undefined) updates.host = host;
+        if (controlHost !== undefined) updates.controlHost = controlHost || null;
         if (port !== undefined) {
             const p = parseInt(port, 10);
             if (isNaN(p) || p < 1 || p > 65535) return res.status(400).json({ error: "Invalid port" });
