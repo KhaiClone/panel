@@ -21,7 +21,7 @@ const TERM_THEME = {
 };
 
 export default function TerminalPage() {
-    const { nodeId, selectedNode, isRemote } = useNode();
+    const { nodeId, selectedNode } = useNode();
     const containerRef = useRef(null);
     const termRef = useRef(null);
     const fitRef = useRef(null);
@@ -79,7 +79,7 @@ export default function TerminalPage() {
 
         setStatus("connecting");
         term.reset();
-        term.writeln(`\x1b[90mConnecting to ${isRemote ? selectedNode?.name || nodeId : "panel VPS (local)"}…\x1b[0m`);
+        term.writeln(`\x1b[90mConnecting to ${selectedNode?.name || nodeId || "no node selected"}…\x1b[0m`);
 
         const token = localStorage.getItem("token");
         const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -164,7 +164,7 @@ export default function TerminalPage() {
                 <div>
                     <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", margin: "0 0 4px" }}>Terminal</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
-                        Shell on <strong style={{ color: "var(--text)" }}>{isRemote ? selectedNode?.name || nodeId : "panel VPS (local)"}</strong>
+                        Shell on <strong style={{ color: "var(--text)" }}>{selectedNode?.name || nodeId || "no node selected"}</strong>
                         {isRemote && selectedNode?.host ? ` — ${selectedNode.host}` : ""}
                     </p>
                 </div>

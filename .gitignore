@@ -6,3 +6,6 @@ client/dist/
 *.db
 logs/
 package-lock.json
+
+# Data snapshots taken by scripts/inventory.js — local only
+scripts/snapshots/

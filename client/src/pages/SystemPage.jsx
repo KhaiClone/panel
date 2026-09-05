@@ -202,7 +202,7 @@ export default function SystemPage() {
                     <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>System Monitor</h1>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
                         <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
-                            {nodeId === "local" ? "Host server resource utilization." : `Node "${selectedNode?.name || nodeId}" resource utilization.`}
+                            {`Node "${selectedNode?.name || nodeId || "?"}" resource utilization.`}
                         </p>
                         {stats.hostname && (
                             <span className="mono" style={{ fontSize: 12, color: "var(--text-dim)", background: "var(--bg-input)", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)" }}>

@@ -442,9 +442,8 @@ export default function Layout() {
 }
 
 /**
- * Global remote-view switcher — the whole panel shows the selected node's
- * data as if it were the panel's own VPS. Hidden while no remote node is
- * registered (the /nodes list always contains the virtual "local" entry).
+ * Global node switcher — the panel shows the selected node's data. Hidden
+ * while only one node is registered, since there would be nothing to switch to.
  */
 function NodeSwitcher() {
     const { nodeId, setNode, nodes, isRemote, nodeStatus } = useNode();
@@ -457,7 +456,7 @@ function NodeSwitcher() {
 
     return (
         <div
-            title={isRemote ? "Remote view — the panel shows this node's data" : "Panel VPS"}
+            title={isRemote ? "The panel is showing this node's data" : "The node this panel runs on"}
             style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "4px 10px", borderRadius: 99,
@@ -479,7 +478,7 @@ function NodeSwitcher() {
             >
                 {nodes.map((n) => (
                     <option key={n._id} value={n._id} style={{ background: "var(--bg-surface)", color: "var(--text)" }}>
-                        {n.name}{n.status === "offline" ? " (offline)" : ""}
+                        {n.name}{n.isPanelNode ? " — panel" : ""}{n.status === "offline" ? " (offline)" : ""}
                     </option>
                 ))}
             </select>

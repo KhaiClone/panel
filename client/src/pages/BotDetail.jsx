@@ -838,7 +838,7 @@ export default function BotDetail() {
 
                         {/* Move to another node (admin — /nodes returns [] for non-admins) */}
                         {(() => {
-                            const currentNodeId = bot.nodeId || "local";
+                            const currentNodeId = bot.nodeId;
                             const targets = nodes.filter((n) => n._id !== currentNodeId && n.status === "online" && n.enabled !== false);
                             if (nodes.length < 2) return null;
                             const hasDomain = bot.projectType === "website" && bot.websiteConfig?.domain;

@@ -427,7 +427,7 @@ export default function NodesPage() {
                                         <button
                                             className="btn-ghost"
                                             style={{ padding: "5px 12px", fontSize: 12, color: isViewing ? "var(--success)" : "var(--accent-hover)" }}
-                                            onClick={() => setNode(isViewing ? "local" : node._id)}
+                                            onClick={() => setNode(isViewing ? null : node._id)}
                                             title="Point the whole panel at this node's data"
                                         >
                                             {isViewing ? "✓ Viewing" : "Remote view"}

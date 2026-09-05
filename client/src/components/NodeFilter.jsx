@@ -2,8 +2,7 @@
 // nodeName come back on every bot), so regular users get the filter too
 // without needing access to the admin-only /api/nodes endpoint.
 
-export const nodeKey = (bot) =>
-    bot.nodeId && bot.nodeId !== "local" ? bot.nodeId : "local";
+export const nodeKey = (bot) => bot.nodeId || "";
 
 export const matchNode = (bot, value) =>
     value === "all" || nodeKey(bot) === value;
@@ -12,14 +11,13 @@ export function getNodeOptions(bots) {
     const map = new Map();
     for (const b of bots) {
         const key = nodeKey(b);
-        if (!map.has(key)) {
-            map.set(key, key === "local" ? "Local" : (b.nodeName || "Node"));
-        }
+        if (!key) continue;
+        if (!map.has(key)) map.set(key, b.nodeName || "Node");
     }
-    // Local first, then remote nodes alphabetically
+    // Every node is equal now — plain alphabetical order
     return [...map.entries()]
         .map(([id, label]) => ({ id, label }))
-        .sort((a, b) => (a.id === "local" ? -1 : b.id === "local" ? 1 : a.label.localeCompare(b.label)));
+        .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /**
@@ -43,7 +41,7 @@ export default function NodeFilter({ bots, value, onChange }) {
                     key={o.id}
                     className={`tab-item ${value === o.id ? "active" : ""}`}
                     onClick={() => onChange(o.id)}
-                    title={o.id === "local" ? "Panel VPS" : `Node "${o.label}"`}
+                    title={`Node "${o.label}"`}
                 >
                     ⬡ {o.label}
                 </button>

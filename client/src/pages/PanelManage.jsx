@@ -276,7 +276,7 @@ function GitHubSection() {
             </div>
 
             {/* Node key sync — only shown once a worker node exists */}
-            {syncStatus.filter(n => n.nodeId !== "local").length > 0 && (
+            {syncStatus.length > 0 && (
                 <div className="card" style={{ padding: 16 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                         <span>🔄</span>
@@ -284,7 +284,7 @@ function GitHubSection() {
                         <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: "auto" }}>Keys &amp; git config auto-push to nodes on every change</span>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {syncStatus.filter(n => n.nodeId !== "local").map(n => {
+                        {syncStatus.map(n => {
                             const offline = !n.reachable && n.enabled;
                             const outOfSync = n.reachable && !n.inSync;
                             const issues = [

@@ -12,7 +12,7 @@ export default function ProxyPage() {
     const [rowState, setRowState] = useState({}); // botId -> { busy, msg, ok }
 
     const nodeName = (id) => {
-        if (!id || id === "local") return "Local (panel VPS)";
+        if (!id) return "—";
         return nodes.find((n) => n._id === id)?.name || id;
     };
 

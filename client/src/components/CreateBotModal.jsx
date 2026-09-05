@@ -65,7 +65,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
         ...defaultForm,
         projectType: defaultProjectType || defaultForm.projectType,
         // Remote view active → default the placement to the node being viewed
-        nodeId: globalNodeId !== "local" ? globalNodeId : defaultForm.nodeId,
+        nodeId: globalNodeId || defaultForm.nodeId,
     }));
     const [groups, setGroups] = useState([]);
     const [availableTags, setAvailableTags] = useState([]);

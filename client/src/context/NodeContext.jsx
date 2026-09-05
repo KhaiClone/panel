@@ -2,28 +2,41 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import api from "../api/client";
 import { useAuth } from "./AuthContext";
 
-// Global "remote view" node selection. The chosen node id is persisted to
-// localStorage (bp_selected_node) where the axios interceptor picks it up and
-// stamps X-Panel-Node on every request — the server then scopes bot lists and
-// system stats to that node. Admin-only: /api/nodes is admin-only and the
-// server ignores the header for regular users anyway.
+// Global node selection. The chosen node id is persisted to localStorage
+// (bp_selected_node) where the axios interceptor picks it up and stamps
+// X-Panel-Node on every request; the server then scopes bot lists and system
+// stats to that node. Admin-only: /api/nodes is admin-only and the server
+// ignores the header for regular users anyway.
+//
+// Every node is equal now — there is no "local" entry. A browser may still hold
+// the pre-split value "local" in localStorage, so it is discarded on read and
+// the panel's own node is selected instead. Without that, the old value would
+// match no node and the switcher would sit on an id that does not exist.
 
 const STORAGE_KEY = "bp_selected_node";
+const LEGACY_LOCAL = "local";
+
+const readStored = () => {
+    try {
+        const v = localStorage.getItem(STORAGE_KEY);
+        return v && v !== LEGACY_LOCAL ? v : null;
+    } catch {
+        return null; // private mode / storage disabled
+    }
+};
 
 const NodeContext = createContext(null);
 
 export function NodeProvider({ children }) {
     const { user, isAdmin } = useAuth();
-    const [nodeId, setNodeId] = useState(() =>
-        localStorage.getItem(STORAGE_KEY) || "local",
-    );
-    const [nodes, setNodes] = useState([]); // from GET /nodes — "local" entry first
+    const [nodeId, setNodeId] = useState(readStored);
+    const [nodes, setNodes] = useState([]); // from GET /nodes — panel's own node first
 
-    // Non-admins (and logged-out sessions) are always pinned to local
+    // Non-admins (and logged-out sessions) never scope the view
     useEffect(() => {
         if (user && !isAdmin) {
-            localStorage.removeItem(STORAGE_KEY);
-            setNodeId("local");
+            try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+            setNodeId(null);
         }
     }, [user, isAdmin]);
 
@@ -39,18 +52,26 @@ export function NodeProvider({ children }) {
         return () => clearInterval(int);
     }, [user, isAdmin]);
 
-    // If the selected node disappears from the registry, fall back to local
+    // Settle the selection once the node list arrives: an unknown or missing id
+    // falls back to the panel's own node, then to the first node in the list.
     useEffect(() => {
-        if (nodeId !== "local" && nodes.length > 0 && !nodes.some((n) => n._id === nodeId)) {
-            localStorage.removeItem(STORAGE_KEY);
-            setNodeId("local");
-        }
+        if (!nodes.length) return;
+        if (nodeId && nodes.some((n) => n._id === nodeId)) return;
+
+        const fallback = nodes.find((n) => n.isPanelNode) || nodes[0];
+        try {
+            if (fallback) localStorage.setItem(STORAGE_KEY, fallback._id);
+        } catch { /* ignore */ }
+        setNodeId(fallback ? fallback._id : null);
     }, [nodes, nodeId]);
 
     const setNode = useCallback((id) => {
-        if (!id || id === "local") localStorage.removeItem(STORAGE_KEY);
-        else localStorage.setItem(STORAGE_KEY, id);
-        setNodeId(id || "local");
+        const next = id && id !== LEGACY_LOCAL ? id : null;
+        try {
+            if (next) localStorage.setItem(STORAGE_KEY, next);
+            else localStorage.removeItem(STORAGE_KEY);
+        } catch { /* ignore */ }
+        setNodeId(next);
     }, []);
 
     const selectedNode = nodes.find((n) => n._id === nodeId) || null;
@@ -62,8 +83,9 @@ export function NodeProvider({ children }) {
                 setNode,
                 nodes,
                 selectedNode,
-                isRemote: nodeId !== "local",
-                nodeStatus: selectedNode?.status ?? "online",
+                // True while viewing a node other than the one the panel runs on.
+                isRemote: !!selectedNode && !selectedNode.isPanelNode,
+                nodeStatus: selectedNode?.status ?? "unknown",
             }}
         >
             {children}

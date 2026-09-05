@@ -136,7 +136,7 @@ export default function OverviewPage() {
                 <div>
                     <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Server Overview</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
-                        Real-time health and resource summary of {isRemote ? `node "${selectedNode?.name || "?"}"` : "your VPS"}
+                        Real-time health and resource summary of node "{selectedNode?.name || "?"}"
                     </p>
                 </div>
             </div>
@@ -188,7 +188,7 @@ export default function OverviewPage() {
             <div className="card" style={{ padding: "28px 32px", marginBottom: 24 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
                     <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>
-                        VPS Resources{isRemote && selectedNode ? ` — ⬡ ${selectedNode.name}` : ""}
+                        VPS Resources{selectedNode ? ` — ⬡ ${selectedNode.name}` : ""}
                     </h2>
                     {cpu?.model && <span style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "monospace" }}>{cpu.model}</span>}
                 </div>

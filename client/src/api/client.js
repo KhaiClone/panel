@@ -15,12 +15,15 @@ api.interceptors.request.use((config) => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
-    // Callers may pin a request to a specific node (e.g. "local") by setting
-    // the header themselves — only fill it in when absent.
-    const selectedNode = localStorage.getItem("bp_selected_node");
-    if (selectedNode && selectedNode !== "local" && !config.headers["X-Panel-Node"]) {
-        config.headers["X-Panel-Node"] = selectedNode;
-    }
+    // Callers may pin a request to a specific node by setting the header
+    // themselves — only fill it in when absent. No value means "every node";
+    // the pre-split value "local" is ignored (see context/NodeContext.jsx).
+    try {
+        const selectedNode = localStorage.getItem("bp_selected_node");
+        if (selectedNode && selectedNode !== "local" && !config.headers["X-Panel-Node"]) {
+            config.headers["X-Panel-Node"] = selectedNode;
+        }
+    } catch { /* storage disabled — send no node scope */ }
     return config;
 });
 
