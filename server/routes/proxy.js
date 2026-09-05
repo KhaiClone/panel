@@ -11,8 +11,6 @@ const nodeService = require("../services/nodeService");
 //  Replaces the old global socks/http proxy feature.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const LOCAL = nodeService.LOCAL_NODE_ID;
-
 /** GET /api/proxy — bots + their egress setting, and the VPSes available as egress. */
 router.get("/", async (req, res, next) => {
     try {
@@ -25,7 +23,7 @@ router.get("/", async (req, res, next) => {
                 name: b.name,
                 pm2Name: b.pm2Name,
                 projectType: b.projectType || "discord",
-                nodeId: b.nodeId || LOCAL,
+                nodeId: (() => { try { return nodeService.resolveNodeId(b.nodeId); } catch { return null; } })(),
                 egressNodeId: b.egressNodeId || "",
             })),
         });

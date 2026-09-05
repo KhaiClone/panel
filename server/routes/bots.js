@@ -1,22 +1,13 @@
 const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const { exec } = require("child_process");
-const { promisify } = require("util");
-const execAsync = promisify(exec);
 const router = express.Router();
 
+// This router runs no shell and touches no filesystem: every project operation
+// is relayed to the agent on the project's node (see services/executor.js).
 const db = require("../db");
-const gitService = require("../services/gitService");
 const executor = require("../services/executor");
 const schedulerService = require("../services/schedulerService");
 const nodeService = require("../services/nodeService");
 const { createNotification } = require("./notifications");
-
-// Root directory where all buyer bot folders live (e.g. /root/bots)
-const BOTS_ROOT = () => process.env.BOTS_ROOT_DIR;
-// Root directory for website projects (e.g. /root/sites); falls back to BOTS_ROOT
-const SITES_ROOT = () => process.env.SITES_ROOT_DIR || BOTS_ROOT();
 
 // ─── Ownership middleware ─────────────────────────────────────────────────────
 // Admin can access any bot. Users can only access their own.
@@ -165,16 +156,13 @@ const applyWebsiteInfra = async (bot) => {
 };
 
 /**
- * Run a website build command on the bot's node. Remote nodes reuse the
- * agent's /git/install (it runs an arbitrary command in the project dir).
+ * Run a website build command in the project dir on its node.
+ * The agent's /git/install runs an arbitrary command there, so build and
+ * install share one endpoint.
  */
 const runBuildCommand = async (bot, buildCommand) => {
     if (!buildCommand) return;
-    if (executor.isRemote(bot)) {
-        await executor.installDeps(bot, buildCommand);
-    } else {
-        await execAsync(buildCommand, { cwd: botDir(bot), timeout: 300_000 });
-    }
+    await executor.installDeps(bot, buildCommand);
 };
 
 /**
@@ -212,17 +200,6 @@ const getProxyConf = async (bot) => {
 //  Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Resolve the working directory of a bot.
- * - source === "local"  → use the stored localPath directly
- * - source === "git"    → construct from BOTS_ROOT/buyerID/botID (default)
- */
-const botDir = (bot) => {
-    if (bot.source === "local" && bot.localPath) return bot.localPath;
-    const root = bot.projectType === "website" ? SITES_ROOT() : BOTS_ROOT();
-    return path.join(root, bot.buyerID, bot.botID);
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  List & Read
 // ─────────────────────────────────────────────────────────────────────────────
@@ -236,7 +213,11 @@ router.get("/domains", async (req, res, next) => {
         const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
         let bots = await db.find("bots", query);
         // Remote-view context: only domains hosted on the selected node
-        if (req.node) bots = bots.filter((b) => (b.nodeId || "local") === req.nodeId);
+        if (req.node) {
+            bots = bots.filter((b) => {
+                try { return nodeService.resolveNodeId(b.nodeId) === req.nodeId; } catch { return false; }
+            });
+        }
         const domains = bots
             .filter((b) => b.projectType === "website" && b.websiteConfig?.domain)
             .map((b) => ({
@@ -264,7 +245,11 @@ router.get("/", async (req, res, next) => {
         const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
         let bots = await db.find("bots", query);
         // Remote-view context: only bots living on the selected node
-        if (req.node) bots = bots.filter((b) => (b.nodeId || "local") === req.nodeId);
+        if (req.node) {
+            bots = bots.filter((b) => {
+                try { return nodeService.resolveNodeId(b.nodeId) === req.nodeId; } catch { return false; }
+            });
+        }
         // One PM2 list fetch per node (local + each agent) instead of per bot
         const resolver = await executor.getStatusResolver(bots);
         const nodes = await nodeService.getNodes();
@@ -273,7 +258,8 @@ router.get("/", async (req, res, next) => {
         const enriched = await Promise.all(
             bots.map(async (bot) => {
                 const live = await getLiveStatus(bot, resolver);
-                const nodeName = executor.isRemote(bot) ? (nodeNames[bot.nodeId] || "unknown node") : null;
+                let nodeName = null;
+                try { nodeName = nodeNames[nodeService.resolveNodeId(bot.nodeId)] || "unknown node"; } catch { /* PANEL_NODE_ID unset */ }
                 return { ...bot, live, nodeName };
             }),
         );
@@ -295,10 +281,10 @@ router.get("/:id", requireOwnership, async (req, res, next) => {
 
         const live = await getLiveStatus(bot);
         let nodeName = null;
-        if (executor.isRemote(bot)) {
-            const node = await db.findOne("nodes", { _id: bot.nodeId });
+        try {
+            const node = await db.findOne("nodes", { _id: nodeService.resolveNodeId(bot.nodeId) });
             nodeName = node?.name || "unknown node";
-        }
+        } catch { /* PANEL_NODE_ID unset */ }
         res.json({ ...bot, live, nodeName });
     } catch (err) {
         next(err);
@@ -399,47 +385,23 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             return res.status(400).json({ error: schedErr.message });
         }
         const nodeId = placement.nodeId;
-        const isRemoteNode = nodeId !== nodeService.LOCAL_NODE_ID;
         console.log(`[Bots] Placement for "${botID}": node=${placement.nodeName} (${placement.reason})`);
 
         const isStaticWebsite = projectType === "website" && rawWebsiteConfig?.mode === "static";
-        const root = projectType === "website" ? SITES_ROOT() : BOTS_ROOT();
-        const dir = path.join(root, buyerID, botID);
         const nodeRef = { nodeId, buyerID, botID, projectType };
 
-        if (isRemoteNode) {
-            // 1+2. Clone + install on the target node via its agent
-            console.log(`[Bots] Cloning ${repoUrl} on node "${placement.nodeName}"`);
-            await executor.cloneRepo(nodeRef, repoUrl, branch);
+        // 1. Clone on the target node (the agent creates parent dirs itself)
+        console.log(`[Bots] Cloning ${repoUrl} on node "${placement.nodeName}"`);
+        await executor.cloneRepo(nodeRef, repoUrl, branch);
+
+        // 2. Install dependencies (skip for static websites)
+        if (!isStaticWebsite) {
             try {
                 console.log(`[Bots] Installing deps for ${botID} on node "${placement.nodeName}"`);
                 await executor.installDeps(nodeRef, installCommand);
             } catch (installErr) {
                 await executor.fsDelete(nodeRef, "").catch(() => {});
                 throw installErr;
-            }
-        } else {
-            // Ensure buyer directory exists
-            fs.mkdirSync(path.join(root, buyerID), { recursive: true });
-
-            // 1. Clone repository
-            console.log(`[Bots] Cloning ${repoUrl} → ${dir}`);
-            try {
-                await gitService.cloneRepo(repoUrl, dir, branch);
-            } catch (cloneErr) {
-                if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-                throw cloneErr;
-            }
-
-            // 2. Install dependencies (skip for static websites)
-            if (!isStaticWebsite) {
-                console.log(`[Bots] Installing deps for ${botID}`);
-                try {
-                    await gitService.installDeps(dir, installCommand);
-                } catch (installErr) {
-                    fs.rmSync(dir, { recursive: true, force: true });
-                    throw installErr;
-                }
             }
         }
 
@@ -451,15 +413,10 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             if (!isStaticWebsite && rawWebsiteConfig.buildCommand) {
                 console.log(`[Bots] Running build command for ${botID}`);
                 try {
-                    if (isRemoteNode) {
-                        // Agent /git/install runs any command in the project dir
-                        await executor.installDeps(nodeRef, rawWebsiteConfig.buildCommand);
-                    } else {
-                        await execAsync(rawWebsiteConfig.buildCommand, { cwd: dir, timeout: 300_000 });
-                    }
+                    // Agent /git/install runs any command in the project dir
+                    await executor.installDeps(nodeRef, rawWebsiteConfig.buildCommand);
                 } catch (buildErr) {
-                    if (isRemoteNode) await executor.fsDelete(nodeRef, "").catch(() => {});
-                    else fs.rmSync(dir, { recursive: true, force: true });
+                    await executor.fsDelete(nodeRef, "").catch(() => {});
                     throw buildErr;
                 }
             }
@@ -585,10 +542,19 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
                 return res.status(400).json({ error: "Invalid serviceConfig.port" });
         }
 
-        // Validate the path exists on disk
-        if (!fs.existsSync(localPath) || !fs.statSync(localPath).isDirectory()) {
+        // The folder lives on the panel's own node. Ask that node's agent whether
+        // it exists AND is inside its allowlist — a path outside BOTS/SITES_ROOT_DIR
+        // needs to be listed in the agent's EXTRA_ROOTS or nothing can manage it.
+        const importRef = { nodeId: nodeService.panelNodeId(), source: "local", localPath };
+        try {
+            if (!(await executor.fsExists(importRef))) {
+                return res.status(400).json({
+                    error: `Path "${localPath}" does not exist on the panel's node`,
+                });
+            }
+        } catch (err) {
             return res.status(400).json({
-                error: `Path "${localPath}" does not exist or is not a directory`,
+                error: `Cannot use "${localPath}": ${err.message}`,
             });
         }
 
@@ -604,7 +570,7 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
         const isStaticWebsite = projectType === "website" && rawWebsiteConfig?.mode === "static";
         if (!isStaticWebsite && installCommand !== null && installCommand !== "") {
             console.log(`[Bots] Installing deps for local bot ${botID}`);
-            await gitService.installDeps(localPath, installCommand);
+            await executor.installDeps(importRef, installCommand);
         }
 
         // Build step (website only, skip for static)
@@ -612,7 +578,7 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
         if (projectType === "website") {
             const mode = rawWebsiteConfig.mode || "static";
             if (mode !== "static" && rawWebsiteConfig.buildCommand) {
-                await execAsync(rawWebsiteConfig.buildCommand, { cwd: localPath, timeout: 300_000 });
+                await executor.installDeps(importRef, rawWebsiteConfig.buildCommand);
             }
             const port = await assignPort(rawWebsiteConfig.port);
             websiteConfig = {
@@ -636,16 +602,7 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
         }
 
         // Check if it's a git repo (for informational field)
-        let repoUrl = null;
-        let branch = null;
-        try {
-            const { stdout: remoteOut } = await execAsync(`git -C "${localPath}" remote get-url origin`);
-            repoUrl = remoteOut.trim();
-            const { stdout: branchOut } = await execAsync(`git -C "${localPath}" rev-parse --abbrev-ref HEAD`);
-            branch = branchOut.trim();
-        } catch {
-            // Not a git repo — that's fine
-        }
+        const { repoUrl, branch } = await executor.gitInfo(importRef);
 
         const pm2Name = `${buyerID}-${botID}`;
         const botRecord = await db.create("bots", {
@@ -659,8 +616,9 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
             pm2Name,
             source: "local",
             localPath,
-            // Imported folders physically live on this VPS — always the local node
-            nodeId: nodeService.LOCAL_NODE_ID,
+            // Imported folders physically live on the panel's machine, which is
+            // an ordinary node — the import is registered against it.
+            nodeId: importRef.nodeId,
             groupId,
             maxMemory,
             currentPrice,
@@ -816,16 +774,16 @@ router.post("/:id/migrate", requireOwnership, async (req, res, next) => {
         const { targetNodeId } = req.body;
         if (!targetNodeId) return res.status(400).json({ error: "targetNodeId is required" });
 
-        const currentNodeId = bot.nodeId || nodeService.LOCAL_NODE_ID;
-        if (targetNodeId === currentNodeId) return res.status(400).json({ error: "Target node is the same as the current node" });
-
-        // Validate the target (local is always valid; a remote must be online + enabled)
-        if (targetNodeId !== nodeService.LOCAL_NODE_ID) {
-            const target = await nodeService.getNode(targetNodeId); // throws if unknown
-            if (target.enabled === false) return res.status(400).json({ error: `Node "${target.name}" is disabled` });
-            const healthy = await nodeService.checkNodeHealth(target);
-            if (!healthy) return res.status(400).json({ error: `Node "${target.name}" is offline — cannot migrate there` });
+        const currentNodeId = nodeService.resolveNodeId(bot.nodeId);
+        if (nodeService.resolveNodeId(targetNodeId) === currentNodeId) {
+            return res.status(400).json({ error: "Target node is the same as the current node" });
         }
+
+        // The target must exist, be enabled, and answer right now
+        const target = await nodeService.getNode(targetNodeId); // throws if unknown
+        if (target.enabled === false) return res.status(400).json({ error: `Node "${target.name}" is disabled` });
+        const healthy = await nodeService.checkNodeHealth(target);
+        if (!healthy) return res.status(400).json({ error: `Node "${target.name}" is offline — cannot migrate there` });
 
         const sourceRef = { ...bot }; // nodeId = current
         const targetRef = { ...bot, nodeId: targetNodeId };
@@ -899,7 +857,7 @@ router.post("/:id/migrate", requireOwnership, async (req, res, next) => {
         if (bot && sourceStopped) {
             try {
                 const still = await db.findOne("bots", { _id: bot._id });
-                if (still && (still.nodeId || nodeService.LOCAL_NODE_ID) === (bot.nodeId || nodeService.LOCAL_NODE_ID)) {
+                if (still && nodeService.resolveNodeId(still.nodeId) === nodeService.resolveNodeId(bot.nodeId)) {
                     if (bot.projectType === "website") await applyWebsiteInfra(bot).catch(() => {});
                     else await executor.startBot(bot, await getProxyConf(bot)).catch(() => {});
                 }
@@ -1205,21 +1163,13 @@ router.get("/:id/env", requireOwnership, async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        if (executor.isRemote(bot)) {
-            try {
-                const data = await executor.fsRead(bot, ".env");
-                return res.json({ content: data.content });
-            } catch (err) {
-                if (err.status === 404) return res.json({ content: "" });
-                throw err;
-            }
+        try {
+            const data = await executor.fsRead(bot, ".env");
+            res.json({ content: data.content });
+        } catch (err) {
+            if (err.status === 404) return res.json({ content: "" });
+            throw err;
         }
-
-        const envPath = path.join(botDir(bot), ".env");
-        const content = fs.existsSync(envPath)
-            ? fs.readFileSync(envPath, "utf8")
-            : "";
-        res.json({ content });
     } catch (err) {
         next(err);
     }
@@ -1240,14 +1190,7 @@ router.put("/:id/env", requireOwnership, async (req, res, next) => {
         if (content === undefined)
             return res.status(400).json({ error: "content is required" });
 
-        if (executor.isRemote(bot)) {
-            await executor.fsWrite(bot, ".env", content);
-            return res.json({ message: ".env saved successfully" });
-        }
-
-        const envPath = path.join(botDir(bot), ".env");
-        fs.writeFileSync(envPath, content, "utf8");
-
+        await executor.fsWrite(bot, ".env", content);
         res.json({ message: ".env saved successfully" });
     } catch (err) {
         next(err);
@@ -1256,16 +1199,26 @@ router.put("/:id/env", requireOwnership, async (req, res, next) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  File Manager
+//
+//  Every operation is relayed to the agent on the project's node, which runs
+//  its own traversal check against its configured roots (agent/utils/paths.js).
+//  The panel only guards what the agent cannot know: that the file manager must
+//  never address the project directory itself.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const resolveSafePath = (baseDir, reqPath) => {
-    // Normalize requested path to remove ../ etc.
-    const target = path.normalize(path.join(baseDir, reqPath || ""));
-    // Ensure the target is still inside baseDir
-    if (!target.startsWith(path.normalize(baseDir))) {
-        throw new Error("Invalid path");
-    }
-    return target;
+const multer = require("multer");
+
+// Memory storage: the destination lives in another process (often another
+// machine), so the file is buffered here and forwarded to the agent.
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 },
+});
+
+/** True when a requested path is the project root rather than something inside it. */
+const isProjectRoot = (reqPath) => {
+    const p = String(reqPath || "").trim();
+    return p === "" || p === "." || p === "/" || p === "./";
 };
 
 /**
@@ -1274,57 +1227,28 @@ const resolveSafePath = (baseDir, reqPath) => {
  */
 router.get("/:id/fs/download", requireOwnership, async (req, res, next) => {
     try {
-        console.log(`[FS] Incoming download: id=${req.params.id} path=${req.query.path}`);
         const bot = await db.findOne("bots", { _id: req.params.id });
-        if (!bot) {
-            console.error(`[FS] Bot not found: ${req.params.id}`);
-            return res.status(404).json({ error: "Bot not found" });
-        }
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        if (executor.isRemote(bot)) {
-            try {
-                const upstream = await executor.fsDownloadStream(bot, req.query.path);
-                if (upstream.headers["content-disposition"]) {
-                    res.setHeader("Content-Disposition", upstream.headers["content-disposition"]);
-                }
-                if (upstream.headers["content-type"]) {
-                    res.setHeader("Content-Type", upstream.headers["content-type"]);
-                }
-                upstream.data.pipe(res);
-                upstream.data.on("error", () => res.end());
-            } catch (err) {
-                const status = err.response?.status || 500;
-                return res.status(status).json({ error: status === 404 ? "File not found" : "Download failed on remote node" });
-            }
-            return;
-        }
-
-        const baseDir = botDir(bot);
-        let targetFile;
+        let upstream;
         try {
-            targetFile = resolveSafePath(baseDir, req.query.path);
-        } catch (e) {
-            console.error(`[FS] Path resolution failed: ${e.message}`);
-            return res.status(400).json({ error: "Invalid path" });
+            upstream = await executor.fsDownloadStream(bot, req.query.path);
+        } catch (err) {
+            const status = err.response?.status || 500;
+            return res
+                .status(status)
+                .json({ error: status === 404 ? "File not found" : "Download failed on the node" });
         }
 
-        console.log(`[FS] Verified download: bot=${bot.name} target=${targetFile}`);
-
-        if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
-            console.error(`[FS] File on disk not found: ${targetFile}`);
-            return res.status(404).json({ error: "File not found" });
+        if (upstream.headers["content-disposition"]) {
+            res.setHeader("Content-Disposition", upstream.headers["content-disposition"]);
         }
-
-        const fileName = path.basename(targetFile);
-        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-        res.sendFile(path.resolve(targetFile), { dotfiles: 'allow' }, (err) => {
-            if (err) {
-                console.error(`[FS] sendFile error: ${err.message}`);
-                if (!res.headersSent) {
-                    next(err);
-                }
-            }
-        });
+        if (upstream.headers["content-type"]) {
+            res.setHeader("Content-Type", upstream.headers["content-type"]);
+        }
+        upstream.data.pipe(res);
+        upstream.data.on("error", () => res.end());
+        req.on("close", () => upstream.data.destroy());
     } catch (err) {
         console.error(`[FS] Download error: ${err.message}`);
         next(err);
@@ -1333,50 +1257,14 @@ router.get("/:id/fs/download", requireOwnership, async (req, res, next) => {
 
 /**
  * GET /api/bots/:id/fs/list?path=...
- * Lists directories and files for a given path relative to the bot's root folder.
+ * Lists directories and files for a given path relative to the project folder.
  */
 router.get("/:id/fs/list", requireOwnership, async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        if (executor.isRemote(bot)) {
-            return res.json(await executor.fsList(bot, req.query.path));
-        }
-
-        const baseDir = botDir(bot);
-        if (!fs.existsSync(baseDir)) return res.json({ files: [] });
-
-        let targetDir;
-        try {
-            targetDir = resolveSafePath(baseDir, req.query.path);
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
-            return res.status(400).json({ error: "Directory not found" });
-        }
-
-        const items = fs.readdirSync(targetDir).map(name => {
-            const fullPath = path.join(targetDir, name);
-            const stat = fs.statSync(fullPath);
-            return {
-                name,
-                isDir: stat.isDirectory(),
-                size: stat.size,
-                mtime: stat.mtimeMs
-            };
-        });
-
-        // Sort directories first, then alphabetically
-        items.sort((a, b) => {
-            if (a.isDir && !b.isDir) return -1;
-            if (!a.isDir && b.isDir) return 1;
-            return a.name.localeCompare(b.name);
-        });
-
-        res.json({ files: items });
+        res.json(await executor.fsList(bot, req.query.path));
     } catch (err) {
         next(err);
     }
@@ -1384,62 +1272,23 @@ router.get("/:id/fs/list", requireOwnership, async (req, res, next) => {
 
 /**
  * GET /api/bots/:id/fs/read?path=...
- * Returns the contents of a specific file. Max 1MB.
+ * Returns the contents of a specific file. Max 10MB (enforced by the agent).
  */
 router.get("/:id/fs/read", requireOwnership, async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        if (executor.isRemote(bot)) {
-            return res.json(await executor.fsRead(bot, req.query.path, req.query.binary === "true"));
-        }
-
-        const baseDir = botDir(bot);
-        let targetFile;
-        try {
-            targetFile = resolveSafePath(baseDir, req.query.path);
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (!fs.existsSync(targetFile) || !fs.statSync(targetFile).isFile()) {
-            return res.status(404).json({ error: "File not found" });
-        }
-
-        const stat = fs.statSync(targetFile);
-        if (stat.size > 1024 * 1024 * 10) {
-            return res.status(400).json({ error: "File too large to edit (max 10MB)" });
-        }
-
-        const isBinary = req.query.binary === 'true';
-        let content;
-
-        if (isBinary) {
-            // Read as buffer and convert to base64 for binary files
-            const buffer = fs.readFileSync(targetFile);
-            content = buffer.toString('base64');
-        } else {
-            // Read as UTF-8 for text files
-            content = fs.readFileSync(targetFile, "utf8");
-        }
-
-        res.json({ content });
+        res.json(await executor.fsRead(bot, req.query.path, req.query.binary === "true"));
     } catch (err) {
         next(err);
     }
 });
 
 /**
- * GET /api/bots/:id/fs/download?path=...
- * Downloads a specific file.
- */
-
-
-/**
  * PUT /api/bots/:id/fs/write
  * Writes updated content to a specific file.
- * Body: { path: string, content: string }
+ * Body: { path: string, content: string, binary?: boolean }
  */
 router.put("/:id/fs/write", requireOwnership, async (req, res, next) => {
     try {
@@ -1451,45 +1300,16 @@ router.put("/:id/fs/write", requireOwnership, async (req, res, next) => {
             return res.status(400).json({ error: "path and content are required" });
         }
 
-        // Check if this is a binary file based on extension or explicit binary flag
-        const isBinaryFile = binary === true || /\.(db|sqlite|sqlite3|wasm|bin|exe|dll|so|dylib)$/i.test(reqPath);
+        // Binary by explicit flag or by a known non-text extension — the client
+        // sends base64 in both cases.
+        const isBinaryFile =
+            binary === true || /\.(db|sqlite|sqlite3|wasm|bin|exe|dll|so|dylib)$/i.test(reqPath);
 
-        if (executor.isRemote(bot)) {
-            await executor.fsWrite(bot, reqPath, content, isBinaryFile);
-            return res.json({ message: "File saved successfully" });
-        }
-
-        const baseDir = botDir(bot);
-        let targetFile;
-        try {
-            targetFile = resolveSafePath(baseDir, reqPath);
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (isBinaryFile && typeof content === 'string') {
-            // Convert base64 back to buffer for binary files
-            const buffer = Buffer.from(content, 'base64');
-            fs.writeFileSync(targetFile, buffer);
-        } else {
-            // Write as UTF-8 for text files
-            fs.writeFileSync(targetFile, content, "utf8");
-        }
-
+        await executor.fsWrite(bot, reqPath, content, isBinaryFile);
         res.json({ message: "File saved successfully" });
     } catch (err) {
         next(err);
     }
-});
-
-const multer = require("multer");
-
-// Memory storage: the destination depends on the bot's node, which is only
-// known after the multipart body is parsed — buffer first, then write locally
-// or forward to the agent.
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 100 * 1024 * 1024 },
 });
 
 /**
@@ -1507,30 +1327,8 @@ router.post("/:id/fs/create", requireOwnership, async (req, res, next) => {
             return res.status(400).json({ error: "path and type are required" });
         }
 
-        if (executor.isRemote(bot)) {
-            await executor.fsCreate(bot, reqPath, type === "dir");
-            return res.json({ message: `${type === 'dir' ? 'Directory' : 'File'} created successfully` });
-        }
-
-        const baseDir = botDir(bot);
-        let targetPath;
-        try {
-            targetPath = resolveSafePath(baseDir, reqPath);
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (fs.existsSync(targetPath)) {
-            return res.status(400).json({ error: "Path already exists" });
-        }
-
-        if (type === "dir") {
-            fs.mkdirSync(targetPath, { recursive: true });
-        } else {
-            fs.writeFileSync(targetPath, "", "utf8");
-        }
-
-        res.json({ message: `${type === 'dir' ? 'Directory' : 'File'} created successfully` });
+        await executor.fsCreate(bot, reqPath, type === "dir");
+        res.json({ message: `${type === "dir" ? "Directory" : "File"} created successfully` });
     } catch (err) {
         next(err);
     }
@@ -1538,7 +1336,7 @@ router.post("/:id/fs/create", requireOwnership, async (req, res, next) => {
 
 /**
  * DELETE /api/bots/:id/fs/delete
- * Deletes a file or directory.
+ * Deletes a file or directory inside the project.
  * Body: { path: string }
  */
 router.delete("/:id/fs/delete", requireOwnership, async (req, res, next) => {
@@ -1547,32 +1345,14 @@ router.delete("/:id/fs/delete", requireOwnership, async (req, res, next) => {
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
         const { path: reqPath } = req.body;
-        if (!reqPath) {
-            return res.status(400).json({ error: "path is required" });
-        }
-
-        if (executor.isRemote(bot)) {
-            await executor.fsDelete(bot, reqPath);
-            return res.json({ message: "Deleted successfully" });
-        }
-
-        const baseDir = botDir(bot);
-        let targetPath;
-        try {
-            targetPath = resolveSafePath(baseDir, reqPath);
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (!fs.existsSync(targetPath)) {
-            return res.status(404).json({ error: "Path not found" });
-        }
-
-        if (targetPath === baseDir || targetPath === path.normalize(baseDir)) {
+        if (!reqPath) return res.status(400).json({ error: "path is required" });
+        // executor.fsDelete(bot, "") wipes the whole project — that belongs to
+        // DELETE /api/bots/:id, never to the file manager.
+        if (isProjectRoot(reqPath)) {
             return res.status(400).json({ error: "Cannot delete the root directory" });
         }
 
-        fs.rmSync(targetPath, { recursive: true, force: true });
+        await executor.fsDelete(bot, reqPath);
         res.json({ message: "Deleted successfully" });
     } catch (err) {
         next(err);
@@ -1593,34 +1373,11 @@ router.put("/:id/fs/rename", requireOwnership, async (req, res, next) => {
         if (!oldPath || !newPath) {
             return res.status(400).json({ error: "oldPath and newPath are required" });
         }
-
-        if (executor.isRemote(bot)) {
-            await executor.fsRename(bot, oldPath, newPath);
-            return res.json({ message: "Renamed successfully" });
-        }
-
-        const baseDir = botDir(bot);
-        let targetOldPath, targetNewPath;
-        try {
-            targetOldPath = resolveSafePath(baseDir, oldPath);
-            targetNewPath = resolveSafePath(baseDir, newPath);
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (!fs.existsSync(targetOldPath)) {
-            return res.status(404).json({ error: "Original path not found" });
-        }
-
-        if (fs.existsSync(targetNewPath)) {
-            return res.status(400).json({ error: "Destination path already exists" });
-        }
-
-        if (targetOldPath === baseDir || targetOldPath === path.normalize(baseDir)) {
+        if (isProjectRoot(oldPath) || isProjectRoot(newPath)) {
             return res.status(400).json({ error: "Cannot rename the root directory" });
         }
 
-        fs.renameSync(targetOldPath, targetNewPath);
+        await executor.fsRename(bot, oldPath, newPath);
         res.json({ message: "Renamed successfully" });
     } catch (err) {
         next(err);
@@ -1634,31 +1391,12 @@ router.put("/:id/fs/rename", requireOwnership, async (req, res, next) => {
  */
 router.post("/:id/fs/upload", requireOwnership, upload.single("file"), async (req, res, next) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ error: "No file uploaded" });
-        }
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        if (executor.isRemote(bot)) {
-            await executor.fsUpload(bot, req.body.path || "", req.file.buffer, req.file.originalname);
-            return res.json({ message: "File uploaded successfully", file: req.file.originalname });
-        }
-
-        const baseDir = botDir(bot);
-        let targetDir;
-        try {
-            targetDir = resolveSafePath(baseDir, req.body.path || "");
-        } catch (e) {
-            return res.status(400).json({ error: "Invalid path" });
-        }
-
-        if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
-            return res.status(400).json({ error: "Directory not found" });
-        }
-
-        fs.writeFileSync(path.join(targetDir, req.file.originalname), req.file.buffer);
+        await executor.fsUpload(bot, req.body.path || "", req.file.buffer, req.file.originalname);
         res.json({ message: "File uploaded successfully", file: req.file.originalname });
     } catch (err) {
         next(err);

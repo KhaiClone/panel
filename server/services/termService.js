@@ -8,8 +8,9 @@ const nodeService = require("./nodeService");
 //  Interactive terminal (WebSocket) for the panel.
 //
 //  Browser xterm.js  ⇄  ws://panel/api/term?token=<jwt>&node=<nodeId>
-//    node=local (or absent) → spawn a PTY on the panel VPS (panel's own user)
-//    node=<id>              → open a WS to that node's agent /term and pipe
+//  Every session opens a WS to that node's agent /term and pipes frames both
+//  ways. The panel spawns no shell of its own — the machine it runs on is
+//  reached through its own agent like every other node.
 //
 //  Same JSON frame protocol both ways as the agent:
 //    client → server : { type:"input", data } | { type:"resize", cols, rows }
@@ -43,16 +44,16 @@ const attachTermServer = (httpServer) => {
         }
 
         wss.handleUpgrade(req, socket, head, (ws) => {
-            wss.emit("connection", ws, query.node || "local");
+            wss.emit("connection", ws, query.node || null);
         });
     });
 
     wss.on("connection", (ws, nodeId) => {
-        if (!nodeId || nodeId === nodeService.LOCAL_NODE_ID) {
-            handleLocal(ws);
-        } else {
-            handleRemote(ws, nodeId);
+        if (!nodeId) {
+            safeSend(ws, { type: "data", data: "\r\n[panel] No node selected — pick one in the switcher.\r\n" });
+            return ws.close();
         }
+        handleNode(ws, nodeId);
     });
 
     // Keep-alive for the browser-facing sockets
@@ -69,52 +70,8 @@ const attachTermServer = (httpServer) => {
     return wss;
 };
 
-// ── Local PTY (panel VPS) ────────────────────────────────────────────────────
-const handleLocal = (ws) => {
-    let pty;
-    try {
-        pty = require("node-pty");
-    } catch {
-        safeSend(ws, { type: "data", data: "\r\n[panel] node-pty is not installed on the panel VPS.\r\n" });
-        return ws.close();
-    }
-
-    const term = pty.spawn(process.env.SHELL || "bash", [], {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd: os.homedir(),
-        env: process.env,
-    });
-
-    let idleTimer;
-    const resetIdle = () => {
-        clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => { try { term.kill(); } catch { /* gone */ } }, IDLE_TIMEOUT_MS);
-    };
-    resetIdle();
-
-    term.onData((data) => safeSend(ws, { type: "data", data }));
-    term.onExit(({ exitCode }) => {
-        safeSend(ws, { type: "exit", code: exitCode });
-        if (ws.readyState === WebSocket.OPEN) ws.close();
-    });
-
-    ws.isAlive = true;
-    ws.on("pong", () => { ws.isAlive = true; });
-    ws.on("message", (raw) => {
-        let msg;
-        try { msg = JSON.parse(raw.toString()); } catch { return; }
-        if (msg.type === "input") { resetIdle(); term.write(msg.data); }
-        else if (msg.type === "resize" && msg.cols && msg.rows) {
-            try { term.resize(msg.cols, msg.rows); } catch { /* bad size */ }
-        }
-    });
-    ws.on("close", () => { clearTimeout(idleTimer); try { term.kill(); } catch { /* gone */ } });
-};
-
-// ── Remote PTY (agent) — pipe frames straight through ────────────────────────
-const handleRemote = async (ws, nodeId) => {
+// ── PTY on the node's agent — pipe frames straight through ───────────────────
+const handleNode = async (ws, nodeId) => {
     let node;
     try {
         node = await nodeService.getNode(nodeId);
@@ -123,7 +80,8 @@ const handleRemote = async (ws, nodeId) => {
         return ws.close();
     }
 
-    const agentUrl = `ws://${node.host}:${node.port}/term`;
+    // controlHost keeps this on the loopback for the node the panel shares a machine with
+    const agentUrl = `ws://${node.controlHost || node.host}:${node.port}/term`;
     const upstream = new WebSocket(agentUrl, { headers: { "x-agent-key": node.apiKey } });
 
     upstream.on("open", () => {
@@ -137,6 +95,7 @@ const handleRemote = async (ws, nodeId) => {
         if (ws.readyState === WebSocket.OPEN) ws.close();
     });
 
+    ws.isAlive = true;
     ws.on("pong", () => { ws.isAlive = true; });
     ws.on("message", (raw) => {
         if (upstream.readyState === WebSocket.OPEN) upstream.send(raw.toString());

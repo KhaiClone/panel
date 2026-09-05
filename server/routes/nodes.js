@@ -8,7 +8,8 @@ const nodeService = require("../services/nodeService");
 
 /**
  * GET /api/nodes
- * All nodes (virtual "local" first) with live status, stats, and bot counts.
+ * All registered nodes with live status, stats, and bot counts.
+ * The panel's own node is flagged isPanelNode and sorted first.
  */
 router.get("/", async (req, res, next) => {
     try {
@@ -17,7 +18,10 @@ router.get("/", async (req, res, next) => {
 
         const withCounts = nodes.map((n) => ({
             ...n,
-            botCount: bots.filter((b) => (b.nodeId || nodeService.LOCAL_NODE_ID) === n._id).length,
+            // Legacy rows still carrying nodeId "local" belong to the panel's node.
+            botCount: bots.filter((b) => {
+                try { return nodeService.resolveNodeId(b.nodeId) === n._id; } catch { return false; }
+            }).length,
         }));
 
         res.json(withCounts);

@@ -1,5 +1,4 @@
 const express = require("express");
-const si = require("systeminformation");
 const nodeService = require("../services/nodeService");
 const sampleStore = require("../services/sampleStore");
 const router = express.Router();
@@ -11,101 +10,41 @@ const RANGE_MS = {
     "7d": 7 * 24 * 60 * 60 * 1000,
 };
 
-let cachedStats = null;
-let lastFetch = 0;
+// Own short cache: nodeService.getNodeStats caches for 10s, too coarse for the
+// System page's ~4s poll — the live chart would step instead of move.
 const CACHE_TTL = 2000;
-
-// Remote-view stats cache — own 2s TTL per node (nodeService.getNodeStats's
-// 10s cache is too coarse for the System page's 5s poll).
-const remoteCache = new Map(); // nodeId → { at, stats }
+const statsCache = new Map(); // nodeId → { at, stats }
 
 /**
  * GET /api/system/stats
- * Returns CPU, RAM, disk, and network I/O.
- * Honors the X-Panel-Node remote-view context: proxies to the node's agent.
+ * CPU, RAM, disk and network of one node, read from its agent.
+ * Honors the X-Panel-Node context; with no node selected it reports the node
+ * the panel itself runs on.
  */
 router.get("/stats", async (req, res, next) => {
     try {
+        const nodeId = req.nodeId || nodeService.panelNodeId();
         const now = Date.now();
+        const cached = statsCache.get(nodeId);
+        if (cached && now - cached.at < CACHE_TTL) return res.json(cached.stats);
 
-        if (req.node) {
-            const cached = remoteCache.get(req.nodeId);
-            if (cached && now - cached.at < CACHE_TTL) return res.json(cached.stats);
-            const stats = await nodeService.agentRequest(req.node, "get", "/stats", { timeout: 8000 });
-            remoteCache.set(req.nodeId, { at: Date.now(), stats });
-            return res.json(stats);
-        }
-
-        if (cachedStats && now - lastFetch < CACHE_TTL) {
-            return res.json(cachedStats);
-        }
-
-        const [cpuLoad, mem, fsData, temp, cpuInfo, netStats] = await Promise.all([
-            si.currentLoad(),
-            si.mem(),
-            si.fsSize().catch(() => []),
-            si.cpuTemperature().catch(() => ({ main: null })),
-            si.cpu().catch(() => ({ brand: null, manufacturer: null })),
-            si.networkStats().catch(() => []),
-        ]);
-
-        const mainFs =
-            fsData.find((f) => f.mount === "/") ||
-            fsData.sort((a, b) => b.size - a.size)[0] ||
-            null;
-
-        // Pick the first non-loopback interface
-        const iface = netStats.find((n) => n.iface && !n.iface.startsWith("lo")) || netStats[0] || null;
-
-        const response = {
-            cpu: {
-                usagePercent: parseFloat(cpuLoad.currentLoad.toFixed(2)),
-                temperature: temp.main ?? null,
-                model: cpuInfo.brand
-                    ? `${cpuInfo.manufacturer} ${cpuInfo.brand}`.trim()
-                    : null,
-            },
-            memory: {
-                totalBytes: mem.total,
-                usedBytes: mem.active,
-                freeBytes: mem.available,
-                usedPercent: parseFloat(((mem.active / mem.total) * 100).toFixed(2)),
-            },
-            disk: mainFs
-                ? {
-                      totalBytes: mainFs.size,
-                      usedBytes: mainFs.used,
-                      freeBytes: mainFs.size - mainFs.used,
-                      usedPercent: parseFloat(((mainFs.used / mainFs.size) * 100).toFixed(2)),
-                      mount: mainFs.mount,
-                      fs: mainFs.type,
-                  }
-                : null,
-            network: iface
-                ? {
-                      rxBytesPerSec: iface.rx_sec ?? 0,
-                      txBytesPerSec: iface.tx_sec ?? 0,
-                      iface: iface.iface,
-                  }
-                : null,
-        };
-
-        cachedStats = response;
-        lastFetch = Date.now();
-        res.json(response);
+        const node = await nodeService.getNode(nodeId);
+        const stats = await nodeService.agentRequest(node, "get", "/stats", { timeout: 8000 });
+        statsCache.set(nodeId, { at: Date.now(), stats });
+        res.json(stats);
     } catch (err) {
         next(err);
     }
 });
 
 /**
- * GET /api/system/history?node=<id|local>&range=1h|6h|24h|7d
+ * GET /api/system/history?node=<id>&range=1h|6h|24h|7d
  * Persistent resource history recorded by samplerService, down-sampled to
  * ~720 points so charts stay light. node defaults to the remote-view context.
  */
 router.get("/history", (req, res, next) => {
     try {
-        const nodeId = req.query.node || req.nodeId || nodeService.LOCAL_NODE_ID;
+        const nodeId = nodeService.resolveNodeId(req.query.node || req.nodeId || undefined);
         const rangeMs = RANGE_MS[req.query.range] || RANGE_MS["6h"];
         const rows = sampleStore.query(nodeId, Date.now() - rangeMs);
 

@@ -2,10 +2,10 @@ const nodeService = require("./nodeService");
 const sampleStore = require("./sampleStore");
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Resource sampler — records CPU/RAM/Disk/network for the panel VPS and every
-//  enabled node every SAMPLE_INTERVAL, 24/7, keeping RETENTION_MS of history.
-//  Central collection: the panel reads each node's existing /stats; offline
-//  nodes are skipped (leaving a gap in that node's series).
+//  Resource sampler — records CPU/RAM/Disk/network for every enabled node every
+//  SAMPLE_INTERVAL, 24/7, keeping RETENTION_MS of history. Central collection:
+//  the panel reads each node's existing /stats; offline nodes are skipped
+//  (leaving a gap in that node's series).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SAMPLE_INTERVAL_MS = 15_000;
@@ -26,14 +26,9 @@ const tick = async () => {
     const ts = Date.now();
     const rows = [];
 
-    // Panel VPS
-    try {
-        rows.push(toRow(nodeService.LOCAL_NODE_ID, ts, await nodeService.getLocalStats()));
-    } catch (err) {
-        console.error("[Sampler] local stats failed:", err.message);
-    }
-
-    // Each enabled remote node (skip unreachable — leaves a gap)
+    // Every enabled node, the panel's own included — it is an ordinary node now.
+    // Before the split this loop ALSO sampled the panel host separately under the
+    // id "local", so its series was recorded twice; one pass is the whole point.
     const nodes = await nodeService.getNodes();
     await Promise.all(
         nodes

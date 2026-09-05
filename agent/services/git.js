@@ -16,6 +16,25 @@ const cloneRepo = async (repoUrl, targetPath, branch = "main") => {
     return stdout || stderr;
 };
 
+/**
+ * Read a checkout's origin URL and current branch. Both are informational, so
+ * a folder that is not a git repo yields nulls instead of an error.
+ */
+const repoInfo = async (botPath) => {
+    const one = async (cmd) => {
+        try {
+            const { stdout } = await execAsync(cmd, { cwd: botPath, timeout: 15_000 });
+            return stdout.trim() || null;
+        } catch {
+            return null;
+        }
+    };
+    return {
+        repoUrl: await one("git remote get-url origin"),
+        branch: await one("git rev-parse --abbrev-ref HEAD"),
+    };
+};
+
 const pullRepo = async (botPath) => {
     try {
         const { stdout, stderr } = await execAsync(`git pull`, {
@@ -87,4 +106,4 @@ const installDeps = async (botPath, installCommand = undefined) => {
     return stdout || stderr;
 };
 
-module.exports = { cloneRepo, pullRepo, installDeps, cleanPackageFolder };
+module.exports = { cloneRepo, pullRepo, installDeps, cleanPackageFolder, repoInfo };

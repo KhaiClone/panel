@@ -68,4 +68,18 @@ router.post("/install", async (req, res, next) => {
     }
 });
 
+/**
+ * GET /git/info?root&dir  |  ?absPath
+ * origin URL + current branch of a checkout. Nulls when it is not a git repo.
+ */
+router.get("/info", async (req, res, next) => {
+    try {
+        const botPath = resolveTarget(req.query);
+        if (!fs.existsSync(botPath)) return res.status(404).json({ error: "Directory not found" });
+        res.json(await git.repoInfo(botPath));
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;

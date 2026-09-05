@@ -2,7 +2,7 @@ const express = require("express");
 const path = require("path");
 const router = express.Router();
 const nginx = require("../services/nginx");
-const { resolveSafe } = require("../utils/paths");
+const { resolveTarget } = require("../utils/paths");
 
 // pm2Name becomes part of the config filename — never allow path characters.
 const validName = (name) => typeof name === "string" && /^[\w.-]+$/.test(name);
@@ -12,20 +12,20 @@ const validEmail = (e) => typeof e === "string" && /^[\w.+-]+@[a-zA-Z0-9.-]+$/.t
 
 /**
  * POST /nginx/config
- * body: { pm2Name, mode, port, apiPort, root, dir, distFolder, domain, extraConfig }
- * dir/distFolder are relative to the node's roots — the agent resolves them
- * itself so panel-side absolute paths never leak onto this VPS.
+ * body: { pm2Name, mode, port, apiPort, root, dir | absPath, distFolder, domain, extraConfig }
+ * distFolder is always relative to the project dir; the agent resolves the
+ * project dir itself so panel-side absolute paths never leak onto this VPS.
  */
 router.post("/config", async (req, res, next) => {
     try {
-        const { pm2Name, mode, port, apiPort, root, dir, distFolder, domain, extraConfig } = req.body;
+        const { pm2Name, mode, port, apiPort, dir, absPath, distFolder, domain, extraConfig } = req.body;
         if (!validName(pm2Name)) return res.status(400).json({ error: "Valid pm2Name is required" });
-        if (!dir) return res.status(400).json({ error: "dir is required" });
+        if (!dir && !absPath) return res.status(400).json({ error: "dir or absPath is required" });
         if (domain && !validDomain(domain)) return res.status(400).json({ error: "Invalid domain" });
 
         const distAbs = path.isAbsolute(distFolder || "")
             ? (() => { throw new Error("distFolder must be relative to the project dir"); })()
-            : resolveSafe(root, dir, distFolder || "");
+            : resolveTarget(req.body, distFolder || "");
 
         await nginx.writeConfig(pm2Name, {
             mode,

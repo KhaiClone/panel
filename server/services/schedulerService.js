@@ -4,9 +4,9 @@ const nodeService = require("./nodeService");
 //  Scheduler — decides which node a new project lands on.
 //
 //  Rules:
-//   - website/service projects: explicit nodeId wins (agent ≥ 1.1.0 provides
-//     nginx/UFW on remote nodes). Auto-placement still pins them to local —
-//     DNS points at a specific VPS, so silently moving a website would break it.
+//   - website/service projects: explicit nodeId wins. Auto-placement pins them
+//     to the panel's own node — DNS points at a specific VPS, so silently moving
+//     a website would break it.
 //   - Discord bots: explicit nodeId wins (validated online), otherwise every
 //     online node (including local) is scored and the best one is picked.
 //
@@ -41,22 +41,20 @@ const diskFreeGB = (stats) =>
 const pickNode = async ({ requestedNodeId = null, projectType = "discord" } = {}) => {
     const wantsAuto = !requestedNodeId || requestedNodeId === "auto";
 
-    // Websites/services: auto stays on the panel VPS (their DNS/ports are
-    // node-specific); an explicit node choice falls through to the shared
-    // validation below.
+    // Websites/services: auto stays on the panel's own node (their DNS and ports
+    // are node-specific, so silently moving one would break it); an explicit node
+    // choice falls through to the shared validation below.
     if (projectType !== "discord" && wantsAuto) {
+        const node = await nodeService.getNode(nodeService.panelNodeId());
         return {
-            nodeId: nodeService.LOCAL_NODE_ID,
-            nodeName: "Local",
-            reason: `${projectType} auto-placement stays on the panel VPS`,
+            nodeId: node._id,
+            nodeName: node.name,
+            reason: `${projectType} auto-placement stays on the panel's node`,
         };
     }
 
     // Explicit choice
     if (!wantsAuto) {
-        if (requestedNodeId === nodeService.LOCAL_NODE_ID) {
-            return { nodeId: requestedNodeId, nodeName: "Local", reason: "manually selected" };
-        }
         const node = await nodeService.getNode(requestedNodeId); // throws if unknown
         if (node.enabled === false) throw new Error(`Node "${node.name}" is disabled`);
         const healthy = await nodeService.checkNodeHealth(node);
@@ -69,8 +67,10 @@ const pickNode = async ({ requestedNodeId = null, projectType = "discord" } = {}
     const candidates = all.filter((n) => n.status === "online" && n.stats);
 
     if (candidates.length === 0) {
-        // Should never happen (local is always a candidate unless stats failed)
-        return { nodeId: nodeService.LOCAL_NODE_ID, nodeName: "Local", reason: "no stats available — defaulted to local" };
+        // Every node is unreachable or has no stats — fall back to the panel's own
+        // node rather than refusing to create anything.
+        const node = await nodeService.getNode(nodeService.panelNodeId());
+        return { nodeId: node._id, nodeName: node.name, reason: "no node reported stats — defaulted to the panel's node" };
     }
 
     // Exclude nodes below the disk floor — unless that removes everything,

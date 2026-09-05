@@ -5,14 +5,31 @@ const db = require("../db");
 // ─────────────────────────────────────────────────────────────────────────────
 //  Node registry + agent HTTP client
 //
-//  A "node" is a worker VPS running the agent (see /agent). The panel itself
-//  is the special node "local" — it has no DB record and no agent; operations
-//  on it call the local services directly (see executor.js).
+//  Every VPS is a node, including the one the panel itself runs on: the panel
+//  is a control plane and owns no worker code, so even "the machine right here"
+//  is reached through its agent over HTTP. That keeps exactly one code path in
+//  executor.js instead of a local/remote fork in every operation.
 //
-//  nodes collection: { _id, name, host, port, apiKey, enabled, createdAt }
+//  nodes collection:
+//    { _id, name, host, port, apiKey, enabled, createdAt,
+//      controlHost?, wgPubKey?, wgOverlayIp?, wgPort?, questProxy? }
+//
+//  host vs controlHost — read this before touching either:
+//    host        the node's PUBLIC address. Also used as the WireGuard endpoint
+//                pushed to every other node (wgService._peersFor) and as the
+//                egress proxy address (executor.buildEgressProxyConf). Changing
+//                it to a loopback address breaks the mesh and makes bots on
+//                other nodes proxy back into themselves.
+//    controlHost OPTIONAL. Used for panel → agent control traffic only. Set it
+//                to 127.0.0.1 on the node that runs the panel so those calls
+//                never leave the machine. Leave it unset everywhere else.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const LOCAL_NODE_ID = "local";
+// Legacy node id from before the panel/agent split. Bot records created back
+// then carry nodeId "local" (or nothing at all); resolveNodeId maps those onto
+// PANEL_NODE_ID so old rows keep working without a migration. Once the data is
+// migrated this constant has no remaining users and can go.
+const LEGACY_LOCAL_ID = "local";
 
 // Default timeout covers control operations; long ops (clone/install) pass
 // their own — slightly above the agent's internal timeouts so the agent's
@@ -21,10 +38,33 @@ const DEFAULT_TIMEOUT = 20_000;
 
 const getNodes = async () => (await db.find("nodes")) || [];
 
+/** _id of the node this panel runs on. Required config — never guessed. */
+const panelNodeId = () => {
+    const id = process.env.PANEL_NODE_ID;
+    if (!id) {
+        const err = new Error(
+            "PANEL_NODE_ID is not set. Add the _id of the node running this panel " +
+                "to the panel's .env — the panel reaches its own machine through that node's agent.",
+        );
+        err.status = 503;
+        throw err;
+    }
+    return id;
+};
+
+/**
+ * Map any stored nodeId onto a real node _id.
+ * Missing or "local" means a record written before the split — those projects
+ * live on the panel's own machine, which is now a normal node.
+ */
+const resolveNodeId = (nodeId) =>
+    !nodeId || nodeId === LEGACY_LOCAL_ID ? panelNodeId() : nodeId;
+
+/** The node record for a stored nodeId. Always a real record, never null. */
 const getNode = async (nodeId) => {
-    if (!nodeId || nodeId === LOCAL_NODE_ID) return null;
-    const node = await db.findOne("nodes", { _id: nodeId });
-    if (!node) throw new Error(`Node "${nodeId}" no longer exists`);
+    const id = resolveNodeId(nodeId);
+    const node = await db.findOne("nodes", { _id: id });
+    if (!node) throw new Error(`Node "${id}" no longer exists`);
     return node;
 };
 
@@ -34,7 +74,9 @@ const getNode = async (nodeId) => {
  * make clear which VPS failed.
  */
 const agentRequest = async (node, method, urlPath, { data, params, responseType, timeout } = {}) => {
-    const url = `http://${node.host}:${node.port}${urlPath}`;
+    // controlHost keeps panel → agent traffic on the loopback for the node the
+    // panel shares a machine with. host stays the public address for everyone else.
+    const url = `http://${node.controlHost || node.host}:${node.port}${urlPath}`;
     try {
         const res = await axios({
             method,
@@ -59,23 +101,26 @@ const agentRequest = async (node, method, urlPath, { data, params, responseType,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Stats (cached) + local node stats
+//  Stats (cached)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATS_TTL = 10_000;
 const statsCache = new Map(); // nodeId → { at, stats }
 
-/** Stats of the panel's own VPS — same shape the agent's /stats returns. */
+/**
+ * Stats of the machine this process runs on, in the agent's /stats shape.
+ *
+ * Kept only as a fallback for the panel's own host when its agent cannot be
+ * reached — the normal path reads /stats from the agent like any other node.
+ */
 const getLocalStats = async () => {
     const os = require("os");
-    const pm2Service = require("./pm2Service");
-    const [cpuLoad, mem, fsData, cpuInfo, netStats, pm2List] = await Promise.all([
+    const [cpuLoad, mem, fsData, cpuInfo, netStats] = await Promise.all([
         si.currentLoad(),
         si.mem(),
         si.fsSize().catch(() => []),
         si.cpu().catch(() => ({ brand: null, manufacturer: null })),
         si.networkStats().catch(() => []),
-        pm2Service.getProcessList(),
     ]);
 
     const mainFs =
@@ -117,27 +162,23 @@ const getLocalStats = async () => {
               }
             : null,
         uptime: os.uptime(),
-        processCount: pm2List.length,
+        processCount: null,
     };
 };
 
 /**
- * Get stats for one node (cached ~10s). nodeId "local" → panel's own stats.
+ * Get stats for one node (cached ~10s).
  * Throws when the node is unreachable — callers decide how to handle that.
  */
 const getNodeStats = async (nodeId) => {
-    const cached = statsCache.get(nodeId);
+    const id = resolveNodeId(nodeId);
+    const cached = statsCache.get(id);
     if (cached && Date.now() - cached.at < STATS_TTL) return cached.stats;
 
-    let stats;
-    if (!nodeId || nodeId === LOCAL_NODE_ID) {
-        stats = await getLocalStats();
-    } else {
-        const node = await getNode(nodeId);
-        stats = await agentRequest(node, "get", "/stats", { timeout: 8000 });
-    }
+    const node = await getNode(id);
+    const stats = await agentRequest(node, "get", "/stats", { timeout: 8000 });
 
-    statsCache.set(nodeId, { at: Date.now(), stats });
+    statsCache.set(id, { at: Date.now(), stats });
     return stats;
 };
 
@@ -145,23 +186,29 @@ const getNodeStats = async (nodeId) => {
 //  Health polling
 // ─────────────────────────────────────────────────────────────────────────────
 
-// nodeId → "online" | "offline" (remote nodes only; local is always online)
+// nodeId → "online" | "offline"
 const nodeStatus = new Map();
 
 const isNodeOnline = (nodeId) => {
-    if (!nodeId || nodeId === LOCAL_NODE_ID) return true;
-    return nodeStatus.get(nodeId) === "online";
+    try {
+        return nodeStatus.get(resolveNodeId(nodeId)) === "online";
+    } catch {
+        return false; // PANEL_NODE_ID unset — treat as unknown, not online
+    }
 };
 
 // Confirmed-offline only: an unpolled/unknown node returns false (treated as usable).
 const isNodeOffline = (nodeId) => {
-    if (!nodeId || nodeId === LOCAL_NODE_ID) return false;
-    return nodeStatus.get(nodeId) === "offline";
+    try {
+        return nodeStatus.get(resolveNodeId(nodeId)) === "offline";
+    } catch {
+        return false;
+    }
 };
 
 /** Mark a node online immediately (e.g. right after a verified registration). */
 const markOnline = (nodeId) => {
-    if (nodeId && nodeId !== LOCAL_NODE_ID) nodeStatus.set(nodeId, "online");
+    if (nodeId) nodeStatus.set(nodeId, "online");
 };
 
 const checkNodeHealth = async (node) => {
@@ -220,26 +267,15 @@ const startHealthPolling = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * All nodes (virtual "local" first) with live status and stats.
+ * All registered nodes with live status and stats. The node the panel runs on
+ * is flagged isPanelNode so the UI can label it; it is otherwise ordinary.
  * Stats are null when a node is unreachable. apiKey is never included.
  */
 const getAllNodesWithStats = async () => {
+    const panelId = process.env.PANEL_NODE_ID || null;
+    const nodes = await getNodes();
     const result = [];
 
-    let localStats = null;
-    try { localStats = await getNodeStats(LOCAL_NODE_ID); } catch { /* keep null */ }
-    result.push({
-        _id: LOCAL_NODE_ID,
-        name: "Local (panel VPS)",
-        host: null,
-        port: null,
-        local: true,
-        enabled: true,
-        status: "online",
-        stats: localStats,
-    });
-
-    const nodes = await getNodes();
     for (const node of nodes) {
         let stats = null;
         let status = node.enabled === false ? "disabled" : (nodeStatus.get(node._id) || "unknown");
@@ -257,21 +293,31 @@ const getAllNodesWithStats = async () => {
             _id: node._id,
             name: node.name,
             host: node.host,
+            controlHost: node.controlHost ?? null,
             port: node.port,
-            local: false,
+            isPanelNode: node._id === panelId,
             enabled: node.enabled !== false,
             status,
             stats,
             wgOverlayIp: node.wgOverlayIp ?? null,
+            questProxy: node.questProxy !== false,
             createdAt: node.createdAt,
         });
     }
+
+    // The panel's own node first, then alphabetical — a stable order for the switcher.
+    result.sort((a, b) => {
+        if (a.isPanelNode !== b.isPanelNode) return a.isPanelNode ? -1 : 1;
+        return String(a.name).localeCompare(String(b.name));
+    });
 
     return result;
 };
 
 module.exports = {
-    LOCAL_NODE_ID,
+    LEGACY_LOCAL_ID,
+    panelNodeId,
+    resolveNodeId,
     getNodes,
     getNode,
     agentRequest,

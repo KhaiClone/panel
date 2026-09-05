@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { streamBotLogs } = require("../services/pm2Service");
 const executor = require("../services/executor");
 
 const checkLogOwnership = async (req, decoded) => {
@@ -66,42 +65,22 @@ router.get("/:botId/stream", async (req, res, next) => {
 
         const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 15_000);
 
-        if (executor.isRemote(bot)) {
-            // Remote bot: the agent already emits SSE — pipe its bytes through
-            let upstream;
-            try {
-                upstream = await executor.streamRemoteLogs(bot, 50);
-            } catch (err) {
-                clearInterval(keepAlive);
-                res.write(`data: [panel] Cannot reach node: ${err.message}\n\n`);
-                return res.end();
-            }
-
-            upstream.data.pipe(res);
-            upstream.data.on("error", () => res.end());
-
-            req.on("close", () => {
-                clearInterval(keepAlive);
-                upstream.data.destroy();
-            });
-            return;
+        // The agent already emits SSE — pipe its bytes straight through.
+        let upstream;
+        try {
+            upstream = await executor.streamBotLogs(bot, 50);
+        } catch (err) {
+            clearInterval(keepAlive);
+            res.write(`data: [panel] Cannot reach node: ${err.message}\n\n`);
+            return res.end();
         }
 
-        const proc = streamBotLogs(bot.pm2Name, 50);
-
-        const sendData = (chunk) => {
-            const lines = chunk.toString().split("\n");
-            for (const line of lines) {
-                if (line.trim()) res.write(`data: ${line}\n\n`);
-            }
-        };
-
-        proc.stdout.on("data", sendData);
-        proc.stderr.on("data", sendData);
+        upstream.data.pipe(res);
+        upstream.data.on("error", () => res.end());
 
         req.on("close", () => {
             clearInterval(keepAlive);
-            proc.kill("SIGTERM");
+            upstream.data.destroy();
         });
     } catch (err) {
         next(err);

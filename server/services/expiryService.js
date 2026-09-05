@@ -2,7 +2,6 @@ const cron = require("node-cron");
 const path = require("path");
 const fs = require("fs");
 const db = require("../db");
-const { flushLogs } = require("./pm2Service");
 const executor = require("./executor");
 const { sendExpiryWarning, sendExpiryRemoval, sendExpirySuspended } = require("./discordService");
 const { createNotification } = require("../routes/notifications");
@@ -45,21 +44,15 @@ const checkExpiry = async () => {
                 // 1. Stop & unregister from PM2 (on whichever node the bot lives)
                 await executor.deleteBot(bot);
 
-                // 2. Delete source directory (never touch imported local folders)
-                if (executor.isRemote(bot)) {
-                    await executor.removeBotFiles(bot).catch((err) =>
-                        console.error(`[Expiry] Could not delete remote folder: ${err.message}`),
-                    );
+                // 2. Delete the project directory on its node.
+                // Imported folders (source === "local") keep their files: the panel
+                // never registered them, so it must not remove them either.
+                if (bot.source === "local") {
+                    console.log(`[Expiry] Kept imported folder for "${bot.botID}" (source=local)`);
                 } else {
-                    const botDir = path.join(
-                        process.env.BOTS_ROOT_DIR,
-                        bot.buyerID,
-                        bot.botID,
+                    await executor.removeBotFiles(bot).catch((err) =>
+                        console.error(`[Expiry] Could not delete folder on node: ${err.message}`),
                     );
-                    if (fs.existsSync(botDir)) {
-                        fs.rmSync(botDir, { recursive: true, force: true });
-                        console.log(`[Expiry] Deleted folder: ${botDir}`);
-                    }
                 }
 
                 // 3. Remove record from DB

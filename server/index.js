@@ -89,20 +89,10 @@ async function seedAdminUser() {
             }
         }
 
-        // Migrate existing bots that have no nodeId → they run on this VPS
-        {
-            const allBots = await db.find("bots");
-            let nodeMigrated = 0;
-            for (const bot of allBots) {
-                if (!bot.nodeId) {
-                    await db.findOneAndUpdate("bots", { _id: bot._id }, { nodeId: nodeService.LOCAL_NODE_ID });
-                    nodeMigrated++;
-                }
-            }
-            if (nodeMigrated > 0) {
-                console.log(`[Server] Migrated ${nodeMigrated} existing bot(s) → nodeId: "local"`);
-            }
-        }
+        // NOTE: bots with no nodeId (or the legacy "local") are resolved at read
+        // time by nodeService.resolveNodeId → PANEL_NODE_ID. Deliberately NOT
+        // rewritten here: a startup migration would fight scripts/migrate-local-node.js
+        // and would write to the DB on every boot.
     } catch (err) {
         console.error("[Server] Seed error:", err.message);
     }
