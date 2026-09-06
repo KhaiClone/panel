@@ -63,6 +63,10 @@ const bus = new EventEmitter();
 bus.setMaxListeners(0);
 // accountId -> { abort, completer }
 const running = new Map();
+// accountId -> the egress lease held for the whole run (see proxyPool.acquire).
+// Held, not just used: while a lease is out the pool refuses to rotate that
+// proxy's IP, so an account never has the ground move under it mid-run.
+const leases = new Map();
 // accountId -> { [questId]: { name, taskType, needed, done, percent, state, media } }
 // Kept so the snapshot / list can render rich quest cards even after a page reload.
 const liveState = new Map();
@@ -220,8 +224,11 @@ async function previewToken(token) {
  * mode "select" → run only selectedQuestIds.
  */
 async function startAccount({ token, mode = "all", selectedQuestIds = [], webhookUrl, ref }) {
-    const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
+    const lease = await proxyPool.acquire(token);
+    const resolved = await resolveDiscordAccount(token, lease.agent);
     if (!resolved.ok) {
+        // A dead token is not the proxy's fault; anything else might be.
+        lease.release({ failed: !resolved.invalidToken });
         const e = new Error(resolved.reason);
         e.status = resolved.invalidToken ? 401 : 502;
         throw e;
@@ -251,10 +258,19 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
     if (existing) await db.findOneAndUpdate(MODEL, { accountId }, record);
     else await db.create(MODEL, record);
 
-    // (Re)start the loop with the freshly resolved api.
+    // (Re)start the loop with the freshly resolved api. _stopLoop first, so the
+    // previous run's lease is returned before this one is registered.
     _stopLoop(accountId);
-    _launch(accountId, resolved, record);
+    _launch(accountId, resolved, record, lease);
     return _publicRec(record);
+}
+
+/** Give the account's egress route back to the pool. Safe to call twice. */
+function _releaseLease(accountId, opts) {
+    const lease = leases.get(accountId);
+    if (!lease) return;
+    leases.delete(accountId);
+    lease.release(opts);
 }
 
 function _stopLoop(accountId) {
@@ -263,6 +279,7 @@ function _stopLoop(accountId) {
         r.abort.stopped = true;
         running.delete(accountId);
     }
+    _releaseLease(accountId);
 }
 
 async function stopAccount(accountId) {
@@ -281,7 +298,8 @@ async function removeAccount(accountId) {
 }
 
 // ── Run loop ─────────────────────────────────────────────────────────────────────
-function _launch(accountId, resolved, record) {
+function _launch(accountId, resolved, record, lease = null) {
+    if (lease) leases.set(accountId, lease);
     const abort = { stopped: false };
     const completer = new QuestAutocompleter(resolved.api, {
         label: resolved.username,
@@ -375,16 +393,24 @@ async function _runLoop(accountId, completer, abort, record) {
         }
         if (!abort.stopped) {
             running.delete(accountId);
+            _releaseLease(accountId);
             await _setStatus(accountId, "done");
         }
     } catch (err) {
         running.delete(accountId);
-        if (err?.aborted) return;
+        if (err?.aborted) {
+            _releaseLease(accountId); // _stopLoop already released; this is the no-op path
+            return;
+        }
         if (isInvalidTokenError(err)) {
+            _releaseLease(accountId);
             await _setStatus(accountId, "token_dead", {
                 error: "Token không hợp lệ / đã hết hạn.",
             });
         } else {
+            // The run died for a non-token reason — a rotating proxy gets a fresh IP
+            // now that nothing is using it, rather than waiting for its idle timer.
+            _releaseLease(accountId, { failed: true });
             console.error(`[Quest] ${record.username} loop error:`, err.message);
             await _setStatus(accountId, "error", { error: err.message });
         }
@@ -407,8 +433,10 @@ async function restore() {
             continue;
         }
         try {
-            const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
+            const lease = await proxyPool.acquire(token);
+            const resolved = await resolveDiscordAccount(token, lease.agent);
             if (!resolved.ok) {
+                lease.release({ failed: !resolved.invalidToken });
                 await _setStatus(
                     rec.accountId,
                     resolved.invalidToken ? "token_dead" : "error",
@@ -416,7 +444,7 @@ async function restore() {
                 );
                 continue;
             }
-            _launch(rec.accountId, resolved, rec);
+            _launch(rec.accountId, resolved, rec, lease);
             restored++;
         } catch (e) {
             console.warn(`[Quest] restore ${rec.username} error: ${e.message}`);

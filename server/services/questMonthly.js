@@ -124,9 +124,14 @@ async function runBatch() {
     for (const rec of accts) {
         const token = _decrypt(rec);
         if (!token) continue;
+        // Hold the egress lease for the whole pass — the pool will not rotate this
+        // proxy's IP while it is out (see proxyPool.acquire).
+        const lease = await proxyPool.acquire(token);
+        let egressFailed = false;
         try {
-            const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
+            const resolved = await resolveDiscordAccount(token, lease.agent);
             if (!resolved.ok) {
+                egressFailed = !resolved.invalidToken;
                 if (resolved.invalidToken) {
                     questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
                     _webhook(rec, { type: "status", status: "token_dead" });
@@ -196,7 +201,12 @@ async function runBatch() {
             if (isInvalidTokenError(e)) {
                 questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
                 _webhook(rec, { type: "status", status: "token_dead" });
-            } else console.error(`[Monthly] ${rec.username} error: ${e.message}`);
+            } else {
+                egressFailed = true;
+                console.error(`[Monthly] ${rec.username} error: ${e.message}`);
+            }
+        } finally {
+            lease.release({ failed: egressFailed });
         }
         await new Promise((r) => setTimeout(r, 3000));
     }
@@ -210,8 +220,9 @@ async function runEnrollScan() {
     for (const rec of accts) {
         const token = _decrypt(rec);
         if (!token) continue;
+        const lease = await proxyPool.acquire(token);
         try {
-            const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
+            const resolved = await resolveDiscordAccount(token, lease.agent);
             if (!resolved.ok) continue;
             const completer = new QuestAutocompleter(resolved.api, { label: rec.username });
             const quests = await completer.fetchQuests();
@@ -219,6 +230,8 @@ async function runEnrollScan() {
             processed++;
         } catch (e) {
             if (!isInvalidTokenError(e)) console.error(`[MonthlyEnroll] ${rec.username}: ${e.message}`);
+        } finally {
+            lease.release();
         }
         await new Promise((r) => setTimeout(r, 3000));
     }

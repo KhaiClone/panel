@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
 import useQuestStream from "../hooks/useQuestStream";
 
@@ -56,6 +56,130 @@ function StatCard({ icon, label, value, sub, color = "var(--accent)" }) {
             </div>
             <p style={{ fontSize: 28, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1 }}>{value}</p>
             {sub && <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>{sub}</p>}
+        </div>
+    );
+}
+
+/**
+ * Egress menu — which IPs auto quest runs through.
+ *
+ * The panel used to hardcode "every VPS node is a proxy"; these switches replace
+ * that. Proxies you supply are managed on /proxies; this menu only decides which
+ * sources are in play, so the two pages never disagree about the same setting.
+ */
+function EgressMenu() {
+    const [pool, setPool] = useState(null);
+    const [open, setOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState(null);
+
+    const load = useCallback(async () => {
+        try {
+            const { data } = await api.get("/proxies/settings/quest");
+            setPool(data);
+        } catch (e) {
+            setErr(e.response?.data?.error || "Could not load egress settings.");
+        }
+    }, []);
+
+    useEffect(() => {
+        load();
+    }, [load]);
+
+    const save = async (patch) => {
+        setSaving(true);
+        setErr(null);
+        try {
+            const { data } = await api.patch("/proxies/settings/quest", patch);
+            setPool(data);
+        } catch (e) {
+            setErr(e.response?.data?.error || "Could not save.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const summary = !pool
+        ? "…"
+        : pool.activeSource === "proxy"
+          ? `${pool.activeCount} custom proxy(ies)`
+          : pool.activeSource === "node"
+            ? `${pool.activeCount} VPS node(s)`
+            : "panel IP (no proxy)";
+
+    const Switch = ({ label, hint, field, count }) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--border-light)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                    {label} <span style={{ color: "var(--text-dim)", fontWeight: 500 }}>({count})</span>
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 11.5, color: "var(--text-muted)" }}>{hint}</p>
+            </div>
+            <input
+                type="checkbox"
+                checked={!!pool.settings[field]}
+                disabled={saving}
+                onChange={(e) => save({ [field]: e.target.checked })}
+            />
+        </div>
+    );
+
+    return (
+        <div style={{ marginBottom: 20 }}>
+            <button
+                onClick={() => setOpen((o) => !o)}
+                className="btn-ghost"
+                style={{ padding: "6px 12px", fontSize: 12.5 }}
+            >
+                🌐 Egress: {summary} {open ? "▾" : "▸"}
+            </button>
+
+            {open && pool && (
+                <div className="card" style={{ marginTop: 10, padding: 18, maxWidth: 560 }}>
+                    <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
+                        Which IPs quest traffic leaves from. With both on, one source is used and the
+                        other is the fallback — unless you pick “Mix”.
+                    </p>
+
+                    <Switch
+                        label="My proxies"
+                        hint="Proxies registered on the Proxy Pool page."
+                        field="useCustomProxies"
+                        count={pool.customProxies.length}
+                    />
+                    <Switch
+                        label="VPS nodes as proxy"
+                        hint="Every enabled agent node doubles as an egress IP."
+                        field="useNodes"
+                        count={pool.nodes.length}
+                    />
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 12, borderTop: "1px solid var(--border-light)" }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", flex: 1 }}>
+                            Order
+                        </span>
+                        <select
+                            className="input"
+                            style={{ width: 180 }}
+                            value={pool.settings.priority}
+                            disabled={saving}
+                            onChange={(e) => save({ priority: e.target.value })}
+                        >
+                            <option value="custom">My proxies first</option>
+                            <option value="nodes">VPS nodes first</option>
+                            <option value="mixed">Mix both</option>
+                        </select>
+                    </div>
+
+                    {err && <p style={{ fontSize: 12, color: "var(--danger)", margin: "10px 0 0" }}>{err}</p>}
+
+                    <p style={{ margin: "14px 0 0", fontSize: 12 }}>
+                        <Link to="/proxies" style={{ color: "var(--accent)" }}>
+                            Manage proxies →
+                        </Link>
+                    </p>
+                </div>
+            )}
         </div>
     );
 }
@@ -179,6 +303,9 @@ export default function QuestsPage() {
                     Monitor every account running quests. Click an account to inspect its quests.
                 </p>
             </div>
+
+            {/* ── Egress (which IPs quest traffic uses) ── */}
+            <EgressMenu />
 
             {/* ── Stat row ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>

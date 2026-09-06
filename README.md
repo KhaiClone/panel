@@ -89,7 +89,8 @@ root/
     │   │   ├── system.js            ← CPU, RAM, disk stats
     │   │   ├── panel.js             ← Panel self-management (restart, rebuild, env, logs)
     │   │   ├── github.js            ← SSH key + git config management
-    │   │   ├── proxy.js             ← Reverse-proxy configuration
+    │   │   ├── proxy.js             ← Egress proxy — pin a bot's public IP to a VPS
+    │   │   ├── proxies.js           ← Proxy pool the panel egresses through + per-feature switches
     │   │   ├── notifications.js     ← In-panel notification inbox
     │   │   └── external.js          ← External API (API-key protected)
     │   ├── services/
@@ -130,7 +131,8 @@ root/
     │       │   ├── GroupsPage.jsx   ← Group management
     │       │   ├── TagsPage.jsx     ← Tag management
     │       │   ├── MultiManage.jsx  ← Bulk operations UI
-    │       │   ├── ProxyPage.jsx    ← Reverse-proxy config
+    │       │   ├── ProxyPage.jsx    ← Egress proxy per bot
+    │       │   ├── ProxiesPage.jsx  ← Proxy pool (static / rotating) + Auto Quest egress
     │       │   └── PanelManage.jsx  ← Panel self-management
     │       ├── components/
     │       │   ├── Layout.jsx          ← Collapsible sidebar + page wrapper
@@ -539,8 +541,16 @@ All routes require `Authorization: Bearer <token>` unless noted.
 | `POST` | `/api/github/keys/:name/test` | Test SSH key connection |
 | `GET` | `/api/github/git-config` | Read global git config |
 | `PUT` | `/api/github/git-config` | Update global git config |
-| `GET` | `/api/proxy/config` | Get proxy config |
-| `PUT` | `/api/proxy/config` | Update proxy config |
+| `GET` | `/api/proxy` | Bots + their egress VPS |
+| `GET` | `/api/proxies` | List pool proxies (credentials masked) |
+| `POST` | `/api/proxies` | Add a proxy (static or rotating) |
+| `POST` | `/api/proxies/bulk` | Import a pasted list |
+| `PATCH` | `/api/proxies/:id` | Update a proxy (omit `password` to keep it) |
+| `DELETE` | `/api/proxies/:id` | Remove a proxy |
+| `POST` | `/api/proxies/:id/test` | Check which IP it egresses from |
+| `POST` | `/api/proxies/:id/rotate` | Fetch its rotate link now (refused while in use) |
+| `GET` | `/api/proxies/settings/:feature` | Egress switches + current pool |
+| `PATCH` | `/api/proxies/settings/:feature` | Toggle VPS nodes / custom proxies / order |
 | `GET` | `/api/notifications` | List notifications |
 | `POST` | `/api/notifications/read` | Mark notifications as read |
 | `DELETE` | `/api/notifications/:id` | Delete notification |

@@ -13,6 +13,7 @@ import MultiManage from "./pages/MultiManage";
 import PanelManage from "./pages/PanelManage";
 import TerminalPage from "./pages/TerminalPage";
 import ProxyPage from "./pages/ProxyPage";
+import ProxiesPage from "./pages/ProxiesPage";
 import TagsPage from "./pages/TagsPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import NodeDetailPage from "./pages/NodeDetailPage";
@@ -91,6 +92,8 @@ export default function App() {
                             {/* Admin-only routes */}
                             <Route path="panel-manage"  element={<AdminRoute><PanelManage /></AdminRoute>} />
                             <Route path="proxy"         element={<AdminRoute><ProxyPage /></AdminRoute>} />
+                            {/* /proxy pins a bot's IP to a VPS; /proxies is the panel's own egress pool. */}
+                            <Route path="proxies"       element={<AdminRoute><ProxiesPage /></AdminRoute>} />
                             <Route path="systems"      element={<AdminRoute><SystemsPage /></AdminRoute>} />
                             {/* /system was the single-node monitor; /systems + a node's
                                 Metrics tab replace it. Redirect so old links still land. */}

@@ -15,6 +15,7 @@ const externalRoutes = require("./routes/external");
 const panelRoutes = require("./routes/panel");
 const githubRoutes = require("./routes/github");
 const proxyRoutes = require("./routes/proxy");
+const proxiesRoutes = require("./routes/proxies");
 const tagRoutes = require("./routes/tags");
 const notificationRoutes = require("./routes/notifications");
 const userRoutes = require("./routes/users");
@@ -35,6 +36,7 @@ const memoryMonitorService = require("./services/memoryMonitorService");
 const nodeService = require("./services/nodeService");
 const termService = require("./services/termService");
 const samplerService = require("./services/samplerService");
+const proxyStore = require("./services/proxyStore");
 const questService = require("./services/questService");
 const questMonthly = require("./services/questMonthly");
 const db = require("./db");
@@ -130,6 +132,8 @@ app.use("/api/system", authMiddleware, adminOnly, nodeContext, systemRoutes);
 app.use("/api/panel", authMiddleware, adminOnly, panelRoutes);
 app.use("/api/github", authMiddleware, adminOnly, githubRoutes);
 app.use("/api/proxy", authMiddleware, adminOnly, proxyRoutes);
+// /api/proxy pins a bot's IP to a VPS; /api/proxies is the panel's own egress pool.
+app.use("/api/proxies", authMiddleware, adminOnly, proxiesRoutes);
 app.use("/api/external/quests", apiKeyMiddleware, questExternalRoutes);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
@@ -166,6 +170,8 @@ backupService.start();
 memoryMonitorService.start();
 nodeService.startHealthPolling();
 samplerService.start();
+// Rotates registered rotating proxies while they are idle; never mid-run.
+proxyStore.startRotationScheduler();
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Listen + Seed
