@@ -16,7 +16,6 @@ import TerminalPage from "./pages/TerminalPage";
 import ProxyPage from "./pages/ProxyPage";
 import TagsPage from "./pages/TagsPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
-import NodesPage from "./pages/NodesPage";
 import NodeDetailPage from "./pages/NodeDetailPage";
 import OrdersPage from "./pages/OrdersPage";
 import DecorsPage from "./pages/DecorsPage";
@@ -74,7 +73,9 @@ export default function App() {
                                 Metrics tab replace it. Redirect so old links still land. */}
                             <Route path="system"        element={<Navigate to="/systems" replace />} />
                             <Route path="terminal"      element={<AdminRoute><TerminalPage /></AdminRoute>} />
-                            <Route path="nodes"         element={<AdminRoute><NodesPage /></AdminRoute>} />
+                            {/* The node list lived here; /systems shows the same fleet with
+                                live metrics, and each node's own page manages it. */}
+                            <Route path="nodes"         element={<Navigate to="/systems" replace />} />
                             <Route path="nodes/:id"     element={<AdminRoute><NodeDetailPage /></AdminRoute>} />
                             <Route path="admin/users"   element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
                             <Route path="orders"        element={<AdminRoute><OrdersPage /></AdminRoute>} />

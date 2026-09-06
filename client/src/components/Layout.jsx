@@ -65,7 +65,6 @@ const getNavSections = (isAdmin) => {
         items: [
             { to: "/systems",      label: "Systems",  icon: I.system },
             { to: "/terminal",     label: "Terminal", icon: I.terminal },
-            { to: "/nodes",        label: "Nodes",    icon: I.nodes },
             { to: "/orders",       label: "Orders",   icon: I.orders },
             { to: "/decors",       label: "Decors",   icon: I.decors },
             { to: "/quests",       label: "Quests",   icon: I.quests },
@@ -91,7 +90,6 @@ const PAGE_TITLES = {
     "/proxy":        "Egress Proxy",
     "/terminal":     "Terminal",
     "/systems":      "Systems",
-    "/nodes":        "Nodes",
     "/orders":       "Orders",
     "/decors":       "Decors",
     "/quests":       "Auto Quest",

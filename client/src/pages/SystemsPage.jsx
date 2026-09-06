@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import Sparkline from "../components/Sparkline";
+import NodeModal from "../components/NodeModal";
 import { fmtBytes, fmtPercent } from "../components/MetricChart";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,6 +73,8 @@ export default function SystemsPage() {
     const [range, setRange] = useState("6h");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [addOpen, setAddOpen] = useState(false);
+    const [wg, setWg] = useState({ busy: false, msg: null });
 
     const loadNodes = useCallback(async () => {
         try {
@@ -97,6 +100,25 @@ export default function SystemsPage() {
         const t = setInterval(loadNodes, LIVE_POLL_MS);
         return () => clearInterval(t);
     }, [loadNodes]);
+
+    // Recompute the WireGuard mesh and push it to every node. A whole-fleet
+    // action, so it belongs on the fleet view rather than on one node's page.
+    const syncWg = async () => {
+        setWg({ busy: true, msg: null });
+        try {
+            const { data } = await api.post("/nodes/wg/sync");
+            const okCount = (data.results || []).filter((r) => r.ok).length;
+            const failed = (data.results || []).filter((r) => !r.ok);
+            setWg({
+                busy: false,
+                msg: failed.length
+                    ? `${okCount} synced, ${failed.length} failed: ${failed.map((f) => `${f.node} (${f.error})`).join("; ")}`
+                    : `Mesh synced to ${okCount} node${okCount === 1 ? "" : "s"}.`,
+            });
+        } catch (err) {
+            setWg({ busy: false, msg: err.response?.data?.error || "WireGuard sync failed" });
+        }
+    };
 
     useEffect(() => {
         loadHistory(range);
@@ -136,6 +158,13 @@ export default function SystemsPage() {
                         Every VPS the panel manages. Select one to see its full history.
                     </p>
                 </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <button className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={syncWg} disabled={wg.busy}>
+                    {wg.busy ? "Syncing…" : "Sync WireGuard"}
+                </button>
+                <button className="btn-primary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => setAddOpen(true)}>
+                    + Add node
+                </button>
                 <div className="tab-bar" style={{ display: "flex", gap: 4 }}>
                     {RANGES.map((r) => (
                         <button
@@ -148,7 +177,14 @@ export default function SystemsPage() {
                         </button>
                     ))}
                 </div>
+                </div>
             </div>
+
+            {wg.msg && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13, marginBottom: 16 }}>
+                    {wg.msg}
+                </div>
+            )}
 
             {error && (
                 <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13, marginBottom: 16 }}>
@@ -249,6 +285,10 @@ export default function SystemsPage() {
                     </tbody>
                 </table>
             </div>
+
+            {addOpen && (
+                <NodeModal node={null} onClose={() => setAddOpen(false)} onSaved={loadNodes} />
+            )}
         </div>
     );
 }

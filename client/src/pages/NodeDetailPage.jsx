@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import NodeMetrics from "../components/NodeMetrics";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import NodeModal from "../components/NodeModal";
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -71,6 +72,8 @@ export default function NodeDetailPage() {
     const [confirmAction, setConfirmAction] = useState(null);
     const [error, setError] = useState("");
     const [tab, setTab] = useState("Metrics");
+    const [editOpen, setEditOpen] = useState(false);
+    const [testMsg, setTestMsg] = useState("");
 
     const nodeBots = bots;
 
@@ -107,6 +110,26 @@ export default function NodeDetailPage() {
         const int = setInterval(fetchAll, 10_000);
         return () => clearInterval(int);
     }, [fetchAll, fetchLogs]);
+
+    const doTest = async () => {
+        setTestMsg("Testing…");
+        try {
+            const { data } = await api.post(`/nodes/${id}/test`);
+            setTestMsg(data.message || (data.ok ? "Agent reachable." : "Agent did not answer."));
+        } catch (err) {
+            setTestMsg(err.response?.data?.error || "Agent did not answer.");
+        }
+    };
+
+    const doDelete = async () => {
+        setConfirmAction(null);
+        try {
+            await api.delete(`/nodes/${id}`);
+            navigate("/systems");
+        } catch (err) {
+            setError(err.response?.data?.error || "Could not remove this node");
+        }
+    };
 
     const doRestart = async () => {
         setConfirmAction(null);
@@ -159,7 +182,7 @@ export default function NodeDetailPage() {
 
             {/* Header */}
             <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                <button onClick={() => navigate("/nodes")} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)" }}>
+                <button onClick={() => navigate("/systems")} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)" }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -180,6 +203,15 @@ export default function NodeDetailPage() {
                     <button className="btn-warning" disabled={!online || busy} onClick={() => setConfirmAction("restart")} style={{ padding: "8px 16px", fontSize: 13 }}>
                         {busy === "restart" ? "Restarting…" : "Restart Agent"}
                     </button>
+                    <button className="btn-ghost" onClick={doTest} style={{ padding: "8px 14px", fontSize: 13 }}>
+                        Test
+                    </button>
+                    <button className="btn-ghost" onClick={() => setEditOpen(true)} style={{ padding: "8px 14px", fontSize: 13 }}>
+                        Edit
+                    </button>
+                    <button className="btn-ghost" onClick={() => setConfirmAction("delete")} style={{ padding: "8px 14px", fontSize: 13, color: "var(--danger)" }}>
+                        Remove
+                    </button>
                     <button className="btn-primary" disabled={!online || busy} onClick={() => setConfirmAction("update")} style={{ padding: "8px 16px", fontSize: 13 }}>
                         {busy === "update" ? "Updating…" : "Update Agent"}
                     </button>
@@ -188,6 +220,9 @@ export default function NodeDetailPage() {
 
             {error && (
                 <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13 }}>{error}</div>
+            )}
+            {testMsg && (
+                <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13 }}>{testMsg}</div>
             )}
             {actionMsg && (
                 <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13, whiteSpace: "pre-wrap" }}>{actionMsg}</div>
@@ -281,6 +316,20 @@ export default function NodeDetailPage() {
                     {logs || "(empty)"}
                 </pre>
             </div>
+
+            {editOpen && (
+                <NodeModal node={node} onClose={() => setEditOpen(false)} onSaved={fetchAll} />
+            )}
+
+            {confirmAction === "delete" && (
+                <ConfirmModal
+                    title={`Remove node "${node.name}"?`}
+                    message="The panel forgets this node. Nothing on the machine is touched — its agent keeps running and its bots keep running, but the panel can no longer see or control them."
+                    confirmText="Remove node"
+                    onConfirm={doDelete}
+                    onCancel={() => setConfirmAction(null)}
+                />
+            )}
 
             {confirmAction === "restart" && (
                 <ConfirmModal
