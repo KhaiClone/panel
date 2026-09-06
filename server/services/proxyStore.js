@@ -259,7 +259,7 @@ async function test(id) {
         });
         return { ok: true, ip, latencyMs: Date.now() - started };
     } catch (err) {
-        const message = err.message || "Không kết nối được qua proxy.";
+        const message = _explain(err);
         await _touch(id, {
             lastCheckedAt: Date.now(),
             lastError: message,
@@ -267,6 +267,24 @@ async function test(id) {
         });
         return { ok: false, error: message, latencyMs: Date.now() - started };
     }
+}
+
+/**
+ * Turn a transport failure into something actionable. Raw axios text ("Request
+ * failed with status code 407") sends you looking for a bug in the panel when the
+ * proxy is simply refusing the credentials you typed.
+ */
+function _explain(err) {
+    const status = err.response?.status;
+    if (status === 407)
+        return "407 — proxy từ chối user/pass. Kiểm tra lại credential, và xem nhà cung cấp có yêu cầu whitelist IP của panel không.";
+    if (status === 403) return "403 — proxy từ chối kết nối (IP của panel chưa được cấp quyền?).";
+    if (status) return `HTTP ${status} từ proxy.`;
+    const code = err.code || "";
+    if (code === "ECONNREFUSED") return "Proxy từ chối kết nối — sai host/port, hoặc proxy đã tắt.";
+    if (code === "ETIMEDOUT" || code === "ECONNABORTED") return "Hết thời gian chờ — proxy không phản hồi.";
+    if (code === "ENOTFOUND") return "Không phân giải được host của proxy.";
+    return err.message || "Không kết nối được qua proxy.";
 }
 
 // ── Rotation ─────────────────────────────────────────────────────────────────────

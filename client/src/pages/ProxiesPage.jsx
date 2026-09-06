@@ -247,7 +247,14 @@ function ProxyModal({ proxy, onClose, onSaved }) {
                     </button>
                 </div>
 
-                <form onSubmit={submit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* autoComplete="off" throughout: the browser reads host/username/password
+                    as a login form and silently autofills them. That produced a credential
+                    the proxy rejected with 407 and no clue why. */}
+                <form
+                    onSubmit={submit}
+                    autoComplete="off"
+                    style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}
+                >
                     <div>
                         <label className="label">Label</label>
                         <input
@@ -290,7 +297,14 @@ function ProxyModal({ proxy, onClose, onSaved }) {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="grid-1-mobile">
                         <div>
                             <label className="label">Username</label>
-                            <input className="input mono" value={form.username} onChange={set("username")} />
+                            <input
+                                className="input mono"
+                                name="proxy-user"
+                                autoComplete="off"
+                                spellCheck={false}
+                                value={form.username}
+                                onChange={set("username")}
+                            />
                         </div>
                         <div>
                             <label className="label">
@@ -298,7 +312,12 @@ function ProxyModal({ proxy, onClose, onSaved }) {
                             </label>
                             <input
                                 className="input mono"
+                                // "new-password" is the one value Chrome actually honours here;
+                                // "off" alone is ignored on password inputs.
                                 type="password"
+                                name="proxy-pass"
+                                autoComplete="new-password"
+                                spellCheck={false}
                                 value={form.password}
                                 onChange={set("password")}
                             />
