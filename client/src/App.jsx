@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { NodeProvider } from "./context/NodeContext";
 import { DataProvider } from "./context/DataContext";
 import Login from "./pages/Login";
 import OverviewPage from "./pages/OverviewPage";
@@ -72,7 +71,6 @@ function AdminRoute({ children }) {
 export default function App() {
     return (
         <AuthProvider>
-            <NodeProvider>
             <DataProvider>
                 <BrowserRouter>
                     <Routes>
@@ -114,7 +112,6 @@ export default function App() {
                     </Routes>
                 </BrowserRouter>
             </DataProvider>
-            </NodeProvider>
         </AuthProvider>
     );
 }

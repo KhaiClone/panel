@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
-import { useNode } from "../context/NodeContext";
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 const I = {
@@ -146,7 +145,6 @@ function NavItem({ to, icon, label, expanded }) {
 export default function Layout() {
     const { user, logout, isAdmin } = useAuth();
     const { stats, bots } = useData();
-    const { isRemote, selectedNode, nodeStatus } = useNode();
     const NAV_SECTIONS = getNavSections(isAdmin);
     const navigate = useNavigate();
     const location = useLocation();
@@ -343,12 +341,11 @@ export default function Layout() {
             {/* ── Main ───────────────────────────────────────────────── */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-                {/* Header — accent top border signals remote view */}
+                {/* Header */}
                 <header style={{
                     height: 58, flexShrink: 0,
                     background: "var(--bg-surface)",
                     borderBottom: "1px solid var(--border-light)",
-                    borderTop: isRemote ? "2px solid var(--accent)" : "2px solid transparent",
                     display: "flex", alignItems: "center", padding: "0 20px", gap: 14,
                     position: "relative", zIndex: 10,
                 }}>
@@ -365,7 +362,6 @@ export default function Layout() {
                     {/* Header chips */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} ref={notifRef}>
                         {/* Global node switcher (admin, with registered nodes only) */}
-                        {isAdmin && <NodeSwitcher />}
 
                         {/* Resource chips */}
                         <div className="hide-mobile" style={{ display: "flex", gap: 6 }}>
@@ -423,66 +419,10 @@ export default function Layout() {
                     </div>
                 </header>
 
-                {/* Remote node offline banner */}
-                {isRemote && nodeStatus === "offline" && (
-                    <div style={{
-                        flexShrink: 0, padding: "6px 20px",
-                        background: "rgba(239,68,68,0.12)", borderBottom: "1px solid rgba(239,68,68,0.3)",
-                        color: "#f87171", fontSize: 12, fontWeight: 600,
-                    }}>
-                        ⚠ Node "{selectedNode?.name || "?"}" is offline — data may be stale or unavailable.
-                    </div>
-                )}
-
                 <main style={{ flex: 1, overflowY: "auto", position: "relative" }} className="fade-in">
                     <Outlet />
                 </main>
             </div>
-        </div>
-    );
-}
-
-/**
- * Global node switcher — the panel shows the selected node's data. Hidden
- * while only one node is registered, since there would be nothing to switch to.
- */
-function NodeSwitcher() {
-    const { nodeId, setNode, nodes, isRemote, nodeStatus } = useNode();
-    if (nodes.length < 2) return null;
-
-    const dotColor =
-        nodeStatus === "online" ? "var(--success)"
-        : nodeStatus === "offline" ? "var(--danger)"
-        : "var(--warning)";
-
-    return (
-        <div
-            title={isRemote ? "The panel is showing this node's data" : "The node this panel runs on"}
-            style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "4px 10px", borderRadius: 99,
-                background: isRemote ? "var(--accent-dim)" : "var(--bg-input)",
-                border: `1px solid ${isRemote ? "var(--accent)" : "var(--border)"}`,
-            }}
-        >
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: isRemote ? "var(--accent-hover)" : "var(--text-muted)" }}>⬡</span>
-            <select
-                className="node-switcher-select"
-                value={nodeId}
-                onChange={(e) => setNode(e.target.value)}
-                style={{
-                    background: "transparent", border: "none", outline: "none",
-                    color: "var(--text)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                    maxWidth: 150,
-                }}
-            >
-                {nodes.map((n) => (
-                    <option key={n._id} value={n._id} style={{ background: "var(--bg-surface)", color: "var(--text)" }}>
-                        {n.name}{n.isPanelNode ? " — panel" : ""}{n.status === "offline" ? " (offline)" : ""}
-                    </option>
-                ))}
-            </select>
         </div>
     );
 }

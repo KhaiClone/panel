@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { useNode } from "../context/NodeContext";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -60,12 +59,11 @@ function TabBar({ value, onChange, options }) {
 
 export default function CreateBotModal({ onClose, onCreated, defaultProjectType }) {
     const { isAdmin } = useAuth();
-    const { nodeId: globalNodeId } = useNode();
     const [form, setForm] = useState(() => ({
         ...defaultForm,
         projectType: defaultProjectType || defaultForm.projectType,
         // Remote view active → default the placement to the node being viewed
-        nodeId: globalNodeId || defaultForm.nodeId,
+        nodeId: defaultForm.nodeId,
     }));
     const [groups, setGroups] = useState([]);
     const [availableTags, setAvailableTags] = useState([]);

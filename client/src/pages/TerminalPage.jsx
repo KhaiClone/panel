@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { useNode } from "../context/NodeContext";
+import api from "../api/client";
 
-// Interactive shell for the selected node (header switcher). Connects a
-// browser xterm.js session to the panel's /api/term WebSocket, which either
-// spawns a local PTY or pipes through to the node's agent.
+// Interactive shell for one node, chosen right here rather than from a global
+// switcher — the choice only means anything on this page. Connects a browser
+// xterm.js session to the panel's /api/term WebSocket, which pipes it through
+// to that node's agent.
 
 const TERM_THEME = {
     background: "#0b0e14",
@@ -21,7 +22,9 @@ const TERM_THEME = {
 };
 
 export default function TerminalPage() {
-    const { nodeId, selectedNode } = useNode();
+    const [nodes, setNodes] = useState([]);
+    const [nodeId, setNodeId] = useState(null);
+    const selectedNode = nodes.find((n) => n._id === nodeId) || null;
     const containerRef = useRef(null);
     const termRef = useRef(null);
     const fitRef = useRef(null);
@@ -71,15 +74,26 @@ export default function TerminalPage() {
         };
     }, []);
 
+    // Node list for the picker. Defaults to the panel's own node, which is the
+    // one an admin almost always wants a shell on.
+    useEffect(() => {
+        api.get("/nodes")
+            .then((r) => {
+                setNodes(r.data);
+                setNodeId((cur) => cur || (r.data.find((n) => n.isPanelNode) || r.data[0])?._id || null);
+            })
+            .catch(() => {});
+    }, []);
+
     // (Re)connect whenever the node or reconnect trigger changes
     useEffect(() => {
         const term = termRef.current;
         const fit = fitRef.current;
         if (!term) return;
 
-        // NodeContext starts with no selection and settles once /nodes returns.
-        // Connecting before that would send node=null, which the server rightly
-        // refuses — wait for a real id and let this effect re-run instead.
+        // The node list arrives asynchronously. Connecting before it does would
+        // send node=null, which the server rightly refuses — wait for a real id
+        // and let this effect re-run instead.
         if (!nodeId) {
             setStatus("connecting");
             term.reset();
@@ -174,11 +188,26 @@ export default function TerminalPage() {
                 <div>
                     <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", margin: "0 0 4px" }}>Terminal</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
-                        Shell on <strong style={{ color: "var(--text)" }}>{selectedNode?.name || nodeId || "no node selected"}</strong>
-                        {selectedNode?.host ? ` — ${selectedNode.host}` : ""}
+                        {selectedNode
+                            ? <>Shell on <strong style={{ color: "var(--text)" }}>{selectedNode.name}</strong>{selectedNode.host ? ` — ${selectedNode.host}` : ""}</>
+                            : "Pick a node to open a shell on."}
                     </p>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <select
+                        className="input mono"
+                        style={{ fontSize: 12, padding: "6px 10px", width: "auto", minWidth: 170 }}
+                        value={nodeId || ""}
+                        onChange={(e) => setNodeId(e.target.value || null)}
+                        aria-label="Node to open a shell on"
+                    >
+                        {!nodeId && <option value="">Select a node…</option>}
+                        {nodes.map((n) => (
+                            <option key={n._id} value={n._id}>
+                                {n.name}{n.isPanelNode ? " — panel" : ""}{n.status === "offline" ? " (offline)" : ""}
+                            </option>
+                        ))}
+                    </select>
                     <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>
                         <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot }} />
                         {status === "connected" ? "Connected" : status === "connecting" ? "Connecting…" : "Disconnected"}
