@@ -93,15 +93,11 @@ root/
     │   │   ├── notifications.js     ← In-panel notification inbox
     │   │   └── external.js          ← External API (API-key protected)
     │   ├── services/
-    │   │   ├── pm2Service.js        ← All PM2 CLI operations (auto pm2 save)
-    │   │   ├── gitService.js        ← git clone, git pull, npm install
     │   │   ├── discordService.js    ← Webhook alerts + backup file sender
     │   │   ├── expiryService.js     ← Hourly expiry check + auto-removal
     │   │   ├── backupService.js     ← Hourly DB dump to Discord
     │   │   ├── memoryMonitorService.js ← Per-minute memory overflow checker
     │   │   ├── githubService.js     ← SSH key generation + ~/.ssh/config manager
-    │   │   ├── nginxService.js      ← nginx vhost generation + reload
-    │   │   ├── ufwService.js        ← UFW open/close port + free-port finder
     │   │   └── panelService.js      ← Panel restart / client rebuild helpers
     │   └── index.js                 ← Express entry point
     │

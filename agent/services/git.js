@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const execAsync = util.promisify(exec);
 
-// Standalone copy of server/services/gitService.js — identical behavior so
+// The agent owns every git operation — the panel runs no git of its own, so
 // clone/pull/install work the same on every node.
 
 const GIT_TIMEOUT = 120_000;

@@ -5,9 +5,9 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-// Standalone copy of server/services/pm2Service.js adapted for the agent:
-// identical behavior, but dump-corruption alerts go to the console instead of
-// the panel's notification feed (the panel sees node health via /health).
+// The agent owns every PM2 operation — the panel runs no pm2 of its own.
+// Dump-corruption alerts go to the console instead of the panel's notification
+// feed (the panel sees node health via /health).
 
 const runPM2 = async (args) => {
     const { stdout, stderr } = await execAsync(
@@ -256,7 +256,7 @@ const flushBotLogs = async (pm2Name) => {
     await execAsync(`pm2 flush "${pm2Name}"`);
 };
 
-/** Flush the logs of EVERY process on this node (panel's pm2Service.flushLogs). */
+/** Flush the logs of EVERY process on this node. */
 const flushLogs = async () => {
     try {
         return await runPM2("flush");

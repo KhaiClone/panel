@@ -91,8 +91,7 @@ async function seedAdminUser() {
 
         // NOTE: bots with no nodeId (or the legacy "local") are resolved at read
         // time by nodeService.resolveNodeId → PANEL_NODE_ID. Deliberately NOT
-        // rewritten here: a startup migration would fight scripts/migrate-local-node.js
-        // and would write to the DB on every boot.
+        // rewritten here: a startup migration would write to the DB on every boot.
     } catch (err) {
         console.error("[Server] Seed error:", err.message);
     }

@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const execAsync = util.promisify(exec);
 
-// Port of the panel's nginxService for the agent VPS. Works both as root
+// nginx vhost management, owned entirely by the agent. Works both as root
 // (nothing prefixed) and as a regular user with passwordless sudo (every
 // privileged command/file move goes through sudo).
 

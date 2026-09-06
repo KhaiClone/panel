@@ -3,7 +3,7 @@ const util = require("util");
 const net = require("net");
 const execAsync = util.promisify(exec);
 
-// Port of the panel's ufwService for the agent VPS. Works as root (no
+// UFW management, owned entirely by the agent. Works as root (no
 // prefix) or as a regular user with passwordless sudo.
 
 const IS_ROOT = typeof process.getuid === "function" && process.getuid() === 0;

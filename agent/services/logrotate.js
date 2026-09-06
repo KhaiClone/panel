@@ -6,7 +6,7 @@ const path = require("path");
 const os = require("os");
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  pm2-logrotate management — port of the panel's logrotateService.
+//  pm2-logrotate management, owned entirely by the agent.
 //
 //  Lets the panel install and configure the pm2-logrotate module on any node so
 //  PM2 logs can never fill a disk. A 2.9G pm2.log once filled a disk here and
