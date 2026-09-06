@@ -683,10 +683,14 @@ export default function ProxiesPage() {
         mark(p._id, { testing: true, msg: null });
         try {
             const { data } = await api.post(`/proxies/${p._id}/test`);
+            const parts = [
+                data.ip || "IP unreadable",
+                data.reachable ? `Discord ${data.reachMs}ms` : "Discord unreachable",
+            ];
             mark(p._id, {
                 testing: false,
                 ok: data.ok,
-                msg: data.ok ? `${data.ip} · ${data.latencyMs}ms` : data.error,
+                msg: data.ok ? parts.join(" · ") : data.error,
             });
             load();
         } catch (e) {

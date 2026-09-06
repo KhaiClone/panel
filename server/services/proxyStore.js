@@ -31,8 +31,23 @@ const MODEL = "proxies";
 const PROTOCOLS = ["http", "https", "socks4", "socks5"];
 const KNOWN_USES = ["quest"];
 
-// Where a health check asks "what IP am I coming from?".
-const IP_CHECK_URL = process.env.PROXY_IP_CHECK_URL || "https://api.ipify.org?format=json";
+// Where a health check asks "what IP am I coming from?". Several, tried in order:
+// a residential/rotating proxy can be fine for the traffic you care about while one
+// particular echo service stalls behind it, and reporting that as "proxy dead" sends
+// you debugging the wrong thing. Ordered by measured latency through a real proxy.
+// PROXY_IP_CHECK_URL overrides the list with a single endpoint.
+const IP_CHECK_URLS = process.env.PROXY_IP_CHECK_URL
+    ? [process.env.PROXY_IP_CHECK_URL]
+    : [
+          "https://ipv4.icanhazip.com",
+          "https://checkip.amazonaws.com",
+          "https://ipinfo.io/ip",
+          "https://api.ipify.org?format=json",
+      ];
+
+// What the pool actually exists to reach. A proxy that answers this is usable even
+// when every IP echo above is having a bad day.
+const REACH_CHECK_URL = "https://discord.com/api/v9/experiments";
 
 /** Credentials are encrypted at rest with the same secret as quest tokens. */
 function _secret() {
@@ -239,27 +254,41 @@ function buildAgent(rec) {
     return rec.protocol.startsWith("socks") ? new SocksProxyAgent(url) : new HttpsProxyAgent(url);
 }
 
-/** Ask an IP echo service what IP this proxy egresses from. Records the result. */
+const ATTEMPT_TIMEOUT_MS = 12_000;
+
+/**
+ * Health check: what IP does this proxy egress from, and can it reach Discord?
+ *
+ * The two questions are answered separately on purpose. Reachability is what the
+ * pool is for; the exit IP is a nicety that depends on third-party echo services,
+ * any of which can stall behind a residential proxy. A proxy that reaches Discord
+ * but whose IP we could not read is a PASS, not a failure.
+ */
 async function test(id) {
     const rec = await get(id);
     if (!rec) throw _err("Không tìm thấy proxy.", 404);
     const started = Date.now();
-    try {
-        const res = await axios.get(IP_CHECK_URL, {
-            httpsAgent: buildAgent(rec),
-            proxy: false,
-            timeout: 20_000,
-        });
-        const ip = res.data?.ip || (typeof res.data === "string" ? res.data.trim() : null);
-        await _touch(id, {
-            lastCheckedAt: Date.now(),
-            lastIp: ip,
-            lastError: null,
-            failCount: 0,
-        });
-        return { ok: true, ip, latencyMs: Date.now() - started };
-    } catch (err) {
-        const message = _explain(err);
+
+    let ip = null;
+    let lastErr = null;
+    for (const url of IP_CHECK_URLS) {
+        try {
+            const res = await axios.get(url, {
+                httpsAgent: buildAgent(rec),
+                proxy: false,
+                timeout: ATTEMPT_TIMEOUT_MS,
+            });
+            ip = res.data?.ip || (typeof res.data === "string" ? res.data.trim() : null);
+            if (ip) break;
+        } catch (err) {
+            lastErr = err;
+        }
+    }
+
+    // Auth failures are conclusive — every endpoint will fail the same way, and the
+    // reachability probe would only add another 12 seconds to say so.
+    if (!ip && lastErr?.response?.status === 407) {
+        const message = _explain(lastErr);
         await _touch(id, {
             lastCheckedAt: Date.now(),
             lastError: message,
@@ -267,6 +296,48 @@ async function test(id) {
         });
         return { ok: false, error: message, latencyMs: Date.now() - started };
     }
+
+    let reachable = false;
+    let reachMs = null;
+    const reachStarted = Date.now();
+    try {
+        await axios.get(REACH_CHECK_URL, {
+            httpsAgent: buildAgent(rec),
+            proxy: false,
+            timeout: ATTEMPT_TIMEOUT_MS,
+            validateStatus: () => true,
+        });
+        reachable = true;
+        reachMs = Date.now() - reachStarted;
+    } catch (err) {
+        lastErr = lastErr || err;
+    }
+
+    if (!ip && !reachable) {
+        const message = _explain(lastErr);
+        await _touch(id, {
+            lastCheckedAt: Date.now(),
+            lastError: message,
+            failCount: (rec.failCount ?? 0) + 1,
+        });
+        return { ok: false, error: message, latencyMs: Date.now() - started };
+    }
+
+    await _touch(id, {
+        lastCheckedAt: Date.now(),
+        lastIp: ip ?? rec.lastIp ?? null,
+        lastError: null,
+        failCount: 0,
+    });
+    return {
+        ok: true,
+        ip,
+        reachable,
+        reachMs,
+        latencyMs: Date.now() - started,
+        // Say so out loud rather than showing a blank IP and letting it read as broken.
+        note: ip ? null : "Không đọc được exit IP, nhưng proxy vẫn tới được Discord.",
+    };
 }
 
 /**
