@@ -44,10 +44,10 @@ router.put("/bots/:id", async (req, res, next) => {
 
         let egressNodeId = req.body?.egressNodeId ?? "";
         egressNodeId = egressNodeId ? String(egressNodeId).trim() : "";
-        if (egressNodeId && egressNodeId !== LOCAL) {
-            // Validate the target node exists (getNode throws if it doesn't).
-            await nodeService.getNode(egressNodeId);
-        }
+        // Validate the target node exists (getNode throws if it doesn't).
+        // Every node is a real record now, the panel's own included, so there
+        // is no id that needs skipping here.
+        if (egressNodeId) await nodeService.getNode(egressNodeId);
 
         const updated = await db.findOneAndUpdate(
             "bots",

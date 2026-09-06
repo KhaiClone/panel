@@ -175,7 +175,7 @@ export default function TerminalPage() {
                     <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", margin: "0 0 4px" }}>Terminal</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
                         Shell on <strong style={{ color: "var(--text)" }}>{selectedNode?.name || nodeId || "no node selected"}</strong>
-                        {isRemote && selectedNode?.host ? ` — ${selectedNode.host}` : ""}
+                        {selectedNode?.host ? ` — ${selectedNode.host}` : ""}
                     </p>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

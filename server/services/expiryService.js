@@ -124,10 +124,21 @@ const start = () => {
     // Every hour at minute 0
     cron.schedule("0 * * * *", checkExpiry);
     
-    // Auto remove hosting logs every 3 days (midnight on every 3rd day)
+    // Auto remove hosting logs every 3 days (midnight on every 3rd day).
+    // The panel runs no pm2 of its own, so this asks every node's agent to
+    // flush; one unreachable node must not stop the others.
     cron.schedule("0 0 */3 * *", async () => {
         console.log("[Logs] Auto flushing PM2 hosting logs (3-day cycle)...");
-        await flushLogs();
+        const nodeService = require("./nodeService");
+        const nodes = await nodeService.getNodes();
+        for (const n of nodes.filter((x) => x.enabled !== false)) {
+            try {
+                await executor.flushAllLogsOn(n._id);
+                console.log(`[Logs] Flushed on "${n.name}"`);
+            } catch (err) {
+                console.error(`[Logs] Flush failed on "${n.name}": ${err.message}`);
+            }
+        }
     });
 
     console.log("[Expiry] Expiry service started — runs every hour");
