@@ -63,6 +63,7 @@ const getNavSections = (isAdmin) => {
         id: "system",
         label: "Admin",
         items: [
+            { to: "/systems",      label: "Systems",  icon: I.nodes },
             { to: "/system",       label: "Monitor",  icon: I.system },
             { to: "/terminal",     label: "Terminal", icon: I.terminal },
             { to: "/nodes",        label: "Nodes",    icon: I.nodes },

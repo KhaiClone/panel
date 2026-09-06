@@ -3,6 +3,7 @@ const router = express.Router();
 
 const db = require("../db");
 const nodeService = require("../services/nodeService");
+const history = require("../services/historyService");
 
 // Mounted behind authMiddleware + adminOnly (see index.js).
 
@@ -25,6 +26,19 @@ router.get("/", async (req, res, next) => {
         }));
 
         res.json(withCounts);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /api/nodes/history?range=1h|6h|24h|7d|30d
+ * Every node's series in one request, shaped for the sparklines in the systems
+ * list. Declared before "/:id/..." so "history" is not read as a node id.
+ */
+router.get("/history", (req, res, next) => {
+    try {
+        res.json(history.allNodesHistory(req.query.range));
     } catch (err) {
         next(err);
     }
@@ -232,6 +246,19 @@ router.post("/:id/update-agent", withNode(async (node, req, res) => {
  * POST /api/nodes/:id/test
  * Live connection + stats check.
  */
+/**
+ * GET /api/nodes/:id/bots-history?range=...
+ * CPU/memory history of every bot running on this node — the breakdown of who
+ * is actually consuming the machine.
+ */
+router.get("/:id/bots-history", async (req, res, next) => {
+    try {
+        res.json(history.nodeBotsHistory(nodeService.resolveNodeId(req.params.id), req.query.range));
+    } catch (err) {
+        next(err);
+    }
+});
+
 router.post("/:id/test", async (req, res, next) => {
     try {
         const node = await db.findOne("nodes", { _id: req.params.id });

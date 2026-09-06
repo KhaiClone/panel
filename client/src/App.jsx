@@ -4,6 +4,7 @@ import { NodeProvider } from "./context/NodeContext";
 import { DataProvider } from "./context/DataContext";
 import Login from "./pages/Login";
 import OverviewPage from "./pages/OverviewPage";
+import SystemsPage from "./pages/SystemsPage";
 import Dashboard from "./pages/Dashboard";
 import SitesPage from "./pages/SitesPage";
 import DomainsPage from "./pages/DomainsPage";
@@ -69,6 +70,7 @@ export default function App() {
                             {/* Admin-only routes */}
                             <Route path="panel-manage"  element={<AdminRoute><PanelManage /></AdminRoute>} />
                             <Route path="proxy"         element={<AdminRoute><ProxyPage /></AdminRoute>} />
+                            <Route path="systems"      element={<AdminRoute><SystemsPage /></AdminRoute>} />
                             <Route path="system"        element={<AdminRoute><SystemPage /></AdminRoute>} />
                             <Route path="terminal"      element={<AdminRoute><TerminalPage /></AdminRoute>} />
                             <Route path="nodes"         element={<AdminRoute><NodesPage /></AdminRoute>} />

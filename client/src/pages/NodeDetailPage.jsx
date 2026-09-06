@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import NodeMetrics from "../components/NodeMetrics";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import { useData } from "../context/DataContext";
@@ -68,6 +69,7 @@ export default function NodeDetailPage() {
     const [actionMsg, setActionMsg] = useState("");
     const [confirmAction, setConfirmAction] = useState(null);
     const [error, setError] = useState("");
+    const [tab, setTab] = useState("Metrics");
 
     const nodeBots = bots.filter((b) => nodeKey(b) === id);
 
@@ -183,6 +185,18 @@ export default function NodeDetailPage() {
                 <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13, whiteSpace: "pre-wrap" }}>{actionMsg}</div>
             )}
 
+            <div className="tab-bar" style={{ display: "inline-flex" }}>
+                {["Metrics", "Manage"].map((t) => (
+                    <button key={t} className={`tab-item ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
+                        {t}
+                    </button>
+                ))}
+            </div>
+
+            {tab === "Metrics" && <NodeMetrics nodeId={id} bots={nodeBots} />}
+
+            {tab === "Manage" && (
+            <>
             {/* Resource rings */}
             <div className="card" style={{ padding: "26px 28px" }}>
                 <h2 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 22px" }}>Resources</h2>
@@ -276,6 +290,8 @@ export default function NodeDetailPage() {
                     onConfirm={doUpdate}
                     onCancel={() => setConfirmAction(null)}
                 />
+            )}
+        </>
             )}
         </div>
     );

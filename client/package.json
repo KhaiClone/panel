@@ -39,7 +39,8 @@
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "react-router-dom": "^6.22.0",
-        "sql.js": "^1.14.1"
+        "sql.js": "^1.14.1",
+        "uplot": "^1.6.32"
     },
     "devDependencies": {
         "@types/react": "^18.2.0",

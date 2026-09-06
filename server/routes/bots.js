@@ -5,6 +5,7 @@ const router = express.Router();
 // is relayed to the agent on the project's node (see services/executor.js).
 const db = require("../db");
 const executor = require("../services/executor");
+const history = require("../services/historyService");
 const schedulerService = require("../services/schedulerService");
 const nodeService = require("../services/nodeService");
 const { createNotification } = require("./notifications");
@@ -286,6 +287,22 @@ router.get("/:id", requireOwnership, async (req, res, next) => {
             nodeName = node?.name || "unknown node";
         } catch { /* PANEL_NODE_ID unset */ }
         res.json({ ...bot, live, nodeName });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /api/bots/:id/history?range=1h|6h|24h|7d|30d
+ * This bot's own CPU/memory history, recorded by samplerService from the PM2
+ * numbers on its node. `up` is 1 for each sample where the process was online,
+ * so a stopped stretch reads as a real gap in the chart instead of as 0% load.
+ */
+router.get("/:id/history", requireOwnership, async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+        res.json(history.botHistory(bot._id, req.query.range));
     } catch (err) {
         next(err);
     }

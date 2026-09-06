@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import BotMetrics from "../components/BotMetrics";
 import api from '../api/client';
 import LogViewer from '../components/LogViewer';
 import EnvEditor from '../components/EnvEditor';
@@ -118,7 +119,7 @@ const BtnSpinner = () => (
     <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
 );
 
-const TABS = ['Manage', 'Resources', 'Logs', 'Environment', 'Files'];
+const TABS = ['Manage', 'Resources', 'Metrics', 'Logs', 'Environment', 'Files'];
 
 // ── Website Panel ───────────────────────────────────────────────────────────
 function WebsitePanel({ bot, onRefresh }) {
@@ -954,6 +955,11 @@ export default function BotDetail() {
                             </div>
                         </div>
                     </div>
+                )}
+
+                {/* Metrics Tab — this project's own CPU/memory history */}
+                {tab === 'Metrics' && (
+                    <BotMetrics botId={bot._id} maxMemory={bot.maxMemory} />
                 )}
 
                 {/* Logs Tab */}
