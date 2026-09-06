@@ -216,6 +216,11 @@ const rollupOne = db.transaction((name, stmt, from, to) => {
     setState.run(name, to);
 });
 
+const oldestRaw = {
+    samples_5m: db.prepare("SELECT MIN(ts) m FROM samples"),
+    bot_samples_5m: db.prepare("SELECT MIN(ts) m FROM bot_samples"),
+};
+
 /** Aggregate everything up to the last completed bucket. Safe to run often. */
 const rollup = () => {
     const now = Date.now();
@@ -226,8 +231,11 @@ const rollup = () => {
     ];
     let done = 0;
     for (const [name, stmt] of jobs) {
-        // First run has no state: start one raw-retention back, not at epoch.
-        const from = getState.get(name)?.last_ts ?? now - RAW_RETENTION_MS;
+        // First run has no state, so it must start at the OLDEST raw row rather
+        // than one retention window back. Starting later would leave everything
+        // before that point unaggregated, and prune would then be free to delete
+        // it — which is exactly how four days of history were lost once.
+        const from = getState.get(name)?.last_ts ?? (oldestRaw[name].get().m ?? upTo);
         if (from >= upTo) continue;
         rollupOne(name, stmt, from, upTo);
         done++;

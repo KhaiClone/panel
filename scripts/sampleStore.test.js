@@ -113,6 +113,19 @@ ok("history older than raw retention still resolves from the rollup", () => {
     assert.ok(rows.length > 500, `got ${rows.length}`);
     assert.ok(Math.abs(rows[0].cpu - 50) < 0.001);
 });
+ok("REGRESSION: the first rollup starts at the OLDEST raw row, not one retention back", () => {
+    // The original implementation began at now - RAW_RETENTION, so anything older
+    // was never aggregated — and prune then deleted it. Four days of real history
+    // were lost that way. The rollup must reach back to the very first sample.
+    const rows = store.queryNode("n1", now - 5 * DAY);
+    const oldest = rows[0].ts;
+    const seededFrom = now - 4 * DAY;
+    assert.ok(
+        oldest - seededFrom < 2 * store.ROLLUP_BUCKET_MS,
+        `rollup only reaches back to ${new Date(oldest).toISOString()}, ` +
+            `but data was seeded from ${new Date(seededFrom).toISOString()}`,
+    );
+});
 
 console.log("\nhistoryService — columnar output, capped point count");
 ok("nodeHistory returns parallel arrays", () => {
