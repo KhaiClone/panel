@@ -77,9 +77,19 @@ export default function TerminalPage() {
         const fit = fitRef.current;
         if (!term) return;
 
+        // NodeContext starts with no selection and settles once /nodes returns.
+        // Connecting before that would send node=null, which the server rightly
+        // refuses — wait for a real id and let this effect re-run instead.
+        if (!nodeId) {
+            setStatus("connecting");
+            term.reset();
+            term.writeln(`\x1b[90mWaiting for a node…\x1b[0m`);
+            return;
+        }
+
         setStatus("connecting");
         term.reset();
-        term.writeln(`\x1b[90mConnecting to ${selectedNode?.name || nodeId || "no node selected"}…\x1b[0m`);
+        term.writeln(`\x1b[90mConnecting to ${selectedNode?.name || nodeId}…\x1b[0m`);
 
         const token = localStorage.getItem("token");
         const proto = window.location.protocol === "https:" ? "wss" : "ws";

@@ -25,7 +25,32 @@ const getPanelPM2Name = async () => {
     return data.pm2Name;
 };
 
-const getPanelStatus = () => call("get", "/self/panel-status", { timeout: 15_000 });
+/**
+ * Panel status in the shape the Panel page has always consumed:
+ * { env, git, pm2 }. The agent reports flat fields, so the reshaping happens
+ * here rather than in the route — the API contract must not shift just because
+ * the work moved from an exec to an HTTP call.
+ */
+const getPanelStatus = async () => {
+    const d = await call("get", "/self/panel-status", { timeout: 15_000 });
+    return {
+        env: {
+            version: d.version || "?",
+            // NODE_ENV belongs to this process, not to the agent's.
+            isDev: process.env.NODE_ENV === "development",
+        },
+        git: { commitHash: d.commit || null, branch: d.branch || null },
+        pm2: {
+            name: d.pm2Name,
+            status: d.status || "unknown",
+            monit: { cpu: d.cpu ?? 0, memory: d.memory ?? 0 },
+            pm_uptime: d.uptime ?? null,
+            restarts: d.restarts ?? 0,
+            pm_id: null,
+        },
+        panelDir: d.panelDir,
+    };
+};
 
 const getPanelLogs = async (lines = 100) => {
     const data = await call("get", "/self/panel-logs", { params: { lines }, timeout: 30_000 });

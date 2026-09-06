@@ -173,8 +173,24 @@ const requirePanelDir = (req, res, next) => {
  */
 router.get("/panel-status", requirePanelDir, async (req, res, next) => {
     try {
+        // Version and commit describe the PANEL's checkout, which is not the
+        // same thing as this agent's own repo — read both from PANEL_DIR.
+        let version = null;
+        try {
+            version = JSON.parse(fs.readFileSync(path.join(PANEL_DIR, "package.json"), "utf8")).version || null;
+        } catch { /* no package.json — leave null */ }
+
+        let commit = null;
+        let branch = null;
+        try {
+            const { stdout: c } = await execAsync(`git -C "${PANEL_DIR}" rev-parse HEAD`, { timeout: 10_000 });
+            const { stdout: b } = await execAsync(`git -C "${PANEL_DIR}" rev-parse --abbrev-ref HEAD`, { timeout: 10_000 });
+            commit = c.trim();
+            branch = b.trim();
+        } catch { /* not a git checkout */ }
+
         const live = await getBotStatus(PANEL_PM2_NAME);
-        res.json({ pm2Name: PANEL_PM2_NAME, panelDir: PANEL_DIR, ...live });
+        res.json({ pm2Name: PANEL_PM2_NAME, panelDir: PANEL_DIR, version, commit, branch, ...live });
     } catch (err) {
         next(err);
     }
