@@ -12,7 +12,6 @@ import BotDetail from "./pages/BotDetail";
 import GroupsPage from "./pages/GroupsPage";
 import MultiManage from "./pages/MultiManage";
 import PanelManage from "./pages/PanelManage";
-import SystemPage from "./pages/SystemPage";
 import TerminalPage from "./pages/TerminalPage";
 import ProxyPage from "./pages/ProxyPage";
 import TagsPage from "./pages/TagsPage";
@@ -71,7 +70,9 @@ export default function App() {
                             <Route path="panel-manage"  element={<AdminRoute><PanelManage /></AdminRoute>} />
                             <Route path="proxy"         element={<AdminRoute><ProxyPage /></AdminRoute>} />
                             <Route path="systems"      element={<AdminRoute><SystemsPage /></AdminRoute>} />
-                            <Route path="system"        element={<AdminRoute><SystemPage /></AdminRoute>} />
+                            {/* /system was the single-node monitor; /systems + a node's
+                                Metrics tab replace it. Redirect so old links still land. */}
+                            <Route path="system"        element={<Navigate to="/systems" replace />} />
                             <Route path="terminal"      element={<AdminRoute><TerminalPage /></AdminRoute>} />
                             <Route path="nodes"         element={<AdminRoute><NodesPage /></AdminRoute>} />
                             <Route path="nodes/:id"     element={<AdminRoute><NodeDetailPage /></AdminRoute>} />

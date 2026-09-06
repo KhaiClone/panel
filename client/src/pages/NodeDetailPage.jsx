@@ -3,8 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import NodeMetrics from "../components/NodeMetrics";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
-import { useData } from "../context/DataContext";
-import { nodeKey } from "../components/NodeFilter";
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -57,7 +55,10 @@ const PROC_STATUS_COLOR = { online: "var(--success)", stopped: "var(--danger)", 
 export default function NodeDetailPage() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { bots } = useData();
+    // Bots are fetched for THIS node explicitly rather than read from
+    // DataContext: that list is scoped by the header switcher, so viewing
+    // node A while opening node B's page would show an empty B.
+    const [bots, setBots] = useState([]);
 
     const [node, setNode] = useState(null);       // from /api/nodes list
     const [info, setInfo] = useState(null);        // /self/info
@@ -71,7 +72,7 @@ export default function NodeDetailPage() {
     const [error, setError] = useState("");
     const [tab, setTab] = useState("Metrics");
 
-    const nodeBots = bots.filter((b) => nodeKey(b) === id);
+    const nodeBots = bots;
 
     const fetchAll = useCallback(async () => {
         try {
@@ -85,6 +86,13 @@ export default function NodeDetailPage() {
         api.get(`/nodes/${id}/info`).then((r) => { setInfo(r.data); setError(""); })
             .catch((e) => setError(e.response?.data?.error || "Agent unreachable"));
         api.get(`/nodes/${id}/processes`).then((r) => setProcesses(r.data.processes || [])).catch(() => {});
+
+        // Pin the request to THIS node. The axios interceptor only fills in
+        // X-Panel-Node when it is absent, so passing it explicitly overrides
+        // whatever the header switcher is currently pointing at.
+        api.get("/bots", { headers: { "X-Panel-Node": id } })
+            .then((r) => setBots(r.data))
+            .catch(() => setBots([]));
     }, [id]);
 
     const fetchLogs = useCallback(() => {
@@ -236,7 +244,8 @@ export default function NodeDetailPage() {
                     <div style={{ maxHeight: 420, overflowY: "auto" }}>
                         {processes.map((p) => {
                             const st = p.pm2_env?.status;
-                            const managed = bots.find((b) => b.pm2Name === p.name && nodeKey(b) === id);
+                            // `bots` is already scoped to this node, so matching on pm2Name is enough.
+                            const managed = bots.find((b) => b.pm2Name === p.name);
                             return (
                                 <div key={p.pm_id}
                                     onClick={managed ? () => navigate(`/${managed.projectType === "website" ? "sites" : "bots"}/${managed._id}`) : undefined}
