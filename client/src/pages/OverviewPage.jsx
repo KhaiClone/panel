@@ -2,84 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useAuth } from "../context/AuthContext";
-import { useNode } from "../context/NodeContext";
 import api from "../api/client";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const fmtBytes = (b) => {
-    if (!b && b !== 0) return "—";
-    if (b >= 1_073_741_824) return `${(b / 1_073_741_824).toFixed(1)} GB`;
-    if (b >= 1_048_576)     return `${(b / 1_048_576).toFixed(0)} MB`;
-    if (b >= 1_024)         return `${(b / 1_024).toFixed(0)} KB`;
-    return `${b} B/s`;
-};
-const clamp = (v) => Number.isFinite(v) ? Math.min(Math.max(Math.round(v), 0), 100) : 0;
-
-// ── Sub-components ─────────────────────────────────────────────────────────
-function RingMeter({ percent, color, label, sub, size = 110 }) {
-    const pct = clamp(percent);
-    const r = (size / 2) - 10;
-    const circ = 2 * Math.PI * r;
-    const offset = circ - (pct / 100) * circ;
-
-    return (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-            <div style={{ position: "relative", width: size, height: size }}>
-                <svg width={size} height={size} style={{ transform: "rotate(-90deg)", filter: `drop-shadow(0 0 8px ${color}40)` }}>
-                    <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bg-input)" strokeWidth="9" />
-                    <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="9"
-                        strokeLinecap="round"
-                        style={{ strokeDasharray: circ, strokeDashoffset: offset, transition: "stroke-dashoffset 0.8s ease" }} />
-                </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", lineHeight: 1 }}>{pct}<span style={{ fontSize: 12 }}>%</span></span>
-                </div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{label}</p>
-                <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>{sub}</p>
-            </div>
-        </div>
-    );
-}
-
-function StatCard({ icon, label, value, sub, color = "var(--accent)", onClick }) {
-    return (
-        <div className="card card-hover" onClick={onClick}
-            style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 12, cursor: onClick ? "pointer" : "default", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: -20, right: -10, width: 80, height: 80, background: color, opacity: 0.06, filter: "blur(20px)", borderRadius: "50%", pointerEvents: "none" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</span>
-                <span style={{ fontSize: 20, color }}>{icon}</span>
-            </div>
-            <p style={{ fontSize: 32, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1 }}>{value}</p>
-            {sub && <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>{sub}</p>}
-        </div>
-    );
-}
-
-function DomainRow({ item }) {
-    const navigate = useNavigate();
-    return (
-        <div
-            onClick={() => navigate(`/bots/${item._id}`)}
-            style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", borderBottom: "1px solid var(--border-light)", cursor: "pointer", transition: "background 0.15s" }}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-        >
-            <span style={{ fontSize: 16 }}>🌐</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <p className="mono" style={{ margin: 0, fontSize: 13, color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.domain}</p>
-                <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)" }}>{item.name} · port {item.port}</p>
-            </div>
-            {item.sslEnabled
-                ? <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)", fontWeight: 700 }}>🔒 SSL</span>
-                : <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "rgba(245,158,11,0.1)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.25)", fontWeight: 700 }}>HTTP</span>
-            }
-        </div>
-    );
-}
-
 const TYPE_META = {
     discord: { icon: "🤖", label: "Discord Bot", color: "#5865F2" },
     website: { icon: "🌐", label: "Website",     color: "#22c55e" },
@@ -89,12 +14,11 @@ const TYPE_META = {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function OverviewPage() {
-    // bots + stats already come scoped to the globally-selected node (the ⬡
-    // switcher in the header) — the server filters /bots and /system/stats by
-    // the X-Panel-Node header, so no per-page node filter is needed here.
-    const { stats, bots } = useData();
+    // Only regular users reach this page — admins are routed to /systems, which
+    // covers machine health far better than a single ring ever did. What is left
+    // here is what /systems cannot show: this user's own slot, quota and projects.
+    const { bots } = useData();
     const { isAdmin } = useAuth();
-    const { isRemote, selectedNode } = useNode();
     const [domains, setDomains] = useState([]);
     const [myInfo, setMyInfo] = useState(null); // slot + usage for regular users
     const navigate = useNavigate();
@@ -115,28 +39,15 @@ export default function OverviewPage() {
         return acc;
     }, {});
 
-    // Resource rings show the selected node's stats (already routed through the
-    // global switcher via /system/stats).
-    const effStats = stats;
-
-    const cpu  = effStats?.cpu;
-    const mem  = effStats?.memory;
-    const disk = effStats?.disk;
-    const net  = effStats?.network;
-
-    const cpuColor  = !cpu  ? "var(--accent)" : cpu.usagePercent  > 80 ? "var(--danger)" : cpu.usagePercent  > 50 ? "var(--warning)" : "var(--success)";
-    const memColor  = !mem  ? "#60A5FA"       : mem.usedPercent   > 85 ? "var(--danger)" : mem.usedPercent   > 65 ? "var(--warning)" : "#60A5FA";
-    const diskColor = !disk ? "#a78bfa"       : disk.usedPercent  > 90 ? "var(--danger)" : disk.usedPercent  > 75 ? "var(--warning)" : "#a78bfa";
-
     return (
         <div className="page fade-in" style={{ maxWidth: 1200 }}>
 
             {/* ── Page title ── */}
             <div className="mobile-wrap" style={{ marginBottom: 28, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                 <div>
-                    <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Server Overview</h1>
+                    <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>Overview</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
-                        Real-time health and resource summary of node "{selectedNode?.name || "?"}"
+                        Your slot, your projects and their domains.
                     </p>
                 </div>
             </div>
@@ -181,38 +92,6 @@ export default function OverviewPage() {
                 <div className="card" style={{ padding: "12px 16px", marginBottom: 20, borderLeft: "3px solid var(--warning)" }}>
                     <p style={{ margin: 0, fontSize: 13, color: "var(--warning)" }}>No slot assigned to your account yet. Contact the administrator.</p>
                 </div>
-            )}
-
-            {/* ── VPS Resource rings (admin only) ── */}
-            {isAdmin && (
-            <div className="card" style={{ padding: "28px 32px", marginBottom: 24 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-                    <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>
-                        VPS Resources{selectedNode ? ` — ⬡ ${selectedNode.name}` : ""}
-                    </h2>
-                    {cpu?.model && <span style={{ fontSize: 12, color: "var(--text-dim)", fontFamily: "monospace" }}>{cpu.model}</span>}
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 32, justifyItems: "center" }}>
-                    <RingMeter percent={cpu?.usagePercent}  color={cpuColor}  label="CPU"  sub={cpu?.temperature ? `${cpu.temperature}°C` : "Usage"} />
-                    <RingMeter percent={mem?.usedPercent}   color={memColor}  label="RAM"  sub={mem ? `${fmtBytes(mem.usedBytes)} / ${fmtBytes(mem.totalBytes)}` : "Memory"} />
-                    <RingMeter percent={disk?.usedPercent}  color={diskColor} label="Disk" sub={disk ? `${fmtBytes(disk.usedBytes)} / ${fmtBytes(disk.totalBytes)}` : "Storage"} />
-
-                    {/* Network card */}
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                        <div style={{ width: 110, height: 110, borderRadius: 16, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                            <div style={{ textAlign: "center" }}>
-                                <p style={{ margin: 0, fontSize: 11, color: "#34d399", fontWeight: 600 }}>↓ {net ? fmtBytes(net.rxBytesPerSec) + "/s" : "—"}</p>
-                                <p style={{ margin: "4px 0 0", fontSize: 11, color: "#60a5fa", fontWeight: 600 }}>↑ {net ? fmtBytes(net.txBytesPerSec) + "/s" : "—"}</p>
-                            </div>
-                        </div>
-                        <div style={{ textAlign: "center" }}>
-                            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Network</p>
-                            <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>{net?.iface || "I/O"}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
             )}
 
             {/* ── Instance summary ── */}

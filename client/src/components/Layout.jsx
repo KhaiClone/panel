@@ -34,7 +34,11 @@ const getNavSections = (isAdmin) => {
         id: "main",
         label: "Main",
         items: [
-            { to: "/overview", label: "Overview", icon: I.overview },
+            // Admins have no use for the personal overview — the fleet view is
+            // their home. Regular users cannot reach /systems at all.
+            isAdmin
+                ? { to: "/systems",  label: "Systems",  icon: I.system }
+                : { to: "/overview", label: "Overview", icon: I.overview },
             { to: "/bots",     label: "Bots",     icon: I.bots },
             { to: "/sites",    label: "Sites",    icon: I.sites },
             { to: "/domains",  label: "Domains",  icon: I.domains },
@@ -63,7 +67,6 @@ const getNavSections = (isAdmin) => {
         id: "system",
         label: "Admin",
         items: [
-            { to: "/systems",      label: "Systems",  icon: I.system },
             { to: "/terminal",     label: "Terminal", icon: I.terminal },
             { to: "/orders",       label: "Orders",   icon: I.orders },
             { to: "/decors",       label: "Decors",   icon: I.decors },

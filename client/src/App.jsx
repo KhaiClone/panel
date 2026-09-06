@@ -38,6 +38,29 @@ function PrivateRoute({ children }) {
     return user ? children : <Navigate to="/login" replace />;
 }
 
+/**
+ * Where "home" is depends on who you are. Admins land on the fleet view;
+ * regular users have no access to it, so they land on their own overview
+ * (slot, quota, projects). Everything that used to point at /overview points
+ * here instead — sending admins to /overview and bouncing them onward would
+ * flash the wrong page, and pointing everyone at /systems would bounce a
+ * regular user back into a redirect loop.
+ */
+/** /overview: admins are sent to the fleet view, everyone else sees the page. */
+function OverviewHome() {
+    const { user, loading } = useAuth();
+    if (loading) return <Spinner />;
+    if (user?.role === "admin") return <Navigate to="/systems" replace />;
+    return <OverviewPage />;
+}
+
+function Home() {
+    const { user, loading } = useAuth();
+    if (loading) return <Spinner />;
+    if (!user) return <Navigate to="/login" replace />;
+    return <Navigate to={user.role === "admin" ? "/systems" : "/overview"} replace />;
+}
+
 function AdminRoute({ children }) {
     const { user, loading } = useAuth();
     if (loading) return <Spinner />;
@@ -55,8 +78,10 @@ export default function App() {
                     <Routes>
                         <Route path="/login" element={<Login />} />
                         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-                            <Route index element={<Navigate to="/overview" replace />} />
-                            <Route path="overview"      element={<OverviewPage />} />
+                            <Route index element={<Home />} />
+                            {/* Admins get the fleet view; the overview page exists for
+                                regular users, whose slot and quota live only here. */}
+                            <Route path="overview"      element={<OverviewHome />} />
                             <Route path="bots"          element={<Dashboard />} />
                             <Route path="bots/:id"      element={<BotDetail />} />
                             <Route path="sites"         element={<SitesPage />} />
@@ -85,7 +110,7 @@ export default function App() {
                             {/* Legacy redirect */}
                             <Route path="dashboard"     element={<Navigate to="/bots" replace />} />
                         </Route>
-                        <Route path="*" element={<Navigate to="/overview" replace />} />
+                        <Route path="*" element={<Home />} />
                     </Routes>
                 </BrowserRouter>
             </DataProvider>
