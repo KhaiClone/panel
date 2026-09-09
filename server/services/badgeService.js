@@ -46,6 +46,11 @@ const ACCOUNTS = "badge_accounts";
 // xong. Cần đối chứng lúc tranh chấp thì bấm "Xác minh ngay" ở trang /badges;
 // verifyOrder() vẫn còn nguyên, chỉ không còn ai gọi tự động.
 
+// Sớm hơn mốc này thì badge tiered chắc chắn chưa lên, nên xác minh chỉ đọc ra
+// số cũ. 20h (badge thực đo được lên sau ~21-24h) — dưới ngưỡng này nút "Xác
+// minh ngay" chỉ báo cáo, không chấm đơn là hỏng.
+const EARLY_VERIFY_MS = 20 * 60 * 60_000;
+
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
 
@@ -679,6 +684,19 @@ async function verifyOrder(orderId) {
     const badge = read.badges[order.badgeKey];
     const value = badge?.value ?? 0;
     const ok = value >= order.threshold;
+
+    // Badge tiered cần ~1 ngày để Discord dựng lại. Xác minh sớm hơn thì CHẮC
+    // CHẮN đọc ra số cũ — chấm là "thất bại" lúc đó vừa sai, vừa hạ trạng thái
+    // đơn đang tốt, vừa bắn cho khách một cái DM báo động vô cớ. Chưa tới giờ
+    // thì chỉ báo lại cho admin, không đụng vào status và không webhook.
+    const age = Date.now() - (order.sentAt ?? order.createdAt ?? Date.now());
+    if (!ok && age < EARLY_VERIFY_MS) {
+        const hoursLeft = Math.ceil((EARLY_VERIFY_MS - age) / 3_600_000);
+        await _patch(orderId, {
+            error: `Chưa tới lúc xác minh — Discord cần ~1 ngày, thử lại sau ~${hoursLeft} giờ (đang đọc ${value}/${order.threshold} ${order.unit})`,
+        });
+        return _shape(await _get(orderId));
+    }
 
     await _patch(orderId, {
         status: ok ? "verified" : "verify_failed",
