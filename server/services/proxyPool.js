@@ -41,6 +41,13 @@ const DEFAULTS = {
         // "nodes"  → the reverse. "mixed" → one flat pool, sticky across both.
         priority: "custom",
     },
+    // Auto Badge. Sending /science events is short (seconds), so a lease is held
+    // only for the length of one order — unlike quest, which holds one for hours.
+    badge: {
+        useNodes: true,
+        useCustomProxies: true,
+        priority: "custom",
+    },
 };
 
 // ── Settings ─────────────────────────────────────────────────────────────────────

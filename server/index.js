@@ -22,6 +22,10 @@ const shopOrderRoutes = require("./routes/shopOrders");
 const decorRoutes = require("./routes/decors");
 const questRoutes = require("./routes/quests");
 const questExternalRoutes = require("./routes/questsExternal");
+const pricingRoutes = require("./routes/pricing");
+const pricingExternalRoutes = require("./routes/pricingExternal");
+const badgeRoutes = require("./routes/badges");
+const badgeExternalRoutes = require("./routes/badgesExternal");
 const { authMiddleware } = require("./middleware/auth");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
 const nodeContext = require("./middleware/nodeContext");
@@ -35,6 +39,7 @@ const samplerService = require("./services/samplerService");
 const proxyStore = require("./services/proxyStore");
 const questService = require("./services/questService");
 const questMonthly = require("./services/questMonthly");
+const badgeService = require("./services/badgeService");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Validate critical env vars on startup
@@ -94,6 +99,8 @@ app.use("/api/proxy", authMiddleware, proxyRoutes);
 // /api/proxy pins a bot's IP to a VPS; /api/proxies is the panel's own egress pool.
 app.use("/api/proxies", authMiddleware, proxiesRoutes);
 app.use("/api/external/quests", apiKeyMiddleware, questExternalRoutes);
+app.use("/api/external/pricing", apiKeyMiddleware, pricingExternalRoutes);
+app.use("/api/external/badges", apiKeyMiddleware, badgeExternalRoutes);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -101,6 +108,8 @@ app.use("/api/nodes", authMiddleware, nodeRoutes);
 app.use("/api/shop", authMiddleware, shopOrderRoutes);
 app.use("/api/decors", authMiddleware, decorRoutes);
 app.use("/api/quests", authMiddleware, questRoutes);
+app.use("/api/pricing", authMiddleware, pricingRoutes);
+app.use("/api/badges", authMiddleware, badgeRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -142,6 +151,8 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     questService.restore().catch((e) => console.warn("[Quest] restore error:", e.message));
     // Monthly subscription schedulers (Tue/Sat run + daily enroll scan).
     questMonthly.start();
+    // Auto Badge: resume interrupted orders + the ~26h verification sweep.
+    badgeService.start();
 });
 
 // Interactive terminal (WebSocket upgrade on /api/term)
