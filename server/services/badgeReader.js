@@ -365,6 +365,27 @@ async function readProfileBadges(token, userId) {
     return res.data.badges.map((b) => b.id);
 }
 
+/**
+ * Application id của những game khách đã chơi THẬT.
+ *
+ * `/users/@me/activities/statistics/applications` là kho game-detection qua
+ * gateway — khác kho analytics nuôi badge. Nhưng khi khách chơi thật thì client
+ * bắn cả hai, nên một game xuất hiện ở đây gần như chắc chắn cũng đã được đếm
+ * vào Game Variety. Dùng để dồn giờ Game Time lên game "đã có sẵn" thay vì mở
+ * game mới.
+ *
+ * Chỉ đọc được cho CHÍNH chủ token (không đọc được của người khác), và không
+ * cần Nitro — nên miễn phí với mọi khách.
+ */
+async function readPlayedApplicationIds(token) {
+    const res = await _get("/users/@me/activities/statistics/applications", token, null);
+    if (res.status === 401 || res.status === 403) {
+        throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
+    }
+    if (res.status !== 200 || !Array.isArray(res.data)) return [];
+    return res.data.map((a) => String(a.application_id)).filter(Boolean);
+}
+
 /** Tài khoản đang ở nhà HypeSquad nào (1/2/3), hoặc null. */
 async function readHypeSquadHouse(token, userId) {
     const ids = await readProfileBadges(token, userId);
@@ -458,6 +479,7 @@ async function importEnvReader() {
 module.exports = {
     checkNitro,
     readProfileBadges,
+    readPlayedApplicationIds,
     readHypeSquadHouse,
     read,
     readSelf,

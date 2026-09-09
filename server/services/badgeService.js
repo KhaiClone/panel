@@ -132,6 +132,23 @@ async function _addClaimedGames(accountId, username, ids) {
     return merged;
 }
 
+/**
+ * Còn bao nhiêu đơn vị nữa mới chạm mốc kế tiếp của một badge.
+ *
+ * Dùng cho đơn Game Time: mỗi game mới mở ra cộng 1 vào Game Variety, và nếu
+ * cộng đủ để qua mốc thì khách được mốc đó miễn phí. Trả Infinity khi đã ở mốc
+ * cao nhất (không còn gì để mất).
+ */
+function _headroomToNextTier(badgeKey, currentValue) {
+    const tiers = pricingStore.BADGE_CATALOG[badgeKey]?.tiers ?? [];
+    const next = tiers
+        .filter((t) => Number.isFinite(t.threshold) && t.threshold > currentValue)
+        .sort((a, b) => a.threshold - b.threshold)[0];
+    if (!next) return Infinity;
+    // -1 vì chạm đúng ngưỡng là đã đạt mốc.
+    return Math.max(0, next.threshold - currentValue - 1);
+}
+
 // ── Báo giá (ArnTo-Auto gọi trước khi hiện QR) ───────────────────────────────────
 
 /**
@@ -392,6 +409,21 @@ async function _process(orderId) {
     }
 
     // ── Bước 3: lập kế hoạch + gửi ──────────────────────────────────────────────
+    // Đơn Game Time: gom thêm dữ liệu để khỏi vô tình tặng mốc Game Variety.
+    let playedGameIds = [];
+    let varietyHeadroom = Infinity;
+    if (order.badgeKey === "game_time") {
+        varietyHeadroom = _headroomToNextTier(
+            "game_variety",
+            read.badges.game_variety?.value ?? 0,
+        );
+        // Đọc bằng token của khách nên không tốn reader. Hỏng thì bỏ qua — lớp
+        // chặn cứng varietyHeadroom vẫn còn.
+        playedGameIds = await badgeReader
+            .readPlayedApplicationIds(token)
+            .catch(() => []);
+    }
+
     let plan;
     try {
         plan = await planOrder({
@@ -400,6 +432,8 @@ async function _process(orderId) {
             current: measured,
             overshoot: order.overshoot,
             claimedGameIds: await _claimedGameIds(order.accountId),
+            playedGameIds,
+            varietyHeadroom,
         });
     } catch (err) {
         await _patch(orderId, { status: "manual_review", error: err.message });
@@ -420,6 +454,12 @@ async function _process(orderId) {
             hoursPerGame: plan.hoursPerGame,
             need: plan.need,
             varietySideEffect: plan.varietySideEffect ?? 0,
+            reusedCount: plan.reusedCount ?? 0,
+            playedCount: plan.playedCount ?? 0,
+            varietyHeadroom: Number.isFinite(plan.varietyHeadroom)
+                ? plan.varietyHeadroom
+                : null,
+            crossedVarietyTier: Boolean(plan.crossedVarietyTier),
         },
         total: plan.games.length,
         sent: 0,

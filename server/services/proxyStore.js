@@ -29,7 +29,15 @@ const agentCrypto = require("./agentCrypto");
 
 const MODEL = "proxies";
 const PROTOCOLS = ["http", "https", "socks4", "socks5"];
-const KNOWN_USES = ["quest"];
+// Tính năng mà một proxy được phép phục vụ. `uses` của proxy bị lọc theo danh
+// sách này, và usable(feature) lọc lần nữa — nên thiếu tên ở đây là feature đó
+// KHÔNG BAO GIỜ nhận được proxy mua, dù proxyPool có bật useCustomProxies.
+const KNOWN_USES = ["quest", "badge"];
+
+// Proxy tạo trước khi có Auto Badge chỉ có uses: ["quest"]. Mặc định cho chúng
+// dùng luôn cả badge thì tiện, nhưng đó là quyết định của bạn chứ không phải của
+// code — nên giữ nguyên, và trang /proxies có nút gán thêm.
+const DEFAULT_USES = ["quest"];
 
 // Where a health check asks "what IP am I coming from?". Several, tried in order:
 // a residential/rotating proxy can be fine for the traffic you care about while one
@@ -97,7 +105,7 @@ function _normalize(input = {}, existing = null) {
 
     const uses = Array.isArray(input.uses)
         ? input.uses.map(String).filter((u) => KNOWN_USES.includes(u))
-        : (existing?.uses ?? ["quest"]);
+        : (existing?.uses ?? DEFAULT_USES);
 
     const body = {
         label: String(input.label ?? existing?.label ?? "").trim() || `${host}:${port}`,
@@ -119,7 +127,7 @@ function _normalize(input = {}, existing = null) {
         ),
         enabled:
             input.enabled === undefined ? existing?.enabled !== false : input.enabled !== false,
-        uses: uses.length ? uses : ["quest"],
+        uses: uses.length ? uses : DEFAULT_USES,
         note: String(input.note ?? existing?.note ?? "").trim(),
         updatedAt: Date.now(),
     };
@@ -162,7 +170,7 @@ function publicView(rec) {
         rotateMinIntervalSec: rec.rotateMinIntervalSec ?? 60,
         rotateIdleIntervalSec: rec.rotateIdleIntervalSec ?? 0,
         enabled: rec.enabled !== false,
-        uses: rec.uses ?? ["quest"],
+        uses: rec.uses ?? DEFAULT_USES,
         note: rec.note ?? "",
         lastRotatedAt: rec.lastRotatedAt ?? null,
         lastRotateError: rec.lastRotateError ?? null,
@@ -195,7 +203,7 @@ async function get(id) {
 /** Enabled proxies a given feature is allowed to use, in a stable order. */
 async function usable(feature = "quest") {
     return (await all())
-        .filter((p) => p.enabled !== false && (p.uses ?? ["quest"]).includes(feature))
+        .filter((p) => p.enabled !== false && (p.uses ?? DEFAULT_USES).includes(feature))
         .sort((a, b) => String(a._id).localeCompare(String(b._id)));
 }
 
@@ -499,6 +507,7 @@ async function bulkCreate(text, defaults = {}) {
 module.exports = {
     PROTOCOLS,
     KNOWN_USES,
+    DEFAULT_USES,
     publicView,
     list,
     get,

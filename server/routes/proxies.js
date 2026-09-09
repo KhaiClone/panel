@@ -12,7 +12,24 @@ const proxyPool = require("../services/proxyPool");
 // thing: it pins a BOT's public IP to a VPS via proxychains. This one is the pool
 // the panel itself egresses through — Auto Quest today, more features later.
 
-// ── Settings (declared before /:id so "settings" is not read as an id) ───────────
+// ── Meta + settings (declared before /:id so they are not read as an id) ─────────
+
+/**
+ * GET /api/proxies/features — tính năng nào đang dùng pool này.
+ * Trang /proxies dựng tab và ô chọn `uses` từ đây, để thêm một feature mới chỉ
+ * phải sửa proxyStore/proxyPool chứ không phải sửa cả UI.
+ */
+router.get("/features", (req, res) => {
+    res.json({
+        features: proxyStore.KNOWN_USES.map((key) => ({
+            key,
+            label: key === "quest" ? "Auto Quest" : key === "badge" ? "Auto Badge" : key,
+        })),
+        defaultUses: proxyStore.DEFAULT_USES,
+    });
+});
+
+// ── Settings ─────────────────────────────────────────────────────────────────────
 
 /** GET /api/proxies/settings/:feature — switches + what the pool looks like now */
 router.get("/settings/:feature", async (req, res, next) => {

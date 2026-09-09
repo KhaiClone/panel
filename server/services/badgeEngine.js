@@ -14,10 +14,19 @@
  * HAI BADGE ẢNH HƯỞNG LẪN NHAU. Mỗi game gửi đi vừa cộng vào Game Variety (số
  * game) vừa cộng vào Game Time (số giờ). Nên:
  *   - Bán Game Variety  → nhiều game, mỗi game 1 phút (giờ tăng không đáng kể).
- *   - Bán Game Time     → dồn giờ lên ÍT game nhất có thể, và ưu tiên game tài
- *                         khoản đã claim ở đơn trước (claimedGameIds) để số game
- *                         không nhích lên. Đơn đầu tiên không tránh được việc mở
- *                         vài game mới — xem GAME_TIME_SPREAD.
+ *   - Bán Game Time     → dồn giờ lên game ĐÃ ĐƯỢC ĐẾM RỒI, để số game đứng yên.
+ *
+ * Chỗ thứ hai là nơi dễ mất tiền nhất: mở 5 game mới cho một account trắng là
+ * tặng luôn Sampler (2 game) và Dabbler (5 game). planOrder() chống bằng ba lớp:
+ *
+ *   1. claimedGameIds  — game ta đã gửi cho account này ở đơn trước. Chắc chắn
+ *                        đã đếm, dùng lại là miễn phí tuyệt đối.
+ *   2. playedGameIds   — game khách đã chơi thật. Chơi thật thì client cũng bắn
+ *                        /science nên gần như chắc chắn đã đếm. Suy đoán mạnh,
+ *                        không phải đảm bảo.
+ *   3. varietyHeadroom — CHẶN CỨNG: không bao giờ mở nhiều game mới hơn số còn
+ *                        thiếu để chạm mốc Variety kế tiếp. Đây mới là thứ bảo
+ *                        đảm; hai lớp trên chỉ để ít phải dùng tới nó.
  */
 
 const axios = require("axios");
@@ -155,6 +164,12 @@ async function planOrder({
     current = 0,
     overshoot = 1.1,
     claimedGameIds = [],
+    // Game khách đã chơi thật (từ activities/statistics). Dùng lại chúng thì
+    // Game Variety nhiều khả năng không nhích.
+    playedGameIds = [],
+    // Còn bao nhiêu game nữa mới chạm mốc Game Variety kế tiếp. badgeService
+    // tính từ chính giá trị reader đọc được. Infinity = không cần chặn.
+    varietyHeadroom = Infinity,
     spread = GAME_TIME_SPREAD,
 }) {
     const games = await loadGames();
@@ -180,21 +195,72 @@ async function planOrder({
     if (badgeKey === "game_time") {
         const needHours = Math.ceil(Math.max(0, threshold - current) * overshoot);
         if (needHours <= 0) return { games: [], hoursPerGame: 0, need: 0, badgeKey };
-        // Ưu tiên game đã claim: dồn giờ lên đó thì Game Variety đứng yên.
-        const reused = claimedGameIds.map((id) => byId.get(String(id))).filter(Boolean);
-        let pool = reused.slice(0, spread);
+
+        // Ba lớp ưu tiên, mục tiêu: dồn giờ mà KHÔNG đẩy Game Variety qua mốc kế
+        // tiếp (khách sẽ được mốc đó miễn phí, tức mất doanh thu).
+        //
+        //  1. Game ta đã gửi cho chính account này ở đơn trước — chắc chắn đã
+        //     được đếm rồi, thêm giờ lên đó không làm số game nhích lên.
+        //  2. Game khách đã chơi THẬT (đọc từ activities/statistics bằng token
+        //     của họ). Chơi thật thì client cũng đã bắn /science, nên gần như
+        //     chắc chắn đã được đếm. "Gần như" — đây là suy đoán, không phải
+        //     đảm bảo, nên nó chỉ là lớp giảm rủi ro.
+        //  3. Game mới — nhưng bị CHẶN CỨNG bởi varietyHeadroom. Đây mới là thứ
+        //     bảo đảm không vượt mốc, hai lớp trên chỉ để ít phải dùng tới nó.
+        const seen = new Set();
+        const take = (list) => {
+            const out = [];
+            for (const g of list) {
+                if (!g || seen.has(g.id)) continue;
+                seen.add(g.id);
+                out.push(g);
+            }
+            return out;
+        };
+
+        const reused = take(claimedGameIds.map((id) => byId.get(String(id))));
+        const played = take(
+            playedGameIds.map((id) => byId.get(String(id))).filter((g) => g && !claimed.has(g.id)),
+        );
+
+        let pool = [...reused, ...played].slice(0, spread);
+        for (const g of pool) seen.add(g.id);
+
+        let openedNew = 0;
         if (pool.length < spread) {
-            const fresh = games.filter((g) => !claimed.has(g.id));
-            pool = pool.concat(fresh.slice(0, spread - pool.length));
+            // Còn chỗ trước mốc Variety kế tiếp là bao nhiêu thì mở bấy nhiêu.
+            const room = Math.max(0, Math.min(spread - pool.length, varietyHeadroom));
+            if (room > 0) {
+                const fresh = games.filter((g) => !claimed.has(g.id) && !seen.has(g.id));
+                const picked = fresh.slice(0, room);
+                pool = pool.concat(picked);
+                openedNew = picked.length;
+            }
         }
-        if (!pool.length) throw _err("Không chọn được game nào", 409);
+
+        // Hết đường: không có game cũ nào dùng lại được VÀ không còn chỗ trống
+        // trước mốc kế tiếp. Vẫn phải gửi (khách đã trả tiền), nhưng đánh dấu để
+        // đơn ghi lại là có vượt mốc Variety.
+        let crossedVarietyTier = false;
+        if (!pool.length) {
+            const fresh = games.filter((g) => !claimed.has(g.id));
+            if (!fresh.length) throw _err("Không còn game nào để dùng", 409, { exhausted: true });
+            pool = fresh.slice(0, 1);
+            openedNew = 1;
+            crossedVarietyTier = varietyHeadroom <= 0;
+        }
+
         return {
             games: pool,
             hoursPerGame: needHours / pool.length,
             need: needHours,
             badgeKey,
             // Bao nhiêu game MỚI bị mở ra — tức Game Variety sẽ nhích thêm bấy nhiêu.
-            varietySideEffect: pool.filter((g) => !claimed.has(g.id)).length,
+            varietySideEffect: openedNew,
+            reusedCount: reused.length,
+            playedCount: Math.min(played.length, Math.max(0, spread - reused.length)),
+            varietyHeadroom,
+            crossedVarietyTier,
         };
     }
 

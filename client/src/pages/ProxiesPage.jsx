@@ -25,6 +25,8 @@ const EMPTY_FORM = {
     rotateMinIntervalSec: 60,
     rotateIdleIntervalSec: 0,
     enabled: true,
+    // Tính năng nào được dùng proxy này. Rỗng = không tính năng nào dùng được.
+    uses: ["quest"],
     note: "",
 };
 
@@ -182,7 +184,7 @@ function PoolSettings({ pool, onChange, saving }) {
 
 // ── Add / edit form ──────────────────────────────────────────────────────────
 
-function ProxyModal({ proxy, onClose, onSaved }) {
+function ProxyModal({ proxy, features, onClose, onSaved }) {
     const isEdit = !!proxy;
     const [form, setForm] = useState(
         proxy
@@ -191,6 +193,7 @@ function ProxyModal({ proxy, onClose, onSaved }) {
                   ...proxy,
                   password: "", // never round-trips; blank keeps the stored one
                   rotateUrl: proxy.rotateUrl || "",
+                  uses: Array.isArray(proxy.uses) ? proxy.uses : ["quest"],
                   note: proxy.note || "",
               }
             : EMPTY_FORM,
@@ -395,6 +398,43 @@ function ProxyModal({ proxy, onClose, onSaved }) {
                             </div>
                         </>
                     )}
+
+                    <div>
+                        <label className="label">Dùng cho tính năng</label>
+                        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 4 }}>
+                            {features.map((f) => (
+                                <label
+                                    key={f.key}
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 7,
+                                        fontSize: 13,
+                                        color: "var(--text)",
+                                    }}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={form.uses.includes(f.key)}
+                                        onChange={(e) =>
+                                            setForm((v) => ({
+                                                ...v,
+                                                uses: e.target.checked
+                                                    ? [...v.uses, f.key]
+                                                    : v.uses.filter((u) => u !== f.key),
+                                            }))
+                                        }
+                                    />
+                                    {f.label}
+                                </label>
+                            ))}
+                        </div>
+                        {form.uses.length === 0 && (
+                            <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--warning)" }}>
+                                Không chọn tính năng nào thì proxy này sẽ không bao giờ được dùng.
+                            </p>
+                        )}
+                    </div>
 
                     <div>
                         <label className="label">Note</label>
@@ -637,6 +677,10 @@ export default function ProxiesPage() {
     const [err, setErr] = useState(null);
     const [savingSettings, setSavingSettings] = useState(false);
     const [rowState, setRowState] = useState({}); // proxyId -> { testing, rotating, msg, ok }
+    // Pool này phục vụ nhiều tính năng; `feature` quyết định đang xem/sửa cài đặt
+    // của cái nào. Danh sách lấy từ backend để thêm feature không phải sửa UI.
+    const [feature, setFeature] = useState("quest");
+    const [features, setFeatures] = useState([{ key: "quest", label: "Auto Quest" }]);
     const [editing, setEditing] = useState(undefined); // undefined = closed, null = new
     const [bulkOpen, setBulkOpen] = useState(false);
     const [confirm, setConfirm] = useState(null);
@@ -644,18 +688,22 @@ export default function ProxiesPage() {
     const load = useCallback(async () => {
         setErr(null);
         try {
-            const [listRes, poolRes] = await Promise.all([
+            const [listRes, poolRes, featRes] = await Promise.all([
                 api.get("/proxies"),
-                api.get("/proxies/settings/quest"),
+                api.get(`/proxies/settings/${feature}`),
+                api.get("/proxies/features"),
             ]);
             setProxies(listRes.data.proxies || []);
             setPool(poolRes.data);
+            if (Array.isArray(featRes.data?.features) && featRes.data.features.length) {
+                setFeatures(featRes.data.features);
+            }
         } catch (e) {
             setErr(e.response?.data?.error || "Failed to load proxies.");
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [feature]);
 
     useEffect(() => {
         load();
@@ -668,7 +716,7 @@ export default function ProxiesPage() {
     const saveSettings = async (patch) => {
         setSavingSettings(true);
         try {
-            const { data } = await api.patch("/proxies/settings/quest", patch);
+            const { data } = await api.patch(`/proxies/settings/${feature}`, patch);
             setPool(data);
         } catch (e) {
             setErr(e.response?.data?.error || "Failed to save settings.");
@@ -748,8 +796,8 @@ export default function ProxiesPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Proxy Pool</h1>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-                        Proxies the panel egresses through. Used by Auto Quest; other features can
-                        opt in later.
+                        Proxies the panel egresses through. Each feature has its own switches,
+                        and each proxy chooses which features it serves.
                     </p>
                 </div>
                 <button className="btn-ghost" onClick={() => setBulkOpen(true)}>
@@ -768,6 +816,31 @@ export default function ProxiesPage() {
                     {err}
                 </div>
             )}
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                {features.map((f) => (
+                    <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => setFeature(f.key)}
+                        style={{
+                            background: feature === f.key ? "var(--accent-dim)" : "var(--bg-input)",
+                            border: `1px solid ${feature === f.key ? "var(--accent)" : "var(--border)"}`,
+                            borderRadius: 999,
+                            padding: "5px 14px",
+                            color: "var(--text)",
+                            fontSize: 12,
+                            fontWeight: feature === f.key ? 600 : 400,
+                            cursor: "pointer",
+                        }}
+                    >
+                        {f.label}
+                    </button>
+                ))}
+                <span style={{ fontSize: 11, color: "var(--text-dim)", alignSelf: "center" }}>
+                    cài đặt bên dưới áp cho tính năng đang chọn
+                </span>
+            </div>
 
             <PoolSettings pool={pool} onChange={saveSettings} saving={savingSettings} />
 
@@ -801,7 +874,12 @@ export default function ProxiesPage() {
             )}
 
             {editing !== undefined && (
-                <ProxyModal proxy={editing} onClose={() => setEditing(undefined)} onSaved={load} />
+                <ProxyModal
+                    proxy={editing}
+                    features={features}
+                    onClose={() => setEditing(undefined)}
+                    onSaved={load}
+                />
             )}
             {bulkOpen && <BulkModal onClose={() => setBulkOpen(false)} onSaved={load} />}
             {confirm && (
