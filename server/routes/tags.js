@@ -2,12 +2,11 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// Tags are per-user. Admin sees all; users see only their own.
+// Tags are panel-wide — the panel has a single account.
 
 router.get("/", async (req, res, next) => {
     try {
-        const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
-        const tags = await db.find("tags", query);
+        const tags = await db.find("tags");
         res.json(tags);
     } catch (err) {
         next(err);
@@ -21,7 +20,7 @@ router.post("/", async (req, res, next) => {
             return res.status(400).json({ error: "name is required" });
         }
 
-        const existing = await db.findOne("tags", { name: name.trim(), ownerId: req.user.id });
+        const existing = await db.findOne("tags", { name: name.trim() });
         if (existing) {
             return res.status(409).json({ error: `Tag "${name.trim()}" already exists` });
         }
@@ -29,7 +28,6 @@ router.post("/", async (req, res, next) => {
         const tag = await db.create("tags", {
             name: name.trim(),
             color,
-            ownerId: req.user.id,
             createdAt: Date.now(),
         });
 
@@ -43,10 +41,6 @@ router.put("/:id", async (req, res, next) => {
     try {
         const tag = await db.findOne("tags", { _id: req.params.id });
         if (!tag) return res.status(404).json({ error: "Tag not found" });
-        if (req.user.role !== "admin" && tag.ownerId !== req.user.id) {
-            return res.status(403).json({ error: "Access denied" });
-        }
-
         const { name, color } = req.body;
         const updates = {};
         if (name !== undefined) updates.name = name.trim();
@@ -63,17 +57,11 @@ router.delete("/:id", async (req, res, next) => {
     try {
         const tag = await db.findOne("tags", { _id: req.params.id });
         if (!tag) return res.status(404).json({ error: "Tag not found" });
-        if (req.user.role !== "admin" && tag.ownerId !== req.user.id) {
-            return res.status(403).json({ error: "Access denied" });
-        }
-
-        // Strip this tag from all bots owned by this user
-        const userBots = req.user.role === "admin"
-            ? await db.find("bots")
-            : await db.find("bots", { ownerId: req.user.id });
+        // Strip this tag from every bot carrying it
+        const allBots = await db.find("bots");
 
         let affectedCount = 0;
-        for (const bot of userBots) {
+        for (const bot of allBots) {
             if (Array.isArray(bot.tags) && bot.tags.includes(req.params.id)) {
                 await db.findOneAndUpdate("bots", { _id: bot._id }, {
                     tags: bot.tags.filter(t => t !== req.params.id),

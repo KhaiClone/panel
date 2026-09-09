@@ -3,12 +3,9 @@ const router = express.Router();
 const db = require("../db");
 const executor = require("../services/executor");
 
-const checkLogOwnership = async (req, decoded) => {
-    const bot = await db.findOne("bots", { _id: req.params.botId });
-    if (!bot) return { bot: null, allowed: false };
-    if (decoded.role === "admin") return { bot, allowed: true };
-    return { bot, allowed: bot.ownerId === decoded.userId };
-};
+// Auth lives per-route here rather than on the mount, because SSE and downloads
+// carry the token as a query param. A valid token is full access — the panel has
+// a single account.
 
 /**
  * GET /api/logs/:botId?lines=100
@@ -22,13 +19,11 @@ router.get("/:botId", async (req, res, next) => {
         if (!token && req.query.token) token = req.query.token;
         if (!token) return res.status(401).json({ error: "No token" });
 
-        let decoded;
-        try { decoded = jwt.verify(token, process.env.JWT_SECRET); }
+        try { jwt.verify(token, process.env.JWT_SECRET); }
         catch { return res.status(401).json({ error: "Invalid token" }); }
 
-        const { bot, allowed } = await checkLogOwnership(req, decoded);
+        const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
-        if (!allowed) return res.status(403).json({ error: "Access denied" });
 
         const lines = Math.min(parseInt(req.query.lines) || 100, 500);
         const logs = await executor.getBotLogs(bot, lines);
@@ -50,12 +45,11 @@ router.get("/:botId/stream", async (req, res, next) => {
         const token = req.query.token;
         if (!token) return res.status(401).end();
 
-        let decoded;
-        try { decoded = jwt.verify(token, process.env.JWT_SECRET); }
+        try { jwt.verify(token, process.env.JWT_SECRET); }
         catch { return res.status(401).end(); }
 
-        const { bot, allowed } = await checkLogOwnership(req, decoded);
-        if (!bot || !allowed) return res.status(403).end();
+        const bot = await db.findOne("bots", { _id: req.params.botId });
+        if (!bot) return res.status(404).end();
 
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
@@ -99,13 +93,11 @@ router.delete("/:botId", async (req, res, next) => {
         if (!token && req.query.token) token = req.query.token;
         if (!token) return res.status(401).json({ error: "No token" });
 
-        let decoded;
-        try { decoded = jwt.verify(token, process.env.JWT_SECRET); }
+        try { jwt.verify(token, process.env.JWT_SECRET); }
         catch { return res.status(401).json({ error: "Invalid token" }); }
 
-        const { bot, allowed } = await checkLogOwnership(req, decoded);
+        const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
-        if (!allowed) return res.status(403).json({ error: "Access denied" });
 
         await executor.flushBotLogs(bot);
         res.json({ message: "Logs cleared" });

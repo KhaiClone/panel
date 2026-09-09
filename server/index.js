@@ -3,7 +3,6 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const path = require("path");
-const bcrypt = require("bcryptjs");
 
 const authRoutes = require("./routes/auth");
 const botRoutes = require("./routes/bots");
@@ -18,15 +17,12 @@ const proxyRoutes = require("./routes/proxy");
 const proxiesRoutes = require("./routes/proxies");
 const tagRoutes = require("./routes/tags");
 const notificationRoutes = require("./routes/notifications");
-const userRoutes = require("./routes/users");
-const slotRoutes = require("./routes/slots");
 const nodeRoutes = require("./routes/nodes");
 const shopOrderRoutes = require("./routes/shopOrders");
 const decorRoutes = require("./routes/decors");
 const questRoutes = require("./routes/quests");
 const questExternalRoutes = require("./routes/questsExternal");
 const { authMiddleware } = require("./middleware/auth");
-const { adminOnly } = require("./middleware/adminOnly");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
 const nodeContext = require("./middleware/nodeContext");
 const errorHandler = require("./middleware/errorHandler");
@@ -39,11 +35,16 @@ const samplerService = require("./services/samplerService");
 const proxyStore = require("./services/proxyStore");
 const questService = require("./services/questService");
 const questMonthly = require("./services/questMonthly");
-const db = require("./db");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Validate critical env vars on startup
 // ─────────────────────────────────────────────────────────────────────────────
+// The panel is single-account: ADMIN_USERNAME + ADMIN_PASSWORD_HASH ARE the
+// account. There is no users table and no roles — routes/auth.js checks the env
+// directly, and any valid token is full access.
+//
+// NOTE: bots with no nodeId (or the legacy "local") are resolved at read time by
+// nodeService.resolveNodeId → PANEL_NODE_ID, never rewritten in the DB.
 const required = [
     "ADMIN_USERNAME",
     "ADMIN_PASSWORD_HASH",
@@ -54,48 +55,6 @@ for (const key of required) {
     if (!process.env[key]) {
         console.error(`[Server] Missing required env var: ${key}`);
         process.exit(1);
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Seed admin user from env vars (runs once if no users table exists)
-// ─────────────────────────────────────────────────────────────────────────────
-async function seedAdminUser() {
-    try {
-        const existing = await db.findOne("users", { username: process.env.ADMIN_USERNAME });
-        if (!existing) {
-            await db.create("users", {
-                username: process.env.ADMIN_USERNAME,
-                passwordHash: process.env.ADMIN_PASSWORD_HASH,
-                role: "admin",
-                active: true,
-                createdAt: Date.now(),
-                lastLoginAt: null,
-            });
-            console.log(`[Server] Admin user "${process.env.ADMIN_USERNAME}" seeded from env`);
-        }
-
-        // Migrate existing bots that have no ownerId → assign to admin
-        const admin = await db.findOne("users", { role: "admin" });
-        if (admin) {
-            const allBots = await db.find("bots");
-            let migrated = 0;
-            for (const bot of allBots) {
-                if (!bot.ownerId) {
-                    await db.findOneAndUpdate("bots", { _id: bot._id }, { ownerId: admin._id });
-                    migrated++;
-                }
-            }
-            if (migrated > 0) {
-                console.log(`[Server] Migrated ${migrated} existing bot(s) → ownerId: ${admin._id}`);
-            }
-        }
-
-        // NOTE: bots with no nodeId (or the legacy "local") are resolved at read
-        // time by nodeService.resolveNodeId → PANEL_NODE_ID. Deliberately NOT
-        // rewritten here: a startup migration would write to the DB on every boot.
-    } catch (err) {
-        console.error("[Server] Seed error:", err.message);
     }
 }
 
@@ -128,22 +87,20 @@ app.use("/api/bots", authMiddleware, nodeContext, botRoutes);
 app.use("/api/groups", authMiddleware, groupRoutes);
 app.use("/api/bulk", authMiddleware, bulkRoutes);
 app.use("/api/logs", logRoutes); // Auth handled per-route (SSE needs query-param token)
-app.use("/api/system", authMiddleware, adminOnly, nodeContext, systemRoutes);
-app.use("/api/panel", authMiddleware, adminOnly, panelRoutes);
-app.use("/api/github", authMiddleware, adminOnly, githubRoutes);
-app.use("/api/proxy", authMiddleware, adminOnly, proxyRoutes);
+app.use("/api/system", authMiddleware, nodeContext, systemRoutes);
+app.use("/api/panel", authMiddleware, panelRoutes);
+app.use("/api/github", authMiddleware, githubRoutes);
+app.use("/api/proxy", authMiddleware, proxyRoutes);
 // /api/proxy pins a bot's IP to a VPS; /api/proxies is the panel's own egress pool.
-app.use("/api/proxies", authMiddleware, adminOnly, proxiesRoutes);
+app.use("/api/proxies", authMiddleware, proxiesRoutes);
 app.use("/api/external/quests", apiKeyMiddleware, questExternalRoutes);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
-app.use("/api/admin/users", authMiddleware, userRoutes);
-app.use("/api/admin/slots", authMiddleware, slotRoutes);
-app.use("/api/nodes", authMiddleware, adminOnly, nodeRoutes);
-app.use("/api/shop", authMiddleware, adminOnly, shopOrderRoutes);
-app.use("/api/decors", authMiddleware, adminOnly, decorRoutes);
-app.use("/api/quests", authMiddleware, adminOnly, questRoutes);
+app.use("/api/nodes", authMiddleware, nodeRoutes);
+app.use("/api/shop", authMiddleware, shopOrderRoutes);
+app.use("/api/decors", authMiddleware, decorRoutes);
+app.use("/api/quests", authMiddleware, questRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -174,14 +131,13 @@ samplerService.start();
 proxyStore.startRotationScheduler();
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Listen + Seed
+//  Listen
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT) || 3000;
 const server = app.listen(PORT, "0.0.0.0", async () => {
     console.log(
         `[Server] Bot Panel running on port ${PORT} (${process.env.NODE_ENV || "development"})`,
     );
-    await seedAdminUser();
     // Resume any quest accounts that were running before a restart.
     questService.restore().catch((e) => console.warn("[Quest] restore error:", e.message));
     // Monthly subscription schedulers (Tue/Sat run + daily enroll scan).

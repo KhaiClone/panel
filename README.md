@@ -123,7 +123,6 @@ root/
     │       │   └── DataContext.jsx  ← Shared bot/group/tag data + polling
     │       ├── pages/
     │       │   ├── Login.jsx        ← Admin login page
-    │       │   ├── OverviewPage.jsx ← Bot grid + system stats overview
     │       │   ├── BotDetail.jsx    ← Per-bot controls, logs, env, files, settings
     │       │   ├── SitesPage.jsx    ← Website management
     │       │   ├── DomainsPage.jsx  ← Unified domain list
@@ -197,8 +196,8 @@ nano .env
 |--------------------------|----------|---------------------------------------------------------------|
 | `PORT`                   | Yes      | Express server port (default: `3000`)                         |
 | `NODE_ENV`               | Yes      | `production` or `development`                                 |
-| `ADMIN_USERNAME`         | Yes      | Panel login username                                          |
-| `ADMIN_PASSWORD_HASH`    | Yes      | bcrypt hash of your admin password (see below)                |
+| `ADMIN_USERNAME`         | Yes      | Panel login username — the panel's ONLY account               |
+| `ADMIN_PASSWORD_HASH`    | Yes      | bcrypt hash of that account's password (see below)            |
 | `JWT_SECRET`             | Yes      | Long random string for signing JWTs                           |
 | `BOTS_ROOT_DIR`          | Yes      | Absolute path to bots folder, e.g. `/root/bots`               |
 | `SITES_ROOT_DIR`         | No       | Absolute path to websites folder (defaults to `BOTS_ROOT_DIR`)|
@@ -215,7 +214,11 @@ nano .env
 node -e "const b=require('bcryptjs'); console.log(b.hashSync('YOUR_PASSWORD_HERE', 10));"
 ```
 
-Paste the output into `ADMIN_PASSWORD_HASH` in your `.env`.
+Paste the output into `ADMIN_PASSWORD_HASH` in your `.env`, then restart the panel.
+
+> **The panel is single-account.** `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` *are* the
+> account — there is no users table, no roles and no way to create a second login.
+> Changing the password means regenerating the hash and restarting.
 
 ### 4. Create the Bots Root Directory
 
@@ -360,7 +363,7 @@ operations on behalf of the panel.
   create form or leave it on **Auto** — the scheduler scores every online node
   (free RAM 50%, free CPU 30%, free disk 20%; nodes under 5 GB free disk are
   excluded) and picks the best one. `POST /api/bots` also accepts an optional
-  `nodeId` ("auto", "local", or a node `_id`; admin only).
+  `nodeId` ("auto", "local", or a node `_id`).
 - **Websites, services, and local imports always run on the panel VPS** —
   they depend on nginx/UFW/DNS there.
 - **Existing bots** are migrated to `nodeId: "local"` on first startup and
@@ -376,7 +379,7 @@ sudo bash setup-agent.sh <PANEL_IP> [AGENT_PORT] [REPO_URL]
 #   restricts the agent port to the panel's IP via UFW, starts the agent under PM2.
 ```
 
-Then in the panel: **Admin → Nodes → Add Node**, paste the host/port/API key the
+Then in the panel: **Systems → Add Node**, paste the host/port/API key the
 script printed. The connection is verified before the node is saved.
 
 ### Node API summary
@@ -393,7 +396,10 @@ script printed. The connection is verified before the node is saved.
 
 ## 🔒 Security Notes
 
-- The JWT expires after **24 hours** — admins must re-login after that
+- The panel has a **single account**, defined entirely by `ADMIN_USERNAME` and
+  `ADMIN_PASSWORD_HASH` in `.env`. There are no user records, no roles and no
+  registration — a valid JWT is full access
+- The JWT expires after **24 hours** — you must re-login after that
 - The `.env` file is in `.gitignore` — **never commit it**
 - All API routes are JWT-protected except `/api/auth/login`
 - External API routes (`/api/external/*`) are protected by a separate `PANEL_API_KEY` header

@@ -1,6 +1,6 @@
 /**
  * questService.js
- * Admin-only Discord Quest runner. Owns account storage (panel DB), the background
+ * Discord Quest runner. Owns account storage (panel DB), the background
  * run loop, restart recovery, and a realtime event bus (consumed by the SSE route).
  * The Discord logic lives in questEngine.js.
  *

@@ -3,10 +3,10 @@ const nodeService = require("../services/nodeService");
 /**
  * Resolves the global node-view context from the X-Panel-Node header.
  *
- * The client sends the header when an admin has scoped the panel to one node.
+ * The client sends the header when the panel is scoped to one node.
  * Routes that honor the context read req.nodeId / req.node.
  *
- * - No header (or a non-admin user) → req.node = null, meaning EVERY node.
+ * - No header → req.node = null, meaning EVERY node.
  *   Routes decide what that means: /bots lists them all, /system falls back to
  *   the panel's own node.
  * - The legacy value "local" is accepted and resolved to the panel's node, so a
@@ -19,7 +19,7 @@ const nodeService = require("../services/nodeService");
 const nodeContext = async (req, res, next) => {
     const header = req.get("X-Panel-Node");
 
-    if (!header || req.user?.role !== "admin") {
+    if (!header) {
         req.nodeId = null;
         req.node = null;
         return next();

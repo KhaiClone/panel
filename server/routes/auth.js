@@ -2,11 +2,18 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
-const db = require("../db");
+
+/**
+ * The panel has exactly ONE account: the admin, defined by ADMIN_USERNAME and
+ * ADMIN_PASSWORD_HASH in .env. There is no users table, no roles and no
+ * self-service registration — every authenticated request is the admin's.
+ * To change the password, regenerate the hash and restart the panel:
+ *   node -e "console.log(require('bcryptjs').hashSync('newpassword',10))"
+ */
 
 /**
  * POST /api/auth/login
- * Validates username + password against the users table.
+ * Validates username + password against the env credentials.
  * Returns a signed JWT valid for 24 hours.
  * Body: { username: string, password: string }
  */
@@ -18,29 +25,22 @@ router.post("/login", async (req, res, next) => {
             return res.status(400).json({ error: "Username and password are required" });
         }
 
-        const user = await db.findOne("users", { username });
-        if (!user) {
+        if (username !== process.env.ADMIN_USERNAME) {
             return res.status(401).json({ error: "Invalid credentials" });
         }
 
-        if (user.active === false) {
-            return res.status(403).json({ error: "Account is disabled. Contact admin." });
-        }
-
-        const validPassword = await bcrypt.compare(password, user.passwordHash);
+        const validPassword = await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH);
         if (!validPassword) {
             return res.status(401).json({ error: "Invalid credentials" });
         }
 
-        await db.findOneAndUpdate("users", { _id: user._id }, { lastLoginAt: Date.now() });
-
         const token = jwt.sign(
-            { userId: user._id, username: user.username, role: user.role },
+            { username },
             process.env.JWT_SECRET,
             { expiresIn: "24h" },
         );
 
-        res.json({ token, username: user.username, role: user.role });
+        res.json({ token, username });
     } catch (err) {
         next(err);
     }
@@ -48,7 +48,7 @@ router.post("/login", async (req, res, next) => {
 
 /**
  * GET /api/auth/verify
- * Check if the token is still valid. Returns user info + role.
+ * Check if the token is still valid.
  */
 router.get("/verify", (req, res) => {
     const authHeader = req.headers["authorization"];
@@ -58,7 +58,7 @@ router.get("/verify", (req, res) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        res.json({ valid: true, username: decoded.username, role: decoded.role, userId: decoded.userId });
+        res.json({ valid: true, username: decoded.username });
     } catch {
         res.status(401).json({ valid: false });
     }

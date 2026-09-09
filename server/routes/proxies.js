@@ -3,7 +3,7 @@ const router = express.Router();
 const proxyStore = require("../services/proxyStore");
 const proxyPool = require("../services/proxyPool");
 
-// Mounted behind authMiddleware + adminOnly (see index.js).
+// Mounted behind authMiddleware (see index.js).
 //
 // The proxies YOU supply to the panel, plus the per-feature switches that decide
 // whether a feature draws from them, from the agent VPSes, or both.

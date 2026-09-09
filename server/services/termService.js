@@ -16,9 +16,9 @@ const nodeService = require("./nodeService");
 //    client → server : { type:"input", data } | { type:"resize", cols, rows }
 //    server → client : { type:"data", data }  | { type:"exit", code }
 //
-//  Admin-only: the JWT is verified in the upgrade handshake (browsers can't
-//  send auth headers on a WebSocket), matching the ?token= pattern the panel
-//  already uses for log streaming and downloads.
+//  The JWT is verified in the upgrade handshake (browsers can't send auth
+//  headers on a WebSocket), matching the ?token= pattern the panel already uses
+//  for log streaming and downloads.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PING_INTERVAL_MS = 30 * 1000;
@@ -31,15 +31,11 @@ const attachTermServer = (httpServer) => {
         const { pathname, query } = url.parse(req.url, true);
         if (pathname !== "/api/term") return; // not ours — leave it alone
 
-        let user;
+        // A valid token is the only gate — the panel has a single account.
         try {
-            user = jwt.verify(query.token || "", process.env.JWT_SECRET);
+            jwt.verify(query.token || "", process.env.JWT_SECRET);
         } catch {
             socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-            return socket.destroy();
-        }
-        if (user.role !== "admin") {
-            socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
             return socket.destroy();
         }
 

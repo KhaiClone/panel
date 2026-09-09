@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
-import { useAuth } from "../context/AuthContext";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -58,7 +57,6 @@ function TabBar({ value, onChange, options }) {
 }
 
 export default function CreateBotModal({ onClose, onCreated, defaultProjectType }) {
-    const { isAdmin } = useAuth();
     const [form, setForm] = useState(() => ({
         ...defaultForm,
         projectType: defaultProjectType || defaultForm.projectType,
@@ -74,8 +72,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
     useEffect(() => {
         api.get("/groups").then((r) => setGroups(r.data)).catch(() => {});
         api.get("/tags").then((r) => setAvailableTags(r.data)).catch(() => {});
-        if (isAdmin) api.get("/nodes").then((r) => setNodes(r.data)).catch(() => {});
-    }, [isAdmin]);
+        api.get("/nodes").then((r) => setNodes(r.data)).catch(() => {});
+    }, []);
 
     const set = (field) => (e) => {
         const val = e.target.type === "checkbox" ? e.target.checked : e.target.value;
@@ -227,8 +225,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                         />
                     </div>
 
-                    {/* ── Node Placement (admin, git-deployed projects) ── */}
-                    {isAdmin && form.source === "git" && nodes.length > 1 && (
+                    {/* ── Node Placement (git-deployed projects) ── */}
+                    {form.source === "git" && nodes.length > 1 && (
                         <div>
                             <label className="label">Node (VPS)</label>
                             <select className="input" value={form.nodeId} onChange={set("nodeId")}>

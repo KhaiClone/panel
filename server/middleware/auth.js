@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken");
  * Auth middleware — verifies the JWT token in the Authorization header.
  * All API routes except /api/auth/* require this.
  *
+ * The panel has a single account (the admin from .env), so a valid token IS
+ * full access — there is no role to check beyond this point.
+ *
  * Expected header:  Authorization: Bearer <token>
  */
 const authMiddleware = (req, res, next) => {
@@ -23,7 +26,7 @@ const authMiddleware = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = { ...decoded, id: decoded.userId }; // { userId, id, username, role, iat, exp }
+        req.user = decoded; // { username, iat, exp }
         next();
     } catch (err) {
         return res

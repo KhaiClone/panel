@@ -5,7 +5,7 @@ const db = require("../db");
 const nodeService = require("../services/nodeService");
 const history = require("../services/historyService");
 
-// Mounted behind authMiddleware + adminOnly (see index.js).
+// Mounted behind authMiddleware (see index.js).
 
 /**
  * GET /api/nodes

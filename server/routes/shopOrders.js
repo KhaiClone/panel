@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const shopService = require("../services/shopService");
 
-// Mounted behind authMiddleware + adminOnly (see index.js). Thin proxy to the
+// Mounted behind authMiddleware (see index.js). Thin proxy to the
 // ArnTo-Shop Orders API; the shop enforces its own logic and Discord side-effects.
 
 /** GET /api/shop/orders?status=&sellerId= */

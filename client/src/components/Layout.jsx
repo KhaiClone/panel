@@ -5,7 +5,6 @@ import { useData } from "../context/DataContext";
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 const I = {
-    overview:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>,
     bots:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
     sites:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
     domains:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
@@ -16,8 +15,6 @@ const I = {
     system:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
     proxyPool:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/><path d="M16 8l4-4"/><path d="M20 8V4h-4"/></svg>,
     panel:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>,
-    users:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-    nodes:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="2" y="2" width="9" height="9" rx="2"/><rect x="13" y="13" width="9" height="9" rx="2"/><path d="M6.5 11v3a2 2 0 0 0 2 2H13"/><path d="M17.5 13V9a2 2 0 0 0-2-2H11"/></svg>,
     orders:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>,
     decors:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M12 2 15 8.5 22 9.3l-5 4.6 1.4 7L12 17.8 5.6 20.9 7 13.9l-5-4.6 7-.8Z"/></svg>,
     quests:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
@@ -29,63 +26,51 @@ const I = {
     close:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{width:14,height:14}}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
 };
 
-const getNavSections = (isAdmin) => {
-    const main = {
+// One account, one nav. Everything here is reachable to whoever is logged in.
+const NAV_SECTIONS = [
+    {
         id: "main",
         label: "Main",
         items: [
-            // Admins have no use for the personal overview — the fleet view is
-            // their home. Regular users cannot reach /systems at all.
-            isAdmin
-                ? { to: "/systems",  label: "Systems",  icon: I.system }
-                : { to: "/overview", label: "Overview", icon: I.overview },
+            { to: "/systems",  label: "Systems",  icon: I.system },
             { to: "/bots",     label: "Bots",     icon: I.bots },
             { to: "/sites",    label: "Sites",    icon: I.sites },
             { to: "/domains",  label: "Domains",  icon: I.domains },
         ],
-    };
-
-    const tools = {
+    },
+    {
         id: "tools",
         label: "Tools",
         items: [
             { to: "/multi-manage", label: "Bulk Ops", icon: I.bulk },
             // Two different things, deliberately side by side: "Egress Proxy" pins a
             // BOT's public IP to a VPS; "Proxy Pool" is the panel's own egress pool.
-            ...(isAdmin ? [{ to: "/proxy", label: "Egress Proxy", icon: I.proxy }] : []),
-            ...(isAdmin ? [{ to: "/proxies", label: "Proxy Pool", icon: I.proxyPool }] : []),
+            { to: "/proxy",        label: "Egress Proxy", icon: I.proxy },
+            { to: "/proxies",      label: "Proxy Pool",   icon: I.proxyPool },
         ],
-    };
-
-    const organize = {
+    },
+    {
         id: "organize",
         label: "Organize",
         items: [
             { to: "/groups", label: "Groups", icon: I.groups },
             { to: "/tags",   label: "Tags",   icon: I.tags },
         ],
-    };
-
-    const adminSection = {
+    },
+    {
         id: "system",
-        label: "Admin",
+        label: "System",
         items: [
             { to: "/terminal",     label: "Terminal", icon: I.terminal },
             { to: "/orders",       label: "Orders",   icon: I.orders },
             { to: "/decors",       label: "Decors",   icon: I.decors },
             { to: "/quests",       label: "Quests",   icon: I.quests },
             { to: "/panel-manage", label: "Panel",    icon: I.panel },
-            { to: "/admin/users",  label: "Users",    icon: I.users },
         ],
-    };
-
-    return isAdmin
-        ? [main, tools, organize, adminSection]
-        : [main, tools, organize];
-};
+    },
+];
 
 const PAGE_TITLES = {
-    "/overview":     "Overview",
     "/bots":         "Bots",
     "/sites":        "Sites",
     "/domains":      "Domains",
@@ -99,7 +84,6 @@ const PAGE_TITLES = {
     "/orders":       "Orders",
     "/decors":       "Decors",
     "/quests":       "Auto Quest",
-    "/admin/users":  "User Management",
 };
 
 const NOTIF_TYPE_COLOR = {
@@ -147,9 +131,8 @@ function NavItem({ to, icon, label, expanded }) {
 }
 
 export default function Layout() {
-    const { user, logout, isAdmin } = useAuth();
+    const { user, logout } = useAuth();
     const { stats, bots } = useData();
-    const NAV_SECTIONS = getNavSections(isAdmin);
     const navigate = useNavigate();
     const location = useLocation();
     const [expanded, setExpanded] = useState(true);
@@ -331,7 +314,7 @@ export default function Layout() {
                         <>
                             <div style={{ flex: 1, overflow: "hidden" }}>
                                 <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", margin: 0 }}>{user?.username}</p>
-                                <p style={{ fontSize: 10, color: isAdmin ? "var(--success)" : "var(--accent-hover)", margin: 0 }}>{isAdmin ? "Administrator" : "User"}</p>
+                                <p style={{ fontSize: 10, color: "var(--success)", margin: 0 }}>Administrator</p>
                             </div>
                             <button onClick={handleLogout} title="Logout"
                                 style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)", cursor: "pointer", padding: 7, borderRadius: 8, display: "flex", flexShrink: 0 }}>

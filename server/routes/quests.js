@@ -3,8 +3,8 @@ const router = express.Router();
 const questService = require("../services/questService");
 const questMonthly = require("../services/questMonthly");
 
-// Mounted behind authMiddleware + adminOnly (see index.js). Admin-only Discord
-// Quest runner — standalone (does NOT talk to the ArnTo-Auto bot).
+// Mounted behind authMiddleware (see index.js). Discord Quest runner —
+// standalone (does NOT talk to the ArnTo-Auto bot).
 
 // Per-quest accounts + monthly subscribers, normalized into one list for the UI.
 async function combinedList() {
@@ -53,7 +53,7 @@ router.post("/preview", async (req, res, next) => {
 
 /**
  * POST /api/quests/start { token, mode, selectedQuestIds, ref, months }
- * Admin manual add (bypasses arnto-auto). `ref` = the owner's Discord user id so the
+ * Manual add (bypasses arnto-auto). `ref` = the owner's Discord user id so the
  * bot can tell whose token this is (and DM them). mode "monthly" activates a monthly
  * plan instead of an immediate run. The webhook back to arnto is taken from the
  * ARNTO_QUEST_WEBHOOK_URL env so completion DMs reach the owner.
@@ -113,8 +113,8 @@ router.delete("/:accountId", async (req, res, next) => {
 
 /**
  * GET /api/quests/stream — Server-Sent Events for realtime progress.
- * Auth via ?token= (EventSource can't set headers); handled by authMiddleware +
- * adminOnly on the mount. Streams every questService.bus event.
+ * Auth via ?token= (EventSource can't set headers); handled by authMiddleware on
+ * the mount. Streams every questService.bus event.
  */
 router.get("/stream", async (req, res, next) => {
     try {

@@ -5,7 +5,7 @@ import { useAuth } from "./AuthContext";
 const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
-    const { user, isAdmin } = useAuth();
+    const { user } = useAuth();
     const [bots, setBots] = useState([]);
     const [groups, setGroups] = useState([]);
     const [tags, setTags] = useState([]);
@@ -33,12 +33,12 @@ export function DataProvider({ children }) {
     // Stats of the machine the panel runs on — the server defaults to
     // PANEL_NODE_ID when no node is named. Per-node figures live on /systems.
     const fetchStats = useCallback(async () => {
-        if (!user || !isAdmin) return; // system stats are admin-only
+        if (!user) return;
         try {
             const res = await api.get("/system/stats");
             setStats(res.data);
         } catch {}
-    }, [user, isAdmin]);
+    }, [user]);
 
     useEffect(() => {
         if (user) {
@@ -46,10 +46,10 @@ export function DataProvider({ children }) {
             fetchBots();
             fetchStats();
             const botInterval   = setInterval(fetchBots,  10000);
-            const statsInterval = isAdmin ? setInterval(fetchStats, 5000) : null;
+            const statsInterval = setInterval(fetchStats, 5000);
             return () => {
                 clearInterval(botInterval);
-                if (statsInterval) clearInterval(statsInterval);
+                clearInterval(statsInterval);
             };
         } else {
             setBots([]);
@@ -58,7 +58,7 @@ export function DataProvider({ children }) {
             setStats(null);
             setLoading(true);
         }
-    }, [user, isAdmin, fetchBots, fetchStats]);
+    }, [user, fetchBots, fetchStats]);
 
     return (
         <DataContext.Provider value={{ bots, groups, tags, stats, loading, refresh: fetchBots }}>

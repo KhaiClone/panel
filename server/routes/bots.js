@@ -10,67 +10,6 @@ const schedulerService = require("../services/schedulerService");
 const nodeService = require("../services/nodeService");
 const { createNotification } = require("./notifications");
 
-// ─── Ownership middleware ─────────────────────────────────────────────────────
-// Admin can access any bot. Users can only access their own.
-const requireOwnership = async (req, res, next) => {
-    if (req.user.role === "admin") return next();
-    const bot = await db.findOne("bots", { _id: req.params.id });
-    if (!bot) return res.status(404).json({ error: "Bot not found" });
-    if (bot.ownerId !== req.user.id) return res.status(403).json({ error: "Access denied" });
-    next();
-};
-
-// ─── Slot quota middleware ────────────────────────────────────────────────────
-// Admin bypasses quota. Users must have a valid, non-expired slot with remaining capacity.
-const parseRamMB = (str) => {
-    if (!str) return null;
-    const m = str.match(/^(\d+)(K|M|G)?$/i);
-    if (!m) return null;
-    const v = parseInt(m[1]);
-    const u = (m[2] || "M").toUpperCase();
-    if (u === "K") return v / 1024;
-    if (u === "G") return v * 1024;
-    return v;
-};
-
-const checkSlotQuota = async (req, res, next) => {
-    if (req.user.role === "admin") return next();
-
-    const slot = await db.findOne("slots", { userId: req.user.id });
-    if (!slot) return res.status(403).json({ error: "No slot assigned to your account. Contact admin." });
-
-    if (slot.expiresAt && slot.expiresAt < Date.now()) {
-        return res.status(403).json({ error: "Your slot has expired. Contact admin." });
-    }
-
-    const projectType = req.body.projectType || "discord";
-    const userBots = await db.find("bots", { ownerId: req.user.id });
-
-    if (projectType === "website") {
-        const siteCount = userBots.filter(b => b.projectType === "website").length;
-        if (slot.maxSites !== null && siteCount >= slot.maxSites) {
-            return res.status(403).json({ error: `Site limit reached (max ${slot.maxSites}). Contact admin to upgrade.` });
-        }
-    } else {
-        const botCount = userBots.filter(b => b.projectType !== "website").length;
-        if (slot.maxBots !== null && botCount >= slot.maxBots) {
-            return res.status(403).json({ error: `Bot limit reached (max ${slot.maxBots}). Contact admin to upgrade.` });
-        }
-    }
-
-    // Clamp maxMemory to slot's maxRamPerBot if user tries to set higher
-    if (req.body.maxMemory && slot.maxRamPerBot) {
-        const reqMB = parseRamMB(req.body.maxMemory);
-        const slotMB = parseRamMB(slot.maxRamPerBot);
-        if (reqMB !== null && slotMB !== null && reqMB > slotMB) {
-            req.body.maxMemory = slot.maxRamPerBot;
-        }
-    }
-
-    req.slot = slot;
-    next();
-};
-
 // ─── Restart rate limiter ───────────────────────────────────────────────────
 // Tracks timestamps of recent restart attempts per bot id.
 // If a bot is restarted >= 5 times within 60 s it is auto-stopped.
@@ -211,8 +150,7 @@ const getProxyConf = async (bot) => {
  */
 router.get("/domains", async (req, res, next) => {
     try {
-        const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
-        let bots = await db.find("bots", query);
+        let bots = await db.find("bots");
         // Remote-view context: only domains hosted on the selected node
         if (req.node) {
             bots = bots.filter((b) => {
@@ -242,9 +180,7 @@ router.get("/domains", async (req, res, next) => {
  */
 router.get("/", async (req, res, next) => {
     try {
-        // Admin sees all bots; users see only their own
-        const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
-        let bots = await db.find("bots", query);
+        let bots = await db.find("bots");
         // Remote-view context: only bots living on the selected node
         if (req.node) {
             bots = bots.filter((b) => {
@@ -275,7 +211,7 @@ router.get("/", async (req, res, next) => {
  * GET /api/bots/:id
  * Returns a single bot by _id with live status.
  */
-router.get("/:id", requireOwnership, async (req, res, next) => {
+router.get("/:id", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -298,7 +234,7 @@ router.get("/:id", requireOwnership, async (req, res, next) => {
  * numbers on its node. `up` is 1 for each sample where the process was online,
  * so a stopped stretch reads as a real gap in the chart instead of as 0% load.
  */
-router.get("/:id/history", requireOwnership, async (req, res, next) => {
+router.get("/:id/history", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -329,7 +265,7 @@ router.get("/:id/history", requireOwnership, async (req, res, next) => {
  *   maxMemory   string  — PM2 memory limit e.g. "300M", "1G" (optional)
  * }
  */
-router.post("/", checkSlotQuota, async (req, res, next) => {
+router.post("/", async (req, res, next) => {
     try {
         const {
             botID,
@@ -349,23 +285,14 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             serviceConfig: rawServiceConfig,
         } = req.body;
 
-        // For regular users, auto-assign buyerID = their user id
-        const buyerID = req.user.role === "admin"
-            ? (req.body.buyerID || req.user.id)
-            : req.user.id;
-
-        // ownerId: when admin creates a bot for another panel user (buyerID = targetUser._id),
-        // assign ownership to that user so they can manage the bot themselves.
-        let ownerId = req.user.id;
-        if (req.user.role === "admin" && buyerID !== req.user.id) {
-            const targetUser = await db.findOne("users", { _id: buyerID });
-            if (targetUser) ownerId = targetUser._id;
-        }
+        // buyerID identifies the CUSTOMER the project belongs to (a Discord id),
+        // not a panel account — it is half of the {root}/{buyerID}/{botID} path.
+        const { buyerID } = req.body;
 
         // Validate required fields
-        if (!botID || !name || !repoUrl) {
+        if (!buyerID || !botID || !name || !repoUrl) {
             return res.status(400).json({
-                error: "botID, name, and repoUrl are required",
+                error: "buyerID, botID, name, and repoUrl are required",
             });
         }
         if (projectType === "website") {
@@ -389,14 +316,11 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
         }
 
         // Decide which node this project lands on ("auto" → scheduler picks).
-        // Only admins may target a specific node; users always go through auto.
         // The remote-view context (X-Panel-Node) acts as the default target when
         // the form doesn't specify one explicitly.
         let placement;
         try {
-            const requestedNodeId = req.user.role === "admin"
-                ? (req.body.nodeId || (req.node ? req.nodeId : null))
-                : null;
+            const requestedNodeId = req.body.nodeId || (req.node ? req.nodeId : null);
             placement = await schedulerService.pickNode({ requestedNodeId, projectType });
         } catch (schedErr) {
             return res.status(400).json({ error: schedErr.message });
@@ -473,7 +397,6 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
             projectType,
             websiteConfig,
             serviceConfig,
-            ownerId,
             createdAt: Date.now(),
         });
 
@@ -514,7 +437,7 @@ router.post("/", checkSlotQuota, async (req, res, next) => {
  *   maxMemory   string  — PM2 memory limit (optional)
  * }
  */
-router.post("/import-local", checkSlotQuota, async (req, res, next) => {
+router.post("/import-local", async (req, res, next) => {
     try {
         const {
             botID,
@@ -532,19 +455,11 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
             serviceConfig: rawServiceConfig,
         } = req.body;
 
-        const buyerID = req.user.role === "admin"
-            ? (req.body.buyerID || req.user.id)
-            : req.user.id;
+        const { buyerID } = req.body;
 
-        let ownerId = req.user.id;
-        if (req.user.role === "admin" && buyerID !== req.user.id) {
-            const targetUser = await db.findOne("users", { _id: buyerID });
-            if (targetUser) ownerId = targetUser._id;
-        }
-
-        if (!botID || !name || !localPath) {
+        if (!buyerID || !botID || !name || !localPath) {
             return res.status(400).json({
-                error: "botID, name, and localPath are required",
+                error: "buyerID, botID, name, and localPath are required",
             });
         }
         if (projectType === "website") {
@@ -644,7 +559,6 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
             projectType,
             websiteConfig,
             serviceConfig,
-            ownerId,
             createdAt: Date.now(),
         });
 
@@ -672,7 +586,7 @@ router.post("/import-local", checkSlotQuota, async (req, res, next) => {
  *
  * Body: { name?, expiresAt?, startScript?, installCommand?, groupId?, maxMemory? }
  */
-router.put("/:id", requireOwnership, async (req, res, next) => {
+router.put("/:id", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -728,7 +642,7 @@ router.put("/:id", requireOwnership, async (req, res, next) => {
  * Stop the bot, remove from PM2, optionally delete source directory, remove DB record.
  * NOTE: local-sourced bots are NOT deleted from disk.
  */
-router.delete("/:id", requireOwnership, async (req, res, next) => {
+router.delete("/:id", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -774,7 +688,7 @@ router.delete("/:id", requireOwnership, async (req, res, next) => {
  * The DB record only flips its nodeId on success; on failure the source is
  * left intact and restarted.
  */
-router.post("/:id/migrate", requireOwnership, async (req, res, next) => {
+router.post("/:id/migrate", async (req, res, next) => {
     const os = require("os");
     const path2 = require("path");
     const fsp = require("fs");
@@ -783,8 +697,6 @@ router.post("/:id/migrate", requireOwnership, async (req, res, next) => {
     let bot = null;
 
     try {
-        if (req.user.role !== "admin") return res.status(403).json({ error: "Admins only" });
-
         bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
@@ -891,7 +803,7 @@ router.post("/:id/migrate", requireOwnership, async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** POST /api/bots/:id/start */
-router.post("/:id/start", requireOwnership, async (req, res, next) => {
+router.post("/:id/start", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -921,7 +833,7 @@ router.post("/:id/start", requireOwnership, async (req, res, next) => {
 });
 
 /** POST /api/bots/:id/stop */
-router.post("/:id/stop", requireOwnership, async (req, res, next) => {
+router.post("/:id/stop", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -953,7 +865,7 @@ router.post("/:id/stop", requireOwnership, async (req, res, next) => {
  *
  * Body: { port?, apiPort?, distFolder?, buildCommand? }
  */
-router.put("/:id/website-config", requireOwnership, async (req, res, next) => {
+router.put("/:id/website-config", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1010,7 +922,7 @@ router.put("/:id/website-config", requireOwnership, async (req, res, next) => {
 });
 
 /** POST /api/bots/:id/domain — set custom domain + issue SSL */
-router.post("/:id/domain", requireOwnership, async (req, res, next) => {
+router.post("/:id/domain", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1059,7 +971,7 @@ router.post("/:id/domain", requireOwnership, async (req, res, next) => {
 });
 
 /** POST /api/bots/:id/restart */
-router.post("/:id/restart", requireOwnership, async (req, res, next) => {
+router.post("/:id/restart", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1111,7 +1023,7 @@ router.post("/:id/restart", requireOwnership, async (req, res, next) => {
  * For local bots with no remote, only install + restart is performed.
  * Skips install entirely if bot has no installCommand.
  */
-router.post("/:id/update", requireOwnership, async (req, res, next) => {
+router.post("/:id/update", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1175,7 +1087,7 @@ router.post("/:id/update", requireOwnership, async (req, res, next) => {
  * GET /api/bots/:id/env
  * Read the .env file of the bot. Returns empty string if no .env exists.
  */
-router.get("/:id/env", requireOwnership, async (req, res, next) => {
+router.get("/:id/env", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1198,7 +1110,7 @@ router.get("/:id/env", requireOwnership, async (req, res, next) => {
  *
  * Body: { content: string }
  */
-router.put("/:id/env", requireOwnership, async (req, res, next) => {
+router.put("/:id/env", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1242,7 +1154,7 @@ const isProjectRoot = (reqPath) => {
  * GET /api/bots/:id/fs/download?path=...
  * Downloads a specific file.
  */
-router.get("/:id/fs/download", requireOwnership, async (req, res, next) => {
+router.get("/:id/fs/download", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1276,7 +1188,7 @@ router.get("/:id/fs/download", requireOwnership, async (req, res, next) => {
  * GET /api/bots/:id/fs/list?path=...
  * Lists directories and files for a given path relative to the project folder.
  */
-router.get("/:id/fs/list", requireOwnership, async (req, res, next) => {
+router.get("/:id/fs/list", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1291,7 +1203,7 @@ router.get("/:id/fs/list", requireOwnership, async (req, res, next) => {
  * GET /api/bots/:id/fs/read?path=...
  * Returns the contents of a specific file. Max 10MB (enforced by the agent).
  */
-router.get("/:id/fs/read", requireOwnership, async (req, res, next) => {
+router.get("/:id/fs/read", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1307,7 +1219,7 @@ router.get("/:id/fs/read", requireOwnership, async (req, res, next) => {
  * Writes updated content to a specific file.
  * Body: { path: string, content: string, binary?: boolean }
  */
-router.put("/:id/fs/write", requireOwnership, async (req, res, next) => {
+router.put("/:id/fs/write", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1334,7 +1246,7 @@ router.put("/:id/fs/write", requireOwnership, async (req, res, next) => {
  * Creates a file or directory.
  * Body: { path: string, type: 'file' | 'dir' }
  */
-router.post("/:id/fs/create", requireOwnership, async (req, res, next) => {
+router.post("/:id/fs/create", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1356,7 +1268,7 @@ router.post("/:id/fs/create", requireOwnership, async (req, res, next) => {
  * Deletes a file or directory inside the project.
  * Body: { path: string }
  */
-router.delete("/:id/fs/delete", requireOwnership, async (req, res, next) => {
+router.delete("/:id/fs/delete", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1381,7 +1293,7 @@ router.delete("/:id/fs/delete", requireOwnership, async (req, res, next) => {
  * Renames a file or directory.
  * Body: { oldPath: string, newPath: string }
  */
-router.put("/:id/fs/rename", requireOwnership, async (req, res, next) => {
+router.put("/:id/fs/rename", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -1406,7 +1318,7 @@ router.put("/:id/fs/rename", requireOwnership, async (req, res, next) => {
  * Uploads a file to the specified directory.
  * Form Data: path (string), file (File)
  */
-router.post("/:id/fs/upload", requireOwnership, upload.single("file"), async (req, res, next) => {
+router.post("/:id/fs/upload", upload.single("file"), async (req, res, next) => {
     try {
         if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 

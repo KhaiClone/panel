@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const assistantService = require("../services/assistantService");
 
-// Mounted behind authMiddleware + adminOnly (see index.js). Thin proxy to the
+// Mounted behind authMiddleware (see index.js). Thin proxy to the
 // ArnTo-assistant decor API.
 
 /** GET /api/decors — all decors (loaded + imported) with computed prices */

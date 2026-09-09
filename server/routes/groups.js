@@ -2,12 +2,11 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// Groups are per-user. Admin sees all groups; users see only their own.
+// Groups are panel-wide — the panel has a single account.
 
 router.get("/", async (req, res, next) => {
     try {
-        const query = req.user.role === "admin" ? {} : { ownerId: req.user.id };
-        const groups = await db.find("groups", query);
+        const groups = await db.find("groups");
         res.json(groups);
     } catch (err) {
         next(err);
@@ -21,7 +20,7 @@ router.post("/", async (req, res, next) => {
             return res.status(400).json({ error: "name is required" });
         }
 
-        const existing = await db.findOne("groups", { name: name.trim(), ownerId: req.user.id });
+        const existing = await db.findOne("groups", { name: name.trim() });
         if (existing) {
             return res.status(409).json({ error: `Group "${name.trim()}" already exists` });
         }
@@ -29,7 +28,6 @@ router.post("/", async (req, res, next) => {
         const group = await db.create("groups", {
             name: name.trim(),
             color,
-            ownerId: req.user.id,
             createdAt: Date.now(),
         });
 
@@ -43,10 +41,6 @@ router.put("/:id", async (req, res, next) => {
     try {
         const group = await db.findOne("groups", { _id: req.params.id });
         if (!group) return res.status(404).json({ error: "Group not found" });
-        if (req.user.role !== "admin" && group.ownerId !== req.user.id) {
-            return res.status(403).json({ error: "Access denied" });
-        }
-
         const { name, color } = req.body;
         const updates = {};
         if (name !== undefined) updates.name = name.trim();
@@ -63,10 +57,6 @@ router.delete("/:id", async (req, res, next) => {
     try {
         const group = await db.findOne("groups", { _id: req.params.id });
         if (!group) return res.status(404).json({ error: "Group not found" });
-        if (req.user.role !== "admin" && group.ownerId !== req.user.id) {
-            return res.status(403).json({ error: "Access denied" });
-        }
-
         // Ungroup all bots in this group
         const botsInGroup = await db.find("bots", { groupId: req.params.id });
         for (const bot of botsInGroup) {
