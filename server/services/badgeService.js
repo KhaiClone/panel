@@ -260,6 +260,7 @@ async function createOrder({
         accountId: me.userId,
         username: me.username,
         hasNitro: me.hasNitro,
+        locale: me.locale ?? null,
         ...(_encrypt(token)),
         badgeKey,
         tierKey,
@@ -499,7 +500,10 @@ async function _processChoice(orderId, order, token) {
 
     const lease = await proxyPool.acquire(order.accountId, { feature: "badge" });
     try {
-        await setHypeSquad(token, order.houseId, { agent: lease.agent });
+        await setHypeSquad(token, order.houseId, {
+            agent: lease.agent,
+            ...(order.locale ? { locale: order.locale } : {}),
+        });
     } catch (err) {
         lease.release({ failed: true });
         const dead = Boolean(err.invalidToken);

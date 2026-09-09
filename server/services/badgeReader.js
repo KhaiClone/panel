@@ -81,6 +81,9 @@ async function _headers(token) {
         // locale là đổi dấu phân cách, và parse sẽ sai.
         "x-discord-locale": "en-US",
         "accept-language": "en-US",
+        // Client thật luôn gửi timezone. Reader là acc của ta ở VN dùng client
+        // tiếng Anh — một tổ hợp hoàn toàn bình thường.
+        "x-discord-timezone": "Asia/Ho_Chi_Minh",
         accept: "*/*",
         origin: "https://discord.com",
         referer: "https://discord.com/channels/@me",
@@ -198,6 +201,9 @@ async function checkNitro(token) {
         username: res.data.username ?? "Unknown",
         premiumType: res.data.premium_type ?? 0,
         hasNitro: (res.data.premium_type ?? 0) !== 0,
+        // Dùng để gửi /science và /hypesquad với đúng locale/timezone của tài
+        // khoản, thay vì một giá trị cố định cho mọi khách.
+        locale: res.data.locale ?? null,
     };
 }
 

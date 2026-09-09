@@ -44,6 +44,37 @@ const GAME_TIME_SPREAD = 5;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Client thật gửi locale và timezone của chính máy người dùng, và hai thứ đó khớp
+// với cài đặt tài khoản. Ta lấy locale thật từ /users/@me rồi suy ra timezone —
+// hardcode một giá trị cố định cho mọi khách là thứ dễ nhận ra nhất khi đối soát.
+// Mặc định Asia/Ho_Chi_Minh vì khách chủ yếu ở VN.
+const DEFAULT_LOCALE = "en-US";
+const DEFAULT_TZ = "Asia/Ho_Chi_Minh";
+const LOCALE_TZ = {
+    vi: "Asia/Ho_Chi_Minh",
+    th: "Asia/Bangkok",
+    id: "Asia/Jakarta",
+    ja: "Asia/Tokyo",
+    ko: "Asia/Seoul",
+    "zh-CN": "Asia/Shanghai",
+    "zh-TW": "Asia/Taipei",
+    "en-US": "America/New_York",
+    "en-GB": "Europe/London",
+    de: "Europe/Berlin",
+    fr: "Europe/Paris",
+    "es-ES": "Europe/Madrid",
+    it: "Europe/Rome",
+    nl: "Europe/Amsterdam",
+    pl: "Europe/Warsaw",
+    "pt-BR": "America/Sao_Paulo",
+    ru: "Europe/Moscow",
+    tr: "Europe/Istanbul",
+};
+
+function _tzFor(locale) {
+    return LOCALE_TZ[locale] ?? DEFAULT_TZ;
+}
+
 function _err(message, status = 502, extra = {}) {
     const e = new Error(message);
     e.status = status;
@@ -51,7 +82,7 @@ function _err(message, status = 502, extra = {}) {
     return e;
 }
 
-function _superProps(buildNumber, session) {
+function _superProps(buildNumber, session, locale = DEFAULT_LOCALE) {
     return Buffer.from(
         JSON.stringify({
             os: "Windows",
@@ -61,7 +92,7 @@ function _superProps(buildNumber, session) {
             os_version: "10.0.26200",
             os_arch: "x64",
             app_arch: "x64",
-            system_locale: "en-US",
+            system_locale: locale,
             has_client_mods: false,
             browser_user_agent: USER_AGENT,
             browser_version: "42.7.1",
@@ -185,6 +216,9 @@ class BadgeSender {
         this.cookie = cookie;
         this.analyticsToken = null;
         this.buildNumber = null;
+        // Locale thật của tài khoản, lấy ở init(). Trước đó dùng mặc định vì
+        // chính lời gọi /users/@me cũng cần super_props.
+        this.locale = DEFAULT_LOCALE;
         this.session = {
             heartbeatSession: crypto.randomUUID(),
             launchSignature: crypto.randomUUID(),
@@ -216,10 +250,12 @@ class BadgeSender {
         if (res.status !== 200) throw _err(`Discord trả HTTP ${res.status}`);
         if (!res.data?.analytics_token) throw _err("Không lấy được analytics_token");
         this.analyticsToken = res.data.analytics_token;
+        if (res.data.locale) this.locale = res.data.locale;
         return {
             userId: String(res.data.id),
             username: res.data.username ?? "Unknown",
             hasNitro: (res.data.premium_type ?? 0) !== 0,
+            locale: this.locale,
         };
     }
 
@@ -263,7 +299,7 @@ class BadgeSender {
                 client_performance_memory: null,
                 cpu_core_count: null,
                 accessibility_features: 0,
-                rendered_locale: "en-US",
+                rendered_locale: this.locale,
                 launch_signature: this.session.launchSignature,
                 client_rtc_state: null,
                 client_app_state: "focused",
@@ -313,15 +349,16 @@ class BadgeSender {
     async post(events) {
         const headers = {
             accept: "*/*",
-            "accept-language": "en-US",
+            "accept-language": this.locale,
             authorization: this.token,
             "content-type": "application/json",
             origin: "https://discord.com",
             referer: "https://discord.com/channels/@me",
             "user-agent": USER_AGENT,
             "x-debug-options": "bugReporterEnabled",
-            "x-discord-locale": "en-US",
-            "x-super-properties": _superProps(this.buildNumber, this.session),
+            "x-discord-locale": this.locale,
+            "x-discord-timezone": _tzFor(this.locale),
+            "x-super-properties": _superProps(this.buildNumber, this.session, this.locale),
         };
         if (this.cookie) headers.cookie = this.cookie;
         try {
@@ -382,7 +419,7 @@ const HYPESQUAD_URL = `${API}/hypesquad/online`;
  *
  * @param {1|2|3} houseId  1 Bravery · 2 Brilliance · 3 Balance
  */
-async function setHypeSquad(token, houseId, { agent = null } = {}) {
+async function setHypeSquad(token, houseId, { agent = null, locale = DEFAULT_LOCALE } = {}) {
     const buildNumber = await getBuildNumber();
     const session = {
         heartbeatSession: crypto.randomUUID(),
@@ -396,8 +433,10 @@ async function setHypeSquad(token, houseId, { agent = null } = {}) {
                 authorization: token,
                 "content-type": "application/json",
                 "user-agent": USER_AGENT,
-                "x-super-properties": _superProps(buildNumber, session),
-                "x-discord-locale": "en-US",
+                "x-super-properties": _superProps(buildNumber, session, locale),
+                "accept-language": locale,
+                "x-discord-locale": locale,
+                "x-discord-timezone": _tzFor(locale),
                 origin: "https://discord.com",
                 referer: "https://discord.com/channels/@me",
             },
@@ -418,6 +457,7 @@ async function setHypeSquad(token, houseId, { agent = null } = {}) {
 
 module.exports = {
     BadgeSender,
+    DEFAULT_LOCALE,
     loadGames,
     planOrder,
     setHypeSquad,
