@@ -13,7 +13,7 @@ const STATUS = {
     paid:          { label: "Đã thanh toán", color: "var(--text-muted)" },
     verifying:     { label: "Đang kiểm tra", color: "var(--accent)" },
     sending:       { label: "Đang gửi",      color: "var(--accent)" },
-    sent:          { label: "Đã gửi",        color: "#3b82f6" },
+    sent:          { label: "Hoàn tất",      color: "var(--success)" },
     verified:      { label: "Hoàn tất",      color: "var(--success)" },
     verify_failed: { label: "Xác minh hụt",  color: "var(--warning)" },
     manual_review: { label: "Chờ duyệt",     color: "var(--warning)" },
@@ -35,7 +35,10 @@ const fmtTime = (ts) => {
 };
 
 const fmtNum = (n) => (Number.isFinite(n) ? Number(n).toLocaleString("vi-VN") : "—");
-const unitVi = (u) => (u === "hours" ? "giờ" : "game");
+const unitVi = (u) => (u === "hours" ? "giờ" : u === "house" ? "nhà" : "game");
+const badgeVi = (k) =>
+    ({ game_time: "Game Time", game_variety: "Game Variety", hypesquad: "HypeSquad", streaming: "Streaming" })[k] ??
+    k;
 
 function Card({ children, style }) {
     return (
@@ -107,12 +110,16 @@ function OrderRow({ order, onAction, busy }) {
                         )}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
-                        {order.badgeKey === "game_time" ? "Game Time" : "Game Variety"} ·{" "}
-                        <strong style={{ color: "var(--text)" }}>{order.tierName}</strong> ·{" "}
-                        {fmtNum(order.threshold)} {unitVi(order.unit)} · {fmtNum(order.price)}đ
+                        {badgeVi(order.badgeKey)} ·{" "}
+                        <strong style={{ color: "var(--text)" }}>{order.tierName}</strong>
+                        {order.threshold == null
+                            ? ""
+                            : ` · ${fmtNum(order.threshold)} ${unitVi(order.unit)}`}{" "}
+                        · {fmtNum(order.price)}đ
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
-                        khai {fmtNum(order.declaredValue)} · đọc được{" "}
+                        {order.kind === "choice" ? "nhà hiện tại" : "khai"}{" "}
+                        {order.kind === "choice" ? "" : fmtNum(order.declaredValue)} · đọc được{" "}
                         <strong style={{ color: order.measuredValue === null ? "var(--text-dim)" : "var(--text-muted)" }}>
                             {fmtNum(order.measuredValue)}
                         </strong>
@@ -132,7 +139,7 @@ function OrderRow({ order, onAction, busy }) {
                     )}
                     {order.status === "sent" && (
                         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                            xác minh {fmtTime(order.verifyAfter)}
+                            {order.sent}/{order.total} · badge lên sau ~1 ngày
                         </div>
                     )}
                     {order.status === "verified" && (
@@ -423,8 +430,8 @@ export default function BadgesPage() {
             <div style={{ marginBottom: 18 }}>
                 <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Auto Badge</h1>
                 <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "6px 0 0" }}>
-                    Đơn hàng badge. Thanh toán nằm ở ArnTo-Auto; panel đọc tiến độ thật, gửi
-                    /science rồi xác minh lại sau ~26 giờ.
+                    Đơn hàng badge. Thanh toán nằm ở ArnTo-Auto; panel đọc tiến độ thật rồi
+                    gửi — gửi xong là đơn xong. Bấm "Xác minh ngay" nếu cần đối chứng.
                 </p>
             </div>
 

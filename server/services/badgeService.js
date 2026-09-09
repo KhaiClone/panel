@@ -3,16 +3,21 @@
  * Vòng đời một đơn Auto Badge. Thanh toán nằm ở ArnTo-Auto; panel chỉ được gọi
  * SAU KHI khách đã trả tiền, rồi tự chạy hết phần còn lại.
  *
- *   paid ─→ verifying ─┬─→ sending ─→ sent ─(24h)─→ verified
- *                      │                                └─→ verify_failed
- *                      ├─→ forfeited       (đã sở hữu mốc rồi mà vẫn mua)
- *                      └─→ manual_review   (reader chết / rate-limit / 404)
+ *   badge tiered   paid ─→ verifying ─┬─→ sending ─→ sent        (xong)
+ *   (game_time,                       ├─→ forfeited
+ *    game_variety)                    └─→ manual_review
  *
- * BA QUYẾT ĐỊNH THIẾT KẾ, theo yêu cầu:
+ *   badge choice   paid ─→ sending ─→ verified                   (xong)
+ *   (hypesquad)                   └─→ sent  (đổi rồi nhưng không đọc lại được)
+ *
+ * BỐN QUYẾT ĐỊNH THIẾT KẾ, theo yêu cầu:
  *  1. Không có bước xác nhận riêng trước khi hiện QR — khách chọn mốc là mua luôn.
  *  2. Reader lỗi thì KHÔNG tự tịch thu: đơn treo ở manual_review chờ duyệt tay.
  *     Tự động tịch thu khi hạ tầng của mình hỏng là kịch bản tệ nhất có thể có.
  *  3. Đã sở hữu mốc mà vẫn mua thì mất tiền (forfeited).
+ *  4. GỬI XONG LÀ XONG — không có vòng xác minh tự động sau 1-2 ngày. HypeSquad
+ *     vẫn tự xác minh vì nó miễn phí và tức thì; badge tiered thì chỉ xác minh
+ *     khi admin bấm "Xác minh ngay" ở trang /badges.
  *
  * `measuredValue` LUÔN lấy từ reader, không bao giờ từ lời khai của khách. Khách
  * khai thấp để ăn nâng cấp miễn phí là bất khả thi vì kế hoạch gửi tính từ số
@@ -33,10 +38,13 @@ const proxyPool = require("./proxyPool");
 const MODEL = "badge_orders";
 const ACCOUNTS = "badge_accounts";
 
-// Badge lên sau ~1 ngày (đo được: gửi 04/09 20:xx → badge 05/09 17:42 và 20:00).
-// 26h cho dư biên an toàn.
-const VERIFY_DELAY_MS = 26 * 60 * 60_000;
-const TICK_MS = 5 * 60_000;
+// Không có vòng xác minh tự động: gửi xong là đơn xong.
+//
+// Badge tiered vẫn cần ~1 ngày để Discord dựng lại, nhưng bắt đơn treo suốt thời
+// gian đó chỉ để bot tự đọc lại một lần là trả giá quá đắt — mỗi lượt đọc tốn
+// một request từ acc reader, và khách thì đã nhận đủ thứ họ mua ngay lúc gửi
+// xong. Cần đối chứng lúc tranh chấp thì bấm "Xác minh ngay" ở trang /badges;
+// verifyOrder() vẫn còn nguyên, chỉ không còn ai gọi tự động.
 
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
@@ -302,7 +310,6 @@ async function createOrder({
         createdAt: Date.now(),
         paidAt: Date.now(),
         sentAt: null,
-        verifyAfter: null,
         verifiedAt: null,
         finalTier: null,
         finalValue: null,
@@ -312,13 +319,18 @@ async function createOrder({
     await db.create(MODEL, order);
     _dispatch(order, { type: "order_created", status: "paid" });
     // Chạy nền: người gọi không phải chờ hết cả lượt gửi.
-    process(order.orderId).catch(() => {});
+    processOrder(order.orderId).catch(() => {});
     return _shape(order);
 }
 
 // ── Chạy đơn ─────────────────────────────────────────────────────────────────────
 
-async function process(orderId) {
+/**
+ * TUYỆT ĐỐI KHÔNG đặt tên hàm này là `process`: ở phạm vi module nó che khuất
+ * global `process` của Node, khiến mọi `process.env` trong file thành undefined.
+ * Đã dính một lần — _encrypt() chết ngay ở createOrder nên KHÔNG đơn nào chạy được.
+ */
+async function processOrder(orderId) {
     if (running.has(orderId)) return null;
     running.add(orderId);
     try {
@@ -509,12 +521,10 @@ async function _process(orderId) {
 
     await _addClaimedGames(order.accountId, order.username, plan.games.map((g) => g.id));
 
-    const verifyAfter = Date.now() + VERIFY_DELAY_MS;
     await _patch(orderId, {
         status: "sent",
         sent: result.sent,
         sentAt: Date.now(),
-        verifyAfter,
         error: null,
     });
     _dispatch(order, {
@@ -522,7 +532,10 @@ async function _process(orderId) {
         status: "sent",
         sent: result.sent,
         total: result.total,
-        verifyAfter,
+        badgeKey: order.badgeKey,
+        tierName: order.tierName,
+        threshold: order.threshold,
+        unit: order.unit,
     });
     return _shape(await _get(orderId));
 }
@@ -567,11 +580,19 @@ async function _processChoice(orderId, order, token) {
     } catch {
         // Đọc hỏng thì không kết luận là thất bại — API đã nhận rồi. Để scheduler
         // xác minh lại ở lượt sau.
-        await _patch(orderId, {
-            verifyAfter: Date.now() + 60_000,
-            error: "Chưa xác minh được, sẽ thử lại",
+        // API đã nhận request nên gần như chắc chắn đã đổi; chỉ là ta không đọc
+        // lại được để khẳng định. Kết thúc ở "sent" và để admin tự bấm xác minh
+        // nếu khách thắc mắc.
+        await _patch(orderId, { error: "Đã gửi nhưng chưa đọc lại được để xác nhận" });
+        _dispatch(order, {
+            type: "sent",
+            status: "sent",
+            sent: 1,
+            total: 1,
+            badgeKey: order.badgeKey,
+            tierName: order.tierName,
+            unit: order.unit,
         });
-        _dispatch(order, { type: "sent", status: "sent", sent: 1, total: 1 });
         return _shape(await _get(orderId));
     }
 
@@ -693,7 +714,7 @@ async function resolveManual(orderId, action) {
 
     if (action === "retry") {
         await _patch(orderId, { status: "paid", error: null });
-        return process(orderId);
+        return processOrder(orderId);
     }
     if (action === "forfeit") {
         await _patch(orderId, { status: "forfeited", error: "Bị tịch thu khi duyệt tay" });
@@ -733,15 +754,6 @@ async function getOrder(orderId) {
 
 // ── Scheduler + khôi phục sau reboot ─────────────────────────────────────────────
 
-async function _tick() {
-    const now = Date.now();
-    for (const o of (await db.find(MODEL, { status: "sent" })) ?? []) {
-        if (o.verifyAfter && o.verifyAfter <= now) {
-            await verifyOrder(o.orderId).catch(() => {});
-        }
-    }
-}
-
 /**
  * Đơn đang dở lúc panel restart. "paid"/"verifying" chạy lại từ đầu an toàn vì
  * chưa gửi gì. "sending" thì KHÔNG tự chạy lại — /science cộng dồn, chạy lại là
@@ -751,7 +763,7 @@ async function restoreOrders() {
     const stuck = (await db.find(MODEL, {})) ?? [];
     for (const o of stuck) {
         if (o.status === "paid" || o.status === "verifying") {
-            process(o.orderId).catch(() => {});
+            processOrder(o.orderId).catch(() => {});
         } else if (o.status === "sending") {
             await _patch(o.orderId, {
                 status: "manual_review",
@@ -765,8 +777,6 @@ function start() {
     // Nâng cấp êm: .env cũ còn BADGE_READER_TOKEN thì đưa vào pool một lần.
     badgeReader.importEnvReader().catch(() => {});
     restoreOrders().catch(() => {});
-    _tick().catch(() => {});
-    setInterval(() => _tick().catch(() => {}), TICK_MS);
 }
 
 module.exports = {
@@ -774,7 +784,7 @@ module.exports = {
     check,
     quote,
     createOrder,
-    process,
+    processOrder,
     verifyOrder,
     resolveManual,
     listOrders,
