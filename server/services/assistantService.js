@@ -43,4 +43,21 @@ const importDecor = (fields) => request("post", "/api/decors/import", { data: fi
 const updateDecor = (skuId, fields) => request("patch", `/api/decors/import/${encodeURIComponent(skuId)}`, { data: fields });
 const deleteDecor = (skuId) => request("delete", `/api/decors/import/${encodeURIComponent(skuId)}`);
 
-module.exports = { listDecors, listCategories, previewDecor, importDecor, updateDecor, deleteDecor };
+// Price table (assistant DB `prices`): the original->selling-price lookup that
+// GET /api/decors uses to compute sellingPrices. Key-guarded on the assistant.
+const listPrices = () => request("get", "/api/decors/prices");
+const upsertPrice = (fields) => request("put", "/api/decors/prices", { data: fields });
+const deletePrice = (type, original) =>
+    request("delete", `/api/decors/prices/${encodeURIComponent(type)}/${encodeURIComponent(original)}`);
+
+module.exports = {
+    listDecors,
+    listCategories,
+    previewDecor,
+    importDecor,
+    updateDecor,
+    deleteDecor,
+    listPrices,
+    upsertPrice,
+    deletePrice,
+};

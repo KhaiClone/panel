@@ -23,6 +23,33 @@ router.get("/categories", async (req, res, next) => {
     }
 });
 
+/** GET /api/decors/prices — price tiers + how many decors use each tier */
+router.get("/prices", async (req, res, next) => {
+    try {
+        res.json(await assistantService.listPrices());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** PUT /api/decors/prices — add or update one tier { type, original, price } */
+router.put("/prices", async (req, res, next) => {
+    try {
+        res.json(await assistantService.upsertPrice(req.body));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** DELETE /api/decors/prices/:type/:original — remove one tier */
+router.delete("/prices/:type/:original", async (req, res, next) => {
+    try {
+        res.json(await assistantService.deletePrice(req.params.type, req.params.original));
+    } catch (err) {
+        next(err);
+    }
+});
+
 /** POST /api/decors/preview — normalize form fields without saving */
 router.post("/preview", async (req, res, next) => {
     try {

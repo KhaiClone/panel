@@ -1,10 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import DecorPrices from "../components/DecorPrices";
 
 const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 3: "Frame", 1000: "Bundle" };
 
 const money = (n) => (typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—");
+
+// What the shop actually charges, computed by the assistant from the price
+// table. 0 means the tier for this decor's original price is still missing.
+const sellPrice = (d) => d.sellingPrices?.loginWithNitro || 0;
 
 function Field({ label, hint, children }) {
     return (
@@ -222,6 +227,11 @@ export default function DecorsPage() {
                                         </div>
                                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                                             <p className="mono" style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>{money(d.prices?.withNitro)}</p>
+                                            {/* Selling price straight from the price table — 0đ means the
+                                                tier for this original price has not been set yet. */}
+                                            <p className="mono" title="Login price (Nitro)" style={{ fontSize: 11, margin: "2px 0 0", color: sellPrice(d) ? "var(--success)" : "var(--danger)" }}>
+                                                {sellPrice(d) ? money(sellPrice(d)) : "no price"}
+                                            </p>
                                         </div>
                                         {imported && (
                                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -251,6 +261,8 @@ export default function DecorsPage() {
                     </div>
                 </div>
             </div>
+
+            <DecorPrices onChange={fetchDecors} />
 
             {confirmDel && (
                 <ConfirmModal
