@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const executor = require("../services/executor");
+const { AUTH_REQUIRED } = require("../middleware/auth");
 
 // Auth lives per-route here rather than on the mount, because SSE and downloads
 // carry the token as a query param. A valid token is full access — the panel has
@@ -17,10 +18,10 @@ router.get("/:botId", async (req, res, next) => {
         const authHeader = req.headers["authorization"];
         let token = authHeader && authHeader.split(" ")[1];
         if (!token && req.query.token) token = req.query.token;
-        if (!token) return res.status(401).json({ error: "No token" });
+        if (!token) return res.status(401).json({ error: "No token", code: AUTH_REQUIRED });
 
         try { jwt.verify(token, process.env.JWT_SECRET); }
-        catch { return res.status(401).json({ error: "Invalid token" }); }
+        catch { return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED }); }
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -91,10 +92,10 @@ router.delete("/:botId", async (req, res, next) => {
         const authHeader = req.headers["authorization"];
         let token = authHeader && authHeader.split(" ")[1];
         if (!token && req.query.token) token = req.query.token;
-        if (!token) return res.status(401).json({ error: "No token" });
+        if (!token) return res.status(401).json({ error: "No token", code: AUTH_REQUIRED });
 
         try { jwt.verify(token, process.env.JWT_SECRET); }
-        catch { return res.status(401).json({ error: "Invalid token" }); }
+        catch { return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED }); }
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });

@@ -21,11 +21,22 @@ api.interceptors.request.use((config) => {
 });
 
 // ── Response interceptor ───────────────────────────────────────────────────
-// Redirect to login if the server returns 401 (expired/invalid token).
+// Redirect to login when OUR session died — and only then.
+//
+// 401 alone is not enough to decide that. Several routes resolve a Discord
+// token the admin typed in, and they answer 401 when THAT token is dead:
+// POST /quests/start, /quests/preview, /quests/monthly. Logging out on a bare
+// 401 meant pasting a dead token into "Add account manually" kicked the admin
+// back to /login instead of showing "token is dead" — the panel session and the
+// customer's Discord token share one status number.
+//
+// authMiddleware now stamps `code: "AUTH_REQUIRED"` on the 401s that really do
+// mean "log in again". Everything else is the caller's to display.
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
+        const res = error.response;
+        if (res?.status === 401 && res.data?.code === "AUTH_REQUIRED") {
             localStorage.removeItem("token");
             if (window.location.pathname !== "/login") {
                 window.location.href = "/login";
