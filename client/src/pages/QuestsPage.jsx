@@ -22,6 +22,16 @@ const fmtDate = (iso) => {
     }
 };
 
+// Single-quest accounts are erased one week after their run (token, progress, owner
+// link — everything). Monthly subscribers are kept for the life of the plan.
+const retentionText = (a) => {
+    if (a.mode === "monthly" || !a.retentionExpiresAt) return null;
+    const left = a.retentionExpiresAt - Date.now();
+    if (left <= 0) return "erasing…";
+    const d = Math.floor(left / 86400000);
+    return d >= 1 ? `erased in ${d}d` : `erased in ${Math.max(1, Math.ceil(left / 3600000))}h`;
+};
+
 const modeLabel = (a) =>
     a.mode === "monthly"
         ? "♾️ Monthly plan"
@@ -217,6 +227,11 @@ function AccountRow({ a, live, onOpen }) {
                         <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 6 }}>
                             {modeLabel(a)}
                             {a.ref && <span title="Owner linked">· 👤</span>}
+                            {retentionText(a) && (
+                                <span title="Single-quest data is kept for 1 week, then deleted">
+                                    · 🕒 {retentionText(a)}
+                                </span>
+                            )}
                         </p>
                     </div>
                 </div>
@@ -301,6 +316,8 @@ export default function QuestsPage() {
                 </h1>
                 <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
                     Monitor every account running quests. Click an account to inspect its quests.
+                    Single-quest accounts are erased 1 week after their run — token, progress and
+                    owner link included.
                 </p>
             </div>
 

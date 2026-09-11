@@ -149,6 +149,8 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     );
     // Resume any quest accounts that were running before a restart.
     questService.restore().catch((e) => console.warn("[Quest] restore error:", e.message));
+    // Erase single-quest accounts older than the retention window (1 week), hourly.
+    questService.startRetentionSweep();
     // Monthly subscription schedulers (Tue/Sat run + daily enroll scan).
     questMonthly.start();
     // Auto Badge: resume interrupted orders + the ~26h verification sweep.

@@ -119,6 +119,9 @@ export default function QuestAccountDetail() {
                             {a.mode === "monthly" && a.monthlyExpiresAt && (
                                 <MetaItem label="Expires">{fmtDate(a.monthlyExpiresAt)}</MetaItem>
                             )}
+                            {a.mode !== "monthly" && a.retentionExpiresAt && (
+                                <MetaItem label="Data erased">{fmtDate(a.retentionExpiresAt)}</MetaItem>
+                            )}
                         </div>
 
                         {a.error && (

@@ -7,8 +7,14 @@
  * DB model `quest_accounts` (one record per Discord account):
  *   { _id, accountId, username, tokenEncrypted, tokenIv, tokenTag,
  *     mode: "all" | "select", selectedQuestIds: [], status, completedCount,
- *     error, addedAt, updatedAt }
+ *     error, addedAt, updatedAt, retentionExpiresAt }
  * status: "running" | "done" | "stopped" | "token_dead" | "error"
+ *
+ * RETENTION — single-quest ("lẻ") accounts are kept for ONE WEEK only.
+ * `retentionExpiresAt` is set to now + 7 days on every start and swept hourly;
+ * once it passes, the whole record (token included), its live quest state and its
+ * webhook are deleted and it stops being listed anywhere. Monthly subscribers
+ * (quest_monthly) are NOT affected — their data lives as long as the plan.
  */
 
 const { EventEmitter } = require("events");
@@ -27,6 +33,22 @@ const proxyPool = require("./proxyPool");
 
 const MODEL = "quest_accounts";
 const { isEnrolled, isCompleted, isCompletable } = _fields;
+
+// ── Retention: keep a single-quest account for one week, then erase it ───────────
+const RETENTION_DAYS = Math.max(1, parseInt(process.env.QUEST_RETENTION_DAYS || "7", 10) || 7);
+const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+/** When this record must be erased. Legacy records (no field) count from their last
+ *  activity, so anything already older than the window is purged on the next sweep. */
+function _expiryOf(rec) {
+    const explicit = Number(rec?.retentionExpiresAt);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    return (Number(rec?.updatedAt) || Number(rec?.addedAt) || 0) + RETENTION_MS;
+}
+function _isExpired(rec) {
+    return _expiryOf(rec) <= Date.now();
+}
 
 // ── Token encryption at rest (aes-256-gcm, key from env secret) ──────────────────
 const ALGO = "aes-256-gcm";
@@ -175,18 +197,20 @@ function _publicRec(r) {
         ref: r.webhookRef ?? null,
         addedAt: r.addedAt,
         updatedAt: r.updatedAt,
+        retentionExpiresAt: _expiryOf(r),
         quests: liveState.get(r.accountId) ?? {},
     };
 }
 
+/** Expired accounts are hidden immediately, even before the sweep erases them. */
 async function listAccounts() {
     const recs = (await db.get(MODEL)) || [];
-    return recs.map(_publicRec);
+    return recs.filter((r) => !_isExpired(r)).map(_publicRec);
 }
 
 async function getAccount(accountId) {
     const rec = await _getRec(accountId);
-    return rec ? _publicRec(rec) : null;
+    return rec && !_isExpired(rec) ? _publicRec(rec) : null;
 }
 
 /** Resolve a token and fetch its quests (for the UI to pick from). No storage. */
@@ -254,6 +278,8 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
         error: null,
         addedAt: existing?.addedAt ?? Date.now(),
         updatedAt: Date.now(),
+        // Each new run restarts the one-week clock; nothing survives past it.
+        retentionExpiresAt: Date.now() + RETENTION_MS,
     };
     if (existing) await db.findOneAndUpdate(MODEL, { accountId }, record);
     else await db.create(MODEL, record);
@@ -295,6 +321,39 @@ async function removeAccount(accountId) {
     _publish(accountId, { type: "removed" });
     webhooks.delete(accountId);
     return true;
+}
+
+// ── Retention sweep ──────────────────────────────────────────────────────────────
+/**
+ * Erase every single-quest account whose week is up: stops its run, deletes the DB
+ * record (encrypted token included), drops its live quest state and its webhook.
+ * Nothing about the owner is kept afterwards.
+ */
+async function purgeExpired() {
+    const recs = (await db.get(MODEL)) || [];
+    let purged = 0;
+    for (const rec of recs) {
+        if (!_isExpired(rec)) continue;
+        try {
+            await removeAccount(rec.accountId);
+            purged++;
+        } catch (e) {
+            console.warn(`[Quest] retention purge ${rec.accountId} error: ${e.message}`);
+        }
+    }
+    if (purged) console.log(`[Quest] Retention: erased ${purged} account(s) older than ${RETENTION_DAYS}d.`);
+    return purged;
+}
+
+/** Purge now, then keep checking hourly. */
+function startRetentionSweep() {
+    purgeExpired().catch((e) => console.warn("[Quest] retention sweep:", e.message));
+    const timer = setInterval(
+        () => purgeExpired().catch((e) => console.warn("[Quest] retention sweep:", e.message)),
+        SWEEP_INTERVAL_MS,
+    );
+    timer.unref?.();
+    return timer;
 }
 
 // ── Run loop ─────────────────────────────────────────────────────────────────────
@@ -423,6 +482,11 @@ async function restore() {
     const recs = (await db.get(MODEL)) || [];
     let restored = 0;
     for (const rec of recs) {
+        // Past its week: erase instead of resuming — never re-arm a webhook for it.
+        if (_isExpired(rec)) {
+            await removeAccount(rec.accountId).catch(() => {});
+            continue;
+        }
         if (rec.webhookUrl) webhooks.set(rec.accountId, { url: rec.webhookUrl, ref: rec.webhookRef ?? null });
         if (rec.status !== "running") continue;
         const token = _decrypt(rec);
@@ -463,6 +527,9 @@ module.exports = {
     stopAccount,
     removeAccount,
     restore,
+    purgeExpired,
+    startRetentionSweep,
+    RETENTION_DAYS,
     emitExternalEvent,
     getLive,
     clearLive,
