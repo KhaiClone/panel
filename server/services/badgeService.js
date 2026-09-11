@@ -458,7 +458,7 @@ async function _process(orderId) {
         return _shape(await _get(orderId));
     }
 
-    if (!plan.games.length) {
+    if (!plan.sessions?.length) {
         // Đã đủ rồi mà chưa vượt threshold — hiếm, nhưng đừng gửi rỗng.
         await _patch(orderId, { status: "manual_review", error: "Kế hoạch rỗng" });
         return _shape(await _get(orderId));
@@ -468,7 +468,8 @@ async function _process(orderId) {
         status: "sending",
         plan: {
             gameCount: plan.games.length,
-            hoursPerGame: plan.hoursPerGame,
+            sessionCount: plan.sessions.length,
+            hoursPerSession: plan.hoursPerSession,
             need: plan.need,
             varietySideEffect: plan.varietySideEffect ?? 0,
             reusedCount: plan.reusedCount ?? 0,
@@ -478,13 +479,13 @@ async function _process(orderId) {
                 : null,
             crossedVarietyTier: Boolean(plan.crossedVarietyTier),
         },
-        total: plan.games.length,
+        total: plan.sessions.length,
         sent: 0,
     });
     _dispatch(order, {
         type: "status",
         status: "sending",
-        total: plan.games.length,
+        total: plan.sessions.length,
         need: plan.need,
         unit: order.unit,
     });

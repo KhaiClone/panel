@@ -11,10 +11,15 @@
  * Đã xác minh 2026-09-05 trên acc thật: gửi 10.448 game × 2h → hôm sau badge lên
  * `eternal` + `universalist`, credit ~94%.
  *
- * HAI BADGE ẢNH HƯỞNG LẪN NHAU. Mỗi game gửi đi vừa cộng vào Game Variety (số
- * game) vừa cộng vào Game Time (số giờ). Nên:
- *   - Bán Game Variety  → nhiều game, mỗi game 1 phút (giờ tăng không đáng kể).
- *   - Bán Game Time     → dồn giờ lên game ĐÃ ĐƯỢC ĐẾM RỒI, để số game đứng yên.
+ * ĐƠN VỊ GỬI LÀ PHIÊN, KHÔNG PHẢI GAME. Một game có thể mang rất nhiều phiên —
+ * đúng như người chơi thật tích giờ qua nhiều buổi. Đây không phải chi tiết làm
+ * đẹp: gộp tất cả giờ vào MỘT phiên thì `duration_tracked_ms` tràn int32 và
+ * Discord nhận (204) rồi bỏ im lặng. Xem MAX_SESSION_HOURS.
+ *
+ * HAI BADGE ẢNH HƯỞNG LẪN NHAU. Mỗi game MỚI gửi đi vừa cộng vào Game Variety
+ * (số game) vừa cộng vào Game Time (số giờ). Nên:
+ *   - Bán Game Variety  → nhiều game, mỗi game 1 phiên 1 phút.
+ *   - Bán Game Time     → nhiều phiên trên game ĐÃ ĐƯỢC ĐẾM RỒI, số game đứng yên.
  *
  * Chỗ thứ hai là nơi dễ mất tiền nhất: mở 5 game mới cho một account trắng là
  * tặng luôn Sampler (2 game) và Dabbler (5 game). planOrder() chống bằng ba lớp:
@@ -50,6 +55,21 @@ const BATCH_DELAY = 300;
 // càng ít bị đẩy theo (khách khỏi được nâng cấp miễn phí), nhưng dồn 5.000h lên
 // 1 game thì trông bất thường hơn. 5 là điểm cân bằng; chỉnh được qua tham số.
 const GAME_TIME_SPREAD = 5;
+
+// Giờ tối đa của MỘT phiên chơi.
+//
+// `duration_tracked_ms` đi qua một tầng lưu int32 ở phía Discord: 2.147.483.647ms
+// = 596,5 giờ. Vượt là event được nhận (204) rồi bị bỏ âm thầm — đã dính: gửi
+// 1.100 giờ/phiên (3,96 tỷ ms) thì Game Time không nhích một giờ nào.
+//
+// 2 giờ là con số bản gốc đã chứng minh chạy được ở quy mô 10.448 game, và cũng
+// là độ dài một phiên chơi hợp lý. Cần nhiều giờ thì chia thành nhiều PHIÊN trên
+// cùng một game — vừa an toàn, vừa không mở thêm game nào nên Game Variety đứng yên.
+const MAX_SESSION_HOURS = 2;
+
+// Không lùi timestamp quá xa: phiên chơi từ 3 năm trước trông vô lý hơn là nhiều
+// phiên gần nhau. Quá mốc này thì quay vòng lại hiện tại.
+const MAX_BACKDATE_MS = 365 * 24 * 60 * 60_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -178,7 +198,7 @@ async function planOrder({
 
     if (badgeKey === "game_variety") {
         const need = Math.ceil(Math.max(0, threshold - current) * overshoot);
-        if (need <= 0) return { games: [], hoursPerGame: 0, need: 0, badgeKey };
+        if (need <= 0) return { games: [], sessions: [], need: 0, badgeKey };
         // Game MỚI — game đã claim rồi thì không cộng thêm vào số lượng nữa.
         const fresh = games.filter((g) => !claimed.has(g.id)).slice(0, need);
         if (fresh.length < need) {
@@ -189,12 +209,18 @@ async function planOrder({
             );
         }
         // 1 phút mỗi game: đủ để tính là "đã chơi", cộng vào Game Time không đáng kể.
-        return { games: fresh, hoursPerGame: 1 / 60, need, badgeKey };
+        return {
+            games: fresh,
+            sessions: fresh.map((game) => ({ game, hours: 1 / 60 })),
+            hoursPerSession: 1 / 60,
+            need,
+            badgeKey,
+        };
     }
 
     if (badgeKey === "game_time") {
         const needHours = Math.ceil(Math.max(0, threshold - current) * overshoot);
-        if (needHours <= 0) return { games: [], hoursPerGame: 0, need: 0, badgeKey };
+        if (needHours <= 0) return { games: [], sessions: [], need: 0, badgeKey };
 
         // Ba lớp ưu tiên, mục tiêu: dồn giờ mà KHÔNG đẩy Game Variety qua mốc kế
         // tiếp (khách sẽ được mốc đó miễn phí, tức mất doanh thu).
@@ -250,13 +276,32 @@ async function planOrder({
             crossedVarietyTier = varietyHeadroom <= 0;
         }
 
+        // Chia đều thành nhiều phiên ngắn, xoay vòng qua pool. Cùng một game có
+        // thể nhận rất nhiều phiên — đó chính là cách người chơi thật tích giờ,
+        // và nó không làm Game Variety nhích lên.
+        const sessions = [];
+        let left = needHours;
+        while (left > 0) {
+            const hours = Math.min(MAX_SESSION_HOURS, left);
+            sessions.push({ game: pool[sessions.length % pool.length], hours });
+            left -= hours;
+        }
+
+        // `games` phải là những game THẬT SỰ được gửi, không phải cả pool: đơn nhỏ
+        // (vài giờ) chỉ chạm tới 1-2 game trong pool 5 cái. Ghi nhận dư thì đơn sau
+        // sẽ "dùng lại" game chưa bao giờ gửi đi, và Game Variety nhích ngoài dự tính.
+        const usedIds = new Set(sessions.map((x) => x.game.id));
+        const used = pool.filter((g) => usedIds.has(g.id));
+
         return {
-            games: pool,
-            hoursPerGame: needHours / pool.length,
+            games: used,
+            sessions,
+            hoursPerSession: MAX_SESSION_HOURS,
             need: needHours,
             badgeKey,
             // Bao nhiêu game MỚI bị mở ra — tức Game Variety sẽ nhích thêm bấy nhiêu.
-            varietySideEffect: openedNew,
+            // Chỉ đếm game mới THẬT SỰ được gửi.
+            varietySideEffect: used.filter((g) => !claimed.has(g.id)).length,
             reusedCount: reused.length,
             playedCount: Math.min(played.length, Math.max(0, spread - reused.length)),
             varietyHeadroom,
@@ -400,9 +445,13 @@ class BadgeSender {
     }
 
     /** Đúng thứ tự client thật: heartbeat mở (0ms) → launch_game → heartbeat đóng. */
-    buildSession(game, durationMs) {
+    buildSession(game, durationMs, { index = 0 } = {}) {
         const sessionId = crypto.randomUUID();
-        const now = Date.now();
+        // Các phiên lát kề nhau lùi dần về quá khứ: phiên 0 kết thúc bây giờ,
+        // phiên 1 kết thúc ngay trước đó… Một người chơi 2.750 phiên 2h thì các
+        // phiên đó phải rải ra chứ không thể chồng lên cùng một khoảnh khắc.
+        const back = (index * durationMs) % MAX_BACKDATE_MS;
+        const now = Date.now() - back;
         const start = now - durationMs < 0 ? now : now - durationMs;
         return [
             this._heartbeat(game, 0, sessionId, { initial: true, final: false, ts: start }),
@@ -444,17 +493,25 @@ class BadgeSender {
      * Dừng ngay khi gặp 401/403 — cookie/token hỏng thì mọi batch sau cũng hỏng,
      * gửi tiếp chỉ tổ đốt request.
      */
+    /**
+     * Gửi từng PHIÊN, không phải từng game. Một game có thể xuất hiện ở rất nhiều
+     * phiên — đó là cách tích giờ mà không đụng vào Game Variety.
+     */
     async run(plan, { onBatch = () => {} } = {}) {
         if (!this.analyticsToken) await this.init();
-        const durationMs = Math.round(plan.hoursPerGame * 3600 * 1000);
-        const total = plan.games.length;
+        const sessions = plan.sessions ?? [];
+        const total = sessions.length;
         let sent = 0;
         let batchNo = 0;
 
         for (let i = 0; i < total; i += BATCH_SIZE) {
-            const chunk = plan.games.slice(i, i + BATCH_SIZE);
+            const chunk = sessions.slice(i, i + BATCH_SIZE);
             batchNo += 1;
-            const events = chunk.flatMap((g) => this.buildSession(g, durationMs));
+            const events = chunk.flatMap((ses, k) =>
+                this.buildSession(ses.game, Math.round(ses.hours * 3600 * 1000), {
+                    index: i + k,
+                }),
+            );
             const status = await this.post(events);
 
             if (status === 204) {
