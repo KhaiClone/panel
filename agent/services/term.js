@@ -1,8 +1,19 @@
 const os = require("os");
 const url = require("url");
 const WebSocket = require("ws");
-const pty = require("node-pty");
 const { isValidAgentKey } = require("../middleware/auth");
+
+// node-pty is the agent's only native dependency and the only one the agent can
+// live without. A missing or ABI-mismatched build must cost us the terminal
+// feature alone — never the whole agent: an agent that crash-loops on startup is
+// an agent the panel can no longer reach to repair itself.
+let pty = null;
+let ptyLoadError = null;
+try {
+    pty = require("node-pty");
+} catch (err) {
+    ptyLoadError = err.message;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Interactive terminal over WebSocket.
@@ -18,6 +29,19 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // kill a session with no input for 30m
 const PING_INTERVAL_MS = 30 * 1000;
 
 const createTermSocket = (server) => {
+    if (!pty) {
+        console.error(`[Agent] node-pty unavailable — /term disabled: ${ptyLoadError}`);
+        console.error("[Agent] Fix with: cd <repo>/agent && npm install --omit=dev && pm2 restart panel-agent");
+        // Still answer the upgrade, so the panel shows why the terminal is dead
+        // instead of hanging on a socket nobody is listening to.
+        server.on("upgrade", (req, socket) => {
+            if (url.parse(req.url).pathname !== "/term") return;
+            socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+            socket.destroy();
+        });
+        return null;
+    }
+
     const wss = new WebSocket.Server({ noServer: true });
 
     server.on("upgrade", (req, socket, head) => {
