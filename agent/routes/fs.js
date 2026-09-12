@@ -226,7 +226,14 @@ router.get("/archive", (req, res, next) => {
             .map((e) => `--exclude=./${e}`);
 
         res.setHeader("Content-Type", "application/gzip");
-        const tar = spawn("tar", ["czf", "-", "-C", target, ...excludes, "."]);
+        // Store everything as uid/gid 0 instead of this node's numbers. Agents
+        // run under a different account per machine (root here, khaidev there),
+        // and a uid that means nothing on the target is worse than no uid at all
+        // — see the --no-same-owner note in /fs/extract.
+        const tar = spawn("tar", [
+            "czf", "-", "--numeric-owner", "--owner=0", "--group=0",
+            "-C", target, ...excludes, ".",
+        ]);
         tar.stdout.pipe(res);
         tar.stderr.on("data", (d) => console.error("[Agent] tar archive:", d.toString().trim()));
         tar.on("error", (err) => { if (!res.headersSent) next(err); });
@@ -252,7 +259,13 @@ router.post("/extract", (req, res, next) => {
         }
         fs.mkdirSync(target, { recursive: true });
 
-        const tar = spawn("tar", ["xzf", "-", "-C", target]);
+        // --no-same-owner: as root, GNU tar restores the archive's numeric uid/gid.
+        // A bot migrated off a node whose agent runs as khaidev (uid 1002) thus
+        // landed here owned by uid 1002 — a user that does not exist on this
+        // machine — and git refused the checkout outright ("detected dubious
+        // ownership"), breaking every pull the panel sent it. Files must belong
+        // to whoever runs the agent on THIS node.
+        const tar = spawn("tar", ["xzf", "-", "--no-same-owner", "-C", target]);
         let stderr = "";
         tar.stderr.on("data", (d) => { stderr += d.toString(); });
         req.pipe(tar.stdin);
