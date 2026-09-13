@@ -14,8 +14,6 @@ const STATUS = {
     verifying:     { label: "Đang kiểm tra", color: "var(--accent)" },
     sending:       { label: "Đang gửi",      color: "var(--accent)" },
     sent:          { label: "Hoàn tất",      color: "var(--success)" },
-    verified:      { label: "Hoàn tất",      color: "var(--success)" },
-    verify_failed: { label: "Xác minh hụt",  color: "var(--warning)" },
     manual_review: { label: "Chờ duyệt",     color: "var(--warning)" },
     forfeited:     { label: "Tịch thu",      color: "var(--danger)" },
     refund_due:    { label: "Cần hoàn tiền", color: "var(--danger)" },
@@ -139,12 +137,8 @@ function OrderRow({ order, onAction, busy }) {
                     )}
                     {order.status === "sent" && (
                         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                            {order.sent}/{order.total} · badge lên sau ~1 ngày
-                        </div>
-                    )}
-                    {order.status === "verified" && (
-                        <div style={{ fontSize: 11, color: "var(--success)" }}>
-                            {fmtNum(order.finalValue)} {unitVi(order.unit)}
+                            {order.sent}/{order.total}
+                            {order.kind === "choice" ? "" : " · badge lên sau ~1 ngày"}
                         </div>
                     )}
                 </div>
@@ -162,11 +156,6 @@ function OrderRow({ order, onAction, busy }) {
                                 Hoàn tiền
                             </Btn>
                         </>
-                    )}
-                    {(order.status === "sent" || order.status === "verify_failed") && (
-                        <Btn disabled={busy} onClick={() => onAction(order.orderId, "verify")}>
-                            Xác minh ngay
-                        </Btn>
                     )}
                 </div>
             </div>
@@ -383,8 +372,7 @@ export default function BadgesPage() {
         setBusy(true);
         setError("");
         try {
-            if (action === "verify") await api.post(`/badges/${orderId}/verify`);
-            else await api.post(`/badges/${orderId}/resolve`, { action });
+            await api.post(`/badges/${orderId}/resolve`, { action });
             await load();
         } catch (err) {
             setError(err.response?.data?.error || err.message);
@@ -451,7 +439,7 @@ export default function BadgesPage() {
             <ReaderPool pool={pool} onAdd={onReaderAdd} onAction={onReaderAction} busy={busy} />
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                {["", "manual_review", "sent", "verified", "forfeited"].map((s) => (
+                {["", "manual_review", "sent", "forfeited"].map((s) => (
                     <button
                         key={s || "all"}
                         type="button"

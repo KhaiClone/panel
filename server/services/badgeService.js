@@ -7,17 +7,19 @@
  *   (game_time,                       ├─→ forfeited
  *    game_variety)                    └─→ manual_review
  *
- *   badge choice   paid ─→ sending ─→ verified                   (xong)
- *   (hypesquad)                   └─→ sent  (đổi rồi nhưng không đọc lại được)
+ *   badge choice   paid ─→ sending ─→ sent                       (xong)
+ *   (hypesquad)
+ *
+ * "verifying" ở trên là lượt đọc TRƯỚC khi gửi — để biết tài khoản đang ở đâu mà
+ * tính kế hoạch, và để chặn người mua lại mốc họ đã có. Nó không phải xác minh.
  *
  * BỐN QUYẾT ĐỊNH THIẾT KẾ, theo yêu cầu:
  *  1. Không có bước xác nhận riêng trước khi hiện QR — khách chọn mốc là mua luôn.
  *  2. Reader lỗi thì KHÔNG tự tịch thu: đơn treo ở manual_review chờ duyệt tay.
  *     Tự động tịch thu khi hạ tầng của mình hỏng là kịch bản tệ nhất có thể có.
  *  3. Đã sở hữu mốc mà vẫn mua thì mất tiền (forfeited).
- *  4. GỬI XONG LÀ XONG — không có vòng xác minh tự động sau 1-2 ngày. HypeSquad
- *     vẫn tự xác minh vì nó miễn phí và tức thì; badge tiered thì chỉ xác minh
- *     khi admin bấm "Xác minh ngay" ở trang /badges.
+ *  4. GỬI XONG LÀ XONG. Không có bước đọc lại badge sau khi đơn hoàn tất — không
+ *     tự động, không cả nút bấm tay, cho mọi loại badge. Gửi xong là báo khách.
  *
  * `measuredValue` LUÔN lấy từ reader, không bao giờ từ lời khai của khách. Khách
  * khai thấp để ăn nâng cấp miễn phí là bất khả thi vì kế hoạch gửi tính từ số
@@ -38,18 +40,16 @@ const proxyPool = require("./proxyPool");
 const MODEL = "badge_orders";
 const ACCOUNTS = "badge_accounts";
 
-// Không có vòng xác minh tự động: gửi xong là đơn xong.
+// KHÔNG ĐỌC LẠI BADGE SAU KHI GỬI. Đây là quyết định có chủ đích, đừng thêm lại.
 //
-// Badge tiered vẫn cần ~1 ngày để Discord dựng lại, nhưng bắt đơn treo suốt thời
-// gian đó chỉ để bot tự đọc lại một lần là trả giá quá đắt — mỗi lượt đọc tốn
-// một request từ acc reader, và khách thì đã nhận đủ thứ họ mua ngay lúc gửi
-// xong. Cần đối chứng lúc tranh chấp thì bấm "Xác minh ngay" ở trang /badges;
-// verifyOrder() vẫn còn nguyên, chỉ không còn ai gọi tự động.
-
-// Sớm hơn mốc này thì badge tiered chắc chắn chưa lên, nên xác minh chỉ đọc ra
-// số cũ. 20h (badge thực đo được lên sau ~21-24h) — dưới ngưỡng này nút "Xác
-// minh ngay" chỉ báo cáo, không chấm đơn là hỏng.
-const EARLY_VERIFY_MS = 20 * 60 * 60_000;
+// Badge tiered cần ~1 ngày để Discord dựng lại, nên mọi lượt đọc sớm hơn đều ra
+// số cũ và chấm nhầm một đơn đang tốt thành hỏng — đã xảy ra thật một lần, khách
+// nhận DM báo động vô cớ. Mỗi lượt đọc còn tốn một request từ acc reader, trong
+// khi khách đã nhận đủ thứ họ mua ngay lúc gửi xong. Biết chắc phải đợi một ngày
+// mới đọc được thì cái "xác minh" ấy không mua thêm thông tin gì.
+//
+// Cần đối chứng lúc tranh chấp thì đọc thủ công bằng badgeReader, không đi qua
+// đơn và không đổi trạng thái đơn.
 
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
@@ -315,7 +315,6 @@ async function createOrder({
         createdAt: Date.now(),
         paidAt: Date.now(),
         sentAt: null,
-        verifiedAt: null,
         finalTier: null,
         finalValue: null,
         updatedAt: Date.now(),
@@ -576,149 +575,26 @@ async function _processChoice(orderId, order, token) {
     }
     lease.release();
 
-    await _patch(orderId, { status: "sent", sent: 1, sentAt: Date.now() });
-
-    // Discord cập nhật profile gần như tức thì, nhưng chờ một nhịp cho chắc.
-    await new Promise((r) => setTimeout(r, 1500));
-    let house = null;
-    try {
-        house = await badgeReader.readHypeSquadHouse(token, order.accountId);
-    } catch {
-        // Đọc hỏng thì không kết luận là thất bại — API đã nhận rồi. Để scheduler
-        // xác minh lại ở lượt sau.
-        // API đã nhận request nên gần như chắc chắn đã đổi; chỉ là ta không đọc
-        // lại được để khẳng định. Kết thúc ở "sent" và để admin tự bấm xác minh
-        // nếu khách thắc mắc.
-        await _patch(orderId, { error: "Đã gửi nhưng chưa đọc lại được để xác nhận" });
-        _dispatch(order, {
-            type: "sent",
-            status: "sent",
-            sent: 1,
-            total: 1,
-            badgeKey: order.badgeKey,
-            tierName: order.tierName,
-            unit: order.unit,
-        });
-        return _shape(await _get(orderId));
-    }
-
-    const ok = house === order.houseId;
     await _patch(orderId, {
-        status: ok ? "verified" : "verify_failed",
-        verifiedAt: Date.now(),
-        finalValue: house,
+        status: "sent",
+        sent: 1,
+        total: 1,
+        sentAt: Date.now(),
+        finalValue: order.houseId,
         finalTier: order.tierKey,
-        error: ok ? null : `Nhà hiện tại là ${house ?? "không có"}, không phải ${order.tierName}`,
     });
+
+    // Đổi nhà xong là xong. POST /hypesquad/online trả 2xx nghĩa là Discord đã
+    // nhận, và nhà đổi tức thì — đọc lại profile chỉ để tự trấn an, mà lượt đọc
+    // hỏng thì lại chấm oan một đơn đã thành công.
     _dispatch(order, {
-        type: ok ? "verified" : "verify_failed",
-        status: ok ? "verified" : "verify_failed",
-        proof: {
-            badge: "hypesquad",
-            tierName: order.tierName,
-            currentTier: order.tierKey,
-            value: house,
-            unit: "house",
-            infoLabel: ok ? `HypeSquad ${order.tierName}` : null,
-            obtainedAt: ok ? new Date().toISOString() : null,
-        },
-    });
-    return _shape(await _get(orderId));
-}
-
-// ── Xác minh sau ~1 ngày ─────────────────────────────────────────────────────────
-
-async function verifyOrder(orderId) {
-    const order = await _get(orderId);
-    if (!order) throw _err("Không tìm thấy đơn", 404);
-    if (!["sent", "verify_failed"].includes(order.status)) return _shape(order);
-
-    const token = _decrypt(order);
-
-    // HypeSquad xác minh bằng profile, không phải badge directory.
-    if (order.kind === "choice") {
-        let house = null;
-        try {
-            house = await badgeReader.readHypeSquadHouse(token, order.accountId);
-        } catch (err) {
-            await _patch(orderId, { error: `Xác minh hoãn: ${err.message}` });
-            return _shape(await _get(orderId));
-        }
-        const okHouse = house === order.houseId;
-        await _patch(orderId, {
-            status: okHouse ? "verified" : "verify_failed",
-            verifiedAt: Date.now(),
-            finalValue: house,
-            finalTier: order.tierKey,
-            error: okHouse ? null : `Nhà hiện tại là ${house ?? "không có"}`,
-        });
-        _dispatch(order, {
-            type: okHouse ? "verified" : "verify_failed",
-            status: okHouse ? "verified" : "verify_failed",
-            proof: {
-                badge: "hypesquad",
-                tierName: order.tierName,
-                currentTier: order.tierKey,
-                value: house,
-                unit: "house",
-                infoLabel: okHouse ? `HypeSquad ${order.tierName}` : null,
-            },
-        });
-        return _shape(await _get(orderId));
-    }
-
-    let read;
-    try {
-        read = await badgeReader.read({
-            token,
-            userId: order.accountId,
-            hasNitro: order.hasNitro,
-            force: true,
-        });
-    } catch (err) {
-        // Không đọc được thì cứ để nguyên "sent" và thử lại lượt sau — badge đã
-        // gửi rồi, khách không mất gì.
-        await _patch(orderId, { error: `Xác minh hoãn: ${err.message}` });
-        return _shape(await _get(orderId));
-    }
-
-    const badge = read.badges[order.badgeKey];
-    const value = badge?.value ?? 0;
-    const ok = value >= order.threshold;
-
-    // Badge tiered cần ~1 ngày để Discord dựng lại. Xác minh sớm hơn thì CHẮC
-    // CHẮN đọc ra số cũ — chấm là "thất bại" lúc đó vừa sai, vừa hạ trạng thái
-    // đơn đang tốt, vừa bắn cho khách một cái DM báo động vô cớ. Chưa tới giờ
-    // thì chỉ báo lại cho admin, không đụng vào status và không webhook.
-    const age = Date.now() - (order.sentAt ?? order.createdAt ?? Date.now());
-    if (!ok && age < EARLY_VERIFY_MS) {
-        const hoursLeft = Math.ceil((EARLY_VERIFY_MS - age) / 3_600_000);
-        await _patch(orderId, {
-            error: `Chưa tới lúc xác minh — Discord cần ~1 ngày, thử lại sau ~${hoursLeft} giờ (đang đọc ${value}/${order.threshold} ${order.unit})`,
-        });
-        return _shape(await _get(orderId));
-    }
-
-    await _patch(orderId, {
-        status: ok ? "verified" : "verify_failed",
-        verifiedAt: Date.now(),
-        finalValue: value,
-        finalTier: badge?.currentTier ?? null,
-        error: ok ? null : `Mới đạt ${value}/${order.threshold} ${order.unit}`,
-    });
-    _dispatch(order, {
-        type: ok ? "verified" : "verify_failed",
-        status: ok ? "verified" : "verify_failed",
-        // Badge Proof: đây là thứ khách không Nitro không tự nhìn thấy được.
-        proof: {
-            badge: order.badgeKey,
-            tierName: order.tierName,
-            currentTier: badge?.currentTier ?? null,
-            value,
-            unit: order.unit,
-            infoLabel: badge?.infoLabel ?? null,
-            obtainedAt: badge?.tierObtainedAt?.[order.tierKey] ?? null,
-        },
+        type: "sent",
+        status: "sent",
+        sent: 1,
+        total: 1,
+        badgeKey: order.badgeKey,
+        tierName: order.tierName,
+        unit: order.unit,
     });
     return _shape(await _get(orderId));
 }
@@ -804,7 +680,6 @@ module.exports = {
     quote,
     createOrder,
     processOrder,
-    verifyOrder,
     resolveManual,
     listOrders,
     getOrder,

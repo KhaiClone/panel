@@ -120,14 +120,4 @@ router.post("/:orderId/resolve", async (req, res, next) => {
     }
 });
 
-/** POST /api/badges/:orderId/verify — ép xác minh ngay, không chờ tới hạn */
-router.post("/:orderId/verify", async (req, res, next) => {
-    try {
-        res.json(await badgeService.verifyOrder(req.params.orderId));
-    } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
-        next(err);
-    }
-});
-
 module.exports = router;
