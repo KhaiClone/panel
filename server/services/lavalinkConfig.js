@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const yaml = require("js-yaml");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  application.yml renderer.
@@ -125,4 +126,93 @@ const renderYaml = (settings) => {
 
 const sha256 = (text) => crypto.createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
 
-module.exports = { renderYaml, sha256, hasYoutubePlugin, SOURCE_KEYS, FILTER_KEYS };
+// ─────────────────────────────────────────────────────────────────────────────
+//  Reading a hand-written application.yml back
+//
+//  `yamlOverride` makes the file the source of truth, and then the form fields
+//  in the settings record are dead weight that no longer describe anything the
+//  nodes are running. Everything that reads "the port", "the password" or "the
+//  plugin list" has to read them back OUT of that file, or the panel shows one
+//  config while the nodes run another — and the health check knocks on the
+//  wrong port with the wrong password.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Pull the values the panel needs out of an application.yml. Never throws. */
+const parseYaml = (text) => {
+    const empty = { port: null, address: null, password: null, plugins: [], sources: {}, filters: {}, error: null };
+    try {
+        const doc = yaml.load(text);
+        if (!doc || typeof doc !== "object") return { ...empty, error: "application.yml is not a YAML mapping" };
+
+        const server = doc.server && typeof doc.server === "object" ? doc.server : {};
+        // Note the two different "plugins" keys in a Lavalink config:
+        // `lavalink.plugins` is the list of jars to load, while the top-level
+        // `plugins:` block holds each plugin's own settings. Only the first is
+        // a plugin list.
+        const lavalinkNode = doc.lavalink && typeof doc.lavalink === "object" ? doc.lavalink : {};
+        const serverNode = lavalinkNode.server && typeof lavalinkNode.server === "object" ? lavalinkNode.server : {};
+
+        return {
+            port: Number.isFinite(Number(server.port)) ? Number(server.port) : null,
+            address: server.address != null ? String(server.address) : null,
+            password: serverNode.password != null ? String(serverNode.password) : null,
+            plugins: Array.isArray(lavalinkNode.plugins)
+                ? lavalinkNode.plugins
+                      .filter((p) => p && p.dependency)
+                      .map((p) => ({
+                          dependency: String(p.dependency),
+                          repository: p.repository != null ? String(p.repository) : "",
+                          snapshot: p.snapshot === true,
+                      }))
+                : [],
+            sources: serverNode.sources && typeof serverNode.sources === "object" ? serverNode.sources : {},
+            filters: serverNode.filters && typeof serverNode.filters === "object" ? serverNode.filters : {},
+            error: null,
+        };
+    } catch (err) {
+        return { ...empty, error: err.message.split("\n")[0] };
+    }
+};
+
+/**
+ * The config actually in force on the nodes.
+ *
+ * Without an override this is just the settings record. With one, every value
+ * comes from the file — `custom: true` tells the UI to show these as read-only
+ * facts rather than as form fields somebody could edit to no effect.
+ *
+ * A file that will not parse keeps the stored values and reports `parseError`:
+ * the nodes still hold whatever bytes were pushed to them, so guessing would be
+ * worse than saying "I could not read this".
+ */
+const effective = (settings = {}) => {
+    const base = {
+        custom: false,
+        parseError: null,
+        port: settings.port,
+        address: settings.address,
+        password: settings.password,
+        plugins: Array.isArray(settings.plugins) ? settings.plugins : [],
+        sources: settings.sources || {},
+        filters: settings.filters || {},
+    };
+
+    const override = settings.yamlOverride;
+    if (typeof override !== "string" || !override.trim()) return base;
+
+    const parsed = parseYaml(override);
+    if (parsed.error) return { ...base, custom: true, parseError: parsed.error };
+
+    return {
+        custom: true,
+        parseError: null,
+        port: parsed.port ?? base.port,
+        address: parsed.address ?? base.address,
+        password: parsed.password ?? base.password,
+        plugins: parsed.plugins,
+        sources: parsed.sources,
+        filters: parsed.filters,
+    };
+};
+
+module.exports = { renderYaml, sha256, hasYoutubePlugin, parseYaml, effective, SOURCE_KEYS, FILTER_KEYS };

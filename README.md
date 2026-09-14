@@ -406,6 +406,12 @@ another VPS.
   rendered file is pushed to every node. A node whose file differs shows as
   *config drift*. The rendering is deterministic — the panel compares
   `sha256(application.yml)` against what each agent reports.
+- **A hand-written `application.yml` becomes the source of truth.** Paste one
+  into the "custom" box and the panel pushes it verbatim — and reads the port,
+  password, sources and plugin list back *out of it*, so the page shows what the
+  nodes actually run instead of form fields that no longer apply. The health
+  check uses those same parsed values, which is why they cannot be allowed to
+  drift apart.
 - **A new node installs itself.** Registering a node fires a best-effort install
   (latest release + config + PM2 start), the same way it fires the SSH key sync
   and the WireGuard mesh push. Registration never fails because of it; the page

@@ -13,7 +13,7 @@
 
 const assert = require("assert");
 
-const { renderYaml, sha256, hasYoutubePlugin } = require("../server/services/lavalinkConfig");
+const { renderYaml, sha256, hasYoutubePlugin, parseYaml, effective } = require("../server/services/lavalinkConfig");
 const { cmpVersion } = require("../server/services/lavalinkUpdater");
 
 let passed = 0;
@@ -96,6 +96,96 @@ ok("yamlOverride is used verbatim and wins over every other field", () => {
 
 ok("an empty yamlOverride falls back to the form", () => {
     assert.strictEqual(renderYaml({ ...BASE, yamlOverride: "   " }), renderYaml(BASE));
+});
+
+// ── parseYaml / effective ────────────────────────────────────────────────────
+//
+// A hand-written application.yml is the source of truth once it is set, so the
+// panel has to read the port, password and plugin list back OUT of it. Getting
+// this wrong is not cosmetic: the health check would knock on the stored port
+// with the stored password while the node listens somewhere else entirely.
+
+// Shaped like the real config in production: 4-space indent, and TWO different
+// "plugins" keys — lavalink.plugins is the jar list, the top-level plugins: is
+// per-plugin settings.
+const HAND_WRITTEN = [
+    "server:",
+    "    port: 3636",
+    '    address: "0.0.0.0"',
+    "lavalink:",
+    "    server:",
+    '        password: "lavalink"',
+    "        sources:",
+    "            spotify: true",
+    "            youtube: false",
+    "    plugins:",
+    '        - dependency: "com.dunctebot:skybot-lavalink-plugin:1.7.0"',
+    '          repository: "https://maven.lavalink.dev/releases"',
+    '        - dependency: "dev.lavalink.youtube:youtube-plugin:abc123"',
+    "          snapshot: true",
+    "plugins:",
+    "    youtube:",
+    "        enabled: true",
+    "        clients:",
+    "            - TV",
+    "            - WEB",
+    "",
+].join("\n");
+
+ok("parseYaml reads port, address and password", () => {
+    const p = parseYaml(HAND_WRITTEN);
+    assert.strictEqual(p.error, null);
+    assert.strictEqual(p.port, 3636);
+    assert.strictEqual(p.address, "0.0.0.0");
+    assert.strictEqual(p.password, "lavalink");
+});
+
+ok("parseYaml takes lavalink.plugins, not the top-level plugins: settings block", () => {
+    const p = parseYaml(HAND_WRITTEN);
+    assert.strictEqual(p.plugins.length, 2);
+    assert.strictEqual(p.plugins[0].dependency, "com.dunctebot:skybot-lavalink-plugin:1.7.0");
+    assert.strictEqual(p.plugins[0].repository, "https://maven.lavalink.dev/releases");
+    assert.strictEqual(p.plugins[0].snapshot, false);
+    assert.strictEqual(p.plugins[1].snapshot, true);
+    assert.strictEqual(p.plugins[1].repository, "");
+});
+
+ok("parseYaml keeps sources the file declares, including ones the form has no box for", () => {
+    const p = parseYaml(HAND_WRITTEN);
+    assert.strictEqual(p.sources.spotify, true);
+    assert.strictEqual(p.sources.youtube, false);
+});
+
+ok("parseYaml reports broken YAML instead of throwing", () => {
+    const p = parseYaml("server:\n  port: 1\n bad indent: [");
+    assert.ok(p.error, "expected an error message");
+    assert.deepStrictEqual(p.plugins, []);
+});
+
+ok("effective without an override is just the stored settings", () => {
+    const e = effective(BASE);
+    assert.strictEqual(e.custom, false);
+    assert.strictEqual(e.port, BASE.port);
+    assert.strictEqual(e.password, BASE.password);
+});
+
+ok("effective with an override reads every value out of the file", () => {
+    const e = effective({ ...BASE, yamlOverride: HAND_WRITTEN });
+    assert.strictEqual(e.custom, true);
+    assert.strictEqual(e.parseError, null);
+    assert.strictEqual(e.port, 3636);
+    assert.strictEqual(e.password, "lavalink");
+    assert.strictEqual(e.plugins.length, 2);
+    // The stored form values are NOT what the nodes run.
+    assert.notStrictEqual(e.password, BASE.password);
+    assert.notStrictEqual(e.plugins.length, BASE.plugins.length);
+});
+
+ok("effective on unparseable YAML keeps the stored values and says why", () => {
+    const e = effective({ ...BASE, yamlOverride: "server:\n  port: 1\n bad: [" });
+    assert.strictEqual(e.custom, true);
+    assert.ok(e.parseError);
+    assert.strictEqual(e.port, BASE.port);
 });
 
 // ── cmpVersion ───────────────────────────────────────────────────────────────

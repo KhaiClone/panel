@@ -5,7 +5,7 @@ const db = require("../db");
 const store = require("../services/lavalinkStore");
 const lavalink = require("../services/lavalinkService");
 const updater = require("../services/lavalinkUpdater");
-const { renderYaml, sha256 } = require("../services/lavalinkConfig");
+const { renderYaml, sha256, effective } = require("../services/lavalinkConfig");
 
 // Mounted behind authMiddleware (see index.js). The panel has one account, so a
 // valid token is full access — same as every other route here.
@@ -34,7 +34,9 @@ router.get("/", async (req, res, next) => {
         } catch (err) {
             release = { error: err.message };
         }
-        res.json({ settings, release, schedule: updater.SCHEDULE });
+        // `effective` is what the nodes actually run: with a hand-written
+        // application.yml the form fields in `settings` describe nothing.
+        res.json({ settings, effective: effective(settings), release, schedule: updater.SCHEDULE });
     } catch (err) {
         next(err);
     }
@@ -55,7 +57,7 @@ router.put("/settings", async (req, res, next) => {
         if (patch.timezone && patch.timezone !== before.timezone) await updater.start();
 
         const result = sync ? await lavalink.syncAll({ restart: true }) : null;
-        res.json({ settings, sync: result });
+        res.json({ settings, effective: effective(settings), sync: result });
     } catch (err) {
         next(err);
     }

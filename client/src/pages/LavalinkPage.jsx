@@ -70,6 +70,7 @@ function Field({ label, hint, children }) {
 
 export default function LavalinkPage() {
     const [settings, setSettings] = useState(null);
+    const [effective, setEffective] = useState(null);
     const [form, setForm] = useState(null);
     const [release, setRelease] = useState(null);
     const [status, setStatus] = useState(null);
@@ -86,6 +87,7 @@ export default function LavalinkPage() {
         const { data } = await api.get("/lavalink");
         setSettings(data.settings);
         setForm(data.settings);
+        setEffective(data.effective);
         setRelease(data.release);
     }, []);
 
@@ -141,6 +143,7 @@ export default function LavalinkPage() {
             const { data } = await api.put("/lavalink/settings", { ...form, sync }, LONG);
             setSettings(data.settings);
             setForm(data.settings);
+            setEffective(data.effective);
             if (!data.sync) return "Đã lưu cấu hình. Bấm “Đồng bộ tất cả node” để đẩy xuống các node.";
             const failed = data.sync.results.filter((r) => !r.ok);
             return failed.length
@@ -191,6 +194,10 @@ export default function LavalinkPage() {
     if (loading) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
     if (!form) return <p style={{ color: "var(--danger)" }}>{err || "Could not load Lavalink settings."}</p>;
 
+    // What the nodes actually run. With a hand-written application.yml this is
+    // read back out of that file, so the page can never show a plugin list or a
+    // port that nothing is using.
+    const eff = effective || { custom: false, parseError: null, port: form.port, address: form.address, password: form.password, plugins: form.plugins || [], sources: form.sources || {} };
     const nodes = status?.nodes || [];
     const needsJava = nodes.filter((n) => n.state === "java-missing" || n.state === "java-too-old");
 
@@ -201,7 +208,7 @@ export default function LavalinkPage() {
                     <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Lavalink</h1>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
                         Một Lavalink trên mỗi node, dùng chung một cấu hình. Bot nối vào{" "}
-                        <code>127.0.0.1:{form.port}</code> ngay trên node của nó.
+                        <code>127.0.0.1:{eff.port}</code> ngay trên node của nó.
                     </p>
                 </div>
                 <button className="btn-ghost" disabled={!!busy} onClick={previewYaml}>
@@ -292,23 +299,60 @@ export default function LavalinkPage() {
             <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
                 <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>Cấu hình dùng chung</h2>
 
+                {eff.custom && (
+                    <div
+                        style={{
+                            padding: "10px 14px",
+                            marginBottom: 16,
+                            borderRadius: 8,
+                            border: "1px solid var(--border)",
+                            background: "var(--bg-input)",
+                            fontSize: 12,
+                            color: "var(--text-muted)",
+                        }}
+                    >
+                        Đang dùng <strong>application.yml tự viết</strong> — panel đẩy nguyên văn file đó xuống mọi
+                        node. Port, password, nguồn nhạc và plugin bên dưới đọc <strong>trực tiếp từ file</strong>,
+                        không phải từ form; muốn sửa thì sửa file ở mục dưới cùng.
+                        {eff.parseError && (
+                            <span style={{ display: "block", marginTop: 6, color: "var(--danger)" }}>
+                                Không đọc được file: {eff.parseError} — các giá trị dưới đây là bản lưu cũ của panel.
+                            </span>
+                        )}
+                    </div>
+                )}
+
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
-                    <Field label="Port">
-                        <input className="input" value={form.port} onChange={set("port")} />
+                    <Field label="Port" hint={eff.custom ? "đọc từ application.yml" : undefined}>
+                        <input
+                            className="input"
+                            value={eff.custom ? eff.port ?? "" : form.port}
+                            onChange={set("port")}
+                            disabled={eff.custom}
+                        />
                     </Field>
-                    <Field label="Bind address" hint="0.0.0.0 để node khác gọi được; 127.0.0.1 để đóng lại">
-                        <input className="input" value={form.address} onChange={set("address")} />
+                    <Field
+                        label="Bind address"
+                        hint={eff.custom ? "đọc từ application.yml" : "0.0.0.0 để node khác gọi được; 127.0.0.1 để đóng lại"}
+                    >
+                        <input
+                            className="input"
+                            value={eff.custom ? eff.address ?? "" : form.address}
+                            onChange={set("address")}
+                            disabled={eff.custom}
+                        />
                     </Field>
-                    <Field label="Heap (-Xmx)" hint="Ví dụ 512M hoặc 2G">
+                    <Field label="Heap (-Xmx)" hint="Ví dụ 512M hoặc 2G — cờ JVM, không nằm trong yaml">
                         <input className="input" value={form.heap} onChange={set("heap")} />
                     </Field>
-                    <Field label="Password" hint="Bot dùng đúng chuỗi này để xác thực">
+                    <Field label="Password" hint={eff.custom ? "đọc từ application.yml" : "Bot dùng đúng chuỗi này để xác thực"}>
                         <div style={{ display: "flex", gap: 6 }}>
                             <input
                                 className="input"
                                 type={showPassword ? "text" : "password"}
-                                value={form.password}
+                                value={eff.custom ? eff.password ?? "" : form.password}
                                 onChange={set("password")}
+                                disabled={eff.custom}
                             />
                             <button
                                 type="button"
@@ -322,63 +366,134 @@ export default function LavalinkPage() {
                     </Field>
                 </div>
 
-                <p style={{ margin: "18px 0 8px", fontSize: 12, color: "var(--text-muted)" }}>Nguồn nhạc</p>
-                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-                    {SOURCES.map((key) => (
-                        <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                            <input type="checkbox" checked={form.sources?.[key] === true} onChange={setSource(key)} />
-                            {key}
-                        </label>
-                    ))}
-                </div>
-                <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
-                    Khi có plugin youtube, nguồn youtube gốc tự động bị tắt — Lavalink không chạy được nếu bật cả hai.
+                <p style={{ margin: "18px 0 8px", fontSize: 12, color: "var(--text-muted)" }}>
+                    Nguồn nhạc{eff.custom ? " — từ file" : ""}
                 </p>
+                {eff.custom ? (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {Object.keys(eff.sources || {}).length === 0 && (
+                            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>File không khai báo nguồn nào.</span>
+                        )}
+                        {Object.entries(eff.sources || {}).map(([key, on]) => (
+                            <span
+                                key={key}
+                                className="badge"
+                                style={{
+                                    background: on ? "var(--success-bg)" : "var(--bg-input)",
+                                    color: on ? "var(--success)" : "var(--text-dim)",
+                                    border: on ? "1px solid var(--success-border)" : "1px solid var(--border)",
+                                }}
+                            >
+                                {key}
+                            </span>
+                        ))}
+                    </div>
+                ) : (
+                    <>
+                        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                            {SOURCES.map((key) => (
+                                <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                                    <input type="checkbox" checked={form.sources?.[key] === true} onChange={setSource(key)} />
+                                    {key}
+                                </label>
+                            ))}
+                        </div>
+                        <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
+                            Khi có plugin youtube, nguồn youtube gốc tự động bị tắt — Lavalink không chạy được nếu bật cả hai.
+                        </p>
+                    </>
+                )}
 
-                <p style={{ margin: "18px 0 8px", fontSize: 12, color: "var(--text-muted)" }}>Plugin</p>
-                {(form.plugins || []).map((p, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                        <input
-                            className="input"
-                            style={{ flex: 2, minWidth: 240 }}
-                            value={p.dependency}
-                            placeholder="group:artifact:version"
-                            onChange={setPlugin(i, "dependency")}
-                        />
-                        <input
-                            className="input"
-                            style={{ flex: 2, minWidth: 200 }}
-                            value={p.repository}
-                            placeholder="https://maven.lavalink.dev/releases"
-                            onChange={setPlugin(i, "repository")}
-                        />
+                <p style={{ margin: "18px 0 8px", fontSize: 12, color: "var(--text-muted)" }}>
+                    Plugin{eff.custom ? ` — ${eff.plugins.length} cái, từ file` : ""}
+                </p>
+                {eff.custom ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {eff.plugins.length === 0 && (
+                            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>File không khai báo plugin nào.</span>
+                        )}
+                        {eff.plugins.map((p, i) => (
+                            <div
+                                key={i}
+                                style={{
+                                    display: "flex",
+                                    gap: 10,
+                                    flexWrap: "wrap",
+                                    alignItems: "baseline",
+                                    fontSize: 12,
+                                    padding: "6px 10px",
+                                    borderRadius: 6,
+                                    background: "var(--bg-input)",
+                                    border: "1px solid var(--border)",
+                                }}
+                            >
+                                <code style={{ color: "var(--text)" }}>{p.dependency}</code>
+                                {p.snapshot && (
+                                    <span
+                                        className="badge"
+                                        style={{
+                                            background: "var(--warning-bg)",
+                                            color: "var(--warning)",
+                                            border: "1px solid var(--warning-border)",
+                                        }}
+                                    >
+                                        snapshot
+                                    </span>
+                                )}
+                                <span style={{ color: "var(--text-dim)" }}>{p.repository || "(repository mặc định)"}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <>
+                        {(form.plugins || []).map((p, i) => (
+                            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                                <input
+                                    className="input"
+                                    style={{ flex: 2, minWidth: 240 }}
+                                    value={p.dependency}
+                                    placeholder="group:artifact:version"
+                                    onChange={setPlugin(i, "dependency")}
+                                />
+                                <input
+                                    className="input"
+                                    style={{ flex: 2, minWidth: 200 }}
+                                    value={p.repository}
+                                    placeholder="https://maven.lavalink.dev/releases"
+                                    onChange={setPlugin(i, "repository")}
+                                />
+                                <button
+                                    type="button"
+                                    className="btn-danger"
+                                    style={{ padding: "0 12px" }}
+                                    onClick={() => setForm((f) => ({ ...f, plugins: f.plugins.filter((_, idx) => idx !== i) }))}
+                                >
+                                    Xoá
+                                </button>
+                            </div>
+                        ))}
                         <button
                             type="button"
-                            className="btn-danger"
-                            style={{ padding: "0 12px" }}
-                            onClick={() => setForm((f) => ({ ...f, plugins: f.plugins.filter((_, idx) => idx !== i) }))}
+                            className="btn-ghost"
+                            style={{ padding: "6px 12px", fontSize: 12 }}
+                            onClick={() =>
+                                setForm((f) => ({
+                                    ...f,
+                                    plugins: [
+                                        ...(f.plugins || []),
+                                        { dependency: "", repository: "https://maven.lavalink.dev/releases" },
+                                    ],
+                                }))
+                            }
                         >
-                            Xoá
+                            + Thêm plugin
                         </button>
-                    </div>
-                ))}
-                <button
-                    type="button"
-                    className="btn-ghost"
-                    style={{ padding: "6px 12px", fontSize: 12 }}
-                    onClick={() =>
-                        setForm((f) => ({
-                            ...f,
-                            plugins: [...(f.plugins || []), { dependency: "", repository: "https://maven.lavalink.dev/releases" }],
-                        }))
-                    }
-                >
-                    + Thêm plugin
-                </button>
+                    </>
+                )}
 
-                <details style={{ marginTop: 18 }}>
+                <details style={{ marginTop: 18 }} open={eff.custom}>
                     <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
-                        application.yml tự viết (nâng cao)
+                        application.yml tự viết {eff.custom ? "(đang dùng)" : "(nâng cao)"}
                     </summary>
                     <p style={{ margin: "8px 0", fontSize: 11, color: "var(--text-dim)" }}>
                         Có nội dung ở đây thì panel dùng nguyên văn và bỏ qua toàn bộ ô phía trên. Để trống để quay lại
@@ -386,7 +501,7 @@ export default function LavalinkPage() {
                     </p>
                     <textarea
                         className="input"
-                        style={{ minHeight: 200, fontFamily: "monospace", fontSize: 12 }}
+                        style={{ minHeight: 260, fontFamily: "monospace", fontSize: 12 }}
                         value={form.yamlOverride || ""}
                         onChange={(e) => setForm((f) => ({ ...f, yamlOverride: e.target.value || null }))}
                     />

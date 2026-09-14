@@ -2,7 +2,7 @@ const axios = require("axios");
 
 const nodeService = require("./nodeService");
 const store = require("./lavalinkStore");
-const { renderYaml, sha256 } = require("./lavalinkConfig");
+const { renderYaml, sha256, effective } = require("./lavalinkConfig");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Lavalink orchestration.
@@ -132,9 +132,12 @@ const statusAll = async () => {
 const syncNode = async (node, { settings, yaml, restart = true } = {}) => {
     const s = settings || (await store.get());
     const content = yaml || renderYaml(s);
+    // The health check after a restart must use the port and password the file
+    // being pushed actually declares, not the ones the form happens to hold.
+    const eff = effective(s);
     try {
         const result = await nodeService.agentRequest(node, "put", "/lavalink/config", {
-            data: { content, restart, port: s.port, password: s.password, address: s.address, heap: s.heap },
+            data: { content, restart, port: eff.port, password: eff.password, address: eff.address, heap: s.heap },
             timeout: 120_000,
         });
         await store.setNodeState(node._id, { configSha: result.sha, lastSyncAt: Date.now(), error: null });
@@ -167,6 +170,7 @@ const syncAll = async ({ restart = true } = {}) => {
  */
 const installOnNode = async (node, { release = null, start = true } = {}) => {
     const settings = await store.get();
+    const eff = effective(settings);
     if (!settings.enabled) return { nodeId: node._id, nodeName: node.name, ok: false, skipped: "Lavalink is disabled in the panel settings" };
 
     const rel = release || (await latestRelease());
@@ -193,9 +197,9 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
                 jarUrl: asset.url,
                 expectedSize: asset.size,
                 version: rel.version,
-                port: settings.port,
-                password: settings.password,
-                address: settings.address,
+                port: eff.port,
+                password: eff.password,
+                address: eff.address,
                 heap: settings.heap,
                 start,
             },
@@ -224,6 +228,7 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
  */
 const updateNode = async (node, release) => {
     const settings = await store.get();
+    const eff = effective(settings);
 
     let libc = "glibc";
     let installed = null;
@@ -248,9 +253,9 @@ const updateNode = async (node, release) => {
                 jarUrl: asset.url,
                 expectedSize: asset.size,
                 version: release.version,
-                port: settings.port,
-                password: settings.password,
-                address: settings.address,
+                port: eff.port,
+                password: eff.password,
+                address: eff.address,
                 heap: settings.heap,
             },
             timeout: LONG_TIMEOUT,
@@ -288,7 +293,8 @@ const updateNode = async (node, release) => {
 
 const control = async (node, action) => {
     const settings = await store.get();
-    const data = action === "stop" ? {} : { port: settings.port, password: settings.password, address: settings.address, heap: settings.heap };
+    const eff = effective(settings);
+    const data = action === "stop" ? {} : { port: eff.port, password: eff.password, address: eff.address, heap: settings.heap };
     return nodeService.agentRequest(node, "post", `/lavalink/${action}`, { timeout: 180_000, data });
 };
 
