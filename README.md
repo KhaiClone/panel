@@ -406,12 +406,16 @@ another VPS.
   rendered file is pushed to every node. A node whose file differs shows as
   *config drift*. The rendering is deterministic — the panel compares
   `sha256(application.yml)` against what each agent reports.
-- **A hand-written `application.yml` becomes the source of truth.** Paste one
-  into the "custom" box and the panel pushes it verbatim — and reads the port,
-  password, sources and plugin list back *out of it*, so the page shows what the
-  nodes actually run instead of form fields that no longer apply. The health
-  check uses those same parsed values, which is why they cannot be allowed to
-  drift apart.
+- **Two editors, one config.** The page switches between the panel's form
+  fields and the `application.yml` itself. In file mode the file is the source
+  of truth — the port, password, sources and plugin list are read back *out of
+  it* (the health check uses those same values), and the form fields stay live:
+  each one splices over the exact bytes of the value it targets, so comments,
+  indentation and every block the form does not model survive untouched. Saving
+  with nothing changed leaves the file byte-identical, so no node is falsely
+  marked as drifted. Switching back to form mode can only render what the form
+  models, so the panel lists what would be lost (plugin settings blocks, a
+  proxy, a source with no checkbox) and waits for confirmation.
 - **A new node installs itself.** Registering a node fires a best-effort install
   (latest release + config + PM2 start), the same way it fires the SSH key sync
   and the WireGuard mesh push. Registration never fails because of it; the page

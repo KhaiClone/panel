@@ -5,7 +5,7 @@ const db = require("../db");
 const store = require("../services/lavalinkStore");
 const lavalink = require("../services/lavalinkService");
 const updater = require("../services/lavalinkUpdater");
-const { renderYaml, sha256, effective } = require("../services/lavalinkConfig");
+const { renderYaml, sha256, effective, applyEdits, describeUnsupported, parseYaml } = require("../services/lavalinkConfig");
 
 // Mounted behind authMiddleware (see index.js). The panel has one account, so a
 // valid token is full access — same as every other route here.
@@ -49,15 +49,101 @@ router.get("/", async (req, res, next) => {
  */
 router.put("/settings", async (req, res, next) => {
     try {
-        const { sync, ...patch } = req.body || {};
+        const { sync, configEdits, ...patch } = req.body || {};
         const before = await store.get();
+
+        // Two ways to change the same config, and they compose in one save:
+        // `yamlOverride` is the document itself, `configEdits` are the form
+        // fields applied ON TOP of it — spliced over the exact bytes they
+        // replace, so a hand-tuned file keeps its comments and layout.
+        let edited = null;
+        if (configEdits && Object.keys(configEdits).length) {
+            const base = typeof patch.yamlOverride === "string" && patch.yamlOverride.trim()
+                ? patch.yamlOverride
+                : before.yamlOverride;
+            if (!base || !base.trim()) {
+                return res.status(400).json({
+                    error: "configEdits only applies while a custom application.yml is in use",
+                });
+            }
+            edited = applyEdits(base, configEdits);
+            patch.yamlOverride = edited.yaml;
+        }
+
         const settings = await store.update(patch);
 
         // The daily job is armed with a timezone; changing it has to re-arm.
         if (patch.timezone && patch.timezone !== before.timezone) await updater.start();
 
         const result = sync ? await lavalink.syncAll({ restart: true }) : null;
-        res.json({ settings, effective: effective(settings), sync: result });
+        res.json({
+            settings,
+            effective: effective(settings),
+            sync: result,
+            // Tell the UI when a field had to be INSERTED rather than replaced:
+            // that path had no bytes to splice over, so the file was rewritten.
+            edit: edited ? { reformatted: edited.reformatted, inserted: edited.inserted } : null,
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/lavalink/mode/file
+ * Switch to editing application.yml directly. The editor is seeded with the
+ * file the nodes are running right now, so the switch changes nothing by itself.
+ */
+router.post("/mode/file", async (req, res, next) => {
+    try {
+        const current = await store.get();
+        if (current.yamlOverride) {
+            return res.json({ settings: current, effective: effective(current), alreadyCustom: true });
+        }
+        const settings = await store.update({ yamlOverride: renderYaml(current) });
+        res.json({ settings, effective: effective(settings), alreadyCustom: false });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/lavalink/mode/form   body: { confirm?: boolean }
+ * Switch back to the panel's form fields.
+ *
+ * The form can only render what it models, so anything else in the file is
+ * about to be lost — plugin settings blocks, a proxy, a source with no
+ * checkbox. Without `confirm` this only REPORTS what would go, and the page
+ * asks first: silently dropping a Spotify secret on a button press would be
+ * the worst possible outcome here.
+ */
+router.post("/mode/form", async (req, res, next) => {
+    try {
+        const current = await store.get();
+        if (!current.yamlOverride) {
+            return res.json({ settings: current, effective: effective(current), switched: true, dropped: [] });
+        }
+
+        const { error, dropped } = describeUnsupported(current.yamlOverride);
+        if (error) return res.status(400).json({ error });
+
+        if (!req.body?.confirm) {
+            return res.json({ switched: false, dropped, preview: true });
+        }
+
+        // Carry the file's values into the form so the switch does not also
+        // reset the port and password the bots are using.
+        const parsed = parseYaml(current.yamlOverride);
+        const patch = { yamlOverride: null };
+        if (parsed.port !== null) patch.port = parsed.port;
+        if (parsed.address !== null) patch.address = parsed.address;
+        if (parsed.password) patch.password = parsed.password;
+        if (parsed.plugins.length) patch.plugins = parsed.plugins;
+        if (Object.keys(parsed.sources).length) patch.sources = parsed.sources;
+        if (Object.keys(parsed.filters).length) patch.filters = parsed.filters;
+
+        const settings = await store.update(patch);
+        res.json({ settings, effective: effective(settings), switched: true, dropped });
     } catch (err) {
         next(err);
     }

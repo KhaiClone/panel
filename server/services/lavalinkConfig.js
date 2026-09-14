@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const yaml = require("js-yaml");
+const YAML = require("yaml");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  application.yml renderer.
@@ -137,11 +137,17 @@ const sha256 = (text) => crypto.createHash("sha256").update(Buffer.from(text, "u
 //  wrong port with the wrong password.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const _bad = (message) => {
+    const e = new Error(message);
+    e.status = 400;
+    return e;
+};
+
 /** Pull the values the panel needs out of an application.yml. Never throws. */
 const parseYaml = (text) => {
     const empty = { port: null, address: null, password: null, plugins: [], sources: {}, filters: {}, error: null };
     try {
-        const doc = yaml.load(text);
+        const doc = YAML.parse(text);
         if (!doc || typeof doc !== "object") return { ...empty, error: "application.yml is not a YAML mapping" };
 
         const server = doc.server && typeof doc.server === "object" ? doc.server : {};
@@ -215,4 +221,190 @@ const effective = (settings = {}) => {
     };
 };
 
-module.exports = { renderYaml, sha256, hasYoutubePlugin, parseYaml, effective, SOURCE_KEYS, FILTER_KEYS };
+// ─────────────────────────────────────────────────────────────────────────────
+//  Editing a hand-written application.yml from the panel's form fields
+//
+//  Re-serialising the document would work and is one line — and it would also
+//  reflow the whole file: comments move, 4-space indentation becomes 2, and a
+//  one-field change arrives as a 160-line diff. For a file somebody hand-tuned
+//  that is not acceptable, so each edit is spliced over the exact byte range of
+//  the value it replaces and every other byte is left alone.
+//
+//  A key the file does not contain has no range to splice, so inserting it does
+//  fall back to re-serialising — the result says so rather than doing it quietly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Render a scalar, keeping the quoting style already used at that spot. */
+const scalarText = (value, previous = "") => {
+    if (typeof value === "boolean" || typeof value === "number") return String(value);
+    const s = String(value);
+    if (previous.startsWith("'")) return `'${s.replace(/'/g, "''")}'`;
+    return JSON.stringify(s); // double quotes, escaping handled for us
+};
+
+/** Indentation of the line `offset` sits on. */
+const indentAt = (text, offset) => {
+    const lineStart = text.lastIndexOf("\n", offset - 1) + 1;
+    return text.slice(lineStart, offset).match(/^[ ]*/)[0];
+};
+
+/** The plugin list, rendered as a block sequence at `pad` columns. */
+const renderPluginSeq = (plugins, pad) =>
+    plugins
+        .filter((p) => p && String(p.dependency || "").trim())
+        .map((p) => {
+            const lines = [`${pad}- dependency: ${scalarText(String(p.dependency).trim())}`];
+            if (p.repository) lines.push(`${pad}  repository: ${scalarText(String(p.repository).trim())}`);
+            if (p.snapshot === true) lines.push(`${pad}  snapshot: true`);
+            return lines.join("\n");
+        })
+        .join("\n");
+
+const SCALAR_PATHS = {
+    port: ["server", "port"],
+    address: ["server", "address"],
+    password: ["lavalink", "server", "password"],
+};
+
+/**
+ * Apply form-field edits to an application.yml.
+ *
+ * @param {string} text  the current file
+ * @param {Object} edits {port, address, password, sources{}, filters{}, plugins[]}
+ * @returns {{yaml: string, reformatted: boolean, inserted: string[]}}
+ */
+const applyEdits = (text, edits = {}) => {
+    const targets = [];
+    for (const [key, path] of Object.entries(SCALAR_PATHS)) {
+        if (edits[key] === undefined || edits[key] === null) continue;
+        targets.push({ path, value: key === "port" ? Number(edits[key]) : String(edits[key]) });
+    }
+    for (const [key, value] of Object.entries(edits.sources || {})) {
+        targets.push({ path: ["lavalink", "server", "sources", key], value: Boolean(value) });
+    }
+    for (const [key, value] of Object.entries(edits.filters || {})) {
+        targets.push({ path: ["lavalink", "server", "filters", key], value: Boolean(value) });
+    }
+
+    let out = text;
+    const inserted = [];
+    let reformatted = false;
+
+    // Re-parse between edits: a splice moves every offset after it, and one
+    // parse per field is far cheaper than being subtly wrong about that.
+    for (const { path, value } of targets) {
+        const doc = YAML.parseDocument(out);
+        if (doc.errors?.length) throw _bad(`application.yml is not valid YAML: ${doc.errors[0].message}`);
+
+        // Only touch bytes when the value actually changes. Re-emitting an
+        // unchanged value would still rewrite it in THIS renderer's style —
+        // `address: 0.0.0.0` would come back quoted — so a save with no edits
+        // would rewrite the file and mark every node as drifted.
+        const currentValue = doc.getIn(path);
+        if (currentValue !== undefined && String(currentValue) === String(value)) continue;
+
+        const node = doc.getIn(path, true);
+        if (node && Array.isArray(node.range)) {
+            const [start, end] = node.range;
+            out = out.slice(0, start) + scalarText(value, out.slice(start, end)) + out.slice(end);
+        } else {
+            doc.setIn(path, value);
+            out = String(doc);
+            reformatted = true;
+            inserted.push(path.join("."));
+        }
+    }
+
+    if (Array.isArray(edits.plugins)) {
+        const doc = YAML.parseDocument(out);
+        if (doc.errors?.length) throw _bad(`application.yml is not valid YAML: ${doc.errors[0].message}`);
+        const seq = doc.getIn(["lavalink", "plugins"], true);
+
+        // Same rule as the scalars, and it matters more here: the file spells
+        // out `snapshot: false` where this renderer leaves it implicit, so
+        // re-emitting an unchanged list would silently reshape the block.
+        const normalise = (list) =>
+            JSON.stringify(
+                (list || [])
+                    .filter((x) => x && String(x.dependency || "").trim())
+                    .map((x) => [String(x.dependency).trim(), String(x.repository || "").trim(), x.snapshot === true]),
+            );
+        const unchanged = seq && normalise(doc.toJS()?.lavalink?.plugins) === normalise(edits.plugins);
+        if (unchanged) return { yaml: out, reformatted, inserted };
+
+        if (seq && Array.isArray(seq.range)) {
+            const [start, end] = seq.range;
+            const pad = indentAt(out, start);
+            const body = renderPluginSeq(edits.plugins, pad);
+            // range[1] can run past the last item into the blank lines before
+            // the next key; keep whatever whitespace followed so the spacing of
+            // the rest of the file survives.
+            const trailing = out.slice(start, end).match(/\s*$/)[0];
+            out = out.slice(0, start) + (body ? body.trimStart() : "[]") + trailing + out.slice(end);
+        } else if (edits.plugins.length) {
+            doc.setIn(["lavalink", "plugins"], edits.plugins);
+            out = String(doc);
+            reformatted = true;
+            inserted.push("lavalink.plugins");
+        }
+    }
+
+    return { yaml: out, reformatted, inserted };
+};
+
+/**
+ * Paths the file declares that `renderYaml` cannot reproduce.
+ *
+ * Switching a hand-written config back to the form means the form renders the
+ * file from now on — so anything listed here is about to be lost. The UI shows
+ * it and asks first; silently dropping a Spotify secret or a proxy setting
+ * would be the worst possible outcome of a button press.
+ */
+const KNOWN_TOP = new Set(["server", "lavalink", "metrics", "logging"]);
+const KNOWN_LAVALINK_SERVER = new Set([
+    "password", "sources", "filters", "bufferDurationMs", "frameBufferDurationMs",
+    "opusEncodingQuality", "resamplingQuality", "trackStuckThresholdMs", "useSeekGhosting",
+    "youtubePlaylistLoadLimit", "playerUpdateInterval", "youtubeSearchEnabled",
+    "soundcloudSearchEnabled", "gc-warnings",
+]);
+
+const describeUnsupported = (text) => {
+    let doc;
+    try {
+        doc = YAML.parse(text);
+    } catch (err) {
+        return { error: err.message.split("\n")[0], dropped: [] };
+    }
+    if (!doc || typeof doc !== "object") return { error: "application.yml is not a YAML mapping", dropped: [] };
+
+    const dropped = [];
+    for (const key of Object.keys(doc)) {
+        if (!KNOWN_TOP.has(key)) dropped.push(key);
+    }
+    const server = doc.lavalink?.server;
+    if (server && typeof server === "object") {
+        for (const key of Object.keys(server)) {
+            if (!KNOWN_LAVALINK_SERVER.has(key)) dropped.push(`lavalink.server.${key}`);
+        }
+        // A source the form has no checkbox for disappears just as quietly as a
+        // whole block would — production enables `spotify` this way.
+        if (server.sources && typeof server.sources === "object") {
+            for (const key of Object.keys(server.sources)) {
+                if (!SOURCE_KEYS.includes(key)) dropped.push(`lavalink.server.sources.${key}`);
+            }
+        }
+    }
+    return { error: null, dropped };
+};
+
+module.exports = {
+    renderYaml,
+    sha256,
+    hasYoutubePlugin,
+    parseYaml,
+    effective,
+    applyEdits,
+    describeUnsupported,
+    SOURCE_KEYS,
+    FILTER_KEYS,
+};

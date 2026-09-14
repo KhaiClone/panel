@@ -13,7 +13,9 @@
 
 const assert = require("assert");
 
-const { renderYaml, sha256, hasYoutubePlugin, parseYaml, effective } = require("../server/services/lavalinkConfig");
+const {
+    renderYaml, sha256, hasYoutubePlugin, parseYaml, effective, applyEdits, describeUnsupported,
+} = require("../server/services/lavalinkConfig");
 const { cmpVersion } = require("../server/services/lavalinkUpdater");
 const { pm2MemoryCeiling } = require("../agent/services/lavalink");
 
@@ -187,6 +189,118 @@ ok("effective on unparseable YAML keeps the stored values and says why", () => {
     assert.strictEqual(e.custom, true);
     assert.ok(e.parseError);
     assert.strictEqual(e.port, BASE.port);
+});
+
+// ── applyEdits ───────────────────────────────────────────────────────────────
+//
+// The panel offers two ways to edit the same config: the yaml itself, and the
+// form fields. For the second to be usable on a hand-tuned file, an edit has to
+// change ONLY the value it targets — re-serialising the document would reflow
+// 160 lines, move every comment and turn a one-field change into an unreviewable
+// diff. Each edit is therefore spliced over the exact byte range of its value.
+
+// Deliberately awkward, the way a real file is: comments, 4-space indent, an
+// unquoted scalar, an explicit `snapshot: false` this renderer leaves implicit,
+// and a second `plugins:` key that is NOT the plugin list.
+const HAND_TUNED = [
+    "# hand written - keep me",
+    "server:",
+    "    port: 1012   # privileged, needs sudo",
+    "    address: 0.0.0.0",
+    "lavalink:",
+    "    server:",
+    '        password: "lavalink"',
+    "        httpConfig:",
+    '          proxyHost: "127.0.0.1"',
+    "        sources:",
+    "            spotify: true",
+    "            youtube: false",
+    "    plugins:",
+    '        - dependency: "com.dunctebot:skybot-lavalink-plugin:1.7.0"',
+    '          repository: "https://maven.lavalink.dev/releases"',
+    "          snapshot: false",
+    "plugins:",
+    "    lavasrc:",
+    "        spotify:",
+    '            clientSecret: "keep-this-secret"',
+    "",
+].join("\n");
+
+const current = (text) => {
+    const p = parseYaml(text);
+    return { port: p.port, address: p.address, password: p.password, sources: p.sources, plugins: p.plugins };
+};
+
+ok("saving with nothing changed leaves the file byte-identical", () => {
+    // Anything less and every save would rewrite the file and mark every node
+    // as drifted — including re-quoting `address: 0.0.0.0`.
+    const r = applyEdits(HAND_TUNED, current(HAND_TUNED));
+    assert.strictEqual(r.yaml, HAND_TUNED);
+    assert.strictEqual(r.reformatted, false);
+});
+
+ok("changing one field rewrites one line and nothing else", () => {
+    const r = applyEdits(HAND_TUNED, { port: 3636 });
+    const before = HAND_TUNED.split("\n");
+    const after = r.yaml.split("\n");
+    assert.strictEqual(after.length, before.length);
+    const changed = before.map((l, i) => (l === after[i] ? null : i)).filter((i) => i !== null);
+    assert.deepStrictEqual(changed, [2]);
+    assert.strictEqual(after[2], "    port: 3636   # privileged, needs sudo"); // comment survives
+    assert.strictEqual(parseYaml(r.yaml).port, 3636);
+});
+
+ok("edits never disturb the rest of the document", () => {
+    const r = applyEdits(HAND_TUNED, { password: "moi", sources: { spotify: false } });
+    assert.ok(r.yaml.includes('clientSecret: "keep-this-secret"'));
+    assert.ok(r.yaml.includes('proxyHost: "127.0.0.1"'));
+    assert.ok(r.yaml.includes("# hand written - keep me"));
+    assert.strictEqual(parseYaml(r.yaml).password, "moi");
+    assert.strictEqual(parseYaml(r.yaml).sources.spotify, false);
+});
+
+ok("an unchanged plugin list is left alone, explicit snapshot:false and all", () => {
+    const r = applyEdits(HAND_TUNED, { plugins: current(HAND_TUNED).plugins });
+    assert.strictEqual(r.yaml, HAND_TUNED);
+});
+
+ok("a changed plugin list keeps its indentation and the rest of the file", () => {
+    const plugins = [
+        ...current(HAND_TUNED).plugins,
+        { dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2", repository: "", snapshot: true },
+    ];
+    const r = applyEdits(HAND_TUNED, { plugins });
+    const parsed = parseYaml(r.yaml);
+    assert.strictEqual(parsed.plugins.length, 2);
+    assert.strictEqual(parsed.plugins[1].snapshot, true);
+    assert.match(r.yaml, /\n {8}- dependency: "dev\.lavalink\.youtube/); // same 8-space indent
+    assert.ok(r.yaml.includes('clientSecret: "keep-this-secret"'));
+    assert.strictEqual(r.reformatted, false);
+});
+
+ok("a key the file does not have is inserted, and that is reported", () => {
+    const r = applyEdits(HAND_TUNED, { filters: { volume: false } });
+    assert.strictEqual(r.reformatted, true);
+    assert.deepStrictEqual(r.inserted, ["lavalink.server.filters.volume"]);
+    assert.strictEqual(parseYaml(r.yaml).filters.volume, false);
+});
+
+ok("applyEdits refuses broken YAML rather than writing it", () => {
+    assert.throws(() => applyEdits("server:\n  port: 1\n bad: [", { port: 2 }), /not valid YAML/);
+});
+
+// ── describeUnsupported ──────────────────────────────────────────────────────
+
+ok("switching back to the form reports every block the form cannot render", () => {
+    const { error, dropped } = describeUnsupported(HAND_TUNED);
+    assert.strictEqual(error, null);
+    assert.ok(dropped.includes("plugins"), "top-level plugin settings block");
+    assert.ok(dropped.includes("lavalink.server.httpConfig"), "proxy config");
+    assert.ok(dropped.includes("lavalink.server.sources.spotify"), "a source with no checkbox");
+});
+
+ok("a config the form fully models reports nothing dropped", () => {
+    assert.deepStrictEqual(describeUnsupported(renderYaml(BASE)).dropped, []);
 });
 
 // ── pm2MemoryCeiling ─────────────────────────────────────────────────────────
