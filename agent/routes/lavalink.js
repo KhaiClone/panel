@@ -102,17 +102,35 @@ router.post("/install", async (req, res, next) => {
  * Swap the jar and prove the new one works. A failed health check puts the old
  * jar back and restarts it — a node must never be left down by an auto-update
  * that ran at 2am with nobody watching.
+ *
+ * A node that was NOT running only gets the new jar. Starting it would be the
+ * 02:00 job deciding, unattended, to put an audio server live that somebody
+ * deliberately left stopped. Nothing is running, so there is also nothing to
+ * health-check and nothing that could need a rollback.
  */
 router.post("/update", async (req, res, next) => {
     try {
         const { jarUrl, expectedSize, version, port, password, address, heap } = req.body;
         if (!jarUrl) return res.status(400).json({ error: "jarUrl is required" });
 
+        const before = await require("../services/pm2").getBotStatus(lavalink.PM2_NAME);
+        const wasRunning = before.status === "online";
+
         const jar = await lavalink.installJar({ url: jarUrl, expectedSize, version });
+
+        if (!wasRunning) {
+            return res.json({
+                updated: true,
+                rolledBack: false,
+                started: false,
+                jar,
+                note: "Node was not running — the jar was replaced and left stopped",
+            });
+        }
         await lavalink.start(heap); // re-registers the process against the new jar
         const health = await lavalink.health({ port, password, address });
 
-        if (health.ok) return res.json({ updated: true, rolledBack: false, jar, health });
+        if (health.ok) return res.json({ updated: true, rolledBack: false, started: true, jar, health });
 
         let rolledBack = false;
         let rollbackHealth = null;

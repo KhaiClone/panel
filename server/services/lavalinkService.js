@@ -255,8 +255,21 @@ const updateNode = async (node, release) => {
             },
             timeout: LONG_TIMEOUT,
         });
-        await store.setNodeState(node._id, { state: "running", version: release.version, error: null, failedVersion: null });
-        return { nodeId: node._id, nodeName: node.name, ok: true, version: release.version, health: result.health };
+        // A node that was stopped stays stopped — the agent only swapped its jar.
+        await store.setNodeState(node._id, {
+            state: result.started === false ? "stopped" : "running",
+            version: release.version,
+            error: null,
+            failedVersion: null,
+        });
+        return {
+            nodeId: node._id,
+            nodeName: node.name,
+            ok: true,
+            started: result.started !== false,
+            version: release.version,
+            health: result.health,
+        };
     } catch (err) {
         // agentRequest flattens the agent's error body to a message, and the
         // agent says "rolled back to the previous jar" when it restored the old one.

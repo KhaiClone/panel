@@ -200,7 +200,9 @@ const sendLavalinkReport = async ({ title, color, version, url, description, res
     const line = (r) => {
         const name = `**${r.nodeName}**`;
         if (r.ok === null) return `• ⏳ ${name} — đang ở \`${r.from || r.version || "?"}\``;
-        if (r.ok) return `• ✅ ${name} — \`${r.from || "?"}\` → \`${version}\``;
+        // A node that was stopped keeps its jar swapped but is never started by
+        // the scheduled job — say so, or "✅" would read as "it is running now".
+        if (r.ok) return `• ✅ ${name} — \`${r.from || "?"}\` → \`${version}\`${r.started === false ? " _(vẫn đang tắt)_" : ""}`;
         return `• ❌ ${name} — ${r.rolledBack ? "đã rollback về bản cũ" : "thất bại"}: ${String(r.error || "").slice(0, 180)}`;
     };
 
