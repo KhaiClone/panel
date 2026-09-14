@@ -105,6 +105,21 @@ router.post("/", async (req, res, next) => {
             .syncMesh()
             .catch((err) => console.error(`[Nodes] WG mesh sync after adding "${node.name}" failed:`, err.message));
 
+        // Every node ships with a Lavalink: same shared config, latest release,
+        // started under PM2. Best-effort like the two above — registration must
+        // not fail because Java is missing or GitHub is briefly unreachable. The
+        // Lavalink page shows the outcome and offers a manual Install.
+        require("../services/lavalinkStore")
+            .get()
+            .then((s) => {
+                if (!s.enabled || !s.autoInstallOnNewNode) return null;
+                return require("../services/lavalinkService").installOnNode(node);
+            })
+            .then((r) => {
+                if (r && !r.ok) console.warn(`[Lavalink] Auto-install on "${node.name}" failed:`, r.error || r.skipped);
+            })
+            .catch((err) => console.error(`[Lavalink] Auto-install on "${node.name}" failed:`, err.message));
+
         const { apiKey: _hidden, ...safe } = node;
         res.status(201).json(safe);
     } catch (err) {
@@ -173,6 +188,11 @@ router.delete("/:id", async (req, res, next) => {
         }
 
         await db.findOneAndDelete("nodes", { _id: req.params.id });
+
+        // Drop this node's Lavalink state so a recycled _id never inherits it.
+        require("../services/lavalinkStore")
+            .forgetNode(req.params.id)
+            .catch((err) => console.error("[Lavalink] Could not clear node state:", err.message));
 
         // Re-push the WG mesh so the remaining nodes drop the deleted peer.
         require("../services/wgService")

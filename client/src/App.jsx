@@ -20,6 +20,7 @@ import DecorsPage from "./pages/DecorsPage";
 import QuestsPage from "./pages/QuestsPage";
 import PricingPage from "./pages/PricingPage";
 import BadgesPage from "./pages/BadgesPage";
+import LavalinkPage from "./pages/LavalinkPage";
 import QuestAccountDetail from "./pages/QuestAccountDetail";
 import Layout from "./components/Layout";
 
@@ -77,6 +78,7 @@ export default function App() {
                             <Route path="quests"        element={<QuestsPage />} />
                             <Route path="pricing"       element={<PricingPage />} />
                             <Route path="badges"        element={<BadgesPage />} />
+                            <Route path="lavalink"      element={<LavalinkPage />} />
                             <Route path="quests/:accountId" element={<QuestAccountDetail />} />
                             {/* Legacy redirects — /overview and /admin/users are gone
                                 along with the multi-user panel. */}

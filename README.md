@@ -51,6 +51,7 @@
 - 🛠️ Panel self-management — restart or rebuild the panel itself from the UI, view/edit panel `.env`
 - 🗃️ Hourly DB backup sent to Discord as a JSON attachment
 - 🧮 Memory monitor service — runs every minute; restarts any bot that exceeds its limit and fires a notification
+- 🎵 Lavalink fleet — one audio server per node, one shared config edited on the panel, and a 02:00 daily release check that updates every node and reports to Discord
 
 ### Buyer Discord Bot
 - `/mybots` — list all buyer's bots with status + expiry countdown
@@ -391,6 +392,58 @@ script printed. The connection is verified before the node is saved.
 | `PUT` | `/api/nodes/:id` | Update node (enable/disable, key rotation) |
 | `DELETE` | `/api/nodes/:id` | Remove node (blocked while bots live on it) |
 | `POST` | `/api/nodes/:id/test` | Live connection + stats check |
+
+---
+
+## 🎵 Lavalink
+
+Every node runs its own Lavalink, so a music bot connects to `127.0.0.1:<port>`
+on the machine it already lives on instead of reaching across the internet to
+another VPS.
+
+- **One config for the whole fleet.** The panel owns `application.yml`: you edit
+  port, password, heap, sources and plugins once on **/lavalink**, and the same
+  rendered file is pushed to every node. A node whose file differs shows as
+  *config drift*. The rendering is deterministic — the panel compares
+  `sha256(application.yml)` against what each agent reports.
+- **A new node installs itself.** Registering a node fires a best-effort install
+  (latest release + config + PM2 start), the same way it fires the SSH key sync
+  and the WireGuard mesh push. Registration never fails because of it; the page
+  shows the outcome and offers a manual **Install**.
+- **Daily release check at 02:00 Asia/Ho_Chi_Minh.** The panel reads the latest
+  `lavalink-devs/Lavalink` release from GitHub and, if it is newer, updates the
+  nodes **one at a time**: the agent downloads the jar, verifies its size and ZIP
+  header, keeps the old one as `Lavalink.jar.prev`, restarts, then polls
+  Lavalink's own `/version`. A failed health check rolls that node back to the
+  previous jar — so a bad release costs one node's restart, never the fleet.
+  Turn it off with the **auto-update** switch and the job only reports.
+- **Discord report** to `DISCORD_LAVALINK_WEBHOOK` (falls back to
+  `DISCORD_ALERT_WEBHOOK`). Quiet by design: nothing is sent when every node is
+  already up to date.
+- **Java is not installed for you.** Lavalink v4 needs Java 17+. The agent
+  reports a missing or too-old runtime and the page shows the `apt` command —
+  installing system packages from an HTTP call is outside the agent's job.
+
+Agent env (both optional):
+
+```bash
+LAVALINK_DIR=~/lavalink       # fixed directory — never taken from a request
+LAVALINK_PM2_NAME=lavalink
+```
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/lavalink` | Shared settings + latest known release |
+| `PUT` | `/api/lavalink/settings` | Patch settings (`sync: true` pushes to all nodes) |
+| `GET` | `/api/lavalink/yaml` | The exact `application.yml` nodes should hold |
+| `GET` | `/api/lavalink/status` | Per-node state, version and drift |
+| `POST` | `/api/lavalink/sync` | Push the config to every node |
+| `POST` | `/api/lavalink/check-update` | Run the 02:00 job now |
+| `POST` | `/api/lavalink/nodes/:id/install` | First-time setup (or clean reinstall) |
+| `POST` | `/api/lavalink/nodes/:id/update` | Bring one node to the latest release |
+| `POST` | `/api/lavalink/nodes/:id/sync` | Push the config to one node |
+| `POST` | `/api/lavalink/nodes/:id/:action` | `start` · `stop` · `restart` · `rollback` |
+| `GET` | `/api/lavalink/nodes/:id/logs` | That node's Lavalink logs |
 
 ---
 

@@ -26,6 +26,7 @@ const pricingRoutes = require("./routes/pricing");
 const pricingExternalRoutes = require("./routes/pricingExternal");
 const badgeRoutes = require("./routes/badges");
 const badgeExternalRoutes = require("./routes/badgesExternal");
+const lavalinkRoutes = require("./routes/lavalink");
 const { authMiddleware } = require("./middleware/auth");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
 const nodeContext = require("./middleware/nodeContext");
@@ -40,6 +41,7 @@ const proxyStore = require("./services/proxyStore");
 const questService = require("./services/questService");
 const questMonthly = require("./services/questMonthly");
 const badgeService = require("./services/badgeService");
+const lavalinkUpdater = require("./services/lavalinkUpdater");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Validate critical env vars on startup
@@ -110,6 +112,7 @@ app.use("/api/decors", authMiddleware, decorRoutes);
 app.use("/api/quests", authMiddleware, questRoutes);
 app.use("/api/pricing", authMiddleware, pricingRoutes);
 app.use("/api/badges", authMiddleware, badgeRoutes);
+app.use("/api/lavalink", authMiddleware, lavalinkRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -138,6 +141,8 @@ nodeService.startHealthPolling();
 samplerService.start();
 // Rotates registered rotating proxies while they are idle; never mid-run.
 proxyStore.startRotationScheduler();
+// Daily Lavalink release check (02:00 in the timezone stored in the settings).
+lavalinkUpdater.start().catch((e) => console.error("[Lavalink] Scheduler start failed:", e.message));
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Listen

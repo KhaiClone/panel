@@ -23,6 +23,7 @@ app.use("/nginx", require("./routes/nginx"));
 app.use("/ufw", require("./routes/ufw"));
 app.use("/wg", require("./routes/wg"));
 app.use("/logrotate", require("./routes/logrotate"));
+app.use("/lavalink", require("./routes/lavalink"));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
@@ -40,6 +41,7 @@ const server = app.listen(PORT, BIND, () => {
     console.log(`[Agent] bot-panel agent listening on ${BIND}:${PORT}`);
     console.log(`[Agent] BOTS_ROOT_DIR = ${process.env.BOTS_ROOT_DIR}`);
     console.log(`[Agent] SITES_ROOT_DIR = ${process.env.SITES_ROOT_DIR || "(same as bots)"}`);
+    console.log(`[Agent] LAVALINK_DIR = ${require("./services/lavalink").LAVALINK_DIR}`);
     const extra = require("./utils/paths").extraRoots();
     console.log(`[Agent] EXTRA_ROOTS = ${extra.length ? extra.join(", ") : "(none)"}`);
     if (!process.env.AGENT_API_KEY) {

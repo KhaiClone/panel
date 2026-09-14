@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+/**
+ * Checks for the Lavalink config renderer and the updater's version compare.
+ * Run:  node scripts/lavalinkConfig.test.js
+ *
+ * Neither module touches the database, so this needs no fixture.
+ *
+ * The guarantee that matters most here is DETERMINISM: the panel decides which
+ * nodes are out of sync by comparing sha256(renderYaml(settings)) against the
+ * sha each agent reports. A renderer that varies between calls would mark every
+ * node as drifted and restart the whole fleet on every sync.
+ */
+
+const assert = require("assert");
+
+const { renderYaml, sha256, hasYoutubePlugin } = require("../server/services/lavalinkConfig");
+const { cmpVersion } = require("../server/services/lavalinkUpdater");
+
+let passed = 0;
+const ok = (label, fn) => {
+    try {
+        fn();
+        passed++;
+        console.log(`  ok   ${label}`);
+    } catch (err) {
+        console.error(`  FAIL ${label}\n       ${err.message}`);
+        process.exitCode = 1;
+    }
+};
+
+const BASE = {
+    port: 2333,
+    address: "0.0.0.0",
+    password: "s3cret",
+    heap: "512M",
+    sources: { youtube: true, bandcamp: true, soundcloud: true, twitch: false, vimeo: true, nico: true, http: true, local: false },
+    filters: { volume: true, karaoke: false },
+    plugins: [],
+    yamlOverride: null,
+};
+
+// ── renderYaml ───────────────────────────────────────────────────────────────
+
+ok("same settings render byte-identical output", () => {
+    assert.strictEqual(renderYaml(BASE), renderYaml({ ...BASE }));
+    assert.strictEqual(sha256(renderYaml(BASE)), sha256(renderYaml({ ...BASE })));
+});
+
+ok("a different password changes the sha", () => {
+    assert.notStrictEqual(sha256(renderYaml(BASE)), sha256(renderYaml({ ...BASE, password: "other" })));
+});
+
+ok("port and address land under server:", () => {
+    const yaml = renderYaml({ ...BASE, port: 2444, address: "127.0.0.1" });
+    assert.match(yaml, /server:\n {2}port: 2444\n {2}address: "127\.0\.0\.1"/);
+});
+
+ok("password lands under lavalink.server, quoted", () => {
+    assert.match(renderYaml(BASE), /\n {2}server:\n {4}password: "s3cret"/);
+});
+
+ok("a password with quotes or backslashes stays valid YAML", () => {
+    const yaml = renderYaml({ ...BASE, password: 'a"b\\c' });
+    assert.match(yaml, /password: "a\\"b\\\\c"/);
+});
+
+ok("a disabled source renders false, an enabled one true", () => {
+    const yaml = renderYaml(BASE);
+    assert.match(yaml, /\n {6}twitch: false/);
+    assert.match(yaml, /\n {6}bandcamp: true/);
+});
+
+ok("a filter defaults to true and is only false when explicitly disabled", () => {
+    const yaml = renderYaml(BASE);
+    assert.match(yaml, /\n {6}karaoke: false/); // explicitly false in BASE
+    assert.match(yaml, /\n {6}timescale: true/); // absent from BASE → default
+});
+
+ok("the youtube plugin turns the built-in youtube source off", () => {
+    const plugins = [{ dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2", repository: "https://maven.lavalink.dev/releases" }];
+    const yaml = renderYaml({ ...BASE, plugins });
+    assert.ok(hasYoutubePlugin(plugins));
+    assert.match(yaml, /\n {6}youtube: false/);
+    assert.match(yaml, /dependency: "dev\.lavalink\.youtube:youtube-plugin:1\.18\.2"/);
+});
+
+ok("no plugins means no plugins: block at all", () => {
+    assert.ok(!renderYaml(BASE).includes("plugins:"));
+});
+
+ok("yamlOverride is used verbatim and wins over every other field", () => {
+    const yaml = renderYaml({ ...BASE, yamlOverride: "server:\n  port: 9999" });
+    assert.strictEqual(yaml, "server:\n  port: 9999\n");
+    assert.ok(!yaml.includes("s3cret"));
+});
+
+ok("an empty yamlOverride falls back to the form", () => {
+    assert.strictEqual(renderYaml({ ...BASE, yamlOverride: "   " }), renderYaml(BASE));
+});
+
+// ── cmpVersion ───────────────────────────────────────────────────────────────
+
+ok("4.2.10 is newer than 4.2.9 (numeric, not lexical)", () => {
+    assert.ok(cmpVersion("4.2.9", "4.2.10") < 0);
+    assert.ok(cmpVersion("4.2.10", "4.2.9") > 0);
+});
+
+ok("identical tags compare equal, with or without a v prefix", () => {
+    assert.strictEqual(cmpVersion("4.2.2", "4.2.2"), 0);
+    assert.strictEqual(cmpVersion("v4.2.2", "4.2.2"), 0);
+});
+
+ok("a shorter tag is not newer than its own patch release", () => {
+    assert.ok(cmpVersion("4.2", "4.2.1") < 0);
+});
+
+console.log(`\n${passed} checks passed${process.exitCode ? " — but some FAILED above" : ""}\n`);

@@ -175,6 +175,63 @@ const sendExpirySuspended = async (bot) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Lavalink
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Report the outcome of a Lavalink release check to the log channel.
+ *
+ * Goes to DISCORD_LAVALINK_WEBHOOK, falling back to DISCORD_ALERT_WEBHOOK so
+ * the feature still reports on a panel that never configured a separate one.
+ *
+ * @param {Object} report
+ * @param {string} report.title
+ * @param {number} report.color
+ * @param {string} report.version      - the release being moved to
+ * @param {string} [report.url]        - GitHub release page
+ * @param {string} report.description
+ * @param {Array}  report.results      - [{ nodeName, ok, from, error, rolledBack }]
+ * @param {Array}  [report.skipped]    - [{ nodeName, state }] nodes that could not take it
+ */
+const sendLavalinkReport = async ({ title, color, version, url, description, results = [], skipped = [] }) => {
+    const webhookUrl = process.env.DISCORD_LAVALINK_WEBHOOK || process.env.DISCORD_ALERT_WEBHOOK;
+    if (!webhookUrl) return;
+
+    const line = (r) => {
+        const name = `**${r.nodeName}**`;
+        if (r.ok === null) return `• ⏳ ${name} — đang ở \`${r.from || r.version || "?"}\``;
+        if (r.ok) return `• ✅ ${name} — \`${r.from || "?"}\` → \`${version}\``;
+        return `• ❌ ${name} — ${r.rolledBack ? "đã rollback về bản cũ" : "thất bại"}: ${String(r.error || "").slice(0, 180)}`;
+    };
+
+    const fields = [];
+    if (results.length) {
+        fields.push({ name: "Node", value: results.map(line).join("\n").slice(0, 1024), inline: false });
+    }
+    if (skipped.length) {
+        fields.push({
+            name: "Bỏ qua",
+            value: skipped.map((s) => `• ${s.nodeName} — \`${s.state}\``).join("\n").slice(0, 1024),
+            inline: false,
+        });
+    }
+
+    await sendWebhook(webhookUrl, {
+        embeds: [
+            {
+                title,
+                color,
+                url: url || undefined,
+                description,
+                fields,
+                footer: { text: `Lavalink ${version}` },
+                timestamp: new Date().toISOString(),
+            },
+        ],
+    });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Backup
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -233,5 +290,6 @@ module.exports = {
     sendExpiryWarning,
     sendExpiryRemoval,
     sendExpirySuspended,
+    sendLavalinkReport,
     sendBackup,
 };
