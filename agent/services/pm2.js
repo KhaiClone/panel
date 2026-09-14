@@ -9,9 +9,27 @@ const os = require("os");
 // Dump-corruption alerts go to the console instead of the panel's notification
 // feed (the panel sees node health via /health).
 
+// PM2 exports a process's entire pm2_env into its environment, so this agent
+// carries `max_memory_restart=209715200` from agent/ecosystem.config.js. The
+// pm2 CLI then reads that variable as configuration for whatever it is about to
+// start — and it BEATS the explicit --max-memory-restart flag.
+//
+// Left in place, every process the panel starts on this node silently inherits
+// the agent's own 200MB cap and each project's configured limit is ignored. A
+// Node bot never notices (it sits under 100MB); a JVM crosses 200MB before it
+// finishes booting, so Lavalink booted, reported ready, was SIGKILLed and
+// restarted every 30 seconds with nothing in its log to explain it.
+//
+// Measured on pm2 7.0.3: no flag and a clean environment gives no limit at all,
+// the flag alone gives the flag's value, and the flag with this variable set
+// gives the VARIABLE's value. PORT is unset for the same reason — a leaked
+// parent variable quietly reconfiguring a child.
+const PM2_ENV_LEAKS = ["PORT", "max_memory_restart"];
+const PM2_ENV_PREFIX = PM2_ENV_LEAKS.map((v) => `-u ${v}`).join(" ");
+
 const runPM2 = async (args) => {
     const { stdout, stderr } = await execAsync(
-        `env -u PORT pm2 ${args} --no-color`,
+        `env ${PM2_ENV_PREFIX} pm2 ${args} --no-color`,
     );
     return stdout || stderr;
 };
