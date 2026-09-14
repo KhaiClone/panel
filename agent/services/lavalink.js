@@ -340,12 +340,43 @@ const logs = (lines = 100) => pm2.getBotLogs(PM2_NAME, lines);
  * loaded its config — and a bad jar or a taken port stays "online" right up
  * until it exits.
  */
+// 0.0.0.0 means "every interface", which is not an address you can call. A
+// specific bind address has to be used as-is, or a probe knocks on a port
+// nothing is listening on and reports a healthy node as broken.
+const callableHost = (address) =>
+    !address || address === "0.0.0.0" || address === "::" ? "127.0.0.1" : address;
+
+/**
+ * Lavalink's own /v4/stats: players, playing players, uptime, heap, CPU load.
+ *
+ * This is what "is it actually working" looks like from the outside — pm2 can
+ * only say a JVM is running. Answers null rather than throwing: a node that is
+ * stopped or still booting is a normal state for the page to show, not an error.
+ */
+const stats = ({ port = 2333, password = "", address = "0.0.0.0" } = {}) =>
+    new Promise((resolve) => {
+        const req = http.get(
+            { host: callableHost(address), port, path: "/v4/stats", headers: { Authorization: password }, timeout: 5000 },
+            (res) => {
+                let body = "";
+                res.on("data", (c) => (body += c));
+                res.on("end", () => {
+                    if (res.statusCode !== 200) return resolve(null);
+                    try {
+                        resolve(JSON.parse(body));
+                    } catch {
+                        resolve(null);
+                    }
+                });
+            },
+        );
+        req.on("timeout", () => req.destroy());
+        req.on("error", () => resolve(null));
+    });
+
 const health = ({ port = 2333, password = "", address = "0.0.0.0", timeoutMs = 60_000 } = {}) =>
     new Promise((resolve) => {
-        // 0.0.0.0 means "every interface", which is not an address you can call.
-        // A specific bind address has to be used as-is, or the probe knocks on
-        // a port nothing is listening on and reports a healthy node as broken.
-        const host = !address || address === "0.0.0.0" || address === "::" ? "127.0.0.1" : address;
+        const host = callableHost(address);
         const deadline = Date.now() + timeoutMs;
         const attempt = () => {
             const req = http.get(
@@ -386,5 +417,6 @@ module.exports = {
     restart,
     logs,
     health,
+    stats,
     sha256,
 };

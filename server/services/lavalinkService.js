@@ -84,12 +84,27 @@ const _stateOf = (raw, inSync) => {
     return "stopped";
 };
 
-const statusOfNode = async (node, desiredSha) => {
+const statusOfNode = async (node, desiredSha, eff = null) => {
     const base = { nodeId: node._id, nodeName: node.name, host: node.host };
     try {
         const raw = await nodeService.agentRequest(node, "get", "/lavalink/status", { timeout: STATUS_TIMEOUT });
         const inSync = Boolean(desiredSha) && raw.configSha === desiredSha;
-        return { ...base, online: true, state: _stateOf(raw, inSync), inSync, ...raw };
+
+        // pm2 can only say a JVM is alive. Lavalink's own /v4/stats says whether
+        // it is actually serving anyone — how many players, how many playing.
+        // That is the number an operator of music bots actually wants.
+        let stats = null;
+        if (eff && raw.live?.status === "online") {
+            try {
+                const r = await nodeService.agentRequest(node, "post", "/lavalink/stats", {
+                    data: { port: eff.port, password: eff.password, address: eff.address },
+                    timeout: 12_000,
+                });
+                stats = r?.stats ?? null;
+            } catch { /* a node that will not answer /v4/stats is still worth listing */ }
+        }
+
+        return { ...base, online: true, state: _stateOf(raw, inSync), inSync, stats, ...raw };
     } catch (err) {
         // 404 means the agent predates this feature — say so instead of "offline".
         if (err.status === 404) {
@@ -104,9 +119,10 @@ const statusAll = async () => {
     const settings = await store.get();
     const yaml = renderYaml(settings);
     const desiredSha = sha256(yaml);
+    const eff = effective(settings);
     const nodes = await managedNodes();
 
-    const results = await Promise.all(nodes.map((n) => statusOfNode(n, desiredSha)));
+    const results = await Promise.all(nodes.map((n) => statusOfNode(n, desiredSha, eff)));
 
     // Cache what we learned so the Discord report can name versions even when a
     // node is unreachable at the time the report is built.

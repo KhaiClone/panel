@@ -42,6 +42,18 @@ const fmtTime = (ts) => {
 
 const fmtGB = (bytes) => (bytes == null ? "—" : `${(bytes / 1024 ** 3).toFixed(1)} GB`);
 
+const fmtMB = (bytes) => (bytes == null ? "—" : `${Math.round(bytes / 1024 ** 2)} MB`);
+
+/** How long ago a pm2 start timestamp was, in the largest unit that fits. */
+const fmtSince = (ts) => {
+    if (!ts) return "—";
+    const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (secs < 90) return `${secs} giây`;
+    if (secs < 5400) return `${Math.round(secs / 60)} phút`;
+    if (secs < 172800) return `${(secs / 3600).toFixed(1)} giờ`;
+    return `${Math.round(secs / 86400)} ngày`;
+};
+
 function Pill({ state }) {
     const meta = STATE_META[state] || { label: state || "unknown", color: "var(--text-dim)" };
     return (
@@ -68,6 +80,161 @@ function Field({ label, hint, children }) {
     );
 }
 
+// ── Trạng thái ───────────────────────────────────────────────────────────────
+
+const TONE = { ok: "var(--success)", warn: "var(--warning)", bad: "var(--danger)" };
+
+function Summary({ label, value, sub, tone }) {
+    return (
+        <div style={{ minWidth: 96 }}>
+            <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>{label}</p>
+            <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: tone ? TONE[tone] : "var(--text)" }}>
+                {value}
+            </p>
+            {sub ? <p style={{ margin: "1px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{sub}</p> : null}
+        </div>
+    );
+}
+
+function Metric({ label, value, dim }) {
+    return (
+        <div>
+            <p style={{ margin: 0, fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                {label}
+            </p>
+            <p style={{ margin: "1px 0 0", fontSize: 13, fontWeight: 600, color: dim ? "var(--text-muted)" : "var(--text)" }}>
+                {value}
+            </p>
+        </div>
+    );
+}
+
+/**
+ * One node, one card.
+ *
+ * The numbers are chosen for the question this page exists to answer — "is my
+ * music working?". `players` comes from Lavalink's own /v4/stats, so it says
+ * whether bots are actually connected; pm2 can only say a JVM is alive.
+ * `restarts` is on the card because a climbing count is the signature of the
+ * crash loop that took an afternoon to find once.
+ */
+function NodeCard({ n, busy, onAction, onLogs }) {
+    const meta = STATE_META[n.state] || { label: n.state || "unknown", color: "var(--text-dim)" };
+    const live = n.live || {};
+    const notInstalled = ["not-installed", "java-missing", "java-too-old"].includes(n.state);
+    const running = live.status === "online";
+
+    return (
+        <div className="card" style={{ padding: "14px 16px", borderLeft: `3px solid ${meta.color}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {n.nodeName}
+                </span>
+                <Pill state={n.state} />
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--text-dim)" }}>
+                {n.host}
+                {n.version ? ` · Lavalink ${n.version}` : ""}
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 12 }}>
+                <Metric label="Uptime" value={running ? fmtSince(live.uptime) : "—"} dim={!running} />
+                <Metric label="RAM" value={running ? fmtMB(live.memory) : "—"} dim={!running} />
+                <Metric
+                    label="Player"
+                    value={n.stats ? `${n.stats.players ?? 0}` : running ? "?" : "—"}
+                    dim={!n.stats?.players}
+                />
+                <Metric
+                    label="Restart"
+                    value={running ? String(live.restarts ?? 0) : "—"}
+                    dim={!live.restarts}
+                />
+            </div>
+
+            {n.stats?.playingPlayers > 0 && (
+                <p style={{ margin: "-6px 0 10px", fontSize: 11, color: "var(--success)" }}>
+                    {n.stats.playingPlayers} player đang phát nhạc
+                </p>
+            )}
+
+            {n.state === "config-drift" && (
+                <p style={{ margin: "0 0 10px", fontSize: 11, color: "var(--warning)" }}>
+                    File trên node khác cấu hình của panel — bấm Đồng bộ để ghi đè và restart.
+                </p>
+            )}
+            {n.error && (
+                <p style={{ margin: "0 0 10px", fontSize: 11, color: "var(--danger)", wordBreak: "break-word" }}>
+                    {n.error}
+                </p>
+            )}
+
+            <p style={{ margin: "0 0 10px", fontSize: 11, color: "var(--text-dim)" }}>
+                {n.java?.present ? `Java ${n.java.major ?? "?"}` : "chưa có Java"} · {fmtGB(n.freeBytes)} trống
+                {n.hasRollback ? " · có bản jar cũ để rollback" : ""}
+            </p>
+
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {notInstalled ? (
+                    <button
+                        className="btn-ghost"
+                        style={{ padding: "5px 11px", fontSize: 12 }}
+                        disabled={!!busy || !n.online}
+                        onClick={() => onAction("install", "Cài đặt")}
+                    >
+                        Cài đặt
+                    </button>
+                ) : (
+                    <>
+                        <button
+                            className="btn-ghost"
+                            style={{ padding: "5px 11px", fontSize: 12 }}
+                            disabled={!!busy || !n.online}
+                            onClick={() => onAction(running ? "restart" : "start", running ? "Restart" : "Start")}
+                        >
+                            {running ? "Restart" : "Start"}
+                        </button>
+                        {running && (
+                            <button
+                                className="btn-ghost"
+                                style={{ padding: "5px 11px", fontSize: 12 }}
+                                disabled={!!busy}
+                                onClick={() => onAction("stop", "Dừng")}
+                            >
+                                Dừng
+                            </button>
+                        )}
+                        <button
+                            className="btn-ghost"
+                            style={{ padding: "5px 11px", fontSize: 12 }}
+                            disabled={!!busy || !n.online}
+                            onClick={() => onAction("sync", "Đồng bộ config")}
+                        >
+                            Đồng bộ
+                        </button>
+                        <button
+                            className="btn-ghost"
+                            style={{ padding: "5px 11px", fontSize: 12 }}
+                            disabled={!!busy || !n.online}
+                            onClick={() => onAction("update", "Cập nhật")}
+                        >
+                            Cập nhật
+                        </button>
+                    </>
+                )}
+                <button
+                    className="btn-ghost"
+                    style={{ padding: "5px 11px", fontSize: 12 }}
+                    disabled={!n.online}
+                    onClick={onLogs}
+                >
+                    Logs
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export default function LavalinkPage() {
     const [settings, setSettings] = useState(null);
     const [effective, setEffective] = useState(null);
@@ -83,6 +250,7 @@ export default function LavalinkPage() {
     const [yaml, setYaml] = useState("");
     const [logs, setLogs] = useState(null); // { nodeName, text }
     const [switchPrompt, setSwitchPrompt] = useState(null); // { dropped: [] }
+    const [configOpen, setConfigOpen] = useState(false);
 
     // With a hand-written application.yml the stored form fields describe
     // nothing, so the inputs are seeded from what the FILE says — that is what
@@ -283,35 +451,31 @@ export default function LavalinkPage() {
         ? [...new Set([...Object.keys(eff.sources || {}), ...SOURCES])]
         : SOURCES;
     const nodes = status?.nodes || [];
+    const runningCount = nodes.filter((n) => n.live?.status === "online").length;
+    const driftCount = nodes.filter((n) => n.state === "config-drift").length;
+    // A node that answers /v4/stats contributes a number; one that does not
+    // contributes nothing, and the total says "not readable" rather than a
+    // confident 0 that would hide a broken node.
+    const withStats = nodes.filter((n) => n.stats);
+    const totalPlayers = withStats.length ? withStats.reduce((a, n) => a + (n.stats.players ?? 0), 0) : null;
+    const playingPlayers = withStats.reduce((a, n) => a + (n.stats.playingPlayers ?? 0), 0);
+    // The fleet version is only meaningful when every running node agrees.
+    const versions = [...new Set(nodes.filter((n) => n.version).map((n) => n.version))];
+    const fleetVersion = versions.length === 1 ? versions[0] : versions.length ? "không đồng nhất" : null;
     const needsJava = nodes.filter((n) => n.state === "java-missing" || n.state === "java-too-old");
 
     return (
         <div className="fade-in page-compact">
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Lavalink</h1>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-                        Một Lavalink trên mỗi node, dùng chung một cấu hình. Bot nối vào{" "}
+                        Mỗi node một Lavalink, dùng chung một cấu hình. Bot nối vào{" "}
                         <code>127.0.0.1:{eff.port}</code> ngay trên node của nó.
                     </p>
                 </div>
-                <button className="btn-ghost" disabled={!!busy} onClick={previewYaml}>
-                    Xem application.yml
-                </button>
-                <button
-                    className="btn-ghost"
-                    disabled={!!busy}
-                    onClick={() =>
-                        run("Đang đồng bộ…", async () => {
-                            const { data } = await api.post("/lavalink/sync", { restart: true }, LONG);
-                            const failed = data.results.filter((r) => !r.ok);
-                            return failed.length
-                                ? `Lỗi ở ${failed.length} node: ${failed.map((f) => f.nodeName).join(", ")}`
-                                : `Đã đồng bộ ${data.results.length} node.`;
-                        })
-                    }
-                >
-                    Đồng bộ tất cả node
+                <button className="btn-ghost" disabled={!!busy} onClick={() => loadStatus()}>
+                    Làm mới
                 </button>
                 <button className="btn-primary" disabled={!!busy} onClick={checkUpdate}>
                     Kiểm tra bản mới
@@ -334,39 +498,78 @@ export default function LavalinkPage() {
                 </div>
             )}
 
-            {/* ── Release ─────────────────────────────────────────────────── */}
+            {/* ── Tổng quan ───────────────────────────────────────────────── */}
             <div className="card" style={{ padding: "16px 20px", marginBottom: 16 }}>
-                <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
-                    <div>
-                        <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Bản mới nhất trên GitHub</p>
-                        <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 700 }}>
-                            {release?.version || release?.error || "—"}
-                        </p>
-                    </div>
-                    <div>
-                        <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Fleet đang ở</p>
-                        <p style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 700 }}>
-                            {settings?.installedVersion || "—"}
-                        </p>
-                    </div>
-                    <div>
-                        <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>Lần quét gần nhất</p>
-                        <p style={{ margin: "2px 0 0", fontSize: 13 }}>{fmtTime(settings?.lastCheckAt)}</p>
-                    </div>
+                <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
+                    <Summary
+                        label="Node đang chạy"
+                        value={`${runningCount}/${nodes.length}`}
+                        tone={nodes.length && runningCount === nodes.length ? "ok" : runningCount ? "warn" : "bad"}
+                    />
+                    <Summary
+                        label="Player"
+                        value={totalPlayers === null ? "—" : `${totalPlayers}`}
+                        sub={totalPlayers === null ? "không đọc được" : `${playingPlayers} đang phát`}
+                    />
+                    <Summary
+                        label="Phiên bản"
+                        value={fleetVersion || "—"}
+                        sub={
+                            release?.version && fleetVersion && release.version !== fleetVersion
+                                ? `có bản ${release.version}`
+                                : release?.version
+                                  ? "mới nhất"
+                                  : release?.error || ""
+                        }
+                        tone={release?.version && fleetVersion && release.version !== fleetVersion ? "warn" : "ok"}
+                    />
+                    <Summary label="Quét GitHub" value={fmtTime(settings?.lastCheckAt)} sub={`tự động 02:00 ${form.timezone}`} />
                     <div style={{ flex: 1 }} />
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                        <input type="checkbox" checked={!!form.autoUpdate} onChange={set("autoUpdate")} />
-                        Tự cập nhật 02:00 ({form.timezone})
-                    </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                        <input type="checkbox" checked={!!form.autoInstallOnNewNode} onChange={set("autoInstallOnNewNode")} />
-                        Tự cài khi thêm node
-                    </label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                            <input type="checkbox" checked={!!form.autoUpdate} onChange={set("autoUpdate")} />
+                            Tự cập nhật 02:00
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                            <input
+                                type="checkbox"
+                                checked={!!form.autoInstallOnNewNode}
+                                onChange={set("autoInstallOnNewNode")}
+                            />
+                            Tự cài khi thêm node
+                        </label>
+                    </div>
                 </div>
                 {settings?.lastError && (
                     <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--danger)" }}>{settings.lastError}</p>
                 )}
             </div>
+
+            {/* ── Node ────────────────────────────────────────────────────── */}
+            {nodes.length === 0 ? (
+                <div className="card" style={{ padding: 30, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
+                    Chưa có node nào được bật.
+                </div>
+            ) : (
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(310px, 1fr))",
+                        gap: 12,
+                        marginBottom: 16,
+                    }}
+                >
+                    {nodes.map((n) => (
+                        <NodeCard
+                            key={n.nodeId}
+                            n={n}
+                            busy={busy}
+                            onAction={(action, label) => nodeAction(n, action, label)}
+                            onLogs={() => openLogs(n)}
+                        />
+                    ))}
+                </div>
+            )}
 
             {needsJava.length > 0 && (
                 <div
@@ -375,10 +578,80 @@ export default function LavalinkPage() {
                 >
                     {needsJava.map((n) => n.nodeName).join(", ")} chưa có Java 17+. Panel không tự cài gói hệ thống —
                     chạy tay trên node đó:{" "}
-                    <code style={{ color: "var(--text)" }}>sudo apt-get install -y openjdk-17-jre-headless</code>
+                    <code style={{ color: "var(--text)" }}>sudo apt-get install -y openjdk-21-jre-headless</code>
                 </div>
             )}
 
+            {driftCount > 0 && (
+                <div
+                    className="card"
+                    style={{
+                        padding: "12px 16px",
+                        marginBottom: 16,
+                        fontSize: 13,
+                        color: "var(--warning)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        flexWrap: "wrap",
+                    }}
+                >
+                    <span style={{ flex: 1 }}>
+                        {driftCount} node đang chạy file khác với cấu hình của panel. Đồng bộ sẽ ghi lại file và
+                        restart node đó (đứt nhạc vài giây).
+                    </span>
+                    <button
+                        className="btn-ghost"
+                        disabled={!!busy}
+                        onClick={() =>
+                            run("Đang đồng bộ…", async () => {
+                                const { data } = await api.post("/lavalink/sync", { restart: true }, LONG);
+                                const failed = data.results.filter((r) => !r.ok);
+                                return failed.length
+                                    ? `Lỗi ở ${failed.length} node: ${failed.map((f) => f.nodeName).join(", ")}`
+                                    : `Đã đồng bộ ${data.results.length} node.`;
+                            })
+                        }
+                    >
+                        Đồng bộ ngay
+                    </button>
+                </div>
+            )}
+
+            {/* ── Cấu hình (gấp lại — status mới là thứ xem hằng ngày) ────── */}
+            <details open={configOpen} onToggle={(e) => setConfigOpen(e.target.open)} style={{ marginBottom: 16 }}>
+                <summary
+                    style={{
+                        cursor: "pointer",
+                        padding: "12px 20px",
+                        borderRadius: 10,
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-card)",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                    }}
+                >
+                    Cấu hình dùng chung
+                    <span
+                        className="badge"
+                        style={{
+                            background: "var(--bg-input)",
+                            color: "var(--text-muted)",
+                            border: "1px solid var(--border)",
+                            fontWeight: 400,
+                        }}
+                    >
+                        {eff.custom ? "file application.yml" : "form của panel"}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontSize: 11, color: "var(--text-dim)", fontWeight: 400 }}>
+                        port {eff.port} · {(eff.plugins || []).length} plugin
+                    </span>
+                </summary>
+                <div style={{ marginTop: 12 }}>
             {/* ── Shared config ───────────────────────────────────────────── */}
             <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
@@ -558,6 +831,11 @@ export default function LavalinkPage() {
                 )}
 
                 <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                    {!eff.custom && (
+                        <button className="btn-ghost" disabled={!!busy} onClick={previewYaml}>
+                            Xem application.yml sẽ sinh ra
+                        </button>
+                    )}
                     <button className="btn-ghost" disabled={!!busy} onClick={() => save(false)}>
                         Lưu
                     </button>
@@ -566,93 +844,8 @@ export default function LavalinkPage() {
                     </button>
                 </div>
             </div>
-
-            {/* ── Nodes ───────────────────────────────────────────────────── */}
-            <div className="card" style={{ padding: "18px 20px" }}>
-                <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>Node</h2>
-                {nodes.length === 0 && (
-                    <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Chưa có node nào được bật.</p>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {nodes.map((n) => (
-                        <div
-                            key={n.nodeId}
-                            style={{
-                                display: "flex",
-                                gap: 12,
-                                alignItems: "center",
-                                flexWrap: "wrap",
-                                padding: "12px 0",
-                                borderTop: "1px solid var(--border-light)",
-                            }}
-                        >
-                            <div style={{ minWidth: 160 }}>
-                                <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{n.nodeName}</p>
-                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{n.host}</p>
-                            </div>
-                            <Pill state={n.state} />
-                            <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 70 }}>
-                                {n.version || "—"}
-                            </span>
-                            <span style={{ fontSize: 11, color: "var(--text-dim)", minWidth: 110 }}>
-                                {n.java?.present ? `java ${n.java.major ?? "?"}` : "no java"} · {fmtGB(n.freeBytes)} free
-                            </span>
-                            {n.error && (
-                                <span style={{ fontSize: 11, color: "var(--danger)", flex: 1, minWidth: 200 }}>
-                                    {n.error}
-                                </span>
-                            )}
-                            <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                {n.state === "not-installed" || n.state === "java-missing" || n.state === "java-too-old" ? (
-                                    <button
-                                        className="btn-ghost"
-                                        style={{ padding: "6px 12px", fontSize: 12 }}
-                                        disabled={!!busy || !n.online}
-                                        onClick={() => nodeAction(n, "install", "Cài đặt")}
-                                    >
-                                        Cài đặt
-                                    </button>
-                                ) : (
-                                    <>
-                                        <button
-                                            className="btn-ghost"
-                                            style={{ padding: "6px 12px", fontSize: 12 }}
-                                            disabled={!!busy || !n.online}
-                                            onClick={() => nodeAction(n, "update", "Cập nhật")}
-                                        >
-                                            Cập nhật
-                                        </button>
-                                        <button
-                                            className="btn-ghost"
-                                            style={{ padding: "6px 12px", fontSize: 12 }}
-                                            disabled={!!busy || !n.online}
-                                            onClick={() => nodeAction(n, "sync", "Đồng bộ config")}
-                                        >
-                                            Đồng bộ
-                                        </button>
-                                        <button
-                                            className="btn-ghost"
-                                            style={{ padding: "6px 12px", fontSize: 12 }}
-                                            disabled={!!busy || !n.online}
-                                            onClick={() => nodeAction(n, n.live?.status === "online" ? "restart" : "start", "Restart")}
-                                        >
-                                            {n.live?.status === "online" ? "Restart" : "Start"}
-                                        </button>
-                                    </>
-                                )}
-                                <button
-                                    className="btn-ghost"
-                                    style={{ padding: "6px 12px", fontSize: 12 }}
-                                    disabled={!n.online}
-                                    onClick={() => openLogs(n)}
-                                >
-                                    Logs
-                                </button>
-                            </div>
-                        </div>
-                    ))}
                 </div>
-            </div>
+            </details>
 
             {/* ── Modals ──────────────────────────────────────────────────── */}
             {switchPrompt && (

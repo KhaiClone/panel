@@ -25,6 +25,20 @@ router.get("/logs", async (req, res, next) => {
 });
 
 /**
+ * POST /lavalink/stats   body: { port, password, address }
+ * Lavalink's own /v4/stats. Sent as a body rather than a query string so the
+ * password never lands in a URL.
+ */
+router.post("/stats", async (req, res, next) => {
+    try {
+        const { port, password, address } = req.body || {};
+        res.json({ stats: await lavalink.stats({ port, password, address }) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * PUT /lavalink/config   body: { content, restart?, port?, password?, heap? }
  * Writes the panel's application.yml. Restarting is the caller's choice: the
  * panel only restarts nodes whose config actually changed.
