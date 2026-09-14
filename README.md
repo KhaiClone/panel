@@ -429,6 +429,11 @@ another VPS.
 - **Java is not installed for you.** Lavalink v4 needs Java 17+. The agent
   reports a missing or too-old runtime and the page shows the `apt` command —
   installing system packages from an HTTP call is outside the agent's job.
+- **The pm2 memory ceiling is always explicit.** pm2 7 applies a 200MB
+  `max_memory_restart` of its own when none is given (pm2 6 did not), and a JVM
+  crosses that before it finishes booting — the node boots, reports ready, is
+  SIGKILLed and restarts every 30 seconds with nothing in its log. The agent
+  passes `2 × heap` (minimum 1G) so "no flag" is never relied on.
 
 Agent env (both optional):
 

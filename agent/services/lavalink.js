@@ -291,11 +291,31 @@ const rollback = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * RSS ceiling to hand pm2, derived from the heap.
+ *
+ * -Xmx bounds the Java heap only; the process also needs metaspace, the code
+ * cache, thread stacks and — for an audio server — a lot of direct byte
+ * buffers. Twice the heap, never below 1G, leaves room for all of it while
+ * still catching a genuine runaway.
+ */
+const pm2MemoryCeiling = (xmx) => {
+    const m = /^(\d+)([MG])$/i.exec(String(xmx || ""));
+    if (!m) return "2048M";
+    const mb = m[2].toUpperCase() === "G" ? Number(m[1]) * 1024 : Number(m[1]);
+    return `${Math.max(mb * 2, 1024)}M`;
+};
+
+/**
  * Start under PM2 using the agent's normal wrapper-script path, so Lavalink
  * behaves like every other managed process (same dump.pm2 guard, same logs).
  *
- * No --max-memory-restart: the JVM reserves its heap up front, so a pm2 memory
- * cap would restart it in a loop. The heap is bounded by -Xmx instead.
+ * The memory ceiling is ALWAYS passed explicitly. "No flag" does not mean "no
+ * limit" any more: pm2 7 applies a 200MB max_memory_restart of its own when
+ * none is given, and a JVM crosses 200MB before it has finished booting — the
+ * node then boots, reports ready, gets SIGKILLed and restarts, every 30
+ * seconds, with nothing in the log to explain it. Node bots never noticed
+ * because they sit under 100MB. (pm2 6 had no such default, which is why the
+ * same code behaved on one node and not on another.)
  */
 const start = async (heap = "512M") => {
     if (!fs.existsSync(JAR())) throw new Error("Lavalink.jar is not installed on this node");
@@ -305,7 +325,7 @@ const start = async (heap = "512M") => {
         throw new Error("Java is not installed on this node — Lavalink v4 needs Java 17 or newer");
     }
     const xmx = /^\d+[MG]$/i.test(String(heap)) ? String(heap).toUpperCase() : "512M";
-    return pm2.startBot(PM2_NAME, LAVALINK_DIR, `java -Xmx${xmx} -jar Lavalink.jar`, null, null);
+    return pm2.startBot(PM2_NAME, LAVALINK_DIR, `java -Xmx${xmx} -jar Lavalink.jar`, pm2MemoryCeiling(xmx), null);
 };
 
 const stop = () => pm2.stopBot(PM2_NAME);
@@ -355,6 +375,7 @@ module.exports = {
     MIN_FREE_BYTES,
     javaInfo,
     libc,
+    pm2MemoryCeiling,
     freeBytes,
     status,
     writeConfig,

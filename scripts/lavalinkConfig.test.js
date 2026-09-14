@@ -15,6 +15,7 @@ const assert = require("assert");
 
 const { renderYaml, sha256, hasYoutubePlugin, parseYaml, effective } = require("../server/services/lavalinkConfig");
 const { cmpVersion } = require("../server/services/lavalinkUpdater");
+const { pm2MemoryCeiling } = require("../agent/services/lavalink");
 
 let passed = 0;
 const ok = (label, fn) => {
@@ -186,6 +187,31 @@ ok("effective on unparseable YAML keeps the stored values and says why", () => {
     assert.strictEqual(e.custom, true);
     assert.ok(e.parseError);
     assert.strictEqual(e.port, BASE.port);
+});
+
+// ── pm2MemoryCeiling ─────────────────────────────────────────────────────────
+//
+// pm2 7 applies a 200MB max_memory_restart when the caller passes none — pm2 6
+// did not. A JVM crosses 200MB before it finishes booting, so on a pm2 7 node
+// Lavalink booted, reported ready, was SIGKILLed and restarted every 30 seconds
+// with nothing in its log. The ceiling is therefore always passed explicitly,
+// and must leave room for everything -Xmx does NOT cover: metaspace, the code
+// cache, thread stacks and the direct byte buffers an audio server lives on.
+
+ok("the ceiling is twice the heap", () => {
+    assert.strictEqual(pm2MemoryCeiling("1G"), "2048M");
+    assert.strictEqual(pm2MemoryCeiling("2G"), "4096M");
+});
+
+ok("a small heap still gets at least 1G — the JVM overhead does not shrink with it", () => {
+    assert.strictEqual(pm2MemoryCeiling("512M"), "1024M");
+    assert.strictEqual(pm2MemoryCeiling("256M"), "1024M");
+});
+
+ok("an unreadable heap value falls back to a safe ceiling, never to no limit", () => {
+    for (const bad of ["", null, undefined, "bogus", "1GB"]) {
+        assert.strictEqual(pm2MemoryCeiling(bad), "2048M", `for ${JSON.stringify(bad)}`);
+    }
 });
 
 // ── cmpVersion ───────────────────────────────────────────────────────────────
