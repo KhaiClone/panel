@@ -207,12 +207,23 @@ async function checkNitro(token) {
     };
 }
 
-/** Đọc bằng chính token của khách. Chỉ dùng được khi khách có Nitro. */
+/**
+ * Đọc bằng chính token của khách. Miễn phí — không tốn lượt nào của reader.
+ *
+ * 404 Ở ĐÂY KHÔNG CÓ NGHĨA LÀ "THIẾU NITRO". Đo được trên acc `taynhocuto1811`:
+ * `premium_type = 2` (Nitro đầy đủ) mà `/users/@me/badges` vẫn 404, trong khi
+ * reader đọc `/users/{id}/badges` của chính acc đó lại ra 200 với 5 badge.
+ * Đổi sang đường dẫn có id thay cho `@me` cũng 404 — nên 404 là chuyện của
+ * NGƯỜI XEM, không phải của đường dẫn hay của acc được xem.
+ *
+ * Vì không đoán được nguyên nhân, chỉ ném cờ `directoryClosed` để read() biết
+ * mà vòng sang reader, thay vì treo đơn lại.
+ */
 async function readSelf(token, userId) {
     const res = await _fetchBadges("/users/@me/badges", token, null);
     if (res.status === 404) {
-        throw _err("Tài khoản này không đọc được badge directory (cần Nitro)", 400, {
-            needsNitro: true,
+        throw _err("Token này không mở được badge directory (HTTP 404)", 400, {
+            directoryClosed: true,
         });
     }
     if (res.status !== 200 || !Array.isArray(res.data?.badges)) {
@@ -333,7 +344,17 @@ async function read({ token = null, userId = null, hasNitro = null, force = fals
     if (token) {
         const me = hasNitro === null ? await checkNitro(token) : { userId, hasNitro };
         const id = me.userId ?? userId;
-        if (me.hasNitro) return readSelf(token, id);
+        if (me.hasNitro) {
+            try {
+                return await readSelf(token, id);
+            } catch (err) {
+                // Có Nitro nhưng directory vẫn đóng. Không treo đơn vì chuyện đó:
+                // reader đọc được acc này, và khách thì đã trả tiền rồi. Tốn
+                // thêm một lượt reader là cái giá rẻ hơn hẳn một đơn kẹt.
+                if (!err.directoryClosed) throw err;
+                return readOther(id, { force });
+            }
+        }
         return readOther(id, { force });
     }
     if (!userId) throw _err("Cần token hoặc userId", 400);
