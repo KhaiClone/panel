@@ -20,6 +20,8 @@ async function combinedList() {
             mode: "monthly",
             status: m.active ? "monthly" : "expired",
             monthlyExpiresAt: m.monthlyExpiresAt,
+            // Expired plans are erased a week later unless renewed — the UI counts down.
+            purgeAt: m.purgeAt,
             selectedQuestIds: [],
             completedCount,
             running: false,

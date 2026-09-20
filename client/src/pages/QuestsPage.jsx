@@ -23,10 +23,13 @@ const fmtDate = (iso) => {
 };
 
 // Single-quest accounts are erased one week after their run (token, progress, owner
-// link — everything). Monthly subscribers are kept for the life of the plan.
+// link — everything). A monthly subscriber lives as long as the plan, then gets the
+// same one-week window to renew before it is erased too.
 const retentionText = (a) => {
-    if (a.mode === "monthly" || !a.retentionExpiresAt) return null;
-    const left = a.retentionExpiresAt - Date.now();
+    const until =
+        a.mode === "monthly" ? (a.status === "expired" ? a.purgeAt : null) : a.retentionExpiresAt;
+    if (!until) return null;
+    const left = until - Date.now();
     if (left <= 0) return "erasing…";
     const d = Math.floor(left / 86400000);
     return d >= 1 ? `erased in ${d}d` : `erased in ${Math.max(1, Math.ceil(left / 3600000))}h`;
@@ -228,7 +231,7 @@ function AccountRow({ a, live, onOpen }) {
                             {modeLabel(a)}
                             {a.ref && <span title="Owner linked">· 👤</span>}
                             {retentionText(a) && (
-                                <span title="Single-quest data is kept for 1 week, then deleted">
+                                <span title="Data is kept for 1 week, then deleted (a monthly plan's week starts when it expires)">
                                     · 🕒 {retentionText(a)}
                                 </span>
                             )}

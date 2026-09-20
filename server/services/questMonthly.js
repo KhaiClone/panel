@@ -7,6 +7,10 @@
  *
  * DB model `quest_monthly`: { _id, accountId, username, tokenEncrypted, tokenIv,
  *   tokenTag, monthlyExpiresAt, webhookUrl, ref, addedAt, updatedAt }
+ *
+ * RETENTION — an expired plan is kept ONE WEEK so the customer can still renew
+ * (activate() extends monthlyExpiresAt). Past that grace window an un-renewed plan is
+ * erased by the hourly sweep: record, encrypted token and live quest state all go.
  */
 
 const crypto = require("crypto");
@@ -25,6 +29,11 @@ const {
 const MODEL = "quest_monthly";
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const RUN_DAYS = [2, 6]; // Tue, Sat
+// An expired plan stays listed so the customer can still renew it; one week after it
+// ended without a renewal the record (encrypted token included) is erased by the sweep.
+const GRACE_DAYS = Math.max(1, parseInt(process.env.MONTHLY_GRACE_DAYS || "7", 10) || 7);
+const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
+const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const RUN_HOUR = () => parseInt(process.env.MONTHLY_RUN_HOUR || "9", 10) || 9;
 const ENROLL_HOUR = () => parseInt(process.env.MONTHLY_ENROLL_HOUR || "3", 10) || 3;
 const { isEnrolled, isCompleted, isCompletable, getQuestName, getTaskType } = _fields;
@@ -51,9 +60,20 @@ function _decrypt(r) {
         return null;
     }
 }
+function _expiresMs(r) {
+    return new Date(r?.monthlyExpiresAt ?? 0).getTime(); // NaN when the field is unusable
+}
 function _isActive(r) {
-    const t = new Date(r?.monthlyExpiresAt ?? 0).getTime();
-    return Number.isFinite(t) && t > Date.now();
+    return _expiresMs(r) > Date.now();
+}
+/** When an un-renewed plan gets erased: one week after it expired. */
+function _purgeAt(r) {
+    return _expiresMs(r) + GRACE_MS;
+}
+/** A record with an unreadable date is never swept; it just stays listed as expired. */
+function _isPurgeable(r) {
+    const at = _purgeAt(r);
+    return Number.isFinite(at) && at <= Date.now();
 }
 function _webhook(rec, event) {
     if (!rec.webhookUrl) return;
@@ -105,15 +125,54 @@ function _publicRec(r) {
         username: r.username,
         monthlyExpiresAt: r.monthlyExpiresAt,
         active: _isActive(r),
+        purgeAt: _purgeAt(r),
         ref: r.ref ?? null,
     };
 }
+/** Plans past their grace window are hidden right away, before the sweep erases them. */
 async function list() {
-    return ((await db.get(MODEL)) || []).map(_publicRec);
+    return ((await db.get(MODEL)) || []).filter((r) => !_isPurgeable(r)).map(_publicRec);
 }
 async function remove(accountId) {
     await db.findOneAndDelete(MODEL, { accountId });
     return true;
+}
+
+// ── Retention sweep: erase plans a week past expiry (no renewal) ─────────────────
+/**
+ * Deletes the record (encrypted token included), drops its live quest state and tells
+ * the panel + arnto-auto the account is gone. A renewal pushes monthlyExpiresAt
+ * forward, so a renewed plan never reaches this.
+ */
+async function purgeExpired() {
+    const recs = (await db.get(MODEL)) || [];
+    let purged = 0;
+    for (const rec of recs) {
+        if (!_isPurgeable(rec)) continue;
+        try {
+            await db.findOneAndDelete(MODEL, { accountId: rec.accountId });
+            questService.clearLive(rec.accountId);
+            questService.emitExternalEvent(rec.accountId, { type: "removed" });
+            _webhook(rec, { type: "removed", reason: "monthly_expired" });
+            purged++;
+        } catch (e) {
+            console.warn(`[Monthly] retention purge ${rec.accountId} error: ${e.message}`);
+        }
+    }
+    if (purged)
+        console.log(`[Monthly] Retention: erased ${purged} plan(s) expired for more than ${GRACE_DAYS}d.`);
+    return purged;
+}
+
+/** Purge now, then keep checking hourly. */
+function startRetentionSweep() {
+    purgeExpired().catch((e) => console.warn("[Monthly] retention sweep:", e.message));
+    const timer = setInterval(
+        () => purgeExpired().catch((e) => console.warn("[Monthly] retention sweep:", e.message)),
+        SWEEP_INTERVAL_MS,
+    );
+    timer.unref?.();
+    return timer;
 }
 
 // ── Run: complete ALL quests for every active subscriber (one pass) ──────────────
@@ -298,10 +357,22 @@ async function _checkEnroll() {
 }
 
 function start() {
+    startRetentionSweep();
     _checkRun().catch(() => {});
     _checkEnroll().catch(() => {});
     setInterval(() => _checkRun().catch(() => {}), 60 * 1000);
     setInterval(() => _checkEnroll().catch(() => {}), 60 * 1000);
 }
 
-module.exports = { activate, list, remove, listActive, runBatch, runEnrollScan, start };
+module.exports = {
+    activate,
+    list,
+    remove,
+    listActive,
+    runBatch,
+    runEnrollScan,
+    purgeExpired,
+    startRetentionSweep,
+    GRACE_DAYS,
+    start,
+};
