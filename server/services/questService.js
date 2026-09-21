@@ -92,16 +92,18 @@ const leases = new Map();
 // accountId -> { [questId]: { name, taskType, needed, done, percent, state, media } }
 // Kept so the snapshot / list can render rich quest cards even after a page reload.
 const liveState = new Map();
-// accountId -> { url, ref }: caller (arnto-auto) webhook to notify on quest events.
+// accountId -> { url, ref, username }: caller (arnto-auto) webhook to notify on
+// quest events. `username` rides along so arnto-auto can name the account in its
+// notification without another round-trip to the panel.
 const webhooks = new Map();
 
-// Forward meaningful events to the account's webhook (arnto-auto → DM the buyer).
+// Forward meaningful events to the account's webhook (arnto-auto → notify the buyer).
 function _dispatchWebhook(accountId, event) {
     const hook = webhooks.get(accountId);
     if (!hook?.url) return;
     if (!["quest_start", "quest_done", "status", "removed"].includes(event.type)) return;
     axios
-        .post(hook.url, { ...event, accountId, ref: hook.ref ?? null }, {
+        .post(hook.url, { ...event, accountId, ref: hook.ref ?? null, username: hook.username ?? null, plan: "single" }, {
             timeout: 8000,
             // arnto-auto's /api/quest-event authenticates with the shared key.
             headers: { "x-api-key": process.env.PANEL_API_KEY || "" },
@@ -264,7 +266,7 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
     // Preserve an existing webhook if the caller didn't supply a new one.
     const hookUrl = webhookUrl ?? existing?.webhookUrl ?? null;
     const hookRef = ref ?? existing?.webhookRef ?? null;
-    if (hookUrl) webhooks.set(accountId, { url: hookUrl, ref: hookRef });
+    if (hookUrl) webhooks.set(accountId, { url: hookUrl, ref: hookRef, username: resolved.username });
     const record = {
         accountId,
         username: resolved.username,
@@ -487,7 +489,12 @@ async function restore() {
             await removeAccount(rec.accountId).catch(() => {});
             continue;
         }
-        if (rec.webhookUrl) webhooks.set(rec.accountId, { url: rec.webhookUrl, ref: rec.webhookRef ?? null });
+        if (rec.webhookUrl)
+            webhooks.set(rec.accountId, {
+                url: rec.webhookUrl,
+                ref: rec.webhookRef ?? null,
+                username: rec.username,
+            });
         if (rec.status !== "running") continue;
         const token = _decrypt(rec);
         if (!token) {

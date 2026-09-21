@@ -80,7 +80,9 @@ function _webhook(rec, event) {
     axios
         .post(
             rec.webhookUrl,
-            { ...event, accountId: rec.accountId, ref: rec.ref ?? null },
+            // username + plan let arnto-auto say whose account this is in the
+            // notification it posts, without asking the panel for the record.
+            { ...event, accountId: rec.accountId, ref: rec.ref ?? null, username: rec.username, plan: "monthly" },
             // arnto-auto's /api/quest-event authenticates with the shared key.
             { timeout: 8000, headers: { "x-api-key": process.env.PANEL_API_KEY || "" } },
         )
