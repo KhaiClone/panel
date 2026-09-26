@@ -1,7 +1,10 @@
+const fs = require("fs");
 const os = require("os");
 const url = require("url");
 const WebSocket = require("ws");
 const { isValidAgentKey } = require("../middleware/auth");
+const { resolveTarget } = require("../utils/paths");
+const { PM2_ENV_LEAKS } = require("./pm2");
 
 // node-pty is the agent's only native dependency and the only one the agent can
 // live without. A missing or ABI-mismatched build must cost us the terminal
@@ -23,10 +26,42 @@ try {
 //  running the node's login shell. Protocol (JSON frames both ways):
 //    client → agent : { type:"input", data } | { type:"resize", cols, rows }
 //    agent  → client : { type:"data", data }  | { type:"exit", code }
+//
+//  /term?root&dir | ?absPath opens the shell in that project's folder instead
+//  of the home directory (the panel's per-project terminal).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // kill a session with no input for 30m
 const PING_INTERVAL_MS = 30 * 1000;
+
+/**
+ * Where a session starts. A project target goes through the same root jail as
+ * every fs/git call, but the jail only picks the STARTING directory here — the
+ * shell can cd anywhere, exactly as the node terminal always could. A target
+ * that does not resolve still opens a shell, in home, and says why.
+ */
+const startDir = (query) => {
+    if (!query.dir && !query.absPath) return { cwd: os.homedir() };
+    try {
+        const dir = resolveTarget(query);
+        if (!fs.existsSync(dir)) return { cwd: os.homedir(), notice: `project folder ${dir} does not exist` };
+        return { cwd: dir };
+    } catch (err) {
+        return { cwd: os.homedir(), notice: err.message };
+    }
+};
+
+/**
+ * The agent's environment minus the pm2_env keys pm2 leaks into it. A project
+ * terminal is exactly where someone types `pm2 restart <bot>`, and that pm2
+ * CLI would read the agent's own max_memory_restart as configuration — see
+ * PM2_ENV_LEAKS in ./pm2.
+ */
+const shellEnv = () => {
+    const env = { ...process.env };
+    for (const key of PM2_ENV_LEAKS) delete env[key];
+    return env;
+};
 
 const createTermSocket = (server) => {
     if (!pty) {
@@ -45,7 +80,7 @@ const createTermSocket = (server) => {
     const wss = new WebSocket.Server({ noServer: true });
 
     server.on("upgrade", (req, socket, head) => {
-        const { pathname } = url.parse(req.url);
+        const { pathname, query } = url.parse(req.url, true);
         if (pathname !== "/term") return; // leave other upgrades alone
 
         if (!isValidAgentKey(req.headers["x-agent-key"])) {
@@ -53,17 +88,18 @@ const createTermSocket = (server) => {
             socket.destroy();
             return;
         }
-        wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+        wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, query));
     });
 
-    wss.on("connection", (ws) => {
+    wss.on("connection", (ws, query) => {
         const shell = process.env.SHELL || "bash";
+        const { cwd, notice } = startDir(query);
         const term = pty.spawn(shell, [], {
             name: "xterm-256color",
             cols: 80,
             rows: 24,
-            cwd: os.homedir(),
-            env: process.env,
+            cwd,
+            env: shellEnv(),
         });
 
         let idleTimer;
@@ -75,6 +111,7 @@ const createTermSocket = (server) => {
 
         const send = (obj) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
 
+        if (notice) send({ type: "data", data: `\x1b[33m[agent] ${notice} — opened in ${cwd}\x1b[0m\r\n` });
         term.onData((data) => send({ type: "data", data }));
         term.onExit(({ exitCode }) => {
             send({ type: "exit", code: exitCode });

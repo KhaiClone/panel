@@ -6,6 +6,7 @@ import LogViewer from '../components/LogViewer';
 import EnvEditor from '../components/EnvEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import FileEditor from '../components/FileEditor';
+import ShellTerminal from '../components/ShellTerminal';
 import { useData } from '../context/DataContext';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ const BtnSpinner = () => (
     <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
 );
 
-const TABS = ['Manage', 'Resources', 'Metrics', 'Logs', 'Environment', 'Files'];
+const TABS = ['Manage', 'Resources', 'Metrics', 'Logs', 'Terminal', 'Environment', 'Files'];
 
 // ── Website Panel ───────────────────────────────────────────────────────────
 function WebsitePanel({ bot, onRefresh }) {
@@ -427,6 +428,7 @@ export default function BotDetail() {
     const [bot, setBot]       = useState(null);
     const [loading, setLoading] = useState(true);
     const [tab, setTab]       = useState('Manage');
+    const [termOpened, setTermOpened] = useState(false); // Terminal tab visited → keep its session alive
     const [busy, setBusy]     = useState(null);
     const [confirm, setConfirm] = useState(null);
     const [actionMsg, setActionMsg] = useState(null);
@@ -644,7 +646,7 @@ export default function BotDetail() {
             {/* Tabs */}
             <div className="tab-bar" style={{ marginBottom: 24, display: "inline-flex" }}>
                 {TABS.map(t => (
-                    <button key={t} className={`tab-item ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
+                    <button key={t} className={`tab-item ${tab === t ? 'active' : ''}`} onClick={() => { setTab(t); if (t === 'Terminal') setTermOpened(true); }}>
                         {t}
                     </button>
                 ))}
@@ -966,6 +968,26 @@ export default function BotDetail() {
                 {tab === 'Logs' && (
                     <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg-base)", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
                         <LogViewer botId={id} />
+                    </div>
+                )}
+
+                {/* Terminal Tab — a shell already in this project's folder on its
+                    node. Mounted on first visit and only hidden after that, so
+                    looking at Logs or Files does not kill the session. */}
+                {termOpened && (
+                    <div className="card" style={{ display: tab === 'Terminal' ? 'flex' : 'none', flexDirection: 'column', height: 640, padding: 20 }}>
+                        <ShellTerminal
+                            params={{ bot: id }}
+                            targetLabel={bot.name}
+                            title={
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Terminal</div>
+                                    <div className="mono" style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {isLocal ? bot.localPath : `${bot.buyerID}/${bot.botID}`}{bot.nodeName ? ` · ${bot.nodeName}` : ''}
+                                    </div>
+                                </div>
+                            }
+                        />
                     </div>
                 )}
 

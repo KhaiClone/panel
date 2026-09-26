@@ -285,6 +285,7 @@ const flushLogs = async () => {
 };
 
 module.exports = {
+    PM2_ENV_LEAKS,
     startBot,
     startHttpServer,
     stopBot,
