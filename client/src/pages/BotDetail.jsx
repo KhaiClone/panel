@@ -988,7 +988,7 @@ export default function BotDetail() {
             {confirm?.action === 'update' && (
                 <ConfirmModal
                     title={isLocal ? 'Rebuild Local Instance?' : 'Synchronize Git Repository?'}
-                    message={isLocal ? 'Execute the install command and restart the instance.' : 'Pull latest changes, reinstall dependencies, and restart.'}
+                    message={`${isLocal ? 'Execute the install command' : 'Pull latest changes and reinstall dependencies'}. A running instance is restarted; a stopped one stays stopped.`}
                     confirmText="Continue Update" danger={false}
                     onConfirm={() => { setConfirm(null); runAction('update', 'update'); }}
                     onCancel={() => setConfirm(null)}

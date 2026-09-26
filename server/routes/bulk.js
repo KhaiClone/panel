@@ -75,6 +75,8 @@ router.post("/:action", async (req, res, next) => {
                         if (bot.expiresAt && bot.expiresAt <= Date.now()) {
                             throw new Error("Bot is expired");
                         }
+                        // Same rule as the single-bot update: a stopped bot stays stopped.
+                        const keepStopped = executor.isStopped(await executor.getLiveStatus(bot));
                         let pullOutput = "(skipped — no git remote)";
                         try {
                             pullOutput = await executor.pullRepo(bot);
@@ -82,6 +84,7 @@ router.post("/:action", async (req, res, next) => {
                             pullOutput = `(pull failed or skipped: ${err.message || 'unknown error'})`;
                         }
                         await executor.installDeps(bot, bot.installCommand);
+                        if (keepStopped) return "Updated — left stopped";
 
                         const proxyConf = await getProxyConf(bot);
                         await executor.startBot(bot, proxyConf);

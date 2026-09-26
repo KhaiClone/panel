@@ -577,7 +577,7 @@ All routes require `Authorization: Bearer <token>` unless noted.
 | `POST` | `/api/bots/:id/start` | Start bot |
 | `POST` | `/api/bots/:id/stop` | Stop bot |
 | `POST` | `/api/bots/:id/restart` | Restart bot |
-| `POST` | `/api/bots/:id/update` | Git pull + npm install + restart |
+| `POST` | `/api/bots/:id/update` | Git pull + npm install + restart (a stopped bot stays stopped) |
 | `GET` | `/api/bots/:id/env` | Read `.env` file |
 | `PUT` | `/api/bots/:id/env` | Write `.env` file |
 | `GET` | `/api/bots/:id/fs/list` | List directory contents |

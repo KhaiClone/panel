@@ -106,25 +106,6 @@ const runBuildCommand = async (bot, buildCommand) => {
 };
 
 /**
- * Get live status for any project type.
- * - static, no domain → http-server runs via PM2 → PM2 status
- * - static, domain    → nginx config existence (on the bot's node)
- * - discord / fullstack → PM2 status (routed to the bot's node)
- *
- * `resolver` (from executor.getStatusResolver) batches PM2/nginx list fetches
- * per node — pass it when enriching many bots; omit it for a single bot.
- */
-const getLiveStatus = async (bot, resolver = null) => {
-    if (bot.projectType === "website" && bot.websiteConfig?.mode === "static" && bot.websiteConfig?.domain) {
-        const exists = await executor.nginxConfigExists(bot, resolver ? resolver.nginxListFor(bot) : undefined);
-        if (exists === null) return { status: "node-offline", cpu: 0, memory: 0, restarts: 0, uptime: null };
-        return { status: exists ? "online" : "stopped", cpu: 0, memory: 0, restarts: 0, uptime: null };
-    }
-    if (resolver) return resolver.statusFor(bot);
-    return executor.getBotStatus(bot);
-};
-
-/**
  * Resolve the effective proxychains4 config for a given bot.
  * Returns the proxy config object if the global proxy is enabled AND the bot
  * has proxyEnabled === true. Returns null otherwise.
@@ -194,7 +175,7 @@ router.get("/", async (req, res, next) => {
 
         const enriched = await Promise.all(
             bots.map(async (bot) => {
-                const live = await getLiveStatus(bot, resolver);
+                const live = await executor.getLiveStatus(bot, resolver);
                 let nodeName = null;
                 try { nodeName = nodeNames[nodeService.resolveNodeId(bot.nodeId)] || "unknown node"; } catch { /* PANEL_NODE_ID unset */ }
                 return { ...bot, live, nodeName };
@@ -216,7 +197,7 @@ router.get("/:id", async (req, res, next) => {
         const bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const live = await getLiveStatus(bot);
+        const live = await executor.getLiveStatus(bot);
         let nodeName = null;
         try {
             const node = await db.findOne("nodes", { _id: nodeService.resolveNodeId(bot.nodeId) });
@@ -1022,6 +1003,8 @@ router.post("/:id/restart", async (req, res, next) => {
  * For local bots that are also git repos, git pull still works.
  * For local bots with no remote, only install + restart is performed.
  * Skips install entirely if bot has no installCommand.
+ * A stopped project is updated but left stopped — the update never changes
+ * whether it runs, so the next Start picks up the new code.
  */
 router.post("/:id/update", async (req, res, next) => {
     try {
@@ -1031,6 +1014,9 @@ router.post("/:id/update", async (req, res, next) => {
         if (bot.expiresAt && bot.expiresAt <= Date.now()) {
             return res.status(403).json({ error: "Bot is expired. Please extend to start." });
         }
+
+        // Read before touching anything: the pull/install below does not change it.
+        const keepStopped = executor.isStopped(await executor.getLiveStatus(bot));
 
         let pullOutput = "(skipped — no git remote)";
         let pullFailed = false;
@@ -1049,27 +1035,31 @@ router.post("/:id/update", async (req, res, next) => {
         if (bot.projectType === "website" && bot.websiteConfig?.mode === "static") {
             const wc = bot.websiteConfig;
             await runBuildCommand(bot, wc.buildCommand);
-            await applyWebsiteInfra(bot);
+            if (!keepStopped) await applyWebsiteInfra(bot);
             await createNotification(`Bot "${bot.name}" was updated / reinstalled.`, "reinstall");
-            console.log(`[Bots] Updated static website "${bot.name}"`);
+            console.log(`[Bots] Updated static website "${bot.name}"${keepStopped ? " (left stopped)" : ""}`);
             return res.json({
-                message: "Website updated and restarted",
+                message: keepStopped ? "Website updated — left stopped" : "Website updated and restarted",
                 pullOutput,
                 pullFailed,
-                restartOutput: wc.domain ? "nginx config applied" : "http-server started",
+                restartOutput: keepStopped ? null : wc.domain ? "nginx config applied" : "http-server started",
             });
         }
 
         await executor.installDeps(bot, bot.installCommand);
 
-        // Use startBot so wrapper script is refreshed with current proxy settings
-        const proxyConf = await getProxyConf(bot);
-        const restartOutput = await executor.startBot(bot, proxyConf);
+        // Use startBot so wrapper script is refreshed with current proxy settings.
+        // A stopped bot skips it; Start runs startBot anyway, so nothing is lost.
+        let restartOutput = null;
+        if (!keepStopped) {
+            const proxyConf = await getProxyConf(bot);
+            restartOutput = await executor.startBot(bot, proxyConf);
+        }
 
         await createNotification(`Bot "${bot.name}" was updated / reinstalled.`, "reinstall");
-        console.log(`[Bots] Updated bot "${bot.name}"`);
+        console.log(`[Bots] Updated bot "${bot.name}"${keepStopped ? " (left stopped)" : ""}`);
         res.json({
-            message: "Bot updated and restarted",
+            message: keepStopped ? "Bot updated — left stopped" : "Bot updated and restarted",
             pullOutput,
             pullFailed,
             restartOutput,

@@ -189,6 +189,33 @@ const getStatusResolver = async (bots) => {
     };
 };
 
+/**
+ * Get live status for any project type.
+ * - static, no domain → http-server runs via PM2 → PM2 status
+ * - static, domain    → nginx config existence (on the bot's node)
+ * - discord / fullstack → PM2 status (routed to the bot's node)
+ *
+ * `resolver` (from getStatusResolver) batches PM2/nginx list fetches per
+ * node — pass it when enriching many bots; omit it for a single bot.
+ */
+const getLiveStatus = async (bot, resolver = null) => {
+    if (bot.projectType === "website" && bot.websiteConfig?.mode === "static" && bot.websiteConfig?.domain) {
+        const exists = await nginxConfigExists(bot, resolver ? resolver.nginxListFor(bot) : undefined);
+        if (exists === null) return { ...OFFLINE_STATUS };
+        return exists ? { ...STOPPED_STATUS, status: "online" } : { ...STOPPED_STATUS };
+    }
+    if (resolver) return resolver.statusFor(bot);
+    return getBotStatus(bot);
+};
+
+/**
+ * True when the project was deliberately stopped. Pull & Update uses it to
+ * leave such a project stopped instead of starting it as a side effect.
+ * "errored" is not stopped: the process was meant to run and crashed, and an
+ * update is usually the fix for that.
+ */
+const isStopped = (live) => live.status === "stopped" || live.status === "stopping";
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Git / install
 // ─────────────────────────────────────────────────────────────────────────────
@@ -474,6 +501,8 @@ module.exports = {
     setMemoryLimit,
     getBotStatus,
     getStatusResolver,
+    getLiveStatus,
+    isStopped,
     cloneRepo,
     pullRepo,
     installDeps,
