@@ -316,7 +316,11 @@ export default function NodeDetailPage() {
                     {logs || "(empty)"}
                 </pre>
             </div>
+            </>
+            )}
 
+            {/* Modals live outside the tab switch: their buttons are in the
+                header, which shows on every tab. */}
             {editOpen && (
                 <NodeModal node={node} onClose={() => setEditOpen(false)} onSaved={fetchAll} />
             )}
@@ -348,8 +352,6 @@ export default function NodeDetailPage() {
                     onConfirm={doUpdate}
                     onCancel={() => setConfirmAction(null)}
                 />
-            )}
-        </>
             )}
         </div>
     );

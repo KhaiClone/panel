@@ -4,8 +4,8 @@ import api from "../api/client";
 // ─────────────────────────────────────────────────────────────────────────────
 //  NodeModal — register a new node, or edit an existing one.
 //
-//  Used from two places: the Systems list creates (node = null), a node's own
-//  Manage tab edits. Registering verifies the agent answers with this key
+//  Used from two places: the Systems list creates (node = null), a node's detail
+//  page edits (the Edit button in its header). Registering verifies the agent answers with this key
 //  before the record is saved, so a typo fails here rather than showing up
 //  later as a mysteriously offline node.
 // ─────────────────────────────────────────────────────────────────────────────
