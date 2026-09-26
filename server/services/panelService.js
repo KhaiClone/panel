@@ -77,6 +77,87 @@ const rebuildPanel = async () => {
     }
 };
 
+// ── Every node's agent — the first half of a panel update ───────────────────
+
+const AGENT_BACK_TIMEOUT_MS = 90_000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Resolve true once the node's agent answers from a process started after
+ * `since`. Plain health is not enough: /self/update restarts the agent 500ms
+ * AFTER answering, so the old process is still there to say "ok".
+ */
+const waitForAgentRestart = async (node, since) => {
+    const deadline = Date.now() + AGENT_BACK_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+        await sleep(2000);
+        try {
+            const h = await nodeService.agentRequest(node, "get", "/health", { timeout: 5000 });
+            if (h?.ok && h.uptime * 1000 < Date.now() - since) return true;
+        } catch { /* mid-restart */ }
+    }
+    return false;
+};
+
+/** One node: pull + install + restart through /self/update, then wait for it. */
+const updateAgent = async (node, isPanelNode) => {
+    const base = { nodeId: node._id, name: node.name, isPanelNode };
+    // An unreachable node would hold the whole update until the 400s timeout.
+    if (!(await nodeService.checkNodeHealth(node))) {
+        return { ...base, ok: false, message: "Offline — skipped" };
+    }
+
+    const since = Date.now();
+    let result;
+    try {
+        result = await nodeService.agentRequest(node, "post", "/self/update", { timeout: 400_000 });
+    } catch (err) {
+        return { ...base, ok: false, message: err.message };
+    }
+
+    // The panel's node shares its checkout with the panel, so a previous panel
+    // Rebuild may have pulled agent code this process never loaded — "already
+    // up to date" does not mean it runs the current code. Restart it anyway.
+    const pulled = !!result.restarting;
+    if (!pulled && isPanelNode) {
+        try {
+            await nodeService.agentRequest(node, "post", "/self/restart", { timeout: 15_000 });
+        } catch (err) {
+            return { ...base, ok: false, message: err.message };
+        }
+    }
+    if (!pulled && !isPanelNode) return { ...base, ok: true, message: "Already up to date" };
+
+    if (!(await waitForAgentRestart(node, since))) {
+        return { ...base, ok: false, message: `Restarted but did not answer within ${AGENT_BACK_TIMEOUT_MS / 1000}s` };
+    }
+    return { ...base, ok: true, message: pulled ? "Updated and restarted" : "Up to date — restarted to load the current code" };
+};
+
+let _agentsUpdating = false;
+
+/**
+ * Update the agent on every node, all at once. Uses only the long-standing
+ * /self/update, /self/restart and /health, so it works whatever agent version
+ * a node is running. Must finish before the panel is rebuilt: a newer panel
+ * can call endpoints an older agent does not have.
+ */
+const updateAgents = async () => {
+    if (_agentsUpdating) {
+        const err = new Error("Agents are already being updated — wait for it to finish.");
+        err.status = 409;
+        throw err;
+    }
+    _agentsUpdating = true;
+    try {
+        const panelId = nodeService.panelNodeId();
+        const nodes = await nodeService.getNodes();
+        return await Promise.all(nodes.map((node) => updateAgent(node, node._id === panelId)));
+    } finally {
+        _agentsUpdating = false;
+    }
+};
+
 // ── The panel's own .env, read and written through the agent ─────────────────
 
 const readEnv = async () => {
@@ -107,6 +188,7 @@ module.exports = {
     getPanelLogs,
     restartPanel,
     rebuildPanel,
+    updateAgents,
     readEnv,
     writeEnv,
     logrotateStatus,

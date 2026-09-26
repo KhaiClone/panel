@@ -788,7 +788,7 @@ export default function PanelManage() {
     const [showLogs, setShowLogs] = useState(false);
     const [reconnecting, setReconnecting] = useState(false);
     const [confirm, setConfirm] = useState(null);
-    const [building, setBuilding] = useState(false);
+    const [building, setBuilding] = useState(null); // null | "agents" | "panel"
     const [buildOutput, setBuildOutput] = useState(() => {
         const saved = sessionStorage.getItem("panel_build_output");
         if (saved) { sessionStorage.removeItem("panel_build_output"); try { return JSON.parse(saved); } catch { return null; } }
@@ -820,20 +820,42 @@ export default function PanelManage() {
         });
     };
 
+    // Two requests, agents first: a newer panel may call endpoints an older
+    // agent does not have. Kept separate so neither runs into the reverse
+    // proxy's read timeout on its own.
     const handleRebuild = () => {
         setConfirm({
-            title: "Rebuild & Restart Panel",
-            message: "This will rebuild the client UI (may take 30-60 seconds) and then restart the panel. The panel stays online during the build. Continue?",
+            title: "Update Agents, Rebuild & Restart Panel",
+            message: "First updates the agent on every node (git pull, install, restart — bots keep running), then rebuilds the client UI and restarts the panel. The panel stays online during the build. Continue?",
             onConfirm: async () => {
-                setConfirm(null); setBuilding(true); setBuildOutput(null);
+                setConfirm(null); setBuildOutput(null);
+                let agents = [];
                 try {
-                    const r = await api.post("/panel/rebuild", {}, { timeout: 300_000 });
-                    const outputData = { success: true, output: r.data.buildOutput, message: r.data.message };
-                    setBuildOutput(outputData); sessionStorage.setItem("panel_build_output", JSON.stringify(outputData));
-                    setTimeout(() => setReconnecting(true), 1000);
-                } catch (err) {
-                    setBuildOutput({ success: false, output: err.response?.data?.buildOutput || err.message, message: err.response?.data?.message || "Build failed" });
-                } finally { setBuilding(false); }
+                    setBuilding("agents");
+                    try {
+                        const r = await api.post("/panel/update-agents", {}, { timeout: 600_000 });
+                        agents = r.data.agents || [];
+                    } catch (err) {
+                        setBuildOutput({ success: false, output: "", message: `Agent update failed — the panel was NOT rebuilt: ${err.response?.data?.error || err.message}` });
+                        return;
+                    }
+                    // The rebuild itself runs on the panel node's agent — without it there is nothing to rebuild with.
+                    const panelAgent = agents.find((a) => a.isPanelNode);
+                    if (panelAgent && !panelAgent.ok) {
+                        setBuildOutput({ success: false, output: "", agents, message: "The agent on the panel's own node did not update — the panel was NOT rebuilt." });
+                        return;
+                    }
+
+                    setBuilding("panel");
+                    try {
+                        const r = await api.post("/panel/rebuild", {}, { timeout: 300_000 });
+                        const outputData = { success: true, output: r.data.buildOutput, message: r.data.message, agents };
+                        setBuildOutput(outputData); sessionStorage.setItem("panel_build_output", JSON.stringify(outputData));
+                        setTimeout(() => setReconnecting(true), 1000);
+                    } catch (err) {
+                        setBuildOutput({ success: false, output: err.response?.data?.buildOutput || err.message, message: err.response?.data?.message || "Build failed", agents });
+                    }
+                } finally { setBuilding(null); }
             },
         });
     };
@@ -868,11 +890,22 @@ export default function PanelManage() {
             {/* Build output banner */}
             {buildOutput && (
                 <div className="card" style={{ padding: 16, border: `1px solid ${buildOutput.success ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, background: buildOutput.success ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)' }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: buildOutput.output ? 12 : 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: buildOutput.output || buildOutput.agents?.length ? 12 : 0 }}>
                         <h3 style={{ fontSize: 14, fontWeight: 700, color: buildOutput.success ? "#4ade80" : "#f87171", margin: 0 }}>{buildOutput.success ? "✅ Build Successful" : "❌ Build Failed"}</h3>
                         <button onClick={() => setBuildOutput(null)} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }}>Dismiss</button>
                     </div>
                     {buildOutput.message && <p style={{ fontSize: 13, margin: "0 0 8px 0" }}>{buildOutput.message}</p>}
+                    {buildOutput.agents?.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "0 0 10px 0" }}>
+                            {buildOutput.agents.map((a) => (
+                                <div key={a.nodeId} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12 }}>
+                                    <span>{a.ok ? "✅" : "❌"}</span>
+                                    <strong style={{ color: "var(--text)", whiteSpace: "nowrap" }}>Agent · {a.name}{a.isPanelNode ? " (panel)" : ""}</strong>
+                                    <span style={{ color: a.ok ? "var(--text-muted)" : "#f87171", minWidth: 0, overflowWrap: "anywhere" }}>{a.message}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     {buildOutput.output && <pre className="mono" style={{ fontSize: 11, color: "var(--text-dim)", background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, margin: 0, maxHeight: 300, overflowY: "auto", whiteSpace: "pre-wrap" }}>{buildOutput.output}</pre>}
                 </div>
             )}
@@ -900,8 +933,8 @@ export default function PanelManage() {
                     <button onClick={handleRebuild} disabled={building} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 12, border: "1px solid rgba(91,115,232,0.3)", background: "rgba(91,115,232,0.05)", cursor: building ? "wait" : "pointer", opacity: building ? 0.7 : 1, transition: "all 0.2s" }} onMouseEnter={e => !building && (e.currentTarget.style.background = "rgba(91,115,232,0.1)")} onMouseLeave={e => !building && (e.currentTarget.style.background = "rgba(91,115,232,0.05)")}>
                         <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(91,115,232,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--accent)" }}>{building ? "⏳" : "🛠️"}</div>
                         <div style={{ textAlign: "left" }}>
-                            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 2px 0" }}>{building ? "Rebuilding..." : "Rebuild & Restart"}</p>
-                            <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>Rebuilds frontend assets and restarts</p>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", margin: "0 0 2px 0" }}>{building === "agents" ? "Updating agents..." : building ? "Rebuilding..." : "Rebuild & Restart"}</p>
+                            <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>Updates every node's agent, then rebuilds and restarts</p>
                         </div>
                     </button>
                 </div>

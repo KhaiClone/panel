@@ -24,6 +24,7 @@ app.use("/ufw", require("./routes/ufw"));
 app.use("/wg", require("./routes/wg"));
 app.use("/logrotate", require("./routes/logrotate"));
 app.use("/lavalink", require("./routes/lavalink"));
+app.use("/node", require("./routes/node"));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {

@@ -7,6 +7,7 @@ import EnvEditor from '../components/EnvEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import FileEditor from '../components/FileEditor';
 import ShellTerminal from '../components/ShellTerminal';
+import NodeVersionCard from '../components/NodeVersionCard';
 import { useData } from '../context/DataContext';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -720,6 +721,7 @@ export default function BotDetail() {
                                         { label: 'Branch',          value: bot.branch || 'main' },
                                         { label: 'Start Command',   value: bot.startScript },
                                         { label: 'Install Command', value: bot.installCommand || '—' },
+                                        { label: 'Node.js',         value: bot.nodeVersion ? `v${bot.nodeVersion}` : 'System default' },
                                         { label: 'Memory Limit',    value: bot.maxMemory || 'Unrestricted' },
                                         { label: 'Created',         value: fmtDate(bot.createdAt) },
                                         { label: 'Expires',         value: bot.expiresAt ? fmtDate(bot.expiresAt) : 'Permanent' },
@@ -838,6 +840,9 @@ export default function BotDetail() {
                                 )}
                             </div>
                         </div>
+
+                        {/* Node.js version — its own card: applying it downloads and restarts */}
+                        <NodeVersionCard bot={bot} onSaved={() => fetchBot()} onMessage={setActionMsg} />
 
                         {/* Move to another node (admin — /nodes returns [] for non-admins) */}
                         {(() => {

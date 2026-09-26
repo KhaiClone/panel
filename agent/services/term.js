@@ -1,10 +1,12 @@
 const fs = require("fs");
 const os = require("os");
+const path = require("path");
 const url = require("url");
 const WebSocket = require("ws");
 const { isValidAgentKey } = require("../middleware/auth");
 const { resolveTarget } = require("../utils/paths");
 const { PM2_ENV_LEAKS } = require("./pm2");
+const nodeVersions = require("./nodeVersions");
 
 // node-pty is the agent's only native dependency and the only one the agent can
 // live without. A missing or ABI-mismatched build must cost us the terminal
@@ -28,7 +30,8 @@ try {
 //    agent  → client : { type:"data", data }  | { type:"exit", code }
 //
 //  /term?root&dir | ?absPath opens the shell in that project's folder instead
-//  of the home directory (the panel's per-project terminal).
+//  of the home directory (the panel's per-project terminal); &nodeVersion puts
+//  the project's pinned Node first on PATH.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // kill a session with no input for 30m
@@ -56,11 +59,23 @@ const startDir = (query) => {
  * terminal is exactly where someone types `pm2 restart <bot>`, and that pm2
  * CLI would read the agent's own max_memory_restart as configuration — see
  * PM2_ENV_LEAKS in ./pm2.
+ *
+ * ?nodeVersion puts the project's pinned Node first on PATH, so `npm install`
+ * typed here builds for the same Node the project runs on. Only when it is
+ * already unpacked: opening a shell must not wait on a download, and the next
+ * install or start fetches it anyway.
  */
-const shellEnv = () => {
+const shellEnv = (query) => {
     const env = { ...process.env };
     for (const key of PM2_ENV_LEAKS) delete env[key];
-    return env;
+
+    const version = typeof query.nodeVersion === "string" ? query.nodeVersion : "";
+    try { nodeVersions.assertVersion(version); } catch { return { env }; }
+    if (!nodeVersions.isInstalled(version)) {
+        return { env, notice: `Node v${version} is not on this node yet — this shell uses the system node until the next install or start downloads it` };
+    }
+    env.PATH = `${nodeVersions.binDir(version)}${path.delimiter}${env.PATH || ""}`;
+    return { env };
 };
 
 const createTermSocket = (server) => {
@@ -94,12 +109,13 @@ const createTermSocket = (server) => {
     wss.on("connection", (ws, query) => {
         const shell = process.env.SHELL || "bash";
         const { cwd, notice } = startDir(query);
+        const { env, notice: nodeNotice } = shellEnv(query);
         const term = pty.spawn(shell, [], {
             name: "xterm-256color",
             cols: 80,
             rows: 24,
             cwd,
-            env: shellEnv(),
+            env,
         });
 
         let idleTimer;
@@ -112,6 +128,7 @@ const createTermSocket = (server) => {
         const send = (obj) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
 
         if (notice) send({ type: "data", data: `\x1b[33m[agent] ${notice} — opened in ${cwd}\x1b[0m\r\n` });
+        if (nodeNotice) send({ type: "data", data: `\x1b[33m[agent] ${nodeNotice}\x1b[0m\r\n` });
         term.onData((data) => send({ type: "data", data }));
         term.onExit(({ exitCode }) => {
             send({ type: "exit", code: exitCode });

@@ -8,6 +8,7 @@ const executor = require("../services/executor");
 const history = require("../services/historyService");
 const schedulerService = require("../services/schedulerService");
 const nodeService = require("../services/nodeService");
+const nodeReleases = require("../services/nodeReleases");
 const { createNotification } = require("./notifications");
 
 // ─── Restart rate limiter ───────────────────────────────────────────────────
@@ -609,6 +610,78 @@ router.put("/:id", async (req, res, next) => {
         }
 
         res.json(updated);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Node.js version
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NODE_VERSION_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+/**
+ * GET /api/bots/:id/node-versions
+ * What the version picker offers: the project's pin, the system node and the
+ * versions already unpacked on the project's node, plus the newest release of
+ * each major line from nodejs.org.
+ */
+router.get("/:id/node-versions", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const [onNode, available] = await Promise.all([
+            executor.nodeVersionsFor(bot),
+            nodeReleases.latestPerMajor(),
+        ]);
+        res.json({ current: bot.nodeVersion || null, ...onNode, available });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * PUT /api/bots/:id/node-version   body: { nodeVersion: "20.18.1" | null }
+ * Pin the project to an exact Node version, or back to the system node (null).
+ * The version is downloaded onto the project's node BEFORE the record changes,
+ * so a version that cannot be installed is never saved. A running project is
+ * restarted onto it; a stopped one stays stopped and uses it on its next start.
+ */
+router.put("/:id/node-version", async (req, res, next) => {
+    try {
+        const bot = await db.findOne("bots", { _id: req.params.id });
+        if (!bot) return res.status(404).json({ error: "Bot not found" });
+
+        const raw = req.body.nodeVersion;
+        const nodeVersion = raw ? String(raw).trim().replace(/^v/, "") : null;
+        if (nodeVersion && !NODE_VERSION_RE.test(nodeVersion)) {
+            return res.status(400).json({ error: `"${raw}" is not an exact Node version such as 20.18.1` });
+        }
+
+        let downloaded = false;
+        if (nodeVersion) downloaded = !!(await executor.installNodeVersion(bot, nodeVersion)).downloaded;
+
+        const updated = await db.findOneAndUpdate("bots", { _id: bot._id }, { nodeVersion });
+
+        // A static site is served by nginx or the agent's http-server — its pin
+        // only matters to its build command, so there is nothing to restart.
+        const servedStatic = bot.projectType === "website" && bot.websiteConfig?.mode === "static";
+        let restarted = false;
+        if (!servedStatic && (bot.nodeVersion || null) !== nodeVersion) {
+            const live = await executor.getLiveStatus(bot);
+            if (live.status === "online") {
+                await executor.startBot(updated, await getProxyConf(updated));
+                restarted = true;
+            }
+        }
+
+        await createNotification(
+            `"${bot.name}" now uses ${nodeVersion ? `Node v${nodeVersion}` : "the system Node"}.`,
+            "info",
+        );
+        res.json({ bot: updated, restarted, downloaded });
     } catch (err) {
         next(err);
     }

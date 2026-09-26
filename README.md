@@ -578,6 +578,8 @@ All routes require `Authorization: Bearer <token>` unless noted.
 | `POST` | `/api/bots/:id/stop` | Stop bot |
 | `POST` | `/api/bots/:id/restart` | Restart bot |
 | `POST` | `/api/bots/:id/update` | Git pull + npm install + restart (a stopped bot stays stopped) |
+| `GET` | `/api/bots/:id/node-versions` | Node.js versions for the picker: pin, system node, installed on the node, latest per major |
+| `PUT` | `/api/bots/:id/node-version` | Pin an exact Node.js version (downloaded to the node first) or `null` for the system node |
 | `GET` | `/api/bots/:id/env` | Read `.env` file |
 | `PUT` | `/api/bots/:id/env` | Write `.env` file |
 | `GET` | `/api/bots/:id/fs/list` | List directory contents |
@@ -605,6 +607,7 @@ All routes require `Authorization: Bearer <token>` unless noted.
 | `GET` | `/api/system/stats` | CPU / RAM / disk stats |
 | `GET` | `/api/panel/status` | Panel PM2 status |
 | `POST` | `/api/panel/restart` | Restart the panel process |
+| `POST` | `/api/panel/update-agents` | Update + restart the agent on every node (the Panel page runs this before `/rebuild`) |
 | `POST` | `/api/panel/rebuild` | Rebuild React client |
 | `GET` | `/api/panel/logs` | Panel process logs |
 | `GET` | `/api/panel/env` | Read panel `.env` |

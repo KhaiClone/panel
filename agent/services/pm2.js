@@ -4,6 +4,7 @@ const execAsync = util.promisify(exec);
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const nodeVersions = require("./nodeVersions");
 
 // The agent owns every PM2 operation — the panel runs no pm2 of its own.
 // Dump-corruption alerts go to the console instead of the panel's notification
@@ -110,8 +111,13 @@ const startBot = async (
     startCommand = "npm start",
     maxMemory = null,
     proxyConf = null,
+    nodeVersion = null,
 ) => {
     const memFlag = maxMemory ? ` --max-memory-restart ${maxMemory}` : "";
+
+    // Before touching the running process: a download that fails must leave
+    // the bot as it was, not deleted from pm2.
+    const nodeBin = nodeVersion ? await nodeVersions.ensureVersion(nodeVersion) : null;
 
     const list = await getProcessList();
     const existing = list.find((p) => p.name === pm2Name);
@@ -152,12 +158,15 @@ const startBot = async (
     const NL = "\n";
     // exec only works for simple commands — shell operators require bash to run the full line
     const hasShellOps = /[;&|]/.test(effectiveCmd);
-    const scriptContent = `#!/bin/bash${NL}${hasShellOps ? effectiveCmd : `exec ${effectiveCmd}`}`;
+    // A pinned Node version lives in the wrapper itself, so a pm2 restart or a
+    // resurrect after reboot keeps running it without the agent's help.
+    const pathLine = nodeBin ? `export PATH="${nodeBin}:$PATH"${NL}` : "";
+    const scriptContent = `#!/bin/bash${NL}${pathLine}${hasShellOps ? effectiveCmd : `exec ${effectiveCmd}`}`;
     fs.writeFileSync(scriptPath, scriptContent, "utf8");
     try { fs.chmodSync(scriptPath, 0o755); } catch (e) {}
 
     console.log(`[PM2] Wrapper script for "${pm2Name}": ${scriptPath}`);
-    console.log(`[PM2] Effective command: ${effectiveCmd}`);
+    console.log(`[PM2] Effective command: ${effectiveCmd}${nodeVersion ? ` (Node v${nodeVersion})` : ""}`);
 
     const result = await runPM2(
         `start "${scriptPath}" --name "${pm2Name}" --cwd "${botPath}"${memFlag} --interpreter bash`,

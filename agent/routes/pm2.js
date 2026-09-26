@@ -28,20 +28,23 @@ router.get("/status/:pm2Name", async (req, res, next) => {
 
 /**
  * POST /pm2/start
- * body: { pm2Name, root, dir, startCommand, maxMemory, proxyConf }
- *     |  { pm2Name, absPath, startCommand, maxMemory, proxyConf }
+ * body: { pm2Name, root, dir, startCommand, maxMemory, proxyConf, nodeVersion }
+ *     |  { pm2Name, absPath, startCommand, maxMemory, proxyConf, nodeVersion }
  * dir is relative to the node's BOTS_ROOT_DIR / SITES_ROOT_DIR; absPath is an
- * absolute project path checked against EXTRA_ROOTS.
+ * absolute project path checked against EXTRA_ROOTS. nodeVersion (exact, e.g.
+ * "20.18.1") runs the project on that Node, downloading it first if needed.
  */
 router.post("/start", async (req, res, next) => {
     try {
-        const { pm2Name, dir, absPath, startCommand, maxMemory, proxyConf } = req.body;
+        const { pm2Name, dir, absPath, startCommand, maxMemory, proxyConf, nodeVersion } = req.body;
         if (!pm2Name || (!dir && !absPath)) {
             return res.status(400).json({ error: "pm2Name and (dir or absPath) are required" });
         }
 
         const botPath = resolveTarget(req.body);
-        const output = await pm2.startBot(pm2Name, botPath, startCommand || "npm start", maxMemory || null, proxyConf || null);
+        const output = await pm2.startBot(
+            pm2Name, botPath, startCommand || "npm start", maxMemory || null, proxyConf || null, nodeVersion || null,
+        );
         res.json({ output });
     } catch (err) {
         next(err);

@@ -80,8 +80,10 @@ const startBot = async (bot) => {
             startCommand: bot.startScript,
             maxMemory: bot.maxMemory || null,
             proxyConf,
+            nodeVersion: bot.nodeVersion || null,
         },
-        timeout: 60_000,
+        // A pinned Node version not yet on this node is downloaded first.
+        timeout: 180_000,
     });
     return data.output;
 };
@@ -248,11 +250,31 @@ const gitInfo = async (bot) => {
 
 const installDeps = async (bot, installCommand) => {
     const data = await agentCall(bot, "post", "/git/install", {
-        data: { ...target(bot), installCommand },
+        data: { ...target(bot), installCommand, nodeVersion: bot.nodeVersion || null },
         timeout: 610_000,
     });
     return data.output;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Node.js versions (per project, on the project's node)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// An agent from before version pinning answers these with a bare 404.
+const explainOldAgent = (err) => {
+    if (/status code 404/.test(err.message)) {
+        err.message += " — this node's agent predates Node version pinning; update it (Update Agent, or Rebuild on the Panel page)";
+    }
+    throw err;
+};
+
+/** { system, installed[], dir, supported } for the node this project lives on. */
+const nodeVersionsFor = async (bot) =>
+    agentCall(bot, "get", "/node/versions", { timeout: 15_000 }).catch(explainOldAgent);
+
+/** Download + verify + unpack an exact version on the project's node (no-op when present). */
+const installNodeVersion = async (bot, version) =>
+    agentCall(bot, "post", "/node/install", { data: { version }, timeout: 330_000 }).catch(explainOldAgent);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Files
@@ -503,6 +525,8 @@ module.exports = {
     getStatusResolver,
     getLiveStatus,
     isStopped,
+    nodeVersionsFor,
+    installNodeVersion,
     cloneRepo,
     pullRepo,
     installDeps,

@@ -77,6 +77,21 @@ router.post("/restart", async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  POST /api/panel/update-agents
+//  git pull + npm install + restart the agent on every node, and wait for each
+//  restarted one to answer again. The Panel page calls this BEFORE /rebuild —
+//  as its own request, so neither step runs into the proxy's read timeout.
+//  Response: { agents: [{ nodeId, name, isPanelNode, ok, message }] }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/update-agents", async (req, res, next) => {
+    try {
+        res.json({ agents: await panelService.updateAgents() });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  POST /api/panel/rebuild
 //  Run `npm run build` then restart. Build output is returned.
 // ─────────────────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ const { exec } = require("child_process");
 const util = require("util");
 const fs = require("fs");
 const path = require("path");
+const nodeVersions = require("./nodeVersions");
 const execAsync = util.promisify(exec);
 
 // The agent owns every git operation — the panel runs no git of its own, so
@@ -90,18 +91,22 @@ const cleanPackageFolder = (botPath, cmd) => {
     }
 };
 
-const installDeps = async (botPath, installCommand = undefined) => {
+const installDeps = async (botPath, installCommand = undefined, nodeVersion = null) => {
     if (installCommand === null || installCommand === "") return "(skipped — no install command)";
 
     const cmd = installCommand && installCommand.trim()
         ? installCommand.trim()
         : `npm install --omit=dev`;
 
+    // Resolve the Node version before cleaning: a failed download must not
+    // cost the project its node_modules.
+    const env = await nodeVersions.envFor(nodeVersion);
+
     cleanPackageFolder(botPath, cmd);
 
     const { stdout, stderr } = await execAsync(
         cmd,
-        { cwd: botPath, timeout: INSTALL_TIMEOUT, maxBuffer: 10 * 1024 * 1024 },
+        { cwd: botPath, env, timeout: INSTALL_TIMEOUT, maxBuffer: 10 * 1024 * 1024 },
     );
     return stdout || stderr;
 };

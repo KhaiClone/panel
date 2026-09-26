@@ -103,8 +103,10 @@ const resolveSession = async (query) => {
         const nginxOnly = bot.projectType === "website" && bot.websiteConfig?.mode === "static" && bot.websiteConfig?.domain;
         return {
             node,
-            target: executor.target(bot),
-            banner: `[panel] ${bot.name} on ${node.name}${nginxOnly ? " · served by nginx" : ` · pm2: ${bot.pm2Name}`}`,
+            // nodeVersion puts the project's pinned Node first on the shell's PATH.
+            target: { ...executor.target(bot), ...(bot.nodeVersion ? { nodeVersion: bot.nodeVersion } : {}) },
+            banner: `[panel] ${bot.name} on ${node.name}${nginxOnly ? " · served by nginx" : ` · pm2: ${bot.pm2Name}`}` +
+                (bot.nodeVersion ? ` · node v${bot.nodeVersion}` : ""),
         };
     }
     if (!query.node) throw new Error("No node selected — pick one in the switcher.");

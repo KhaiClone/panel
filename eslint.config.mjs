@@ -44,6 +44,7 @@ const nodeGlobals = {
     TextEncoder: "readonly",
     TextDecoder: "readonly",
     AbortController: "readonly",
+    AbortSignal: "readonly",
     fetch: "readonly",
     structuredClone: "readonly",
     queueMicrotask: "readonly",

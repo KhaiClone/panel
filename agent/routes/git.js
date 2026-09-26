@@ -50,18 +50,19 @@ router.post("/pull", async (req, res, next) => {
 
 /**
  * POST /git/install
- * body: { root, dir, installCommand } | { absPath, installCommand }
+ * body: { root, dir, installCommand, nodeVersion } | { absPath, installCommand, nodeVersion }
  * installCommand === null/"" skips the install (pre-built projects).
+ * nodeVersion runs the command under that pinned Node (see services/nodeVersions).
  */
 router.post("/install", async (req, res, next) => {
     try {
-        const { dir, absPath, installCommand } = req.body;
+        const { dir, absPath, installCommand, nodeVersion } = req.body;
         if (!dir && !absPath) return res.status(400).json({ error: "dir or absPath is required" });
 
         const botPath = resolveTarget(req.body);
         if (!fs.existsSync(botPath)) return res.status(404).json({ error: "Directory not found" });
 
-        const output = await git.installDeps(botPath, installCommand);
+        const output = await git.installDeps(botPath, installCommand, nodeVersion || null);
         res.json({ output });
     } catch (err) {
         next(err);
