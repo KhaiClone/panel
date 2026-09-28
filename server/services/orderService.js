@@ -22,8 +22,64 @@ const onPanel = () => sharedStore.nameRow("orders")?.state === "active";
 const owner = () => sharedStore.nameRow("orders")?.owner || null;
 
 const sum = (arr) => arr.reduce((s, o) => s + (o.price || 0), 0);
-// The shop added the buyer's tag from its Discord cache; the panel has none.
-const enrich = (order) => (order ? { ...order, sellerName: SELLERS[order.sellerId] || order.sellerId, buyerTag: order.buyerTag || null } : order);
+
+// ── Buyer tags ───────────────────────────────────────────────────────────────
+// The shop showed each buyer's tag from its own Discord cache. The panel looks
+// tags up with its own bot instead — in the background, a few per second, kept
+// in shared.sqlite and refreshed after a week — so listing never waits on Discord.
+
+const TAGS = "__orders.buyerTags";
+const TAG_TTL = 7 * 86_400_000;
+let tags = null;
+const pendingTags = new Set();
+let resolving = false;
+
+const loadTags = () => {
+    if (tags) return tags;
+    const r = sharedStore.raw().prepare("SELECT value FROM kv WHERE name = ?").get(TAGS);
+    tags = new Map(Object.entries(r ? JSON.parse(r.value) : {}));
+    return tags;
+};
+const saveTags = () =>
+    sharedStore.raw().prepare("INSERT OR REPLACE INTO kv (name, value) VALUES (?, ?)").run(TAGS, JSON.stringify(Object.fromEntries(tags)));
+
+const resolveTags = async () => {
+    if (resolving) return;
+    resolving = true;
+    try {
+        let changed = 0;
+        for (const id of [...pendingTags]) {
+            pendingTags.delete(id);
+            let tag;
+            try {
+                tag = await discordBus.userTag(id);
+            } catch (err) {
+                tag = err.code === 10013 ? null : undefined; // 10013 = unknown user → remember "none"
+            }
+            if (tag === undefined) break; // bus down: try again on a later listing
+            tags.set(id, { tag, at: Date.now() });
+            if (++changed % 50 === 0) saveTags();
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        if (changed) saveTags();
+    } finally {
+        resolving = false;
+    }
+};
+
+const tagOf = (buyerId) => {
+    if (!buyerId) return null;
+    const t = loadTags().get(String(buyerId));
+    if (!t || Date.now() - t.at > TAG_TTL) pendingTags.add(String(buyerId));
+    return t?.tag ?? null;
+};
+
+const enrich = (order) => {
+    if (!order) return order;
+    const out = { ...order, sellerName: SELLERS[order.sellerId] || order.sellerId, buyerTag: tagOf(order.buyerId) };
+    if (pendingTags.size) resolveTags().catch(() => {});
+    return out;
+};
 
 const statsFor = (orders) => ({
     total: orders.length,

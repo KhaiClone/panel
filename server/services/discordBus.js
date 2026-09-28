@@ -343,6 +343,13 @@ const status = () => {
     };
 };
 
+/** A Discord user's tag through the panel's bot (any user id), or null when the bus is down. */
+const userTag = async (id) => {
+    if (!ready || !client) return undefined;
+    const u = await client.users.fetch(String(id));
+    return u?.tag || u?.username || null;
+};
+
 const recent = (limit = 30) =>
     configured() ? table().prepare("SELECT * FROM bus ORDER BY created_at DESC LIMIT ?").all(limit).map(rowToPublic) : [];
 
@@ -360,6 +367,7 @@ module.exports = {
     canHandle,
     handlerOf,
     capabilities,
+    userTag,
     sign,
     verify,
     canonical,
