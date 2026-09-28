@@ -152,9 +152,28 @@ const runStep = async (label, fn) => {
     }
 };
 
+// Set from the click until its job exists: the preflight before a job takes
+// seconds, and a second click in that gap must not start a second job.
+let starting = null;
+
 const assertIdle = () => {
     if (job?.status === "running") throw httpError(409, `A ${job.kind} to ${job.targetName} is already running`);
+    if (starting) throw httpError(409, `A ${starting} is already starting`);
     if (!lifecycle.isActive()) throw httpError(409, `The panel is ${lifecycle.get().state}`);
+};
+
+/**
+ * assertIdle + preflight, holding the slot meanwhile. The caller must create
+ * its job without awaiting anything in between — that is what keeps it single.
+ */
+const preflightExclusive = async (kind, targetNodeId) => {
+    assertIdle();
+    starting = kind;
+    try {
+        return await preflight(targetNodeId);
+    } finally {
+        starting = null;
+    }
 };
 
 // ── Transport ────────────────────────────────────────────────────────────────
@@ -507,8 +526,7 @@ const stripCtx = (pf) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const startPrepare = async (targetNodeId) => {
-    assertIdle();
-    const pf = await preflight(targetNodeId);
+    const pf = await preflightExclusive("prepare", targetNodeId);
     if (!pf.canPrepare) {
         throw httpError(400, pf.checks.find((c) => c.level === "error" && PREPARE_BLOCKERS.has(c.key)).message);
     }
@@ -584,8 +602,7 @@ const startPrepare = async (targetNodeId) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const startMove = async (targetNodeId, { confirmName } = {}) => {
-    assertIdle();
-    const pf = await preflight(targetNodeId);
+    const pf = await preflightExclusive("move", targetNodeId);
     if (!pf.canMove) {
         const first = pf.checks.find((c) => c.level === "error");
         throw httpError(400, `Preflight failed: ${first?.message || "no checks ran"}`);

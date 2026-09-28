@@ -955,6 +955,7 @@ function PanelMoveSection() {
     const [checking, setChecking] = useState(false);
     const [confirmName, setConfirmName] = useState("");
     const [error, setError] = useState("");
+    const [starting, setStarting] = useState(null); // "prepare" | "start" while its request is in flight
 
     const load = useCallback(async () => {
         try {
@@ -993,7 +994,8 @@ function PanelMoveSection() {
     };
 
     const start = (kind) => async () => {
-        setError("");
+        if (starting) return;
+        setStarting(kind); setError("");
         try {
             const body = kind === "start" ? { targetNodeId: targetId, confirmName } : { targetNodeId: targetId };
             await api.post(`/panel/migration/${kind}`, body, { timeout: 180_000 });
@@ -1001,7 +1003,7 @@ function PanelMoveSection() {
             await load();
         } catch (err) {
             setError(err.response?.data?.error || err.message);
-        }
+        } finally { setStarting(null); }
     };
 
     if (!ov) return <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Loading…</p>;
@@ -1010,7 +1012,7 @@ function PanelMoveSection() {
     const current = ov.nodes.find((n) => n.isPanelNode);
     const candidates = ov.nodes.filter((n) => !n.isPanelNode && n.enabled);
     const nodeName = (id) => ov.nodes.find((n) => n._id === id)?.name || id;
-    const idle = !running && state === "active";
+    const idle = !running && !starting && state === "active";
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1038,7 +1040,7 @@ function PanelMoveSection() {
                     {checking ? "Checking…" : "Check"}
                 </button>
                 <button className="btn-primary" disabled={!pf?.canPrepare || !idle} onClick={start("prepare")} style={{ padding: "6px 12px", fontSize: 12 }} title="Firewall access, dependencies, client build and HTTPS for its domains on the new host — nothing is paused">
-                    Prepare
+                    {starting === "prepare" ? "Starting…" : "Prepare"}
                 </button>
             </div>
 
@@ -1055,13 +1057,13 @@ function PanelMoveSection() {
                 </div>
             )}
 
-            {pf?.canMove && idle && pf.target?._id === targetId && (
+            {pf?.canMove && (idle || starting === "start") && pf.target?._id === targetId && (
                 <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.04)" }}>
                     <p style={{ margin: 0, fontSize: 13 }}>Every check passed. Type <strong className="mono">{pf.target.name}</strong> to move the panel there.</p>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <input className="input" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={pf.target.name} style={{ flex: "1 1 200px", minWidth: 0 }} />
-                        <button className="btn-primary" disabled={confirmName !== pf.target.name} onClick={start("start")} style={{ padding: "6px 14px", fontSize: 12, background: "var(--danger)" }}>
-                            Move panel
+                        <button className="btn-primary" disabled={confirmName !== pf.target.name || !!starting} onClick={start("start")} style={{ padding: "6px 14px", fontSize: 12, background: "var(--danger)" }}>
+                            {starting === "start" ? "Starting…" : "Move panel"}
                         </button>
                     </div>
                 </div>

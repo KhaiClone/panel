@@ -61,7 +61,8 @@ const lifecycleGate = require("../server/middleware/lifecycleGate");
 const panelLease = require("../server/services/panelLease");
 const nodeService = require("../server/services/nodeService");
 const integrations = require("../server/services/integrationService");
-const { setEnvKey } = require("../server/services/panelMigration");
+const migration = require("../server/services/panelMigration");
+const { setEnvKey } = migration;
 const { envValue } = require("../server/utils/envText");
 const apiKeys = require("../server/services/apiKeyService");
 const { apiKeyMiddleware } = require("../server/middleware/apiKey");
@@ -131,6 +132,26 @@ const gate = (method, p) => {
         await lifecycle.exitMaintenance();
         assert.strictEqual(lifecycle.get().state, "active");
         assert.ok(gate("POST", "/bots").passed);
+    });
+
+    await test("a second Prepare/Move while the first is still in its checks is refused (double click)", async () => {
+        await fakeDb.set("nodes", [{ _id: "node-t", name: "VPS t", host: "127.0.0.1", enabled: true }]);
+        let release;
+        const held = new Promise((r) => { release = r; });
+        const health = nodeService.checkNodeHealth;
+        nodeService.checkNodeHealth = async () => { await held; return false; };
+        try {
+            const first = migration.startPrepare("node-t");
+            await assert.rejects(() => migration.startPrepare("node-t"), /prepare is already starting/);
+            await assert.rejects(() => migration.startMove("node-t", { confirmName: "VPS t" }), /prepare is already starting/);
+            release();
+            await assert.rejects(first, /not answering/);
+            // Free again once the first one gave up.
+            await assert.rejects(() => migration.startPrepare("node-t"), /not answering/);
+        } finally {
+            nodeService.checkNodeHealth = health;
+            store.delete("nodes");
+        }
     });
 
     console.log("panelLease + agentRequest");
