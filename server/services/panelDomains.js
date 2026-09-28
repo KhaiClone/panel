@@ -117,6 +117,15 @@ const add = async ({ domain, nodeId }) => {
     if (!node) throw httpError(404, "Node not found");
     const rows = await list();
     if (rows.some((d) => d.domain === clean)) throw httpError(409, "Domain already added");
+    // Say what is missing instead of failing deep inside the vhost write.
+    const status = await nodeService.agentRequest(node, "get", "/panel-host/status", { timeout: 20_000 }).catch(() => null);
+    if (status && status.nginx === false) {
+        throw httpError(
+            400,
+            `nginx is not installed on ${node.name}. On that VPS run: sudo apt install -y nginx certbot python3-certbot-nginx ` +
+                `— and allow ports 80 and 443 in its firewall (sudo ufw allow 80,443/tcp) — then add the domain again.`,
+        );
+    }
     const entry = { domain: clean, nodeId: node._id, sslEnabled: false, addedAt: Date.now() };
     await db.set(KEY, [...rows, entry]);
     const [r] = await sync({ nodeIds: [node._id] });
