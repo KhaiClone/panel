@@ -428,13 +428,19 @@ const PANEL_STATE_TEXT = {
     fenced: "This panel has been replaced by one on another server — nothing here runs any more.",
 };
 
+const originOf = (u) => {
+    try { return new URL(u).origin; } catch { return null; }
+};
+
 /**
- * Shown whenever the panel is not simply "active" (see server/services/lifecycle.js).
+ * Shown whenever the panel is not simply "active" (see server/services/lifecycle.js),
+ * or when this tab was opened under an address that is no longer the panel's.
  * Reads the public /api/health, so it keeps working while writes are refused.
  */
 function PanelStateBanner() {
     const [state, setState] = useState("active");
     const [movedTo, setMovedTo] = useState(null);
+    const [url, setUrl] = useState(null);
 
     useEffect(() => {
         let alive = true;
@@ -445,12 +451,32 @@ function PanelStateBanner() {
                     if (!alive || !d?.state) return;
                     setState(d.state);
                     setMovedTo(d.movedTo || null);
+                    setUrl(d.url || null);
                 })
                 .catch(() => { /* unreachable — keep the last known state */ });
         check();
         const t = setInterval(check, 15_000);
         return () => { alive = false; clearInterval(t); };
     }, []);
+
+    // A tab left open on an old address (before a move or a domain rename):
+    // that address now redirects, the browser drops the login on the way, and
+    // every change fails without a word. Send the admin to the current one.
+    const here = window.location;
+    const local = ["localhost", "127.0.0.1"].includes(here.hostname);
+    if (state === "active" && url && !local && originOf(url) !== here.origin) {
+        const target = originOf(url) + here.pathname + here.search;
+        return (
+            <div style={{
+                padding: "8px 16px", fontSize: 13, fontWeight: 600,
+                background: "rgba(239,68,68,0.12)", color: "#f87171",
+                borderBottom: "1px solid var(--border)",
+            }}>
+                The panel now answers at {originOf(url)} — this tab ({here.host}) can no longer save anything.{" "}
+                <a href={target} style={{ color: "inherit", textDecoration: "underline" }}>Open it there</a> (you may need to log in again).
+            </div>
+        );
+    }
 
     if (state === "active") return null;
     const bad = state === "fenced";

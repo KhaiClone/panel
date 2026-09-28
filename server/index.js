@@ -104,6 +104,9 @@ app.get("/api/health", async (req, res) => {
     // A replaced panel says where the panel went (its public address, not a secret).
     const movedTo = state === "fenced" ? info?.url || null : undefined;
     const url = state === "fenced" ? undefined : await require("./services/panelDomains").currentUrl().catch(() => null);
+    // Readable from any origin: a tab left on an old panel address reaches this
+    // through a cross-origin redirect and learns where the panel is now.
+    res.set("Access-Control-Allow-Origin", "*");
     res.json({ ok: state === "active", state, epoch: panelLease.current(), url, movedTo });
 });
 // Starting / moving / replaced: refuse writes (see middleware/lifecycleGate.js).
