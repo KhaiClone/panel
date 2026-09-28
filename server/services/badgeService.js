@@ -30,12 +30,12 @@
 
 const { EventEmitter } = require("events");
 const crypto = require("crypto");
-const axios = require("axios");
 const db = require("../db");
 const badgeReader = require("./badgeReader");
 const { BadgeSender, planOrder, setHypeSquad } = require("./badgeEngine");
 const pricingStore = require("./pricingStore");
 const proxyPool = require("./proxyPool");
+const callbacks = require("./callbackService");
 
 const MODEL = "badge_orders";
 const ACCOUNTS = "badge_accounts";
@@ -99,13 +99,8 @@ function _err(message, status = 400, extra = {}) {
 function _dispatch(order, event) {
     bus.emit("event", { orderId: order.orderId, at: Date.now(), ...event });
     if (!order.webhookUrl) return;
-    axios
-        .post(
-            order.webhookUrl,
-            { ...event, orderId: order.orderId, ref: order.ref ?? null },
-            { timeout: 8000, headers: { "x-api-key": process.env.PANEL_API_KEY || "" } },
-        )
-        .catch(() => {});
+    // Địa chỉ và x-api-key đi theo project đã đăng ký webhook (callbackService).
+    callbacks.send(order.webhookUrl, order.webhookBotId ?? null, { ...event, orderId: order.orderId, ref: order.ref ?? null });
 }
 
 // ── Truy cập DB ──────────────────────────────────────────────────────────────────
@@ -278,6 +273,7 @@ async function createOrder({
     declaredValue = null,
     ref = null,
     webhookUrl = null,
+    webhookBotId = null,
     paymentId = null,
 }) {
     const me = await badgeReader.checkNitro(token);
@@ -312,6 +308,7 @@ async function createOrder({
         sent: 0,
         total: 0,
         webhookUrl,
+        webhookBotId: webhookUrl ? webhookBotId : null,
         createdAt: Date.now(),
         paidAt: Date.now(),
         sentAt: null,

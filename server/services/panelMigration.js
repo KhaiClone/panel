@@ -11,7 +11,9 @@ const lifecycle = require("./lifecycle");
 const panelLease = require("./panelLease");
 const agentCrypto = require("./agentCrypto");
 const integrations = require("./integrationService");
+const callbacks = require("./callbackService");
 const cloudflare = require("./cloudflareService");
+const { setEnvKey, envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Moving the panel to another node.
@@ -43,12 +45,6 @@ const MARKER = path.join(DATA_DIR, "migration-in.json");
 const LOG_KEY = "panel_migrations";
 const PANEL_DOMAINS_KEY = "panel_domains";
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
-// Callback URLs other programs register with the panel (arnto-auto sends
-// http://localhost:1942/api/quest-event), stored per record, plus the .env
-// keys that hold one. "localhost" in any of them meant the machine the panel
-// ran on when it was saved — after a move it would mean the new one.
-const CALLBACK_MODELS = ["quest_accounts", "quest_monthly", "badge_orders"];
-const CALLBACK_ENV = ["ARNTO_QUEST_WEBHOOK_URL"];
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -71,95 +67,8 @@ const sha256File = (file) =>
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
-/**
- * Set (or drop, with null) one KEY=value line in .env text, keeping every other
- * line where it was. Same rules as agent/utils/envFile.js.
- */
-const setEnvKey = (text, key, value) => {
-    const out = [];
-    let done = false;
-    for (const line of String(text || "").split("\n")) {
-        const idx = line.indexOf("=");
-        const isKey = idx > 0 && !line.trim().startsWith("#") && line.slice(0, idx).trim() === key;
-        if (!isKey) {
-            out.push(line);
-            continue;
-        }
-        if (!done && value !== null) out.push(`${key}=${value}`);
-        done = true;
-    }
-    if (!done && value !== null) {
-        while (out.length && out[out.length - 1] === "") out.pop();
-        out.push(`${key}=${value}`, "");
-    }
-    return out.join("\n");
-};
-
-/** The value of KEY in .env text (surrounding quotes dropped), or null. */
-const envValue = (text, key) => {
-    for (const line of String(text || "").split("\n")) {
-        const idx = line.indexOf("=");
-        if (idx > 0 && !line.trim().startsWith("#") && line.slice(0, idx).trim() === key) {
-            return line.slice(idx + 1).trim().replace(/^(["'])(.*)\1$/, "$2") || null;
-        }
-    }
-    return null;
-};
-
-/**
- * `url` with its loopback host replaced by `host`, byte-for-byte otherwise;
- * null when the URL is not a loopback one.
- */
-const relocateUrl = (url, host) => {
-    if (!host || !integrations.isLoopbackUrl(url)) return null;
-    return String(url).replace(/^(https?:\/\/)(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?=[:/]|$)/i, `$1${host}`);
-};
-
 /** The address a panel on ANOTHER node uses to reach `node` (overlay first, like integrations). */
 const nodeAddress = (node) => (node ? node.wgOverlayIp || node.host : null);
-
-/** Every loopback callback URL the panel holds → [{ url, sources: ["10 in quest_monthly", …] }]. */
-const loopbackCallbacks = async () => {
-    const byUrl = new Map();
-    const note = (url, source) => {
-        if (!byUrl.has(url)) byUrl.set(url, []);
-        byUrl.get(url).push(source);
-    };
-    for (const model of CALLBACK_MODELS) {
-        const counts = new Map();
-        for (const r of (await db.get(model)) || []) {
-            if (typeof r?.webhookUrl === "string" && integrations.isLoopbackUrl(r.webhookUrl)) {
-                counts.set(r.webhookUrl, (counts.get(r.webhookUrl) || 0) + 1);
-            }
-        }
-        for (const [url, n] of counts) note(url, `${n} in ${model}`);
-    }
-    for (const key of CALLBACK_ENV) {
-        if (integrations.isLoopbackUrl(process.env[key])) note(process.env[key], `.env ${key}`);
-    }
-    return [...byUrl].map(([url, sources]) => ({ url, sources }));
-};
-
-/**
- * Rewrite the stored loopback callback URLs to `host` — one write per
- * collection (quick.db rewrites the whole array anyway). Returns the count.
- */
-const relocateCallbacks = async (host) => {
-    let count = 0;
-    for (const model of CALLBACK_MODELS) {
-        const rows = (await db.get(model)) || [];
-        let changed = false;
-        const next = rows.map((r) => {
-            const url = typeof r?.webhookUrl === "string" ? relocateUrl(r.webhookUrl, host) : null;
-            if (!url) return r;
-            changed = true;
-            count++;
-            return { ...r, webhookUrl: url };
-        });
-        if (changed) await db.set(model, next);
-    }
-    return count;
-};
 
 /** The ufw command that lets `target` reach `port` on `node` (overlay when both have one). */
 const ufwHint = (node, target, port) =>
@@ -444,30 +353,45 @@ const preflight = async (targetNodeId) => {
         }
     }
 
-    // Callback URLs saying "localhost": the move rewrites them to this node's
-    // address (finalizeIncoming), so the new panel must be able to reach that.
+    // Callback URLs saying "localhost" (callbackService). Owned ones follow
+    // their project, so check the target can reach where it runs; orphans are
+    // rewritten to this node by the move (finalizeIncoming).
     const fromNode = await nodeService.getNode(currentId).catch(() => null);
     const fromAddr = nodeAddress(fromNode);
     const callbackTargets = [];
-    const callbacks = await loopbackCallbacks();
-    if (callbacks.length && !fromAddr) {
-        add("error", "callbacks", "Some callback URLs point at localhost, and this panel's own node record has no address to rewrite them to");
-    } else if (callbacks.length) {
-        const rewritten = callbacks.map((c) => ({ ...c, to: relocateUrl(c.url, fromAddr) }));
+    const addCallbackTarget = (t) => {
+        if (!callbackTargets.some((x) => x.host === t.host && x.port === t.port)) callbackTargets.push(t);
+    };
+    const groups = await callbacks.audit();
+    for (const g of groups.filter((x) => x.ownerBotId)) {
+        const port = callbacks.portOf(g.url);
+        try {
+            const owner = await db.findOne("bots", { _id: g.ownerBotId });
+            const addr = await integrations.addressFor(owner, port, target._id);
+            if (addr.local) {
+                add("ok", `callback:${g.ownerBotId}`, `Callbacks of ${g.ownerName} (${g.sources.join(", ")}) → 127.0.0.1:${port}, same node as the new panel`);
+            } else {
+                addCallbackTarget({ host: addr.host, port, url: addr.url, node: await nodeService.getNode(addr.nodeId), label: g.ownerName });
+            }
+        } catch (err) {
+            add("error", `callback:${g.ownerBotId}`, `Callbacks of ${g.ownerName}: ${err.message}`);
+        }
+    }
+    const orphans = groups.filter((x) => !x.ownerBotId);
+    if (orphans.length && !fromAddr) {
+        add("error", "callbacks", "Some callback URLs point at localhost with no known project, and this panel's own node record has no address to rewrite them to");
+    } else if (orphans.length) {
         add(
             "warn",
             "callbacks",
-            `Callback URLs saying "localhost" (meaning ${fromNode.name}): ` +
-                rewritten.map((c) => `${c.url} — ${c.sources.join(", ")}`).join("; ") +
-                `. The move rewrites them to ${fromAddr}. Whatever registers them must stop sending localhost too ` +
-                `(e.g. ${rewritten[0].to}), or new ones will point at ${target.name}.`,
+            `Callback URLs saying "localhost" with no known project (meaning ${fromNode.name}): ` +
+                orphans.map((c) => `${c.url} — ${c.sources.join(", ")}`).join("; ") +
+                `. The move pins them to ${fromAddr}. Give the project that registers them its own API key, or link it ` +
+                `under Integrations on that port, and they follow the project instead.`,
         );
-        for (const c of rewritten) {
-            const u = new URL(c.to);
-            const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
-            if (!callbackTargets.some((t) => t.host === u.hostname && t.port === port)) {
-                callbackTargets.push({ host: u.hostname, port, url: `${u.protocol}//${u.host}` });
-            }
+        for (const c of orphans) {
+            const u = new URL(callbacks.relocateUrl(c.url, fromAddr));
+            addCallbackTarget({ host: u.hostname, port: callbacks.portOf(u.href), url: `${u.protocol}//${u.host}`, node: fromNode, label: "orphan callbacks" });
         }
     }
 
@@ -511,13 +435,13 @@ const preflight = async (targetNodeId) => {
     }
     for (const t of callbackTargets) {
         const p = reachable(t.host, t.port);
-        if (p?.ok) add("ok", `callback:${t.host}:${t.port}`, `${target.name} can reach the callbacks at ${t.url}`);
+        if (p?.ok) add("ok", `callback:${t.host}:${t.port}`, `${target.name} can reach the callbacks of ${t.label} at ${t.url}`);
         else {
             add(
                 "error",
                 `callback:${t.host}:${t.port}`,
-                `${target.name} cannot reach the callbacks at ${t.url}${p?.error ? ` (${p.error})` : ""}. ` +
-                    `On ${fromNode.name}: ${ufwHint(fromNode, target, t.port)}`,
+                `${target.name} cannot reach the callbacks of ${t.label} at ${t.url}${p?.error ? ` (${p.error})` : ""}. ` +
+                    `On ${t.node?.name || "that node"}: ${ufwHint(t.node, target, t.port)}`,
             );
         }
     }
@@ -691,11 +615,12 @@ const startMove = async (targetNodeId, { confirmName } = {}) => {
                 if (!/^\s*JWT_SECRET\s*=/m.test(raw)) throw new Error("The .env read back has no JWT_SECRET — refusing to move a broken config");
                 let text = setEnvKey(raw, "PANEL_NODE_ID", target._id);
                 const changes = [`PANEL_NODE_ID → ${target._id}`];
-                // Same rule as the stored callbacks: localhost meant the old node.
+                // Same rule as the stored orphan callbacks: localhost meant the old node.
                 const fromAddr = nodeAddress(await nodeService.getNode(fromNodeId).catch(() => null));
-                for (const key of CALLBACK_ENV) {
-                    const url = relocateUrl(envValue(raw, key), fromAddr);
-                    if (url) {
+                for (const key of callbacks.CALLBACK_ENV) {
+                    const current = envValue(raw, key);
+                    const url = callbacks.relocateUrl(current, fromAddr);
+                    if (url && !(await callbacks.ownerOf(current, null))) {
                         text = setEnvKey(text, key, url);
                         changes.push(`${key} → ${url}`);
                     }
@@ -831,11 +756,12 @@ const finalizeIncoming = async () => {
     }
     await db.findOneAndUpdate("nodes", { _id: here }, { controlHost: "127.0.0.1" });
 
-    // Before quests/badges resume and start calling them back.
+    // Before quests/badges resume and start calling them back. Owned callbacks
+    // need nothing: they follow their project.
     const fromAddr = nodeAddress(from);
     if (fromAddr) {
-        const n = await relocateCallbacks(fromAddr);
-        if (n) console.log(`[Move] ${n} callback URL(s) that said localhost now point at ${fromAddr} (${from.name})`);
+        const n = await callbacks.relocateOrphans(fromAddr);
+        if (n) console.log(`[Move] ${n} orphan callback URL(s) that said localhost now point at ${fromAddr} (${from.name})`);
     }
 
     fs.renameSync(MARKER, path.join(DATA_DIR, `migration-in.done-${Date.now()}.json`));
@@ -943,7 +869,4 @@ module.exports = {
     finalizeIncoming,
     followUp,
     setEnvKey,
-    envValue,
-    relocateUrl,
-    relocateCallbacks,
 };

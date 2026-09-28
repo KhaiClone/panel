@@ -6,7 +6,7 @@
  * and webhooks quest events back to arnto-auto (DM the buyer).
  *
  * DB model `quest_monthly`: { _id, accountId, username, tokenEncrypted, tokenIv,
- *   tokenTag, monthlyExpiresAt, webhookUrl, ref, addedAt, updatedAt }
+ *   tokenTag, monthlyExpiresAt, webhookUrl, webhookBotId, ref, addedAt, updatedAt }
  *
  * RETENTION — an expired plan is kept ONE WEEK so the customer can still renew
  * (activate() extends monthlyExpiresAt). Past that grace window an un-renewed plan is
@@ -14,11 +14,11 @@
  */
 
 const crypto = require("crypto");
-const axios = require("axios");
 const db = require("../db");
 const questService = require("./questService");
 const proxyPool = require("./proxyPool");
 const lifecycle = require("./lifecycle");
+const callbacks = require("./callbackService");
 const {
     QuestAutocompleter,
     resolveDiscordAccount,
@@ -78,20 +78,20 @@ function _isPurgeable(r) {
 }
 function _webhook(rec, event) {
     if (!rec.webhookUrl) return;
-    axios
-        .post(
-            rec.webhookUrl,
-            // username + plan let arnto-auto say whose account this is in the
-            // notification it posts, without asking the panel for the record.
-            { ...event, accountId: rec.accountId, ref: rec.ref ?? null, username: rec.username, plan: "monthly" },
-            // arnto-auto's /api/quest-event authenticates with the shared key.
-            { timeout: 8000, headers: { "x-api-key": process.env.PANEL_API_KEY || "" } },
-        )
-        .catch(() => {});
+    // Address and x-api-key follow the project that registered it (callbackService).
+    // username + plan let arnto-auto say whose account this is in the
+    // notification it posts, without asking the panel for the record.
+    callbacks.send(rec.webhookUrl, rec.webhookBotId ?? null, {
+        ...event,
+        accountId: rec.accountId,
+        ref: rec.ref ?? null,
+        username: rec.username,
+        plan: "monthly",
+    });
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────────
-async function activate({ token, months = 1, ref, webhookUrl }) {
+async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = null }) {
     const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
@@ -109,6 +109,8 @@ async function activate({ token, months = 1, ref, webhookUrl }) {
         ..._encrypt(token),
         monthlyExpiresAt,
         webhookUrl: webhookUrl ?? existing?.webhookUrl ?? null,
+        // The owner goes with the URL: a new URL brings its caller's project.
+        webhookBotId: webhookUrl ? webhookBotId : (existing?.webhookBotId ?? null),
         ref: ref ?? existing?.ref ?? null,
         addedAt: existing?.addedAt ?? Date.now(),
         updatedAt: Date.now(),

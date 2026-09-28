@@ -13,8 +13,9 @@
  *   - integrationService: the address the panel uses for a linked project,
  *     from this node and from a move's target node
  *   - panelMigration.setEnvKey: rewriting PANEL_NODE_ID in the copied .env
- *   - callback URLs: "localhost" in a stored webhookUrl (or the .env) is
- *     rewritten to the old node's address, nothing else is touched
+ *   - apiKeyService + middleware/apiKey: per-project keys next to the shared one
+ *   - callbackService: a callback follows the project that registered it and
+ *     is signed with its key; only orphans are rewritten by a move
  */
 
 const http = require("http");
@@ -49,14 +50,21 @@ require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: f
 
 process.env.PANEL_NODE_ID = "node-panel";
 delete process.env.ARNTO_DM_URL;
+delete process.env.ARNTO_QUEST_WEBHOOK_URL;
 process.env.SHOP_API_URL = "http://127.0.0.1:45299";
+process.env.JWT_SECRET = "test-jwt-secret";
+process.env.PANEL_API_KEY = "shared-secret";
 
 const lifecycle = require("../server/services/lifecycle");
 const lifecycleGate = require("../server/middleware/lifecycleGate");
 const panelLease = require("../server/services/panelLease");
 const nodeService = require("../server/services/nodeService");
 const integrations = require("../server/services/integrationService");
-const { setEnvKey, envValue, relocateUrl, relocateCallbacks } = require("../server/services/panelMigration");
+const { setEnvKey } = require("../server/services/panelMigration");
+const { envValue } = require("../server/utils/envText");
+const apiKeys = require("../server/services/apiKeyService");
+const { apiKeyMiddleware } = require("../server/middleware/apiKey");
+const callbacks = require("../server/services/callbackService");
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -252,6 +260,7 @@ const gate = (method, p) => {
     });
 
     await test("relocateUrl: only the loopback host changes, the rest is byte-identical", () => {
+        const { relocateUrl } = callbacks;
         assert.strictEqual(relocateUrl("http://localhost:1942/api/quest-event", "10.88.0.4"), "http://10.88.0.4:1942/api/quest-event");
         assert.strictEqual(relocateUrl("http://127.0.0.1:1942/api/badge-event?x=1", "10.88.0.4"), "http://10.88.0.4:1942/api/badge-event?x=1");
         assert.strictEqual(relocateUrl("https://LOCALHOST/hook", "10.88.0.4"), "https://10.88.0.4/hook");
@@ -262,22 +271,152 @@ const gate = (method, p) => {
         assert.strictEqual(relocateUrl(null, "10.88.0.4"), null);
     });
 
-    await test("relocateCallbacks: rewrites every stored loopback webhookUrl once, leaves the rest alone", async () => {
+    console.log("API keys");
+
+    // sangs = the panel's node, dio has an overlay IP, pokeclaw none (set above).
+    await fakeDb.set("bots", [
+        { _id: "bot-shop", name: "arnto-shop", nodeId: "node-panel" },
+        { _id: "bot-auto", name: "arnto-auto", nodeId: "node-panel" },
+        { _id: "bot-dio", name: "dio-bot", nodeId: "node-dio" },
+    ]);
+    await fakeDb.set("integrations", {});
+    let autoKey = null;
+
+    await test("create: a pk_ key shown once; stored only as hash + encrypted copy", async () => {
+        const { key, record } = await apiKeys.create({ botId: "bot-auto", label: "" });
+        autoKey = key;
+        assert.match(key, /^pk_[A-Za-z0-9_-]{32}$/);
+        assert.strictEqual(record.botName, "arnto-auto");
+        assert.strictEqual(record.label, "arnto-auto");
+        const raw = JSON.stringify(await fakeDb.get("api_keys"));
+        assert.ok(!raw.includes(key), "plaintext key must not be stored");
+        const listed = await apiKeys.list();
+        assert.deepStrictEqual(Object.keys(listed[0]).sort(), ["_id", "botId", "botName", "createdAt", "label", "lastUsedAt", "prefix", "revokedAt"]);
+        await assert.rejects(() => apiKeys.create({ botId: "nope" }), /Project not found/);
+    });
+
+    await test("verify / keyFor: the key maps back to its project; unknown keys map to nothing", async () => {
+        assert.strictEqual((await apiKeys.verify(autoKey)).botId, "bot-auto");
+        assert.strictEqual(await apiKeys.verify("pk_not-a-real-key"), null);
+        assert.strictEqual(await apiKeys.verify("shared-secret"), null);
+        assert.strictEqual(await apiKeys.keyFor("bot-auto"), autoKey);
+        assert.strictEqual(await apiKeys.keyFor("bot-shop"), null);
+    });
+
+    /** Run the middleware; resolves { passed, status, caller }. */
+    const auth = (key) =>
+        new Promise((resolve) => {
+            const req = { headers: key === undefined ? {} : { "x-api-key": key } };
+            const res = { status(c) { resolve({ passed: false, status: c }); return this; }, json() { return this; } };
+            apiKeyMiddleware(req, res, () => resolve({ passed: true, caller: req.apiCaller }));
+        });
+
+    await test("middleware: shared key → caller unknown, project key → its project, anything else → 401", async () => {
+        assert.deepStrictEqual((await auth("shared-secret")).caller, { shared: true });
+        const p = await auth(autoKey);
+        assert.ok(p.passed);
+        assert.strictEqual(p.caller.botId, "bot-auto");
+        assert.strictEqual((await auth("pk_wrong")).status, 401);
+        assert.strictEqual((await auth("shared-secreT")).status, 401);
+        assert.strictEqual((await auth(undefined)).status, 401);
+    });
+
+    console.log("callbacks");
+
+    await test("owned localhost callback → the owner's node as seen from the panel, signed with its key", async () => {
+        const hook = "http://localhost:1942/api/quest-event";
+        let r = await callbacks.resolve(hook, "bot-auto");
+        assert.strictEqual(r.url, "http://127.0.0.1:1942/api/quest-event");
+        assert.strictEqual(r.key, autoKey);
+        // The panel moved to pokeclaw, the project stayed on sangs:
+        r = await callbacks.resolve(hook, "bot-auto", { fromNodeId: "node-poke" });
+        assert.strictEqual(r.url, "http://10.88.0.4:1942/api/quest-event");
+        // The project was migrated to dio:
+        await fakeDb.findOneAndUpdate("bots", { _id: "bot-auto" }, { nodeId: "node-dio" });
+        r = await callbacks.resolve(hook, "bot-auto");
+        assert.strictEqual(r.url, "http://10.88.0.3:1942/api/quest-event");
+        await fakeDb.findOneAndUpdate("bots", { _id: "bot-auto" }, { nodeId: "node-panel" });
+    });
+
+    await test("shared-key callback: owner = the project linked under Integrations on that port, else sent as-is", async () => {
+        const hook = "http://localhost:1942/api/quest-event";
+        let r = await callbacks.resolve(hook, null, { fromNodeId: "node-poke" });
+        assert.strictEqual(r.owner, null);
+        assert.strictEqual(r.url, hook);
+        assert.strictEqual(r.key, "shared-secret");
+        await integrations.setLink("dm", { botId: "bot-auto", port: 1942 });
+        r = await callbacks.resolve(hook, null, { fromNodeId: "node-poke" });
+        assert.strictEqual(r.owner._id, "bot-auto");
+        assert.strictEqual(r.url, "http://10.88.0.4:1942/api/quest-event");
+        assert.strictEqual(r.key, autoKey);
+    });
+
+    await test("a key never goes to an outside host just because the port matches a link", async () => {
+        const r = await callbacks.resolve("https://hooks.example.com:1942/x", null);
+        assert.strictEqual(r.owner, null);
+        assert.strictEqual(r.key, "shared-secret");
+        const owned = await callbacks.resolve("http://10.88.0.4:1942/x", "bot-auto");
+        assert.strictEqual(owned.url, "http://10.88.0.4:1942/x");
+        assert.strictEqual(owned.key, autoKey);
+    });
+
+    await test("send(): the request reaches the resolved address with the owner's key", async () => {
+        let got;
+        const received = new Promise((resolve) => {
+            got = http.createServer((req, res) => {
+                let body = "";
+                req.on("data", (c) => (body += c));
+                req.on("end", () => {
+                    res.end("{}");
+                    resolve({ path: req.url, key: req.headers["x-api-key"], body: JSON.parse(body) });
+                });
+            });
+        });
+        await new Promise((r) => got.listen(0, "127.0.0.1", r));
+        callbacks.send(`http://localhost:${got.address().port}/api/quest-event`, "bot-auto", { type: "quest_done" });
+        const hit = await received;
+        got.close();
+        assert.strictEqual(hit.path, "/api/quest-event");
+        assert.strictEqual(hit.key, autoKey);
+        assert.deepStrictEqual(hit.body, { type: "quest_done" });
+    });
+
+    await test("revoke: the key stops working and callbacks fall back to the shared key", async () => {
+        const [rec] = await apiKeys.list();
+        await apiKeys.revoke(rec._id);
+        assert.strictEqual(await apiKeys.verify(autoKey), null);
+        assert.strictEqual(await apiKeys.keyFor("bot-auto"), null);
+        assert.strictEqual((await callbacks.resolve("http://localhost:1942/x", "bot-auto")).key, "shared-secret");
+        assert.strictEqual((await apiKeys.list())[0].revokedAt !== null, true);
+    });
+
+    await test("audit + relocateOrphans: owned callbacks follow their project, only orphans are pinned by a move", async () => {
         await fakeDb.set("quest_monthly", [
-            { _id: "m1", webhookUrl: "http://localhost:1942/api/quest-event" },
-            { _id: "m2", webhookUrl: "https://hooks.example.com/q" },
-            { _id: "m3", webhookUrl: null },
-            { _id: "m4" },
+            { _id: "m1", webhookUrl: "http://localhost:1942/api/quest-event", webhookBotId: "bot-auto" },
+            { _id: "m2", webhookUrl: "http://localhost:1942/api/quest-event" }, // shared key, owned via the dm link
+            { _id: "m3", webhookUrl: "http://localhost:5555/hook" }, // nobody on 5555 → orphan
+            { _id: "m4", webhookUrl: "https://hooks.example.com/q" },
+            { _id: "m5", webhookUrl: null },
+            { _id: "m6" },
         ]);
-        await fakeDb.set("badge_orders", [{ _id: "b1", webhookUrl: "http://127.0.0.1:1942/api/badge-event", status: "done" }]);
-        assert.strictEqual(await relocateCallbacks("10.88.0.4"), 2);
+        await fakeDb.set("badge_orders", [{ _id: "b1", webhookUrl: "http://127.0.0.1:5555/hook", status: "done" }]);
+
+        const groups = await callbacks.audit();
+        const owned = groups.find((g) => g.url.includes(":1942"));
+        assert.strictEqual(owned.ownerBotId, "bot-auto");
+        assert.deepStrictEqual(owned.sources, ["2 in quest_monthly"]);
+        assert.deepStrictEqual(groups.filter((g) => !g.ownerBotId).map((g) => g.url).sort(), ["http://127.0.0.1:5555/hook", "http://localhost:5555/hook"]);
+
+        assert.strictEqual(await callbacks.relocateOrphans("10.88.0.4"), 2);
         const monthly = await fakeDb.get("quest_monthly");
-        assert.strictEqual(monthly[0].webhookUrl, "http://10.88.0.4:1942/api/quest-event");
-        assert.strictEqual(monthly[1].webhookUrl, "https://hooks.example.com/q");
-        assert.strictEqual(monthly[2].webhookUrl, null);
-        assert.ok(!("webhookUrl" in monthly[3]));
-        assert.deepStrictEqual((await fakeDb.get("badge_orders"))[0], { _id: "b1", webhookUrl: "http://10.88.0.4:1942/api/badge-event", status: "done" });
-        assert.strictEqual(await relocateCallbacks("10.88.0.4"), 0);
+        assert.strictEqual(monthly[0].webhookUrl, "http://localhost:1942/api/quest-event");
+        assert.strictEqual(monthly[1].webhookUrl, "http://localhost:1942/api/quest-event");
+        assert.strictEqual(monthly[2].webhookUrl, "http://10.88.0.4:5555/hook");
+        assert.strictEqual(monthly[3].webhookUrl, "https://hooks.example.com/q");
+        assert.strictEqual(monthly[4].webhookUrl, null);
+        assert.ok(!("webhookUrl" in monthly[5]));
+        assert.deepStrictEqual((await fakeDb.get("badge_orders"))[0], { _id: "b1", webhookUrl: "http://10.88.0.4:5555/hook", status: "done" });
+        assert.strictEqual(await callbacks.relocateOrphans("10.88.0.4"), 0);
     });
 
     if (failures) {

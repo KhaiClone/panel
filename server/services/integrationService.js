@@ -75,6 +75,13 @@ const resolve = async (name, { fromNodeId } = {}) => {
     return { source: "none", url: null };
 };
 
+/** The integration linked to a project on `port` → { name, botId, port }, or null. */
+const linkOnPort = async (port) => {
+    if (!port) return null;
+    const hit = Object.entries(await getLinks()).find(([, l]) => l?.botId && Number(l.port) === Number(port));
+    return hit ? { name: hit[0], ...hit[1] } : null;
+};
+
 /** Base URL only — what the shop/assistant/DM clients call on every request. */
 const baseUrl = async (name) => (await resolve(name)).url;
 
@@ -123,4 +130,4 @@ const setLink = async (name, link) => {
     return links[name] || null;
 };
 
-module.exports = { DEFS, resolve, baseUrl, list, setLink, isLoopbackUrl };
+module.exports = { DEFS, resolve, baseUrl, list, setLink, isLoopbackUrl, addressFor, linkOnPort };

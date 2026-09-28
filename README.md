@@ -205,7 +205,7 @@ nano .env
 | `DISCORD_ALERT_WEBHOOK`  | No       | Webhook URL for expiry warnings and removal alerts            |
 | `DISCORD_BACKUP_WEBHOOK` | No       | Webhook URL for hourly DB backups                             |
 | `BUYER_BOT_TOKEN`        | No       | Discord bot token for the buyer-facing bot                    |
-| `PANEL_API_KEY`          | No       | Secret key for external API integrations                      |
+| `PANEL_API_KEY`          | No       | Shared key for the external API — prefer per-project keys (Panel Settings → API Keys) |
 | `PANEL_PM2_NAME`         | No       | PM2 process name for the panel (auto-detected under PM2)      |
 | `CLIENT_URL`             | No       | Vite dev server URL — only needed in development              |
 
@@ -435,14 +435,24 @@ Unlinked ones use their `.env` URL, and a `localhost` URL blocks the move. A
 project's port must accept the panel over `wg0`; Check prints the `ufw` command
 for any that does not.
 
-**Callback URLs.** Quest accounts, monthly plans and badge orders store the
-`webhookUrl` their caller registered (arnto-auto sends
-`http://localhost:1942/api/quest-event`), and `ARNTO_QUEST_WEBHOOK_URL` in the
-panel's `.env` is one too. `localhost` there meant the old node, so the move
-rewrites those hosts to the old node's WireGuard IP (public host without one)
-and Check verifies the target can reach them. The caller must stop sending
-`localhost` as well — point it at the same address before moving, or every
-order registered afterwards calls back into the new node.
+**API keys and callbacks.** Quest accounts, monthly plans and badge orders store
+the `webhookUrl` their caller registered (arnto-auto sends
+`http://localhost:1942/api/quest-event`). `localhost` there means the CALLER's
+machine, so give each calling project its own key under **Panel Settings → API
+Keys** (the page can write it straight into the project's `.env` as
+`PANEL_API_KEY`; restart the project afterwards). The panel then stores who
+registered each callback, and at send time points `localhost` at wherever that
+project runs — `127.0.0.1` on the panel's node, its WireGuard IP otherwise — and
+signs it with that project's key (the caller checks `x-api-key` against the one
+key it holds). Callbacks registered with the shared key, and
+`ARNTO_QUEST_WEBHOOK_URL`, belong to the project linked under Integrations on
+the same port. Anything with no owner is an *orphan*: a move pins it to the old
+node's address, and Check lists it. Neither the panel nor the project needs a
+`.env` change when either one moves.
+
+Order when switching a project to its own key: link it under Integrations
+first (so its older callbacks, registered with the shared key, get its key
+too), then create the key, then restart the project.
 
 **The target** needs nginx + certbot when the panel has a domain
 (`apt install nginx certbot python3-certbot-nginx`) and must accept ports 80 and
@@ -541,7 +551,7 @@ LAVALINK_PM2_NAME=lavalink
 - The JWT expires after **24 hours** — you must re-login after that
 - The `.env` file is in `.gitignore` — **never commit it**
 - All API routes are JWT-protected except `/api/auth/login`
-- External API routes (`/api/external/*`) are protected by a separate `PANEL_API_KEY` header
+- External API routes (`/api/external/*`) take an `x-api-key`: the shared `PANEL_API_KEY`, or a project's own key (stored as sha256 + an AES-GCM copy under `JWT_SECRET`; revocable one by one)
 - SSE log streaming authenticates via a query-param token (browsers cannot set `Authorization` headers on `EventSource`)
 - Helmet is used to set secure HTTP headers (CSP disabled intentionally to serve the React SPA)
 - **Place the panel behind nginx + HTTPS in production** (see example below)

@@ -19,7 +19,6 @@
 
 const { EventEmitter } = require("events");
 const crypto = require("crypto");
-const axios = require("axios");
 const db = require("../db");
 const {
     QuestAutocompleter,
@@ -31,6 +30,7 @@ const {
 } = require("./questEngine");
 const proxyPool = require("./proxyPool");
 const lifecycle = require("./lifecycle");
+const callbacks = require("./callbackService");
 
 const MODEL = "quest_accounts";
 const { isEnrolled, isCompleted, isCompletable } = _fields;
@@ -103,13 +103,14 @@ function _dispatchWebhook(accountId, event) {
     const hook = webhooks.get(accountId);
     if (!hook?.url) return;
     if (!["quest_start", "quest_done", "status", "removed"].includes(event.type)) return;
-    axios
-        .post(hook.url, { ...event, accountId, ref: hook.ref ?? null, username: hook.username ?? null, plan: "single" }, {
-            timeout: 8000,
-            // arnto-auto's /api/quest-event authenticates with the shared key.
-            headers: { "x-api-key": process.env.PANEL_API_KEY || "" },
-        })
-        .catch(() => {});
+    // Address and x-api-key follow the project that registered it (callbackService).
+    callbacks.send(hook.url, hook.botId, {
+        ...event,
+        accountId,
+        ref: hook.ref ?? null,
+        username: hook.username ?? null,
+        plan: "single",
+    });
 }
 
 function _updateLive(accountId, evt) {
@@ -250,7 +251,7 @@ async function previewToken(token) {
  * mode "all"  → run every available quest.
  * mode "select" → run only selectedQuestIds.
  */
-async function startAccount({ token, mode = "all", selectedQuestIds = [], webhookUrl, ref }) {
+async function startAccount({ token, mode = "all", selectedQuestIds = [], webhookUrl, webhookBotId = null, ref }) {
     const lease = await proxyPool.acquire(token);
     const resolved = await resolveDiscordAccount(token, lease.agent);
     if (!resolved.ok) {
@@ -266,8 +267,10 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
     const existing = await _getRec(accountId);
     // Preserve an existing webhook if the caller didn't supply a new one.
     const hookUrl = webhookUrl ?? existing?.webhookUrl ?? null;
+    // The owner goes with the URL: a new URL brings its caller's project.
+    const hookBotId = webhookUrl ? webhookBotId : (existing?.webhookBotId ?? null);
     const hookRef = ref ?? existing?.webhookRef ?? null;
-    if (hookUrl) webhooks.set(accountId, { url: hookUrl, ref: hookRef, username: resolved.username });
+    if (hookUrl) webhooks.set(accountId, { url: hookUrl, botId: hookBotId, ref: hookRef, username: resolved.username });
     const record = {
         accountId,
         username: resolved.username,
@@ -275,6 +278,7 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
         mode: mode === "select" ? "select" : "all",
         selectedQuestIds: mode === "select" ? cleanIds : [],
         webhookUrl: hookUrl,
+        webhookBotId: hookBotId,
         webhookRef: hookRef,
         status: "running",
         completedCount: existing?.completedCount ?? 0,
@@ -511,6 +515,7 @@ async function restore() {
         if (rec.webhookUrl)
             webhooks.set(rec.accountId, {
                 url: rec.webhookUrl,
+                botId: rec.webhookBotId ?? null,
                 ref: rec.webhookRef ?? null,
                 username: rec.username,
             });

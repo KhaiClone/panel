@@ -58,7 +58,9 @@ router.post("/preview", async (req, res, next) => {
  * Manual add (bypasses arnto-auto). `ref` = the owner's Discord user id so the
  * bot can tell whose token this is (and DM them). mode "monthly" activates a monthly
  * plan instead of an immediate run. The webhook back to arnto is taken from the
- * ARNTO_QUEST_WEBHOOK_URL env so completion DMs reach the owner.
+ * ARNTO_QUEST_WEBHOOK_URL env so completion DMs reach the owner. It has no
+ * owner of its own: a localhost one follows the project linked under
+ * Integrations on its port (services/callbackService.js).
  */
 router.post("/start", async (req, res, next) => {
     try {

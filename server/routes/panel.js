@@ -2,6 +2,10 @@ const express = require("express");
 const panelService = require("../services/panelService");
 const integrations = require("../services/integrationService");
 const panelMigration = require("../services/panelMigration");
+const apiKeys = require("../services/apiKeyService");
+const callbacks = require("../services/callbackService");
+const executor = require("../services/executor");
+const { setEnvKey } = require("../utils/envText");
 const db = require("../db");
 const router = express.Router();
 
@@ -330,6 +334,72 @@ router.put("/integrations/:name", async (req, res, next) => {
         const { botId, port } = req.body || {};
         await integrations.setLink(req.params.name, botId ? { botId, port } : null);
         res.json(await integrations.list());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  API keys — one per project calling /api/external/* (services/apiKeyService.js)
+//  and the callbacks those projects registered (services/callbackService.js)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const apiKeysOverview = async () => ({
+    keys: await apiKeys.list(),
+    callbacks: await callbacks.audit(),
+    sharedKey: !!process.env.PANEL_API_KEY,
+});
+
+/** GET /api/panel/api-keys — keys (never the secrets) + loopback callbacks and their owners. */
+router.get("/api-keys", async (req, res, next) => {
+    try {
+        res.json(await apiKeysOverview());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/panel/api-keys   Body: { botId, label?, writeEnv = true, envKey = "PANEL_API_KEY" }
+ * New key for a project. With writeEnv it goes straight into that project's
+ * .env as envKey (through its agent) and is never shown; without, the response
+ * carries it once. A failed .env write revokes the key again.
+ */
+router.post("/api-keys", async (req, res, next) => {
+    try {
+        const { botId, label, writeEnv = true } = req.body || {};
+        const envKey = String(req.body?.envKey || "PANEL_API_KEY").trim();
+        if (writeEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envKey)) {
+            return res.status(400).json({ error: `Invalid .env key name: "${envKey}"` });
+        }
+        const { key, record } = await apiKeys.create({ botId, label });
+        if (!writeEnv) return res.status(201).json({ record, key });
+
+        const bot = await db.findOne("bots", { _id: record.botId });
+        try {
+            let current = "";
+            try {
+                current = (await executor.fsRead(bot, ".env")).content || "";
+            } catch (err) {
+                if (err.status !== 404) throw err;
+            }
+            await executor.fsWrite(bot, ".env", setEnvKey(current, envKey, key));
+        } catch (err) {
+            await apiKeys.revoke(record._id).catch(() => {});
+            return res.status(502).json({ error: `Could not write ${bot.name}'s .env (${err.message}) — the key was revoked, nothing changed` });
+        }
+        console.log(`[ApiKeys] New key ${record.prefix}… for ${bot.name}, written to its .env as ${envKey}`);
+        res.status(201).json({ record, wroteEnv: envKey });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** DELETE /api/panel/api-keys/:id — revoke. */
+router.delete("/api-keys/:id", async (req, res, next) => {
+    try {
+        await apiKeys.revoke(req.params.id);
+        res.json(await apiKeysOverview());
     } catch (err) {
         next(err);
     }

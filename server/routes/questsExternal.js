@@ -3,9 +3,10 @@ const router = express.Router();
 const questService = require("../services/questService");
 const questMonthly = require("../services/questMonthly");
 
-// Mounted at /api/external/quests behind apiKeyMiddleware (x-api-key = PANEL_API_KEY).
-// This is how ArnTo-Auto delegates quest execution to the panel: it keeps payment,
-// the panel runs the quests and webhooks events back.
+// Mounted at /api/external/quests behind apiKeyMiddleware (PANEL_API_KEY or a
+// project key). This is how ArnTo-Auto delegates quest execution to the panel: it
+// keeps payment, the panel runs the quests and webhooks events back. A webhook
+// registered with a project key belongs to that project (callbackService).
 
 /** POST /preview { token } — resolve + list available quests */
 router.post("/preview", async (req, res, next) => {
@@ -29,7 +30,14 @@ router.post("/start", async (req, res, next) => {
         const { token, mode, selectedQuestIds, webhookUrl, ref } = req.body || {};
         if (!token) return res.status(400).json({ error: "token required" });
         res.status(201).json(
-            await questService.startAccount({ token, mode, selectedQuestIds, webhookUrl, ref }),
+            await questService.startAccount({
+                token,
+                mode,
+                selectedQuestIds,
+                webhookUrl,
+                webhookBotId: req.apiCaller?.botId ?? null,
+                ref,
+            }),
         );
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
@@ -59,7 +67,9 @@ router.post("/monthly", async (req, res, next) => {
     try {
         const { token, months, ref, webhookUrl } = req.body || {};
         if (!token) return res.status(400).json({ error: "token required" });
-        res.status(201).json(await questMonthly.activate({ token, months, ref, webhookUrl }));
+        res.status(201).json(
+            await questMonthly.activate({ token, months, ref, webhookUrl, webhookBotId: req.apiCaller?.botId ?? null }),
+        );
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);

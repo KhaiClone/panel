@@ -605,6 +605,152 @@ function IntegrationsSection() {
     );
 }
 
+// ── API keys: one per project calling /api/external ─────────────────────────
+
+const fmtWhen = (ts) => (ts ? new Date(ts).toLocaleString() : "never");
+
+function ApiKeysSection() {
+    const { bots } = useData();
+    const [data, setData] = useState(null);
+    const [form, setForm] = useState({ botId: "", label: "", envKey: "PANEL_API_KEY", writeEnv: true });
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const [created, setCreated] = useState(null); // { record, key?, wroteEnv? }
+    const [restart, setRestart] = useState(null); // null | "running" | "done" | error text
+    const [revokeConfirm, setRevokeConfirm] = useState(null);
+
+    const load = useCallback(() => {
+        api.get("/panel/api-keys").then((r) => setData(r.data)).catch((err) => setError(err.response?.data?.error || "Failed to load API keys"));
+    }, []);
+    useEffect(load, [load]);
+
+    const create = async () => {
+        setBusy(true); setError(""); setCreated(null); setRestart(null);
+        try {
+            const { data: r } = await api.post("/panel/api-keys", form);
+            setCreated(r);
+            setForm((f) => ({ ...f, botId: "", label: "" }));
+            load();
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to create the key");
+        } finally { setBusy(false); }
+    };
+
+    const revoke = async (id) => {
+        setRevokeConfirm(null); setError("");
+        try { const { data: r } = await api.delete(`/panel/api-keys/${id}`); setData(r); }
+        catch (err) { setError(err.response?.data?.error || "Failed to revoke"); }
+    };
+
+    const restartProject = async (botId) => {
+        setRestart("running");
+        try { await api.post(`/bots/${botId}/restart`); setRestart("done"); }
+        catch (err) { setRestart(err.response?.data?.error || "Restart failed"); }
+    };
+
+    if (!data) return <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>{error || "Loading…"}</p>;
+    const active = data.keys.filter((k) => !k.revokedAt);
+    const revoked = data.keys.filter((k) => k.revokedAt);
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {revokeConfirm && (
+                <ConfirmModal
+                    title={`Revoke key ${revokeConfirm.prefix}…`}
+                    message={`${revokeConfirm.botName || "The project"} can no longer call the panel with this key, and its callbacks fall back to the shared PANEL_API_KEY.`}
+                    confirmText="Revoke"
+                    onConfirm={() => revoke(revokeConfirm._id)}
+                    onCancel={() => setRevokeConfirm(null)}
+                />
+            )}
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                Give every project that calls the panel's external API its own key instead of the shared PANEL_API_KEY. The panel then knows
+                who registered each callback: a <span className="mono">localhost</span> callback follows that project to whatever node it runs on,
+                and is signed with the project's key. Moving the panel or the project needs no .env change.
+            </p>
+            {error && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{error}</p>}
+
+            <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <select className="input" value={form.botId} onChange={(e) => setForm({ ...form, botId: e.target.value })} style={{ flex: "1 1 220px", minWidth: 0 }}>
+                        <option value="">— choose the project —</option>
+                        {bots.map((b) => <option key={b._id} value={b._id}>{b.name} ({b.pm2Name})</option>)}
+                    </select>
+                    <input className="input" placeholder="label (optional)" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} style={{ flex: "1 1 140px", minWidth: 0 }} />
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <input type="checkbox" checked={form.writeEnv} onChange={(e) => setForm({ ...form, writeEnv: e.target.checked })} />
+                        Write it into the project's .env as
+                    </label>
+                    <input className="input mono" value={form.envKey} disabled={!form.writeEnv} onChange={(e) => setForm({ ...form, envKey: e.target.value })} style={{ width: 170 }} />
+                    <button className="btn-primary" disabled={!form.botId || busy} onClick={create} style={{ padding: "6px 12px", fontSize: 12, marginLeft: "auto" }}>
+                        {busy ? "Creating…" : "Create key"}
+                    </button>
+                </div>
+            </div>
+
+            {created?.wroteEnv && (
+                <div className="card" style={{ padding: 12, borderColor: "#4ade80", fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <span>
+                        ✅ Written to <strong>{created.record.botName}</strong>'s .env as <span className="mono">{created.wroteEnv}</span>. It takes effect when the project restarts.
+                    </span>
+                    <button className="btn-ghost" disabled={restart === "running" || restart === "done"} onClick={() => restartProject(created.record.botId)} style={{ padding: "4px 10px", fontSize: 12, marginLeft: "auto" }}>
+                        {restart === "running" ? "Restarting…" : restart === "done" ? "Restarted ✓" : `Restart ${created.record.botName} now`}
+                    </button>
+                    {restart && restart !== "running" && restart !== "done" && <span style={{ color: "#f87171", width: "100%" }}>{restart}</span>}
+                </div>
+            )}
+            {created?.key && (
+                <div className="card" style={{ padding: 12, borderColor: "#facc15", fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span>Key for <strong>{created.record.botName}</strong> — shown once, copy it now:</span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <input className="input mono" readOnly value={created.key} onFocus={(e) => e.target.select()} style={{ flex: 1, minWidth: 0 }} />
+                        <button className="btn-ghost" onClick={() => navigator.clipboard?.writeText(created.key)} style={{ padding: "4px 10px", fontSize: 12 }}>Copy</button>
+                    </div>
+                </div>
+            )}
+
+            {active.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {active.map((k) => (
+                        <div key={k._id} className="card" style={{ padding: "8px 12px", display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", fontSize: 12 }}>
+                            <strong style={{ color: "var(--text)" }}>{k.botName || "deleted project"}</strong>
+                            {k.label !== k.botName && <span style={{ color: "var(--text-muted)" }}>{k.label}</span>}
+                            <span className="mono" style={{ color: "var(--text-dim)" }}>{k.prefix}…</span>
+                            <span style={{ color: "var(--text-dim)", marginLeft: "auto" }}>created {fmtWhen(k.createdAt)} · last used {fmtWhen(k.lastUsedAt)}</span>
+                            <button className="btn-ghost" onClick={() => setRevokeConfirm(k)} style={{ padding: "2px 8px", fontSize: 11, color: "#f87171" }}>Revoke</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {revoked.length > 0 && (
+                <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>
+                    Revoked: {revoked.map((k) => `${k.botName || "?"} ${k.prefix}…`).join(", ")}
+                </p>
+            )}
+            {!data.sharedKey && active.length === 0 && (
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>PANEL_API_KEY is not set and no project has a key — the external API refuses everyone.</p>
+            )}
+
+            {data.callbacks.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)" }}>Localhost callbacks the panel holds</span>
+                    {data.callbacks.map((c) => (
+                        <div key={`${c.url}|${c.ownerBotId}`} style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <span className="mono" style={{ color: "var(--text-dim)", overflowWrap: "anywhere" }}>{c.url}</span>
+                            <span style={{ color: "var(--text-muted)" }}>{c.sources.join(", ")}</span>
+                            {c.ownerBotId
+                                ? <span style={{ color: "#4ade80" }}>→ follows {c.ownerName}</span>
+                                : <span style={{ color: "#facc15" }}>→ no known project: link the project under Integrations on this port</span>}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Moving the panel to another node ────────────────────────────────────────
 
 const CHECK_ICON = { ok: "✅", info: "ℹ️", warn: "⚠️", error: "❌" };
@@ -1234,6 +1380,18 @@ export default function PanelManage() {
                 </div>
                 <div style={{ padding: 16 }}>
                     <IntegrationsSection />
+                </div>
+            </div>
+
+            {/* API keys */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🔑</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>API Keys</h2>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>One per project calling the external API</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <ApiKeysSection />
                 </div>
             </div>
 

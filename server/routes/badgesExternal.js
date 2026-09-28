@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const badgeService = require("../services/badgeService");
 
-// Mounted at /api/external/badges behind apiKeyMiddleware (x-api-key = PANEL_API_KEY).
+// Mounted at /api/external/badges behind apiKeyMiddleware (PANEL_API_KEY or a project key).
 // ArnTo-Auto giữ phần thanh toán; panel chạy phần còn lại và webhook kết quả về.
 
 /**
@@ -60,6 +60,8 @@ router.post("/start", async (req, res, next) => {
                 declaredValue: Number.isFinite(declared) ? declared : null,
                 ref: req.body.ref ?? null,
                 webhookUrl: req.body.webhookUrl ?? null,
+                // Key riêng của project → webhook đi theo project đó (callbackService).
+                webhookBotId: req.apiCaller?.botId ?? null,
                 paymentId: req.body.paymentId ?? null,
             }),
         );
