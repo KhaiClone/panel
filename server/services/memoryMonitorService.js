@@ -1,5 +1,6 @@
 const cron = require("node-cron");
 const executor = require("./executor");
+const lifecycle = require("./lifecycle");
 const { createNotification } = require("../routes/notifications");
 const db = require("../db");
 
@@ -50,7 +51,7 @@ const checkMemoryOverflow = async () => {
 
 const start = () => {
     // Check every 1 minute
-    cron.schedule("* * * * *", checkMemoryOverflow);
+    cron.schedule("* * * * *", lifecycle.guard(checkMemoryOverflow));
     console.log("[MemoryMonitor] Memory double-check service started — runs every minute");
 };
 

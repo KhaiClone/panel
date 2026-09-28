@@ -1,6 +1,7 @@
 const db = require("../db");
 const nodeService = require("./nodeService");
 const sampleStore = require("./sampleStore");
+const lifecycle = require("./lifecycle");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Resource sampler — records two series every SAMPLE_INTERVAL, 24/7:
@@ -114,13 +115,13 @@ const maintenance = () => {
 const start = () => {
     if (timer) return;
     tick().catch((e) => console.error("[Sampler]", e.message));
-    timer = setInterval(() => {
+    timer = setInterval(lifecycle.guard(() => {
         tick().catch((e) => console.error("[Sampler]", e.message));
         if (++ticks % MAINTENANCE_EVERY_TICKS === 0) maintenance();
-    }, SAMPLE_INTERVAL_MS);
+    }), SAMPLE_INTERVAL_MS);
 
     // Catch up on anything missed while the panel was down.
-    setTimeout(maintenance, 30_000);
+    setTimeout(lifecycle.guard(maintenance), 30_000);
 
     const d = (ms) => `${Math.round(ms / 86_400_000)}d`;
     console.log(

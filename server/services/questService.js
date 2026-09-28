@@ -30,6 +30,7 @@ const {
     _fields,
 } = require("./questEngine");
 const proxyPool = require("./proxyPool");
+const lifecycle = require("./lifecycle");
 
 const MODEL = "quest_accounts";
 const { isEnrolled, isCompleted, isCompletable } = _fields;
@@ -351,7 +352,7 @@ async function purgeExpired() {
 function startRetentionSweep() {
     purgeExpired().catch((e) => console.warn("[Quest] retention sweep:", e.message));
     const timer = setInterval(
-        () => purgeExpired().catch((e) => console.warn("[Quest] retention sweep:", e.message)),
+        lifecycle.guard(() => purgeExpired().catch((e) => console.warn("[Quest] retention sweep:", e.message))),
         SWEEP_INTERVAL_MS,
     );
     timer.unref?.();
@@ -367,11 +368,29 @@ function _launch(accountId, resolved, record, lease = null) {
         abort,
         onEvent: (e) => _publish(accountId, e),
     });
-    running.set(accountId, { abort, completer });
-    _runLoop(accountId, completer, abort, record).catch((err) => {
+    const entry = { abort, completer, done: null };
+    running.set(accountId, entry);
+    entry.done = _runLoop(accountId, completer, abort, record).catch((err) => {
         console.error(`[Quest] ${resolved.username} loop crash:`, err.message);
     });
 }
+
+/**
+ * Stop every run loop WITHOUT touching its DB status, so restore() — on this
+ * panel or on the one it hands over to — picks each account back up where it
+ * was. (stopAccount would mark them "stopped" for good.) Resolves once the
+ * loops have noticed, or after timeoutMs.
+ */
+async function suspendAll({ timeoutMs = 30_000 } = {}) {
+    const ids = [...running.keys()];
+    const loops = ids.map((id) => running.get(id)?.done).filter(Boolean);
+    for (const id of ids) _stopLoop(id);
+    await Promise.race([Promise.allSettled(loops), new Promise((r) => setTimeout(r, timeoutMs))]);
+    return ids.length;
+}
+
+/** How many accounts are running right now (the panel-move preflight shows it). */
+const runningCount = () => running.size;
 
 async function _runLoop(accountId, completer, abort, record) {
     const mode = record.mode;
@@ -534,6 +553,8 @@ module.exports = {
     stopAccount,
     removeAccount,
     restore,
+    suspendAll,
+    runningCount,
     purgeExpired,
     startRetentionSweep,
     RETENTION_DAYS,

@@ -18,6 +18,7 @@ const axios = require("axios");
 const db = require("../db");
 const questService = require("./questService");
 const proxyPool = require("./proxyPool");
+const lifecycle = require("./lifecycle");
 const {
     QuestAutocompleter,
     resolveDiscordAccount,
@@ -170,7 +171,7 @@ async function purgeExpired() {
 function startRetentionSweep() {
     purgeExpired().catch((e) => console.warn("[Monthly] retention sweep:", e.message));
     const timer = setInterval(
-        () => purgeExpired().catch((e) => console.warn("[Monthly] retention sweep:", e.message)),
+        lifecycle.guard(() => purgeExpired().catch((e) => console.warn("[Monthly] retention sweep:", e.message))),
         SWEEP_INTERVAL_MS,
     );
     timer.unref?.();
@@ -178,11 +179,15 @@ function startRetentionSweep() {
 }
 
 // ── Run: complete ALL quests for every active subscriber (one pass) ──────────────
-async function runBatch() {
+// `abort.stopped` ends the pass early (the panel is moving to another node); the
+// run is then not recorded as done, so the next panel's scheduler starts it over
+// — quests already completed are skipped by isCompleted.
+async function runBatch(abort = { stopped: false }) {
     const accts = await listActive();
     let processed = 0,
         completed = 0;
     for (const rec of accts) {
+        if (abort.stopped) break;
         const token = _decrypt(rec);
         if (!token) continue;
         // Hold the egress lease for the whole pass — the pool will not rotate this
@@ -206,6 +211,7 @@ async function runBatch() {
             questService.emitExternalEvent(rec.accountId, { type: "status", status: "running" });
             const completer = new QuestAutocompleter(resolved.api, {
                 label: rec.username,
+                abort,
                 onEvent: (e) => questService.emitExternalEvent(rec.accountId, e),
             });
 
@@ -233,7 +239,7 @@ async function runBatch() {
             }
 
             let guard = 0;
-            while (guard++ < 10) {
+            while (!abort.stopped && guard++ < 10) {
                 let quests = await completer.fetchQuests();
                 if (!quests.length) break;
                 quests = await completer.autoAccept(quests);
@@ -249,6 +255,7 @@ async function runBatch() {
                     return ea - eb;
                 });
                 for (const q of actionable) {
+                    if (abort.stopped) break;
                     const r = await completer.processQuest(q);
                     if (r?.skipped) continue;
                     completed++;
@@ -259,7 +266,9 @@ async function runBatch() {
             questService.emitExternalEvent(rec.accountId, { type: "status", status: "monthly" });
             processed++;
         } catch (e) {
-            if (isInvalidTokenError(e)) {
+            if (e?.aborted) {
+                // Suspended for a panel move — not the egress route's fault.
+            } else if (isInvalidTokenError(e)) {
                 questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
                 _webhook(rec, { type: "status", status: "token_dead" });
             } else {
@@ -271,14 +280,15 @@ async function runBatch() {
         }
         await new Promise((r) => setTimeout(r, 3000));
     }
-    return { processed, completed, total: accts.length };
+    return { processed, completed, total: accts.length, aborted: abort.stopped };
 }
 
 // ── Daily enroll-only scan (no completion) ───────────────────────────────────────
-async function runEnrollScan() {
+async function runEnrollScan(abort = { stopped: false }) {
     const accts = await listActive();
     let processed = 0;
     for (const rec of accts) {
+        if (abort.stopped) break;
         const token = _decrypt(rec);
         if (!token) continue;
         const lease = await proxyPool.acquire(token);
@@ -296,7 +306,7 @@ async function runEnrollScan() {
         }
         await new Promise((r) => setTimeout(r, 3000));
     }
-    return { processed, total: accts.length };
+    return { processed, total: accts.length, aborted: abort.stopped };
 }
 
 // ── Schedulers (Asia/Ho_Chi_Minh; catch-up + crash-safe like arnto-auto) ─────────
@@ -317,6 +327,25 @@ function _vnParts() {
 
 let runInProgress = false;
 let enrollInProgress = false;
+// The pass in flight, so abortRuns() can stop it: { abort, promise } | null.
+let currentRun = null;
+let currentEnroll = null;
+
+/**
+ * Stop the monthly pass and the enroll scan if one is running (the panel is
+ * handing over to another node). An aborted pass is not recorded as done, so
+ * the next panel starts it again. Resolves once they have stopped or after
+ * timeoutMs; true when something was running.
+ */
+async function abortRuns({ timeoutMs = 30_000 } = {}) {
+    const active = [currentRun, currentEnroll].filter(Boolean);
+    for (const r of active) r.abort.stopped = true;
+    await Promise.race([
+        Promise.allSettled(active.map((r) => r.promise)),
+        new Promise((r) => setTimeout(r, timeoutMs)),
+    ]);
+    return active.length > 0;
+}
 
 async function _checkRun() {
     try {
@@ -327,11 +356,18 @@ async function _checkRun() {
         runInProgress = true;
         try {
             console.log(`[Monthly] Scheduled run start (${dateStr})`);
-            const res = await runBatch();
+            currentRun = { abort: { stopped: false }, promise: null };
+            currentRun.promise = runBatch(currentRun.abort);
+            const res = await currentRun.promise;
+            if (res.aborted) {
+                console.log("[Monthly] Run suspended before finishing — it restarts on the next check.");
+                return;
+            }
             await db.set("quest_monthly_last_run", dateStr);
             console.log(`[Monthly] Done: ${res.processed}/${res.total} account(s), ${res.completed} quest(s).`);
         } finally {
             runInProgress = false;
+            currentRun = null;
         }
     } catch (e) {
         console.warn("[Monthly] scheduler:", e.message);
@@ -347,26 +383,35 @@ async function _checkEnroll() {
         enrollInProgress = true;
         try {
             console.log(`[MonthlyEnroll] Daily enroll scan start (${dateStr})`);
-            const res = await runEnrollScan();
+            currentEnroll = { abort: { stopped: false }, promise: null };
+            currentEnroll.promise = runEnrollScan(currentEnroll.abort);
+            const res = await currentEnroll.promise;
+            if (res.aborted) return;
             await db.set("quest_monthly_last_enroll", dateStr);
             console.log(`[MonthlyEnroll] Done: ${res.processed}/${res.total} account(s).`);
         } finally {
             enrollInProgress = false;
+            currentEnroll = null;
         }
     } catch (e) {
         console.warn("[MonthlyEnroll] scheduler:", e.message);
     }
 }
 
+/** Whether a monthly pass / enroll scan is in flight (the panel-move preflight shows it). */
+const busy = () => ({ run: runInProgress, enroll: enrollInProgress });
+
 function start() {
     startRetentionSweep();
     _checkRun().catch(() => {});
     _checkEnroll().catch(() => {});
-    setInterval(() => _checkRun().catch(() => {}), 60 * 1000);
-    setInterval(() => _checkEnroll().catch(() => {}), 60 * 1000);
+    setInterval(lifecycle.guard(() => _checkRun().catch(() => {})), 60 * 1000);
+    setInterval(lifecycle.guard(() => _checkEnroll().catch(() => {})), 60 * 1000);
 }
 
 module.exports = {
+    abortRuns,
+    busy,
     activate,
     list,
     remove,

@@ -395,6 +395,62 @@ script printed. The connection is verified before the node is saved.
 
 ---
 
+## 🚚 Moving the Panel to Another Node
+
+The panel is a control plane, so it can run on any node. **Panel Settings →
+Move Panel** moves it: pick the new host, **Check**, **Prepare**, then type the
+node's name to **Move**. Bots never stop — they are PM2 processes on their own
+nodes. Quests and badge orders pause for the few minutes of the move and resume
+on the new panel.
+
+**Before the first move**, run **Rebuild & Restart** once so every agent
+knows the lease and `/panel-host` endpoints (agent ≥ 1.7.0).
+
+| Step | What happens | Panel keeps working? |
+|------|--------------|----------------------|
+| Check | Read-only: target online and prepared, same commit, port free, disk/RAM, every agent reachable *from the target*, integrations, SSH keys, DNS | Yes |
+| Prepare | UFW rule on every other agent for the target's IP, then on the target: `git pull`, deps, client build, nginx site (HTTP) | Yes |
+| Move | Pause background work → snapshot `panel.sqlite` / `samples.sqlite` → `.env` with the new `PANEL_NODE_ID` → import on the target (WireGuard when reachable, always AES-GCM with its agent key) → start it → wait until it reports active | Writes refused for a few minutes |
+
+**Fencing.** Every panel has an *epoch*; every agent remembers the highest one it
+has been claimed by and answers `409 PANEL_SUPERSEDED` to anything older. The
+new panel boots at epoch + 1, claims every agent, and from that moment the old
+panel is locked out of all nodes — it stops its background work and is then
+retired (`pm2 delete`, `.env` → `.env.retired-<ts>`, `data/` kept). Before that
+commit point any failure rolls back and the old panel carries on; after it
+nothing is rolled back, so two panels never both run expiry or quests.
+
+**After the move** the new panel points the domain at itself through Cloudflare
+when `CF_API_TOKEN` / `CF_ZONE_ID` are set (otherwise the page and a
+notification say which record to change), then re-runs certbot for domains that
+had HTTPS. With Cloudflare's proxy on, certbot may need SSL mode *Full* and a
+moment for DNS; the domain's SSL button retries. The old node's
+`panel-self.conf` is left in place.
+
+**Integrations.** The panel calls arnto-auto (DM), shop and assistant. Link each
+one to its project + port under **Panel Settings → Integrations**: the address is
+then worked out per call — `127.0.0.1` on the same node, the node's WireGuard IP
+otherwise — so moving the panel or migrating the project keeps it working.
+Unlinked ones use their `.env` URL, and a `localhost` URL blocks the move. A
+project's port must accept the panel over `wg0`; Check prints the `ufw` command
+for any that does not.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Public: `{ ok, state, epoch }` — `state` is `starting`, `active`, `maintenance` or `fenced` |
+| `GET` | `/api/panel/migration` | State, running/last job, nodes, recent moves |
+| `POST` | `/api/panel/migration/preflight` | `{ targetNodeId }` → checks |
+| `POST` | `/api/panel/migration/prepare` | `{ targetNodeId }` — runs in the background |
+| `POST` | `/api/panel/migration/start` | `{ targetNodeId, confirmName }` — the move, in the background |
+| `GET` | `/api/panel/integrations` | Each integration and its resolved URL |
+| `PUT` | `/api/panel/integrations/:name` | `{ botId, port }` to link, `{ botId: null }` to unlink |
+
+Limits: `panel.sqlite` travels as JSON (the agent accepts 15 MB); history is
+streamed and skipped with a warning if it fails. Moving back is the same
+procedure in the other direction.
+
+---
+
 ## 🎵 Lavalink
 
 Every node runs its own Lavalink, so a music bot connects to `127.0.0.1:<port>`

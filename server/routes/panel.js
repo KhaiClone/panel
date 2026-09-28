@@ -1,5 +1,7 @@
 const express = require("express");
 const panelService = require("../services/panelService");
+const integrations = require("../services/integrationService");
+const panelMigration = require("../services/panelMigration");
 const db = require("../db");
 const router = express.Router();
 
@@ -299,6 +301,84 @@ router.post("/domains/:domain/ssl", async (req, res, next) => {
 
         console.log(`[Panel] SSL enabled for domain: ${domain}`);
         res.json({ ok: true, domain, sslEnabled: true });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Integrations — where the panel reaches arnto-auto / shop / assistant
+//  (services/integrationService.js)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /api/panel/integrations — one row per integration, with its resolved URL. */
+router.get("/integrations", async (req, res, next) => {
+    try {
+        res.json(await integrations.list());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * PUT /api/panel/integrations/:name
+ * Body: { botId, port } to link it to a project, or { botId: null } to go back
+ * to the .env URL.
+ */
+router.put("/integrations/:name", async (req, res, next) => {
+    try {
+        const { botId, port } = req.body || {};
+        await integrations.setLink(req.params.name, botId ? { botId, port } : null);
+        res.json(await integrations.list());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Moving the panel to another node (services/panelMigration.js)
+//  GET stays reachable while the panel is moving or has been replaced — see
+//  middleware/lifecycleGate.js — so the page can follow the move to the end.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /api/panel/migration — state, the running/last job, nodes, recent moves. */
+router.get("/migration", async (req, res, next) => {
+    try {
+        res.json(await panelMigration.overview());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/panel/migration/preflight   Body: { targetNodeId } — read-only checks. */
+router.post("/migration/preflight", async (req, res, next) => {
+    try {
+        if (!req.body?.targetNodeId) return res.status(400).json({ error: "targetNodeId is required" });
+        res.json(await panelMigration.runPreflight(req.body.targetNodeId));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/panel/migration/prepare   Body: { targetNodeId } — starts in the background. */
+router.post("/migration/prepare", async (req, res, next) => {
+    try {
+        if (!req.body?.targetNodeId) return res.status(400).json({ error: "targetNodeId is required" });
+        res.status(202).json(await panelMigration.startPrepare(req.body.targetNodeId));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/panel/migration/start   Body: { targetNodeId, confirmName }
+ * The move itself, in the background. confirmName must equal the target's name.
+ */
+router.post("/migration/start", async (req, res, next) => {
+    try {
+        const { targetNodeId, confirmName } = req.body || {};
+        if (!targetNodeId) return res.status(400).json({ error: "targetNodeId is required" });
+        res.status(202).json(await panelMigration.startMove(targetNodeId, { confirmName }));
     } catch (err) {
         next(err);
     }

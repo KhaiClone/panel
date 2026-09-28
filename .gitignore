@@ -9,3 +9,12 @@ package-lock.json
 
 # Data snapshots taken by scripts/inventory.js — local only
 scripts/snapshots/
+
+# Panel lease (which panel this agent follows) — per node, never committed
+agent/.panel-lease.json
+agent/.panel-lease.json.tmp
+
+# Kept aside by the panel .env editor, panel moves and imports
+.env.bak-*
+.env.retired-*
+.env.pre-import-*

@@ -668,6 +668,20 @@ async function restoreOrders() {
     }
 }
 
+/**
+ * Chờ các đơn đang gửi chạy xong (panel sắp chuyển sang node khác). Không ngắt
+ * giữa chừng: /science cộng dồn nên một đơn "sending" không chạy lại được.
+ * Trả về số đơn còn chạy khi hết timeoutMs (0 = đã rảnh).
+ */
+async function waitIdle({ timeoutMs = 90_000 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    while (running.size && Date.now() < deadline) await new Promise((r) => setTimeout(r, 500));
+    return running.size;
+}
+
+/** Số đơn đang xử lý (preflight chuyển panel hiển thị). */
+const runningCount = () => running.size;
+
 function start() {
     // Nâng cấp êm: .env cũ còn BADGE_READER_TOKEN thì đưa vào pool một lần.
     badgeReader.importEnvReader().catch(() => {});
@@ -684,5 +698,7 @@ module.exports = {
     listOrders,
     getOrder,
     restoreOrders,
+    waitIdle,
+    runningCount,
     start,
 };

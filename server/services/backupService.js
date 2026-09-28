@@ -2,6 +2,7 @@ const cron = require("node-cron");
 const path = require("path");
 const db = require("../db");
 const { sendBackup } = require("./discordService");
+const lifecycle = require("./lifecycle");
 
 /**
  * Send the database file backup to Discord.
@@ -22,7 +23,7 @@ const performBackup = async () => {
  * Runs every hour at :30 minutes (offset from expiry check at :00).
  */
 const start = () => {
-    cron.schedule("30 * * * *", performBackup);
+    cron.schedule("30 * * * *", lifecycle.guard(performBackup));
     console.log("[Backup] Backup service started — runs every hour at :30");
 };
 

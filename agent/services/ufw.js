@@ -21,6 +21,21 @@ const closePort = async (port) => {
     } catch { /* rule may not exist */ }
 };
 
+/**
+ * Let one IP reach one TCP port — how a node that is about to host the panel is
+ * given access to this agent. Inserted at the top so an earlier DENY for the
+ * port cannot shadow it; `ufw insert 1` refuses on an empty rule set, where a
+ * plain allow is equivalent anyway.
+ */
+const allowFrom = async (ip, port) => {
+    const rule = `allow from ${ip} to any port ${port} proto tcp comment 'bot-panel: panel access'`;
+    try {
+        await execAsync(`${SUDO}ufw insert 1 ${rule}`);
+    } catch {
+        await execAsync(`${SUDO}ufw ${rule}`);
+    }
+};
+
 /** Returns true if no process is listening on the given port. */
 const isPortFree = (port) =>
     new Promise((resolve) => {
@@ -47,4 +62,4 @@ const status = async () => {
     return stdout;
 };
 
-module.exports = { openPort, closePort, isPortFree, findFreePort, status };
+module.exports = { openPort, closePort, allowFrom, isPortFree, findFreePort, status };

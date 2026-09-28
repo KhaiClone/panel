@@ -26,6 +26,7 @@ const { HttpsProxyAgent } = require("https-proxy-agent");
 const { SocksProxyAgent } = require("socks-proxy-agent");
 const db = require("../db");
 const agentCrypto = require("./agentCrypto");
+const lifecycle = require("./lifecycle");
 
 const MODEL = "proxies";
 const PROTOCOLS = ["http", "https", "socks4", "socks5"];
@@ -435,7 +436,7 @@ async function _idleSweep() {
 
 function startRotationScheduler() {
     if (_timer) return;
-    _timer = setInterval(() => _idleSweep().catch(() => {}), 30_000);
+    _timer = setInterval(lifecycle.guard(() => _idleSweep().catch(() => {})), 30_000);
     if (_timer.unref) _timer.unref();
     console.log("[Proxy] idle rotation scheduler started");
 }

@@ -1,11 +1,12 @@
 const axios = require("axios");
+const integrations = require("./integrationService");
 
-// HTTP client for the ArnTo-assistant decor API. The assistant bot runs on the
-// same VPS as the panel, so this talks to it over localhost by default.
-//   ASSISTANT_API_URL  (default http://127.0.0.1:3000)
+// HTTP client for the ArnTo-assistant decor API. Where it is reached is the
+// "assistant" integration (see integrationService): linked to its project it
+// follows that project across nodes, otherwise ASSISTANT_API_URL as before
+// (default http://127.0.0.1:3000).
 //   ASSISTANT_API_KEY  (must match the assistant's ASSISTANT_API_KEY)
 
-const BASE = () => (process.env.ASSISTANT_API_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const KEY = () => process.env.ASSISTANT_API_KEY || "";
 
 const request = async (method, path, { data, timeout, needsKey = true } = {}) => {
@@ -17,7 +18,7 @@ const request = async (method, path, { data, timeout, needsKey = true } = {}) =>
     try {
         const res = await axios({
             method,
-            url: `${BASE()}${path}`,
+            url: `${await integrations.baseUrl("assistant")}${path}`,
             data,
             timeout: timeout ?? 15_000,
             headers: needsKey ? { "x-api-key": KEY() } : {},

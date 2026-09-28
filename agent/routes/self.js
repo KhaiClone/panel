@@ -151,18 +151,20 @@ router.post("/update", async (req, res, next) => {
 //  root-jail in utils/paths.js exists for exactly that reason.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PANEL_DIR = process.env.PANEL_DIR || null;
-const PANEL_PM2_NAME = process.env.PANEL_PM2_NAME || "bot-panel";
+// Read at call time: /panel-host/start and /panel-host/retire change these
+// while the agent keeps running.
+const panelDir = () => process.env.PANEL_DIR || null;
+const panelPm2Name = () => process.env.PANEL_PM2_NAME || "bot-panel";
 
 /** Guard every panel endpoint: unconfigured means "this node does not host it". */
 const requirePanelDir = (req, res, next) => {
-    if (!PANEL_DIR) {
+    if (!panelDir()) {
         return res.status(503).json({
             error: "PANEL_DIR is not configured on this agent — it does not host the panel",
         });
     }
-    if (!fs.existsSync(PANEL_DIR)) {
-        return res.status(503).json({ error: `PANEL_DIR "${PANEL_DIR}" does not exist` });
+    if (!fs.existsSync(panelDir())) {
+        return res.status(503).json({ error: `PANEL_DIR "${panelDir()}" does not exist` });
     }
     next();
 };
@@ -177,20 +179,20 @@ router.get("/panel-status", requirePanelDir, async (req, res, next) => {
         // same thing as this agent's own repo — read both from PANEL_DIR.
         let version = null;
         try {
-            version = JSON.parse(fs.readFileSync(path.join(PANEL_DIR, "package.json"), "utf8")).version || null;
+            version = JSON.parse(fs.readFileSync(path.join(panelDir(), "package.json"), "utf8")).version || null;
         } catch { /* no package.json — leave null */ }
 
         let commit = null;
         let branch = null;
         try {
-            const { stdout: c } = await execAsync(`git -C "${PANEL_DIR}" rev-parse HEAD`, { timeout: 10_000 });
-            const { stdout: b } = await execAsync(`git -C "${PANEL_DIR}" rev-parse --abbrev-ref HEAD`, { timeout: 10_000 });
+            const { stdout: c } = await execAsync(`git -C "${panelDir()}" rev-parse HEAD`, { timeout: 10_000 });
+            const { stdout: b } = await execAsync(`git -C "${panelDir()}" rev-parse --abbrev-ref HEAD`, { timeout: 10_000 });
             commit = c.trim();
             branch = b.trim();
         } catch { /* not a git checkout */ }
 
-        const live = await getBotStatus(PANEL_PM2_NAME);
-        res.json({ pm2Name: PANEL_PM2_NAME, panelDir: PANEL_DIR, version, commit, branch, ...live });
+        const live = await getBotStatus(panelPm2Name());
+        res.json({ pm2Name: panelPm2Name(), panelDir: panelDir(), version, commit, branch, ...live });
     } catch (err) {
         next(err);
     }
@@ -202,7 +204,7 @@ router.get("/panel-status", requirePanelDir, async (req, res, next) => {
 router.get("/panel-logs", requirePanelDir, async (req, res, next) => {
     try {
         const lines = Math.min(parseInt(req.query.lines) || 100, 500);
-        res.json({ logs: await getBotLogs(PANEL_PM2_NAME, lines) });
+        res.json({ logs: await getBotLogs(panelPm2Name(), lines) });
     } catch (err) {
         next(err);
     }
@@ -214,9 +216,9 @@ router.get("/panel-logs", requirePanelDir, async (req, res, next) => {
  * reaches the browser before its server goes away.
  */
 router.post("/panel-restart", requirePanelDir, (req, res) => {
-    res.json({ message: `Panel "${PANEL_PM2_NAME}" will restart in ~1.5 seconds` });
+    res.json({ message: `Panel "${panelPm2Name()}" will restart in ~1.5 seconds` });
     setTimeout(() => {
-        exec(`pm2 restart "${PANEL_PM2_NAME}" --no-color`, (err) => {
+        exec(`pm2 restart "${panelPm2Name()}" --no-color`, (err) => {
             if (err) console.error("[Agent] Panel restart failed:", err.message);
         });
     }, 1500);
@@ -228,7 +230,7 @@ router.post("/panel-restart", requirePanelDir, (req, res) => {
  */
 router.get("/env", requirePanelDir, (req, res, next) => {
     try {
-        const envPath = path.join(PANEL_DIR, ".env");
+        const envPath = path.join(panelDir(), ".env");
         const content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
         res.json({ content });
     } catch (err) {
@@ -248,7 +250,7 @@ router.put("/env", requirePanelDir, (req, res, next) => {
         if (typeof content !== "string") {
             return res.status(400).json({ error: "content is required" });
         }
-        const envPath = path.join(PANEL_DIR, ".env");
+        const envPath = path.join(panelDir(), ".env");
         let backup = null;
         if (fs.existsSync(envPath)) {
             backup = `${envPath}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -284,7 +286,7 @@ router.post("/rebuild-app", requirePanelDir, async (req, res) => {
     const out = [];
     const run = async (cmd, timeout) => {
         const { stdout, stderr } = await execAsync(cmd, {
-            cwd: PANEL_DIR,
+            cwd: panelDir(),
             timeout,
             maxBuffer: 10 * 1024 * 1024,
         });
@@ -314,11 +316,11 @@ router.post("/rebuild-app", requirePanelDir, async (req, res) => {
         res.json({
             success: true,
             buildOutput,
-            message: `Build successful. Panel "${PANEL_PM2_NAME}" will restart in ~1.5 seconds`,
+            message: `Build successful. Panel "${panelPm2Name()}" will restart in ~1.5 seconds`,
         });
 
         setTimeout(() => {
-            exec(`pm2 restart "${PANEL_PM2_NAME}" --no-color`, (err) => {
+            exec(`pm2 restart "${panelPm2Name()}" --no-color`, (err) => {
                 if (err) console.error("[Agent] Post-build restart failed:", err.message);
             });
         }, 1500);

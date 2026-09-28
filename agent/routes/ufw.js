@@ -36,6 +36,23 @@ router.post("/close", async (req, res, next) => {
 });
 
 /**
+ * POST /ufw/allow-from   body: { ip, port }
+ * Allow a single IP to one TCP port (idempotent — ufw skips an existing rule).
+ */
+router.post("/allow-from", async (req, res, next) => {
+    try {
+        const port = parsePort(req.body.port);
+        const ip = String(req.body.ip || "");
+        if (!port) return res.status(400).json({ error: "Valid port is required" });
+        if (!require("net").isIP(ip)) return res.status(400).json({ error: "A literal IP address is required" });
+        await ufw.allowFrom(ip, port);
+        res.json({ message: `${ip} may now reach port ${port}` });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * GET /ufw/free-port?start=3000&end=9000
  */
 router.get("/free-port", async (req, res, next) => {

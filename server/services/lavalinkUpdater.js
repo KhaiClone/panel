@@ -3,6 +3,7 @@ const cron = require("node-cron");
 const store = require("./lavalinkStore");
 const lavalink = require("./lavalinkService");
 const discord = require("./discordService");
+const lifecycle = require("./lifecycle");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Daily Lavalink release check — 02:00 Asia/Ho_Chi_Minh by default.
@@ -181,9 +182,9 @@ const start = async () => {
         console.warn(`[Lavalink] Could not read settings, using ${timezone}:`, err.message);
     }
 
-    task = cron.schedule(SCHEDULE, () => {
+    task = cron.schedule(SCHEDULE, lifecycle.guard(() => {
         run().catch((err) => console.error("[Lavalink] Scheduled run failed:", err.message));
-    }, { timezone });
+    }), { timezone });
 
     console.log(`[Lavalink] Release check scheduled — 02:00 ${timezone}`);
 };

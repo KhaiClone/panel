@@ -231,6 +231,25 @@ const deleteBot = async (pm2Name) => {
     }
 };
 
+/**
+ * Start (or restart, when already registered) the app(s) in dir/ecosystem.config.js
+ * — how the panel itself is brought up on this node. The pm2 CLI copies its own
+ * environment into the app, and the agent's holds AGENT_API_KEY, BOTS_ROOT_DIR
+ * and friends; with those inherited, dotenv would never read the panel's own
+ * values from its .env. So the CLI gets only what it needs to find pm2.
+ */
+const startEcosystem = async (dir) => {
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME || os.homedir() };
+    if (process.env.PM2_HOME) env.PM2_HOME = process.env.PM2_HOME;
+    const { stdout, stderr } = await execAsync("pm2 start ecosystem.config.js --no-color", {
+        cwd: dir,
+        env,
+        timeout: 60_000,
+    });
+    await pm2Save();
+    return stdout || stderr;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Status & Logs
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,6 +319,7 @@ module.exports = {
     stopBot,
     restartBot,
     deleteBot,
+    startEcosystem,
     setMemoryLimit,
     getBotStatus,
     getBotLogs,

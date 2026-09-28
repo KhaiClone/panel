@@ -413,10 +413,50 @@ export default function Layout() {
                     </div>
                 </header>
 
+                <PanelStateBanner />
                 <main style={{ flex: 1, overflowY: "auto", position: "relative" }} className="fade-in">
                     <Outlet />
                 </main>
             </div>
+        </div>
+    );
+}
+
+const PANEL_STATE_TEXT = {
+    starting: "The panel is starting — changes are briefly paused.",
+    maintenance: "The panel is moving to another server — changes are paused for a few minutes. Bots keep running.",
+    fenced: "This panel has been replaced by one on another server — nothing here runs any more. Open the panel's address again (details under Panel Settings).",
+};
+
+/**
+ * Shown whenever the panel is not simply "active" (see server/services/lifecycle.js).
+ * Reads the public /api/health, so it keeps working while writes are refused.
+ */
+function PanelStateBanner() {
+    const [state, setState] = useState("active");
+
+    useEffect(() => {
+        let alive = true;
+        const check = () =>
+            fetch("/api/health")
+                .then((r) => r.json())
+                .then((d) => { if (alive && d?.state) setState(d.state); })
+                .catch(() => { /* unreachable — keep the last known state */ });
+        check();
+        const t = setInterval(check, 15_000);
+        return () => { alive = false; clearInterval(t); };
+    }, []);
+
+    if (state === "active") return null;
+    const bad = state === "fenced";
+    return (
+        <div style={{
+            padding: "8px 16px", fontSize: 13, fontWeight: 600,
+            background: bad ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)",
+            color: bad ? "#f87171" : "#f59e0b",
+            borderBottom: "1px solid var(--border)",
+        }}>
+            {PANEL_STATE_TEXT[state] || `Panel state: ${state}`}
         </div>
     );
 }

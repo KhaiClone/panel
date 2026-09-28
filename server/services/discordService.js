@@ -24,18 +24,20 @@ const sendWebhook = async (webhookUrl, payload) => {
 
 /**
  * Send a Discord DM to a buyer via the arnto-auto DM API.
- * No-op if ARNTO_DM_URL or ARNTO_DM_API_KEY is not configured.
+ * No-op if the "dm" integration (linked project, or ARNTO_DM_URL) or
+ * ARNTO_DM_API_KEY is not configured.
  * Errors never crash the caller — webhook alerts remain the source of truth.
  *
  * @param {string} buyerID - Discord user ID
  * @param {Object} payload - { content?, embeds?, components? }
  */
 const sendDM = async (buyerID, payload) => {
-    const url = process.env.ARNTO_DM_URL;
     const key = process.env.ARNTO_DM_API_KEY;
-    if (!url || !key || !buyerID) return;
+    if (!key || !buyerID) return;
 
     try {
+        const url = await require("./integrationService").baseUrl("dm");
+        if (!url) return;
         await axios.post(
             `${url.replace(/\/$/, "")}/api/dm`,
             { buyerID, ...payload },

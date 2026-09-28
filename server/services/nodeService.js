@@ -1,6 +1,8 @@
 const axios = require("axios");
 const si = require("systeminformation");
 const db = require("../db");
+const panelLease = require("./panelLease");
+const lifecycle = require("./lifecycle");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Node registry + agent HTTP client
@@ -72,8 +74,18 @@ const getNode = async (nodeId) => {
  * Perform an HTTP request against a node's agent.
  * Agent errors are re-thrown with the node name so route error messages
  * make clear which VPS failed.
+ *
+ * Every request carries this panel's epoch (panelLease); an agent that follows
+ * a newer panel answers 409 PANEL_SUPERSEDED and this panel fences itself.
+ * `noEpoch` leaves the header off — only for read-only probes a panel must be
+ * able to make while it is being replaced (reading /lease, the new panel's health).
  */
-const agentRequest = async (node, method, urlPath, { data, params, responseType, timeout } = {}) => {
+const agentRequest = async (
+    node,
+    method,
+    urlPath,
+    { data, params, responseType, timeout, headers, noEpoch = false, maxBodyLength } = {},
+) => {
     // controlHost keeps panel → agent traffic on the loopback for the node the
     // panel shares a machine with. host stays the public address for everyone else.
     const url = `http://${node.controlHost || node.host}:${node.port}${urlPath}`;
@@ -85,15 +97,22 @@ const agentRequest = async (node, method, urlPath, { data, params, responseType,
             params,
             responseType,
             timeout: timeout ?? DEFAULT_TIMEOUT,
-            headers: { "x-agent-key": node.apiKey },
+            headers: { ...(noEpoch ? {} : panelLease.headers()), ...headers, "x-agent-key": node.apiKey },
             maxContentLength: 200 * 1024 * 1024,
-            maxBodyLength: 200 * 1024 * 1024,
+            maxBodyLength: maxBodyLength ?? 200 * 1024 * 1024,
         });
         return res.data;
     } catch (err) {
-        if (err.response?.data?.error) {
-            const e = new Error(`[Node ${node.name}] ${err.response.data.error}`);
+        const body = err.response?.data;
+        if (err.response?.status === 409 && body?.code === panelLease.SUPERSEDED) {
+            panelLease.superseded(node, body);
+        }
+        if (body?.error) {
+            const e = new Error(`[Node ${node.name}] ${body.error}`);
             e.status = err.response.status;
+            if (body.code) e.code = body.code;
+            // Long agent operations (panel-host/prepare) put their build log here.
+            if (body.output) e.output = body.output;
             throw e;
         }
         throw new Error(`[Node ${node.name}] ${err.code || ""} ${err.message}`.trim());
@@ -258,7 +277,7 @@ let pollTimer = null;
 const startHealthPolling = () => {
     if (pollTimer) return;
     pollAllNodes().catch(() => {});
-    pollTimer = setInterval(() => pollAllNodes().catch(() => {}), 30_000);
+    pollTimer = setInterval(lifecycle.guard(() => pollAllNodes().catch(() => {})), 30_000);
     console.log("[Nodes] Health polling started — every 30s");
 };
 

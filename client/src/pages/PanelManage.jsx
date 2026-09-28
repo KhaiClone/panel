@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { useData } from "../context/DataContext";
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -524,6 +525,275 @@ const LOGROTATE_FIELDS = [
     { key: "rotateInterval", label: "Rotate at (cron)", hint: "Forced rotation schedule — default is midnight daily", placeholder: "0 0 * * *", width: 110 },
 ];
 
+// ── Integrations: where the panel reaches arnto-auto / shop / assistant ───────
+
+const INTEGRATION_SOURCE = {
+    project: { label: "linked", color: "#4ade80" },
+    env: { label: ".env URL", color: "var(--text-muted)" },
+    default: { label: "default", color: "var(--text-muted)" },
+    none: { label: "off", color: "var(--text-dim)" },
+    error: { label: "broken", color: "#f87171" },
+};
+
+function IntegrationsSection() {
+    const { bots } = useData();
+    const [rows, setRows] = useState(null);
+    const [draft, setDraft] = useState({}); // name → { botId, port }
+    const [saving, setSaving] = useState(null);
+    const [error, setError] = useState("");
+
+    const apply = (data) => {
+        setRows(data);
+        setDraft(Object.fromEntries(data.map((r) => [r.name, { botId: r.link?.botId || "", port: r.link?.port || "" }])));
+    };
+
+    useEffect(() => {
+        api.get("/panel/integrations").then((r) => apply(r.data)).catch((err) => setError(err.response?.data?.error || "Failed to load integrations"));
+    }, []);
+
+    const save = async (name, unlink = false) => {
+        setSaving(name); setError("");
+        try {
+            const d = draft[name] || {};
+            const { data } = await api.put(`/panel/integrations/${name}`, unlink ? { botId: null } : { botId: d.botId, port: Number(d.port) });
+            apply(data);
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to save");
+        } finally { setSaving(null); }
+    };
+
+    if (!rows) return <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>{error || "Loading…"}</p>;
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                Link each integration to the project that serves it. The panel then works out the address on every call —
+                127.0.0.1 on the same node, that node's WireGuard IP otherwise — so migrating the project or moving the panel keeps it working.
+                Unlinked ones keep using their .env URL.
+            </p>
+            {error && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{error}</p>}
+            {rows.map((r) => {
+                const d = draft[r.name] || { botId: "", port: "" };
+                const src = INTEGRATION_SOURCE[r.source] || INTEGRATION_SOURCE.none;
+                const setField = (k) => (e) => setDraft((x) => ({ ...x, [r.name]: { ...d, [k]: e.target.value } }));
+                return (
+                    <div key={r.name} className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: 13, color: "var(--text)" }}>{r.label}</strong>
+                            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: src.color }}>{src.label}</span>
+                            <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: r.error ? "#f87171" : "var(--text-dim)", overflowWrap: "anywhere" }}>
+                                {r.error || r.url || `not configured (${r.env})`}
+                            </span>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <select className="input" value={d.botId} onChange={setField("botId")} style={{ flex: "1 1 220px", minWidth: 0 }}>
+                                <option value="">— choose the project —</option>
+                                {bots.map((b) => <option key={b._id} value={b._id}>{b.name} ({b.pm2Name})</option>)}
+                            </select>
+                            <input className="input mono" type="number" min="1" max="65535" placeholder="port" value={d.port} onChange={setField("port")} style={{ width: 110 }} />
+                            <button className="btn-primary" disabled={!d.botId || !d.port || saving === r.name} onClick={() => save(r.name)} style={{ padding: "6px 12px", fontSize: 12 }}>
+                                {saving === r.name ? "Saving…" : "Link"}
+                            </button>
+                            {r.link && (
+                                <button className="btn-ghost" disabled={saving === r.name} onClick={() => save(r.name, true)} style={{ padding: "6px 12px", fontSize: 12 }}>Unlink</button>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ── Moving the panel to another node ────────────────────────────────────────
+
+const CHECK_ICON = { ok: "✅", info: "ℹ️", warn: "⚠️", error: "❌" };
+const STEP_ICON = { running: "⏳", ok: "✅", warn: "⚠️", error: "❌" };
+
+function MoveResult({ result }) {
+    if (!result?.target) return null;
+    const { target, domains, dnsAutomated, port } = result;
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+            <p style={{ margin: 0, color: "#4ade80", fontWeight: 700 }}>The panel now runs on {target.name}. This copy is being stopped.</p>
+            {domains?.length ? (
+                dnsAutomated ? (
+                    <p style={{ margin: 0 }}>Cloudflare is pointing {domains.join(", ")} at <span className="mono">{target.host}</span> — reload in a minute.</p>
+                ) : (
+                    <p style={{ margin: 0 }}>Point {domains.join(", ")} at <span className="mono">{target.host}</span> with your DNS provider, then reload.</p>
+                )
+            ) : (
+                <p style={{ margin: 0 }}>It answers on <span className="mono">{target.host}:{port}</span> (if that port is reachable).</p>
+            )}
+            <div><button className="btn-primary" onClick={() => window.location.reload()} style={{ padding: "6px 12px", fontSize: 12 }}>Reload</button></div>
+        </div>
+    );
+}
+
+function MoveJob({ job, lost }) {
+    const title = job.kind === "move" ? `Moving the panel to ${job.targetName}` : `Preparing ${job.targetName}`;
+    const statusColor = job.status === "done" ? "#4ade80" : job.status === "failed" ? "#f87171" : "var(--accent)";
+    return (
+        <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <strong style={{ fontSize: 13, color: "var(--text)" }}>{title}</strong>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: statusColor }}>{job.status}</span>
+            </div>
+            {job.steps.map((s, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "flex-start" }}>
+                    <span>{STEP_ICON[s.status] || "•"}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ color: "var(--text)" }}>{s.label}</div>
+                        {s.detail && (
+                            <pre className="mono" style={{ margin: "2px 0 0", fontSize: 11, color: s.status === "error" ? "#f87171" : "var(--text-dim)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 220, overflowY: "auto" }}>{s.detail}</pre>
+                        )}
+                    </div>
+                </div>
+            ))}
+            {job.error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{job.error}</p>}
+            {job.kind === "move" && job.status === "done" && <MoveResult result={job.result} />}
+            {lost && job.kind === "move" && job.status !== "failed" && (
+                <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>This copy of the panel has stopped answering — the new one retired it, as expected.</p>
+            )}
+        </div>
+    );
+}
+
+function PanelMoveSection() {
+    const [ov, setOv] = useState(null);
+    const [lost, setLost] = useState(false);
+    const [targetId, setTargetId] = useState("");
+    const [pf, setPf] = useState(null);
+    const [checking, setChecking] = useState(false);
+    const [confirmName, setConfirmName] = useState("");
+    const [error, setError] = useState("");
+
+    const load = useCallback(async () => {
+        try {
+            const { data } = await api.get("/panel/migration");
+            setOv(data); setLost(false);
+        } catch {
+            setLost(true);
+        }
+    }, []);
+    useEffect(() => { load(); }, [load]);
+
+    const job = ov?.job;
+    const running = job?.status === "running";
+    // Poll while a job runs; keep polling after a finished move so "stopped
+    // answering" shows once the new panel retires this one.
+    const followMove = job?.kind === "move" && job?.status === "done";
+    useEffect(() => {
+        if (!running && !followMove) return;
+        const t = setInterval(load, running ? 2000 : 5000);
+        return () => clearInterval(t);
+    }, [running, followMove, load]);
+
+    // A finished Prepare carries a fresh preflight — show it.
+    useEffect(() => {
+        if (job?.kind === "prepare" && job.status === "done" && job.result?.preflight) setPf(job.result.preflight);
+    }, [job?.kind, job?.status, job?.result]);
+
+    const runCheck = async () => {
+        setChecking(true); setError(""); setPf(null);
+        try {
+            const { data } = await api.post("/panel/migration/preflight", { targetNodeId: targetId }, { timeout: 180_000 });
+            setPf(data);
+        } catch (err) {
+            setError(err.response?.data?.error || err.message);
+        } finally { setChecking(false); }
+    };
+
+    const start = (kind) => async () => {
+        setError("");
+        try {
+            const body = kind === "start" ? { targetNodeId: targetId, confirmName } : { targetNodeId: targetId };
+            await api.post(`/panel/migration/${kind}`, body, { timeout: 180_000 });
+            setConfirmName("");
+            await load();
+        } catch (err) {
+            setError(err.response?.data?.error || err.message);
+        }
+    };
+
+    if (!ov) return <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Loading…</p>;
+
+    const state = ov.lifecycle?.state;
+    const current = ov.nodes.find((n) => n.isPanelNode);
+    const candidates = ov.nodes.filter((n) => !n.isPanelNode && n.enabled);
+    const nodeName = (id) => ov.nodes.find((n) => n._id === id)?.name || id;
+    const idle = !running && state === "active";
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                The panel runs on <strong style={{ color: "var(--text)" }}>{current?.name || ov.panelNodeId || "?"}</strong> (epoch {ov.epoch}).
+                Moving it copies its database, .env and history to another node, starts it there and retires this copy.
+                Bots keep running throughout; quests and badge orders pause for a few minutes and resume on the new panel.
+            </p>
+
+            {state === "fenced" && (
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#f87171" }}>
+                    This panel has been replaced{ov.lifecycle.info?.to ? ` — it now runs on ${ov.lifecycle.info.to}` : ""}. Nothing here runs any more.
+                </p>
+            )}
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select className="input" value={targetId} disabled={!idle} onChange={(e) => { setTargetId(e.target.value); setPf(null); setConfirmName(""); }} style={{ flex: "1 1 240px", minWidth: 0 }}>
+                    <option value="">— choose the new host —</option>
+                    {candidates.map((n) => (
+                        <option key={n._id} value={n._id}>{n.name} ({n.host}){n.online ? "" : " — offline"}</option>
+                    ))}
+                </select>
+                <button className="btn-ghost" disabled={!targetId || checking || !idle} onClick={runCheck} style={{ padding: "6px 12px", fontSize: 12 }}>
+                    {checking ? "Checking…" : "Check"}
+                </button>
+                <button className="btn-primary" disabled={!pf?.canPrepare || !idle} onClick={start("prepare")} style={{ padding: "6px 12px", fontSize: 12 }} title="Firewall access, dependencies, client build and nginx site on the new host — nothing is paused">
+                    Prepare
+                </button>
+            </div>
+
+            {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
+
+            {pf && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {pf.checks.map((c, i) => (
+                        <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "flex-start" }}>
+                            <span>{CHECK_ICON[c.level] || "•"}</span>
+                            <span style={{ color: c.level === "error" ? "#f87171" : c.level === "warn" ? "#f59e0b" : "var(--text-muted)", overflowWrap: "anywhere" }}>{c.message}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {pf?.canMove && idle && pf.target?._id === targetId && (
+                <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.04)" }}>
+                    <p style={{ margin: 0, fontSize: 13 }}>Every check passed. Type <strong className="mono">{pf.target.name}</strong> to move the panel there.</p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <input className="input" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={pf.target.name} style={{ flex: "1 1 200px", minWidth: 0 }} />
+                        <button className="btn-primary" disabled={confirmName !== pf.target.name} onClick={start("start")} style={{ padding: "6px 14px", fontSize: 12, background: "var(--danger)" }}>
+                            Move panel
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {job && <MoveJob job={job} lost={lost} />}
+
+            {ov.history?.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 11, color: "var(--text-dim)" }}>
+                    <strong style={{ color: "var(--text-muted)" }}>Recent moves</strong>
+                    {ov.history.map((h) => (
+                        <span key={h.id}>
+                            {new Date(h.startedAt).toLocaleString()} · {nodeName(h.fromNodeId)} → {nodeName(h.toNodeId)} · {h.status}{h.error ? ` — ${h.error}` : ""}
+                        </span>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function LogRotateSection() {
     const [info, setInfo] = useState(null);
     const [form, setForm] = useState({});
@@ -952,6 +1222,30 @@ export default function PanelManage() {
                 </div>
                 <div style={{ padding: 16 }}>
                     <PanelDomainsSection />
+                </div>
+            </div>
+
+            {/* Integrations */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🔗</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Integrations</h2>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>How the panel reaches arnto-auto, shop and assistant</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <IntegrationsSection />
+                </div>
+            </div>
+
+            {/* Move the panel */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🚚</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Move Panel</h2>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>Run the panel on another node</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <PanelMoveSection />
                 </div>
             </div>
 

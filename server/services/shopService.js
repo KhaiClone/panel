@@ -1,12 +1,12 @@
 const axios = require("axios");
+const integrations = require("./integrationService");
 
-// HTTP client for the ArnTo-Shop Orders API. The shop bot runs on the same VPS
-// as the panel, so this talks to it over localhost by default — no public
-// exposure. Configure via env:
-//   SHOP_API_URL  (default http://127.0.0.1:3000)
+// HTTP client for the ArnTo-Shop Orders API. Where the shop is reached is the
+// "shop" integration (see integrationService): linked to the shop's project it
+// follows that project across nodes, otherwise SHOP_API_URL as before
+// (default http://127.0.0.1:3000).
 //   SHOP_API_KEY  (must match the shop's SHOP_API_KEY)
 
-const BASE = () => (process.env.SHOP_API_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const KEY = () => process.env.SHOP_API_KEY || "";
 
 const request = async (method, path, { params, timeout } = {}) => {
@@ -18,7 +18,7 @@ const request = async (method, path, { params, timeout } = {}) => {
     try {
         const res = await axios({
             method,
-            url: `${BASE()}${path}`,
+            url: `${await integrations.baseUrl("shop")}${path}`,
             params,
             timeout: timeout ?? 15_000,
             headers: { "x-api-key": KEY() },

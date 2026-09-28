@@ -11,8 +11,12 @@ app.use(express.json({ limit: "15mb" }));
 
 // Every route requires the shared agent key
 app.use(auth);
+// …and a panel that has since been replaced is refused (see services/panelLease.js)
+app.use(require("./services/panelLease").middleware);
 
 app.use("/", require("./routes/system"));
+app.use("/lease", require("./routes/lease"));
+app.use("/panel-host", require("./routes/panelHost"));
 app.use("/self", require("./routes/self"));
 app.use("/pm2", require("./routes/pm2"));
 app.use("/git", require("./routes/git"));

@@ -31,6 +31,10 @@ const { authMiddleware } = require("./middleware/auth");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
 const nodeContext = require("./middleware/nodeContext");
 const errorHandler = require("./middleware/errorHandler");
+const lifecycleGate = require("./middleware/lifecycleGate");
+const lifecycle = require("./services/lifecycle");
+const panelLease = require("./services/panelLease");
+const panelMigration = require("./services/panelMigration");
 const expiryService = require("./services/expiryService");
 const backupService = require("./services/backupService");
 const memoryMonitorService = require("./services/memoryMonitorService");
@@ -89,6 +93,14 @@ app.use(express.json({ limit: "2mb" })); // env files could be a bit large
 // ─────────────────────────────────────────────────────────────────────────────
 //  API Routes
 // ─────────────────────────────────────────────────────────────────────────────
+// Public liveness probe. A panel move polls it through the target's agent and
+// waits for state "active" at the new epoch; nothing sensitive in it.
+app.get("/api/health", (req, res) => {
+    const { state } = lifecycle.get();
+    res.json({ ok: state === "active", state, epoch: panelLease.current() });
+});
+// Starting / moving / replaced: refuse writes (see middleware/lifecycleGate.js).
+app.use("/api", lifecycleGate);
 app.use("/api/auth", authRoutes);
 app.use("/api/bots", authMiddleware, nodeContext, botRoutes);
 app.use("/api/groups", authMiddleware, groupRoutes);
@@ -132,27 +144,21 @@ if (process.env.NODE_ENV === "production") {
 app.use(errorHandler);
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Start Scheduled Services
+//  Scheduled Services
 // ─────────────────────────────────────────────────────────────────────────────
-expiryService.start();
-backupService.start();
-memoryMonitorService.start();
-nodeService.startHealthPolling();
-samplerService.start();
-// Rotates registered rotating proxies while they are idle; never mid-run.
-proxyStore.startRotationScheduler();
-// Daily Lavalink release check (02:00 in the timezone stored in the settings).
-lavalinkUpdater.start().catch((e) => console.error("[Lavalink] Scheduler start failed:", e.message));
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Listen
-// ─────────────────────────────────────────────────────────────────────────────
-const PORT = parseInt(process.env.PORT) || 3000;
-const server = app.listen(PORT, "0.0.0.0", async () => {
-    console.log(
-        `[Server] Bot Panel running on port ${PORT} (${process.env.NODE_ENV || "development"})`,
-    );
-    // Resume any quest accounts that were running before a restart.
+// Every scheduled callback is wrapped in lifecycle.guard(), so these keep their
+// timers but do nothing while the panel is not active (moving, or replaced).
+const startBackgroundServices = () => {
+    expiryService.start();
+    backupService.start();
+    memoryMonitorService.start();
+    nodeService.startHealthPolling();
+    samplerService.start();
+    // Rotates registered rotating proxies while they are idle; never mid-run.
+    proxyStore.startRotationScheduler();
+    // Daily Lavalink release check (02:00 in the timezone stored in the settings).
+    lavalinkUpdater.start().catch((e) => console.error("[Lavalink] Scheduler start failed:", e.message));
+    // Resume any quest accounts that were running before a restart (or a move).
     questService.restore().catch((e) => console.warn("[Quest] restore error:", e.message));
     // Erase single-quest accounts older than the retention window (1 week), hourly.
     questService.startRetentionSweep();
@@ -160,6 +166,52 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     questMonthly.start();
     // Auto Badge: resume interrupted orders + the ~26h verification sweep.
     badgeService.start();
+};
+
+/**
+ * Nothing runs until this panel knows it is the one in charge:
+ *   1. load its epoch; on the first boot after a move, adopt the new one and
+ *      fix the node records (panelMigration.finalizeIncoming)
+ *   2. claim every agent at that epoch — an agent that already follows a
+ *      newer panel fences this one, and then nothing below starts
+ *   3. start the background services
+ */
+const bootstrap = async () => {
+    await panelLease.load();
+    let incoming = null;
+    try {
+        incoming = await panelMigration.finalizeIncoming();
+    } catch (err) {
+        console.error("[Move] Could not finish taking over:", err.message);
+    }
+
+    const claims = await panelLease.claimAll();
+    const missed = claims.filter((c) => !c.ok);
+    if (missed.length) {
+        console.warn(`[Panel] Lease not confirmed by: ${missed.map((c) => `${c.name} (${c.error})`).join(", ")}`);
+    }
+
+    if (!lifecycle.activate()) {
+        console.error("[Panel] A newer panel controls the nodes — background services NOT started.");
+        return;
+    }
+    console.log(`[Panel] Active at epoch ${panelLease.current()}`);
+    startBackgroundServices();
+
+    if (incoming) {
+        panelMigration.followUp(incoming).catch((err) => console.error("[Move] Follow-up failed:", err.message));
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Listen
+// ─────────────────────────────────────────────────────────────────────────────
+const PORT = parseInt(process.env.PORT) || 3000;
+const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(
+        `[Server] Bot Panel running on port ${PORT} (${process.env.NODE_ENV || "development"})`,
+    );
+    bootstrap().catch((err) => console.error("[Panel] Startup failed:", err.message));
 });
 
 // Interactive terminal (WebSocket upgrade on /api/term)

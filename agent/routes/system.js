@@ -11,7 +11,8 @@ const AGENT_VERSION = require("../package.json").version;
  * Cheap liveness probe — the panel polls this to mark nodes online/offline.
  */
 router.get("/health", (req, res) => {
-    res.json({ ok: true, version: AGENT_VERSION, uptime: process.uptime() });
+    const lease = require("../services/panelLease").read();
+    res.json({ ok: true, version: AGENT_VERSION, uptime: process.uptime(), leaseEpoch: lease.epoch });
 });
 
 let cachedStats = null;
