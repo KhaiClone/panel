@@ -13,6 +13,8 @@
  *   - integrationService: the address the panel uses for a linked project,
  *     from this node and from a move's target node
  *   - panelMigration.setEnvKey: rewriting PANEL_NODE_ID in the copied .env
+ *   - callback URLs: "localhost" in a stored webhookUrl (or the .env) is
+ *     rewritten to the old node's address, nothing else is touched
  */
 
 const http = require("http");
@@ -54,7 +56,7 @@ const lifecycleGate = require("../server/middleware/lifecycleGate");
 const panelLease = require("../server/services/panelLease");
 const nodeService = require("../server/services/nodeService");
 const integrations = require("../server/services/integrationService");
-const { setEnvKey } = require("../server/services/panelMigration");
+const { setEnvKey, envValue, relocateUrl, relocateCallbacks } = require("../server/services/panelMigration");
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -237,6 +239,45 @@ const gate = (method, p) => {
 
     await test("a .env without PANEL_NODE_ID gets it appended", () => {
         assert.strictEqual(setEnvKey("PORT=1\n", "PANEL_NODE_ID", "n"), "PORT=1\nPANEL_NODE_ID=n\n");
+    });
+
+    console.log("callback URLs");
+
+    await test("envValue: plain, quoted, commented-out and missing keys", () => {
+        const env = "# ARNTO_QUEST_WEBHOOK_URL=http://old\nARNTO_QUEST_WEBHOOK_URL=\"http://localhost:1942/api/quest-event\"\r\nEMPTY=\nX=a=b\n";
+        assert.strictEqual(envValue(env, "ARNTO_QUEST_WEBHOOK_URL"), "http://localhost:1942/api/quest-event");
+        assert.strictEqual(envValue(env, "X"), "a=b");
+        assert.strictEqual(envValue(env, "EMPTY"), null);
+        assert.strictEqual(envValue(env, "NOPE"), null);
+    });
+
+    await test("relocateUrl: only the loopback host changes, the rest is byte-identical", () => {
+        assert.strictEqual(relocateUrl("http://localhost:1942/api/quest-event", "10.88.0.4"), "http://10.88.0.4:1942/api/quest-event");
+        assert.strictEqual(relocateUrl("http://127.0.0.1:1942/api/badge-event?x=1", "10.88.0.4"), "http://10.88.0.4:1942/api/badge-event?x=1");
+        assert.strictEqual(relocateUrl("https://LOCALHOST/hook", "10.88.0.4"), "https://10.88.0.4/hook");
+        assert.strictEqual(relocateUrl("http://[::1]:80", "10.88.0.4"), "http://10.88.0.4:80");
+        assert.strictEqual(relocateUrl("http://localhost.example.com/x", "10.88.0.4"), null);
+        assert.strictEqual(relocateUrl("https://panel.thunderbolt.io.vn/api", "10.88.0.4"), null);
+        assert.strictEqual(relocateUrl("http://localhost:1942", null), null);
+        assert.strictEqual(relocateUrl(null, "10.88.0.4"), null);
+    });
+
+    await test("relocateCallbacks: rewrites every stored loopback webhookUrl once, leaves the rest alone", async () => {
+        await fakeDb.set("quest_monthly", [
+            { _id: "m1", webhookUrl: "http://localhost:1942/api/quest-event" },
+            { _id: "m2", webhookUrl: "https://hooks.example.com/q" },
+            { _id: "m3", webhookUrl: null },
+            { _id: "m4" },
+        ]);
+        await fakeDb.set("badge_orders", [{ _id: "b1", webhookUrl: "http://127.0.0.1:1942/api/badge-event", status: "done" }]);
+        assert.strictEqual(await relocateCallbacks("10.88.0.4"), 2);
+        const monthly = await fakeDb.get("quest_monthly");
+        assert.strictEqual(monthly[0].webhookUrl, "http://10.88.0.4:1942/api/quest-event");
+        assert.strictEqual(monthly[1].webhookUrl, "https://hooks.example.com/q");
+        assert.strictEqual(monthly[2].webhookUrl, null);
+        assert.ok(!("webhookUrl" in monthly[3]));
+        assert.deepStrictEqual((await fakeDb.get("badge_orders"))[0], { _id: "b1", webhookUrl: "http://10.88.0.4:1942/api/badge-event", status: "done" });
+        assert.strictEqual(await relocateCallbacks("10.88.0.4"), 0);
     });
 
     if (failures) {

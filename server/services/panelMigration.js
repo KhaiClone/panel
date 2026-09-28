@@ -43,6 +43,12 @@ const MARKER = path.join(DATA_DIR, "migration-in.json");
 const LOG_KEY = "panel_migrations";
 const PANEL_DOMAINS_KEY = "panel_domains";
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
+// Callback URLs other programs register with the panel (arnto-auto sends
+// http://localhost:1942/api/quest-event), stored per record, plus the .env
+// keys that hold one. "localhost" in any of them meant the machine the panel
+// ran on when it was saved — after a move it would mean the new one.
+const CALLBACK_MODELS = ["quest_accounts", "quest_monthly", "badge_orders"];
+const CALLBACK_ENV = ["ARNTO_QUEST_WEBHOOK_URL"];
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -88,6 +94,78 @@ const setEnvKey = (text, key, value) => {
     }
     return out.join("\n");
 };
+
+/** The value of KEY in .env text (surrounding quotes dropped), or null. */
+const envValue = (text, key) => {
+    for (const line of String(text || "").split("\n")) {
+        const idx = line.indexOf("=");
+        if (idx > 0 && !line.trim().startsWith("#") && line.slice(0, idx).trim() === key) {
+            return line.slice(idx + 1).trim().replace(/^(["'])(.*)\1$/, "$2") || null;
+        }
+    }
+    return null;
+};
+
+/**
+ * `url` with its loopback host replaced by `host`, byte-for-byte otherwise;
+ * null when the URL is not a loopback one.
+ */
+const relocateUrl = (url, host) => {
+    if (!host || !integrations.isLoopbackUrl(url)) return null;
+    return String(url).replace(/^(https?:\/\/)(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?=[:/]|$)/i, `$1${host}`);
+};
+
+/** The address a panel on ANOTHER node uses to reach `node` (overlay first, like integrations). */
+const nodeAddress = (node) => (node ? node.wgOverlayIp || node.host : null);
+
+/** Every loopback callback URL the panel holds → [{ url, sources: ["10 in quest_monthly", …] }]. */
+const loopbackCallbacks = async () => {
+    const byUrl = new Map();
+    const note = (url, source) => {
+        if (!byUrl.has(url)) byUrl.set(url, []);
+        byUrl.get(url).push(source);
+    };
+    for (const model of CALLBACK_MODELS) {
+        const counts = new Map();
+        for (const r of (await db.get(model)) || []) {
+            if (typeof r?.webhookUrl === "string" && integrations.isLoopbackUrl(r.webhookUrl)) {
+                counts.set(r.webhookUrl, (counts.get(r.webhookUrl) || 0) + 1);
+            }
+        }
+        for (const [url, n] of counts) note(url, `${n} in ${model}`);
+    }
+    for (const key of CALLBACK_ENV) {
+        if (integrations.isLoopbackUrl(process.env[key])) note(process.env[key], `.env ${key}`);
+    }
+    return [...byUrl].map(([url, sources]) => ({ url, sources }));
+};
+
+/**
+ * Rewrite the stored loopback callback URLs to `host` — one write per
+ * collection (quick.db rewrites the whole array anyway). Returns the count.
+ */
+const relocateCallbacks = async (host) => {
+    let count = 0;
+    for (const model of CALLBACK_MODELS) {
+        const rows = (await db.get(model)) || [];
+        let changed = false;
+        const next = rows.map((r) => {
+            const url = typeof r?.webhookUrl === "string" ? relocateUrl(r.webhookUrl, host) : null;
+            if (!url) return r;
+            changed = true;
+            count++;
+            return { ...r, webhookUrl: url };
+        });
+        if (changed) await db.set(model, next);
+    }
+    return count;
+};
+
+/** The ufw command that lets `target` reach `port` on `node` (overlay when both have one). */
+const ufwHint = (node, target, port) =>
+    node?.wgOverlayIp && target.wgOverlayIp
+        ? `sudo ufw allow in on wg0 from ${target.wgOverlayIp} to any port ${port} proto tcp`
+        : `sudo ufw allow from ${target.host} to any port ${port} proto tcp`;
 
 /** Consistent copy of a live SQLite file (online backup API — safe while it is open). */
 const backupSqlite = async (src, dest) => {
@@ -187,6 +265,19 @@ const transferLink = async (node) => {
     return { node, overlay: false };
 };
 
+/** TCP connect test from THIS machine → { ok, error } (error is e.g. "ECONNREFUSED" or "timeout"). */
+const tcpCheck = (host, port, timeout = 4000) =>
+    new Promise((resolve) => {
+        const sock = net.connect({ host, port });
+        const done = (ok, error = null) => {
+            sock.destroy();
+            resolve({ ok, error });
+        };
+        sock.setTimeout(timeout, () => done(false, "timeout"));
+        sock.once("connect", () => done(true));
+        sock.once("error", (e) => done(false, e.code || e.message));
+    });
+
 /** Has any node accepted a panel at `epoch` or later? (read without our epoch header) */
 const leaseClaimedAnywhere = async (epoch) => {
     const nodes = (await nodeService.getNodes()).filter((n) => n.enabled !== false);
@@ -280,7 +371,33 @@ const preflight = async (targetNodeId) => {
 
     ctx.domains = await panelDomains();
     if (ctx.domains.length && !status.nginx) {
-        add("error", "nginx", `nginx is not installed on ${target.name} — ${ctx.domains.join(", ")} could not be served`);
+        add(
+            "error",
+            "nginx",
+            `nginx is not installed on ${target.name} — ${ctx.domains.join(", ")} could not be served. ` +
+                `On ${target.name}: sudo apt install -y nginx certbot python3-certbot-nginx`,
+        );
+    }
+
+    // Probed from THIS machine: a firewall that drops the port shows up as a
+    // timeout, while "refused" means open with nothing listening yet (nginx
+    // comes with Prepare, the panel with the move). A firewall that admits only
+    // Cloudflare also times out from here — hence a warning, not an error.
+    const publicPorts = ctx.domains.length ? [80, 443] : [panelPort()];
+    const blocked = [];
+    for (const port of publicPorts) {
+        const r = await tcpCheck(target.host, port);
+        if (!r.ok && r.error !== "ECONNREFUSED") blocked.push(`${port} (${r.error})`);
+    }
+    if (blocked.length) {
+        add(
+            "warn",
+            "public",
+            `${target.name} does not answer on port ${blocked.join(", ")} from here. Unless its firewall admits only Cloudflare, ` +
+                `the panel would be unreachable after the move. On ${target.name}: sudo ufw allow ${publicPorts.join(",")}/tcp`,
+        );
+    } else {
+        add("ok", "public", `Port ${publicPorts.join(", ")} open on ${target.name}`);
     }
 
     // ── Every other node: online, and reachable from the new host ─────────────
@@ -327,9 +444,37 @@ const preflight = async (targetNodeId) => {
         }
     }
 
+    // Callback URLs saying "localhost": the move rewrites them to this node's
+    // address (finalizeIncoming), so the new panel must be able to reach that.
+    const fromNode = await nodeService.getNode(currentId).catch(() => null);
+    const fromAddr = nodeAddress(fromNode);
+    const callbackTargets = [];
+    const callbacks = await loopbackCallbacks();
+    if (callbacks.length && !fromAddr) {
+        add("error", "callbacks", "Some callback URLs point at localhost, and this panel's own node record has no address to rewrite them to");
+    } else if (callbacks.length) {
+        const rewritten = callbacks.map((c) => ({ ...c, to: relocateUrl(c.url, fromAddr) }));
+        add(
+            "warn",
+            "callbacks",
+            `Callback URLs saying "localhost" (meaning ${fromNode.name}): ` +
+                rewritten.map((c) => `${c.url} — ${c.sources.join(", ")}`).join("; ") +
+                `. The move rewrites them to ${fromAddr}. Whatever registers them must stop sending localhost too ` +
+                `(e.g. ${rewritten[0].to}), or new ones will point at ${target.name}.`,
+        );
+        for (const c of rewritten) {
+            const u = new URL(c.to);
+            const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
+            if (!callbackTargets.some((t) => t.host === u.hostname && t.port === port)) {
+                callbackTargets.push({ host: u.hostname, port, url: `${u.protocol}//${u.host}` });
+            }
+        }
+    }
+
     const probeTargets = [
         ...others.map((n) => ({ host: n.host, port: n.port })),
         ...integrationTargets.map((t) => ({ host: t.host, port: t.port })),
+        ...callbackTargets.map((t) => ({ host: t.host, port: t.port })),
     ];
     let probe = [];
     if (probeTargets.length) {
@@ -356,12 +501,23 @@ const preflight = async (targetNodeId) => {
         if (p?.ok) add("ok", `integration:${t.name}`, `${t.label} → ${t.botName} at ${t.url}`);
         else {
             const node = await nodeService.getNode(t.nodeId).catch(() => null);
-            const from = target.wgOverlayIp || target.host;
             add(
                 "error",
                 `integration:${t.name}`,
                 `${target.name} cannot reach ${t.label} at ${t.url}${p?.error ? ` (${p.error})` : ""}. ` +
-                    `On ${node?.name || "that node"}: sudo ufw allow in on wg0 from ${from} to any port ${t.port} proto tcp`,
+                    `On ${node?.name || "that node"}: ${ufwHint(node, target, t.port)}`,
+            );
+        }
+    }
+    for (const t of callbackTargets) {
+        const p = reachable(t.host, t.port);
+        if (p?.ok) add("ok", `callback:${t.host}:${t.port}`, `${target.name} can reach the callbacks at ${t.url}`);
+        else {
+            add(
+                "error",
+                `callback:${t.host}:${t.port}`,
+                `${target.name} cannot reach the callbacks at ${t.url}${p?.error ? ` (${p.error})` : ""}. ` +
+                    `On ${fromNode.name}: ${ufwHint(fromNode, target, t.port)}`,
             );
         }
     }
@@ -533,8 +689,19 @@ const startMove = async (targetNodeId, { confirmName } = {}) => {
             const envText = await runStep("Read the panel's .env", async (step) => {
                 const raw = await panelService.readEnv();
                 if (!/^\s*JWT_SECRET\s*=/m.test(raw)) throw new Error("The .env read back has no JWT_SECRET — refusing to move a broken config");
-                step.detail = `PANEL_NODE_ID → ${target._id}`;
-                return setEnvKey(raw, "PANEL_NODE_ID", target._id);
+                let text = setEnvKey(raw, "PANEL_NODE_ID", target._id);
+                const changes = [`PANEL_NODE_ID → ${target._id}`];
+                // Same rule as the stored callbacks: localhost meant the old node.
+                const fromAddr = nodeAddress(await nodeService.getNode(fromNodeId).catch(() => null));
+                for (const key of CALLBACK_ENV) {
+                    const url = relocateUrl(envValue(raw, key), fromAddr);
+                    if (url) {
+                        text = setEnvKey(text, key, url);
+                        changes.push(`${key} → ${url}`);
+                    }
+                }
+                step.detail = changes.join("\n");
+                return text;
             });
 
             await runStep(`Send the data to ${target.name}`, async (step) => {
@@ -664,6 +831,13 @@ const finalizeIncoming = async () => {
     }
     await db.findOneAndUpdate("nodes", { _id: here }, { controlHost: "127.0.0.1" });
 
+    // Before quests/badges resume and start calling them back.
+    const fromAddr = nodeAddress(from);
+    if (fromAddr) {
+        const n = await relocateCallbacks(fromAddr);
+        if (n) console.log(`[Move] ${n} callback URL(s) that said localhost now point at ${fromAddr} (${from.name})`);
+    }
+
     fs.renameSync(MARKER, path.join(DATA_DIR, `migration-in.done-${Date.now()}.json`));
     return marker;
 };
@@ -769,4 +943,7 @@ module.exports = {
     finalizeIncoming,
     followUp,
     setEnvKey,
+    envValue,
+    relocateUrl,
+    relocateCallbacks,
 };

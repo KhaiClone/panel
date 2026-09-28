@@ -332,8 +332,9 @@ router.get("/health", (req, res) => {
 /**
  * POST /panel-host/retire
  * This node no longer hosts the panel: remove it from PM2 (and the saved dump,
- * so a reboot cannot resurrect it), rename its .env so nothing can start it by
- * accident, and drop PANEL_DIR. data/ is kept — it is the rollback copy.
+ * so a reboot cannot resurrect it), rename its .env (and any move marker) so
+ * nothing can start it by accident, and drop PANEL_DIR. data/ is kept — it is
+ * the rollback copy.
  * Also how an aborted move cleans up the target, where the imported .env may
  * sit in the checkout before PANEL_DIR was ever set.
  */
@@ -349,6 +350,10 @@ router.post("/retire", async (req, res, next) => {
             retiredEnv = `${envPath}.retired-${stampNow()}`;
             fs.renameSync(envPath, retiredEnv);
         }
+        // An aborted move leaves its marker here; a panel started by hand later
+        // must not read it as an order to take over the nodes.
+        const markerPath = path.join(panelDir(), IMPORTS.marker);
+        if (fs.existsSync(markerPath)) fs.renameSync(markerPath, `${markerPath}.retired-${stampNow()}`);
         if (process.env.PANEL_DIR) {
             delete process.env.PANEL_DIR;
             envFile.setKey(AGENT_ENV, "PANEL_DIR", null);

@@ -435,6 +435,21 @@ Unlinked ones use their `.env` URL, and a `localhost` URL blocks the move. A
 project's port must accept the panel over `wg0`; Check prints the `ufw` command
 for any that does not.
 
+**Callback URLs.** Quest accounts, monthly plans and badge orders store the
+`webhookUrl` their caller registered (arnto-auto sends
+`http://localhost:1942/api/quest-event`), and `ARNTO_QUEST_WEBHOOK_URL` in the
+panel's `.env` is one too. `localhost` there meant the old node, so the move
+rewrites those hosts to the old node's WireGuard IP (public host without one)
+and Check verifies the target can reach them. The caller must stop sending
+`localhost` as well — point it at the same address before moving, or every
+order registered afterwards calls back into the new node.
+
+**The target** needs nginx + certbot when the panel has a domain
+(`apt install nginx certbot python3-certbot-nginx`) and must accept ports 80 and
+443 (or the panel port, without a domain). Check probes them from the current
+host: a timeout means a firewall drops them — expected only if it admits
+Cloudflare alone.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/health` | Public: `{ ok, state, epoch }` — `state` is `starting`, `active`, `maintenance` or `fenced` |
