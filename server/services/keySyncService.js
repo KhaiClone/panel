@@ -11,6 +11,15 @@ const githubService = require("./githubService");
 //  leave this process (see agentCrypto).
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Only what the panel itself can create and an agent can hold: a key pair
+// (private + .pub) under a plain name. Anything else in ~/.ssh — a copy like
+// "id_ed25519.backup-premigration", a private key with no .pub — stays on this
+// machine: an agent refuses the name or cannot list it, so it would show as
+// missing on every node forever.
+const KEY_NAME = /^[a-zA-Z0-9_-]+$/;
+const syncableKeys = async () =>
+    (await githubService.listKeys()).filter((k) => k.hasPrivate && k.hasPublic && KEY_NAME.test(k.name));
+
 /** Push one key (with private material) to a single node. */
 const pushKeyToNode = async (node, name) => {
     const { privateKey, publicKey } = githubService.readKeyMaterial(name);
@@ -63,12 +72,9 @@ const syncGitConfigToAllNodes = () => forEachNode((node) => pushGitConfigToNode(
  * Used when a node is first registered.
  */
 const syncAllToNode = async (node) => {
-    const keys = await githubService.listKeys();
-    for (const k of keys) {
-        if (k.hasPrivate) {
-            try { await pushKeyToNode(node, k.name); }
-            catch (err) { console.error(`[KeySync] Failed to push "${k.name}" to ${node.name}:`, err.message); }
-        }
+    for (const k of await syncableKeys()) {
+        try { await pushKeyToNode(node, k.name); }
+        catch (err) { console.error(`[KeySync] Failed to push "${k.name}" to ${node.name}:`, err.message); }
     }
     try { await pushGitConfigToNode(node); }
     catch (err) { console.error(`[KeySync] Failed to push git config to ${node.name}:`, err.message); }
@@ -79,7 +85,7 @@ const syncAllToNode = async (node) => {
  * Returns per-node: reachable, matched/missing/mismatched key names, gitConfigInSync.
  */
 const getSyncStatus = async () => {
-    const localKeys = (await githubService.listKeys()).filter((k) => k.hasPrivate);
+    const localKeys = await syncableKeys();
     const localFp = Object.fromEntries(localKeys.map((k) => [k.name, k.fingerprint]));
     const localCfg = await githubService.getGitConfig();
     const nodes = await nodeService.getNodes();
