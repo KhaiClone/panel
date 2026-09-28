@@ -510,6 +510,45 @@ const gate = (method, p) => {
         assert.ok(plan.get("node-panel").every((s) => s.mode === "redirect" && s.to === "https://panel-poke.example.com"));
     });
 
+    await test("adding/removing the panel node's first domain re-points every other node's redirect", async () => {
+        const nodes = {
+            "node-panel": { _id: "node-panel", name: "dio", host: "160.191.87.61" },
+            "node-poke": { _id: "node-poke", name: "pokeclaw", host: "14.225.211.157" },
+        };
+        const writes = [];
+        const saved = { getNode: nodeService.getNode, agentRequest: nodeService.agentRequest };
+        nodeService.getNode = async (id) => {
+            if (!nodes[id]) throw new Error("Node not found");
+            return nodes[id];
+        };
+        nodeService.agentRequest = async (node, method, p, opts) => {
+            if (p === "/panel-host/status") return { nginx: true };
+            if (p === "/nginx/panel-sites") writes.push({ nodeId: node._id, sites: opts.data.sites });
+            return { certs: [] };
+        };
+        try {
+            await fakeDb.set("panel_domains", [
+                { domain: "p1.example.com", nodeId: "node-panel", sslEnabled: false, addedAt: 1 },
+                { domain: "p3.example.com", nodeId: "node-poke", sslEnabled: false, addedAt: 2 },
+            ]);
+            // A second domain on the panel's node: the address stays p1, only that node is written.
+            await panelDomains.add({ domain: "p2.example.com", nodeId: "node-panel" });
+            assert.deepStrictEqual(writes.map((w) => w.nodeId), ["node-panel"]);
+            writes.length = 0;
+            // Its first domain goes: p2 is the address now, and pokeclaw must redirect there.
+            await panelDomains.remove("p1.example.com");
+            assert.deepStrictEqual(writes.map((w) => w.nodeId), ["node-panel", "node-poke"]);
+            assert.deepStrictEqual(writes[1].sites, [{ domain: "p3.example.com", mode: "redirect", to: "http://p2.example.com" }]);
+            writes.length = 0;
+            // A domain on another node never changes the address.
+            await panelDomains.remove("p3.example.com");
+            assert.deepStrictEqual(writes.map((w) => w.nodeId), ["node-poke"]);
+        } finally {
+            Object.assign(nodeService, saved);
+            store.delete("panel_domains");
+        }
+    });
+
     await test("normalize: domains from before per-node domains get the given node, once", async () => {
         await fakeDb.set("panel_domains", [{ domain: "a.example.com", sslEnabled: true }, { domain: "b.example.com", nodeId: "node-poke" }]);
         assert.strictEqual(await panelDomains.normalize("node-panel"), 1);

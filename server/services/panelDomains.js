@@ -112,6 +112,20 @@ const sync = async ({ nodeIds } = {}) => {
     return results;
 };
 
+/**
+ * After a change on `doneNodeId`: if the panel's address changed (its node's
+ * first domain was added or removed), every other node's redirect must follow,
+ * or they keep sending people to the old name — a loop once that name points
+ * at a redirecting node.
+ */
+const resyncIfAddressChanged = async (before, doneNodeId) => {
+    if ((await currentUrl()) === before) return;
+    const others = [...new Set((await list()).map((d) => d.nodeId))].filter((id) => id !== doneNodeId);
+    for (const r of await sync({ nodeIds: others })) {
+        if (!r.ok) console.warn(`[Domains] Redirect on ${r.name || r.nodeId} not updated: ${r.error}`);
+    }
+};
+
 /** Add a domain on `nodeId` (default: the panel's node) and write that node's vhost. */
 const add = async ({ domain, nodeId }) => {
     const clean = String(domain || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
@@ -130,12 +144,14 @@ const add = async ({ domain, nodeId }) => {
         );
     }
     const entry = { domain: clean, nodeId: node._id, sslEnabled: false, addedAt: Date.now() };
+    const before = await currentUrl();
     await db.set(KEY, [...rows, entry]);
     const [r] = await sync({ nodeIds: [node._id] });
     if (!r.ok) {
         await db.set(KEY, (await list()).filter((d) => d.domain !== clean));
         throw httpError(502, `nginx on ${node.name}: ${r.error}`);
     }
+    await resyncIfAddressChanged(before, node._id);
     return entry;
 };
 
@@ -144,9 +160,11 @@ const remove = async (domain) => {
     const rows = await list();
     const entry = rows.find((d) => d.domain === domain);
     if (!entry) throw httpError(404, "Domain not found");
+    const before = await currentUrl();
     await db.set(KEY, rows.filter((d) => d.domain !== domain));
     const [r] = await sync({ nodeIds: [entry.nodeId] });
     if (!r.ok) console.warn(`[Domains] ${domain} removed, but nginx on its node was not updated: ${r.error}`);
+    await resyncIfAddressChanged(before, entry.nodeId);
 };
 
 /**
