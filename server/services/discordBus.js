@@ -36,6 +36,7 @@ let client = null;
 let ready = false;
 let lastError = null;
 let worker = null;
+let replyWorker = null;
 
 const configured = () => !!(process.env.PANEL_DISCORD_TOKEN && process.env.PANEL_BUS_CHANNEL_ID);
 const channelId = () => process.env.PANEL_BUS_CHANNEL_ID || null;
@@ -222,7 +223,7 @@ const kick = () => {
 
 const onMessage = async (msg) => {
     if (msg.channelId !== channelId() || msg.author?.id === client.user.id) return;
-    if (!msg.mentions?.users?.has(client.user.id)) return;
+    if (!msg.mentions?.users?.has(client.user.id) && !String(msg.content || "").includes(`<@${client.user.id}>`)) return;
     const env = await fromMessage(msg);
     if (!env || env.kind !== "reply" || typeof env.id !== "string") return;
     const r = table().prepare("SELECT * FROM bus WHERE id = ?").get(env.id);
@@ -246,6 +247,42 @@ const onMessage = async (msg) => {
     events.emit("done", rowToPublic(table().prepare("SELECT * FROM bus WHERE id = ?").get(r.id)));
 };
 
+/**
+ * Replies posted while this panel was restarting (or moving) are read back
+ * from the channel — the last 3 days, as far as the bots themselves look.
+ * A command still unanswered after that is marked failed rather than left
+ * "sent" forever.
+ */
+const CATCH_UP_MS = 3 * 86_400_000;
+let catchingUp = false;
+const catchUpReplies = async () => {
+    if (catchingUp || !ready || !client || !lifecycle.isActive()) return;
+    catchingUp = true;
+    try {
+        const cutoff = Date.now() - CATCH_UP_MS;
+        const open = table().prepare("SELECT COUNT(*) AS c FROM bus WHERE status = 'sent'").get().c;
+        if (open) {
+            const channel = await client.channels.fetch(channelId());
+            let before;
+            for (let page = 0; page < 5; page++) {
+                const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+                if (!batch.size) break;
+                for (const m of batch.values()) await onMessage(m).catch(() => {});
+                const oldest = batch.last();
+                before = oldest.id;
+                if (oldest.createdTimestamp < cutoff) break;
+            }
+        }
+        table()
+            .prepare("UPDATE bus SET status = 'failed', error = ?, updated_at = ? WHERE status IN ('sent', 'queued') AND created_at < ?")
+            .run("No answer within 3 days — the bot never ran it", Date.now(), cutoff);
+    } catch (err) {
+        lastError = err.message;
+    } finally {
+        catchingUp = false;
+    }
+};
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
 const start = async () => {
@@ -267,6 +304,7 @@ const start = async () => {
             kvSet("__bus.panelBotId", client.user.id);
             console.log(`[Bus] ${client.user.tag} on #${ch.name} — the Discord bus is up`);
             kick();
+            catchUpReplies().catch(() => {});
         } catch (err) {
             lastError = err.message;
             console.error(`[Bus] ${err.message}`);
@@ -276,6 +314,7 @@ const start = async () => {
         lastError = e.message;
     });
     worker = setInterval(() => pump().catch(() => {}), SEND_EVERY_MS);
+    replyWorker = setInterval(() => catchUpReplies().catch(() => {}), 5 * 60 * 1000);
     await client.login(process.env.PANEL_DISCORD_TOKEN).catch((err) => {
         lastError = err.message;
         console.error(`[Bus] Discord login failed: ${err.message}`);
@@ -286,7 +325,9 @@ const start = async () => {
 const stop = async () => {
     ready = false;
     if (worker) clearInterval(worker);
+    if (replyWorker) clearInterval(replyWorker);
     worker = null;
+    replyWorker = null;
     if (client) await client.destroy().catch(() => {});
     client = null;
 };

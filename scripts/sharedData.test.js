@@ -210,6 +210,18 @@ const strip = (v) => JSON.parse(JSON.stringify(v, (k, x) => (k === "_id" ? "<id>
         assert.ok(!discordBus.verify("another-key", reply));
     });
 
+    await test("a command is for this bot by mention or by its text (posted before the bot joined)", () => {
+        const bus = new PanelBus({ user: { id: "B" }, db: null });
+        bus.channelId = "CH";
+        bus.panelBotId = "P";
+        const msg = (over) => ({ channelId: "CH", author: { id: "P" }, content: "", mentions: { users: new Map() }, ...over });
+        assert.ok(bus.isForMe(msg({ mentions: { users: new Map([["B", {}]]) } })));
+        assert.ok(bus.isForMe(msg({ content: "<@B> `panel-bus` ping" }))); // mention not recorded
+        assert.ok(!bus.isForMe(msg({ content: "<@C> `panel-bus` ping" }))); // another bot's command
+        assert.ok(!bus.isForMe(msg({ content: "<@B>", author: { id: "X" } }))); // not the panel
+        assert.ok(!bus.isForMe(msg({ content: "<@B>", channelId: "OTHER" })));
+    });
+
     server.close();
     sharedStore.close();
     // quick.db keeps its files open; Windows then refuses the delete — harmless.
