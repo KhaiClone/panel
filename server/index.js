@@ -97,11 +97,14 @@ app.use((req, res, next) => (req.path.startsWith("/api/external/data") ? next() 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public liveness probe. A panel move polls it through the target's agent and
 // waits for state "active" at the new epoch; nothing sensitive in it.
-app.get("/api/health", (req, res) => {
+// `url` is where people open this panel — the launcher on Vercel asks every
+// panel domain and sends the browser to the active one with the highest epoch.
+app.get("/api/health", async (req, res) => {
     const { state, info } = lifecycle.get();
     // A replaced panel says where the panel went (its public address, not a secret).
     const movedTo = state === "fenced" ? info?.url || null : undefined;
-    res.json({ ok: state === "active", state, epoch: panelLease.current(), movedTo });
+    const url = state === "fenced" ? undefined : await require("./services/panelDomains").currentUrl().catch(() => null);
+    res.json({ ok: state === "active", state, epoch: panelLease.current(), url, movedTo });
 });
 // Starting / moving / replaced: refuse writes (see middleware/lifecycleGate.js).
 app.use("/api", lifecycleGate);

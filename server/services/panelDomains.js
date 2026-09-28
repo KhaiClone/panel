@@ -69,6 +69,9 @@ const planSites = (rows, panelNode) => {
 
 const panelNode = async () => nodeService.getNode(nodeService.panelNodeId()).catch(() => null);
 
+/** Where the panel is opened right now (reported by /api/health). */
+const currentUrl = async () => publicUrl(await list(), await panelNode());
+
 /** Record which of `nodeId`'s domains have a certificate there (agent's answer). */
 const recordCerts = async (nodeId, certs) => {
     const have = new Set(certs || []);
@@ -162,4 +165,4 @@ const issueCert = async (domain, email = null) => {
     return (await list()).find((d) => d.domain === domain);
 };
 
-module.exports = { KEY, list, normalize, ofNode, publicUrl, planSites, sync, add, remove, issueCert };
+module.exports = { KEY, list, normalize, ofNode, publicUrl, currentUrl, planSites, sync, add, remove, issueCert };
