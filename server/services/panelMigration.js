@@ -14,6 +14,7 @@ const agentCrypto = require("./agentCrypto");
 const integrations = require("./integrationService");
 const callbacks = require("./callbackService");
 const domainsSvc = require("./panelDomains");
+const sharedStore = require("./sharedStore");
 const { setEnvKey, envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -253,6 +254,15 @@ const preflight = async (targetNodeId) => {
         return done();
     }
     ctx.status = status;
+
+    // shared.sqlite (the bots' shared data) can only be received by agent ≥ 1.9.0.
+    if (fs.existsSync(sharedStore.DB_PATH())) {
+        const h = await nodeService.agentRequest(target, "get", "/health", { timeout: 8000 }).catch(() => null);
+        const [maj, min] = String(h?.version || "0.0").split(".").map(Number);
+        if (maj < 1 || (maj === 1 && min < 9)) {
+            add("error", "agent", `The agent on ${target.name} (${h?.version || "?"}) cannot receive the shared data — update it to 1.9.0 ("Rebuild & Restart") first`);
+        }
+    }
 
     // ── The target itself ────────────────────────────────────────────────────
     const panelStatus = await panelService.getPanelStatus().catch(() => null);
@@ -686,6 +696,31 @@ const startMove = async (targetNodeId, { confirmName } = {}) => {
                 });
                 step.detail = `.env + panel.sqlite${link.overlay ? " through the WireGuard tunnel" : " over the public network (encrypted)"}`;
             });
+
+            // The bots' shared data: mandatory (a failure rolls the move back), and
+            // encrypted with the target agent's key — it holds customer orders.
+            if (fs.existsSync(sharedStore.DB_PATH())) {
+                await runStep("Copy the shared data", async (step) => {
+                    const copy = path.join(tmpDir, "shared.sqlite");
+                    await sharedStore.backupTo(copy);
+                    const plain = fs.readFileSync(copy);
+                    const iv = crypto.randomBytes(12);
+                    const cipher = crypto.createCipheriv("aes-256-gcm", crypto.createHash("sha256").update(String(target.apiKey)).digest(), iv);
+                    const enc = Buffer.concat([cipher.update(plain), cipher.final()]);
+                    await nodeService.agentRequest(link.node, "put", "/panel-host/shared", {
+                        data: enc,
+                        headers: {
+                            "content-type": "application/octet-stream",
+                            "x-sha256": sha256(plain),
+                            "x-iv": iv.toString("base64"),
+                            "x-tag": cipher.getAuthTag().toString("base64"),
+                        },
+                        maxBodyLength: Infinity,
+                        timeout: 300_000,
+                    });
+                    step.detail = `shared.sqlite ${fmtSize(plain.length)} (encrypted)`;
+                });
+            }
 
             if (hasSamples) {
                 await runStep("Copy resource history", async (step) => {

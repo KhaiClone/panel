@@ -87,7 +87,7 @@ function _webhook(rec, event) {
         ref: rec.ref ?? null,
         username: rec.username,
         plan: "monthly",
-    });
+    }, "quest.event");
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────────

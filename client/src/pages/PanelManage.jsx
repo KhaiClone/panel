@@ -835,6 +835,149 @@ function ApiKeysSection() {
     );
 }
 
+// ── Shared data + the Discord bus ───────────────────────────────────────────
+// Data the bots and the panel both use lives on the panel (bots call it through
+// their gateway); commands to the bots go through a private Discord channel.
+
+const BUS_STATUS_COLOR = { done: "#4ade80", failed: "#f87171", sent: "var(--accent)", queued: "var(--text-muted)" };
+
+function SharedDataSection() {
+    const { bots } = useData();
+    const [data, setData] = useState(null);
+    const [error, setError] = useState("");
+    const [form, setForm] = useState({ botId: "", name: "", kind: "collection" });
+    const [busy, setBusy] = useState(null);
+    const [note, setNote] = useState("");
+
+    const load = useCallback(() => {
+        api.get("/panel/shared").then((r) => { setData(r.data); setError(""); }).catch((err) => setError(err.response?.data?.error || "Failed to load"));
+    }, []);
+    useEffect(load, [load]);
+
+    const act = (key, fn) => async () => {
+        setBusy(key); setNote(""); setError("");
+        try { setNote(await fn()); load(); }
+        catch (err) { setError(err.response?.data?.error || err.message); }
+        finally { setBusy(null); }
+    };
+
+    const declare = act("declare", async () => {
+        await api.post("/panel/shared/declare", form);
+        setForm((f) => ({ ...f, name: "" }));
+        return `"${form.name}" reserved — the project moves its copy here on its next start (PANEL_SHARED)`;
+    });
+    const ping = (botId, name) => act(`ping:${botId}`, async () => {
+        const { data: r } = await api.post("/panel/shared/ping", { botId }, { timeout: 40_000 });
+        return `${name} answered over Discord in ${r.ms} ms`;
+    });
+    const publish = act("publish", async () => (await api.post("/panel/shared/decor-site/publish", {}, { timeout: 120_000 })).data.message);
+
+    if (!data) return <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>{error || "Loading…"}</p>;
+    const { bus, names, capabilities, recent, decorSite } = data;
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                Data a bot and the panel both use is kept here: the bot lists the names in <span className="mono">PANEL_SHARED</span> and reads/writes
+                them through its gateway — the panel never calls a bot. When the panel needs a bot to act (complete an order, send a DM…), it posts
+                a signed command in a private Discord channel and the bot replies there.
+            </p>
+            {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
+            {note && <p style={{ margin: 0, fontSize: 12, color: "#4ade80" }}>{note}</p>}
+
+            <div style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                <strong style={{ color: "var(--text)" }}>Discord bus</strong>
+                {!bus.configured ? (
+                    <span style={{ color: "var(--text-muted)" }}>off — set PANEL_DISCORD_TOKEN and PANEL_BUS_CHANNEL_ID in .env</span>
+                ) : bus.ready ? (
+                    <span style={{ color: "#4ade80" }}>✅ {bus.botTag} on channel <span className="mono">{bus.channelId}</span></span>
+                ) : (
+                    <span style={{ color: "#f59e0b" }}>⚠️ not connected{bus.error ? ` — ${bus.error}` : ""}</span>
+                )}
+                {Object.entries(bus.counts || {}).map(([k, n]) => <span key={k} style={{ color: "var(--text-dim)" }}>{k}: {n}</span>)}
+            </div>
+
+            {capabilities.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {capabilities.map((c) => (
+                        <div key={c.botId} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+                            <strong style={{ color: "var(--text)" }}>{c.name || c.botId}</strong>
+                            <span className="mono" style={{ color: "var(--text-dim)", overflowWrap: "anywhere" }}>{c.commands.join(", ")}</span>
+                            <span style={{ color: "var(--text-dim)" }}>· seen {new Date(c.at).toLocaleString()}</span>
+                            <button className="btn-ghost" disabled={!bus.ready || busy === `ping:${c.botId}`} onClick={ping(c.botId, c.name)} style={{ padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}>
+                                {busy === `ping:${c.botId}` ? "Pinging…" : "Ping"}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                {names.length === 0 ? (
+                    <div style={{ padding: 12, fontSize: 12, color: "var(--text-dim)" }}>No shared data yet.</div>
+                ) : names.map((n, i) => (
+                    <div key={n.name} style={{ display: "flex", gap: 10, padding: "8px 12px", fontSize: 12, alignItems: "baseline", flexWrap: "wrap", borderBottom: i < names.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                        <strong className="mono" style={{ color: "var(--text)" }}>{n.name}</strong>
+                        <span style={{ color: "var(--text-dim)" }}>{n.kind}</span>
+                        <span style={{ color: "var(--text-muted)" }}>{n.ownerName || n.owner}</span>
+                        <span style={{ marginLeft: "auto", color: n.state === "active" ? "#4ade80" : "#f59e0b" }}>
+                            {n.state === "active" ? `${n.kind === "collection" ? `${n.count} records` : n.count ? "set" : "empty"}` : "waiting for the project to move it here"}
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select className="input" value={form.botId} onChange={(e) => setForm({ ...form, botId: e.target.value })} style={{ flex: "1 1 200px", minWidth: 0 }}>
+                    <option value="">— owning project —</option>
+                    {bots.map((b) => <option key={b._id} value={b._id}>{b.name} ({b.pm2Name})</option>)}
+                </select>
+                <input className="input mono" placeholder="name (e.g. orders)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value.trim() })} style={{ flex: "1 1 140px", minWidth: 0 }} />
+                <select className="input" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} style={{ width: 130 }}>
+                    <option value="collection">collection</option>
+                    <option value="value">value</option>
+                </select>
+                <button className="btn-primary" disabled={!form.botId || !form.name || busy === "declare"} onClick={declare} style={{ padding: "6px 12px", fontSize: 12 }}>Declare</button>
+            </div>
+
+            <div style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                <strong style={{ color: "var(--text)" }}>Decor site</strong>
+                {decorSite.configured ? (
+                    <span style={{ color: "var(--text-muted)" }}>
+                        publishes to <span className="mono">{decorSite.repo}</span>
+                        {decorSite.last?.at ? ` · last: ${decorSite.last.ok ? "✅" : "❌"} ${decorSite.last.message} (${new Date(decorSite.last.at).toLocaleString()})` : " · nothing published yet"}
+                    </span>
+                ) : (
+                    <span style={{ color: "var(--text-muted)" }}>off — set DECOR_SITE_GITHUB_TOKEN (Contents: read & write on the site repo) in .env</span>
+                )}
+                {decorSite.configured && (
+                    <button className="btn-ghost" disabled={busy === "publish"} onClick={publish} style={{ padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}>
+                        {busy === "publish" ? "Publishing…" : "Publish now"}
+                    </button>
+                )}
+            </div>
+
+            {recent.length > 0 && (
+                <details>
+                    <summary style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>Recent commands ({recent.length})</summary>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6 }}>
+                        {recent.map((r) => (
+                            <div key={r.id} style={{ display: "flex", gap: 8, fontSize: 11, flexWrap: "wrap" }}>
+                                <span style={{ color: "var(--text-dim)" }}>{new Date(r.createdAt).toLocaleString()}</span>
+                                <span style={{ color: "var(--text-muted)" }}>{r.targetName || r.target}</span>
+                                <span className="mono">{r.cmd}</span>
+                                <span style={{ color: BUS_STATUS_COLOR[r.status] || "var(--text-muted)" }}>{r.status}</span>
+                                {r.error && <span style={{ color: "#f87171", overflowWrap: "anywhere" }}>{r.error}</span>}
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            )}
+            <div><button className="btn-ghost" onClick={load} style={{ padding: "4px 10px", fontSize: 12 }}>Refresh</button></div>
+        </div>
+    );
+}
+
 // ── Moving the panel to another node ────────────────────────────────────────
 
 const CHECK_ICON = { ok: "✅", info: "ℹ️", warn: "⚠️", error: "❌" };
@@ -1484,6 +1627,18 @@ export default function PanelManage() {
                 </div>
                 <div style={{ padding: 16 }}>
                     <PanelGatewaySection />
+                </div>
+            </div>
+
+            {/* Shared data + Discord bus */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🗄️</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Shared Data &amp; Discord Bus</h2>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>Bots call the panel; the panel talks to them on Discord</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <SharedDataSection />
                 </div>
             </div>
 

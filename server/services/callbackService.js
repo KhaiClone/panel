@@ -3,6 +3,7 @@ const db = require("../db");
 const nodeService = require("./nodeService");
 const integrations = require("./integrationService");
 const apiKeys = require("./apiKeyService");
+const discordBus = require("./discordBus");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Callbacks — the URLs other projects register for the panel to call back
@@ -81,12 +82,25 @@ const resolve = async (url, ownerBotId, { fromNodeId } = {}) => {
     return { url: target, key, owner };
 };
 
-/** Fire-and-forget POST, errors swallowed — callbacks never break the run that emits them. */
-const send = (url, ownerBotId, body) => {
-    if (!url) return;
-    resolve(url, ownerBotId)
-        .then((t) => axios.post(t.url, body, { timeout: 8000, headers: { "x-api-key": t.key } }))
-        .catch(() => {});
+/**
+ * Deliver one event, fire-and-forget (errors swallowed — callbacks never break
+ * the run that emits them). When the owner runs the bus library and announced
+ * `busCmd`, it goes over the Discord bus (services/discordBus.js) and the panel
+ * calls nothing; otherwise the registered URL is POSTed as before.
+ */
+const send = (url, ownerBotId, body, busCmd = null) => {
+    (async () => {
+        if (busCmd) {
+            const owner = await ownerOf(url, ownerBotId);
+            if (owner && discordBus.canHandle(owner._id, busCmd)) {
+                await discordBus.notify(owner._id, busCmd, body);
+                return;
+            }
+        }
+        if (!url) return;
+        const t = await resolve(url, ownerBotId);
+        await axios.post(t.url, body, { timeout: 8000, headers: { "x-api-key": t.key } });
+    })().catch(() => {});
 };
 
 /**

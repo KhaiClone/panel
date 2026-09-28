@@ -241,14 +241,26 @@ router.post("/import", refuseWhileOnline, (req, res, next) => {
  * Resource history (samples.sqlite) — tens of MB, so it is streamed rather than
  * sent as JSON. Not secret, but checksummed: a truncated copy would be a
  * corrupt database.
+ *
+ * PUT /panel-host/shared    same, for shared.sqlite — the data the bots keep on
+ * the panel (orders, decors …). Unlike history, a move cannot go on without it,
+ * and it holds customer data, so it arrives AES-256-GCM-encrypted with this
+ * agent's key (headers x-iv / x-tag); x-sha256 is then of the plaintext.
  */
-router.put("/samples", refuseWhileOnline, (req, res, next) => {
+const decryptBuffer = (enc, ivB64, tagB64) => {
+    const key = crypto.createHash("sha256").update(String(process.env.AGENT_API_KEY)).digest();
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivB64, "base64"));
+    decipher.setAuthTag(Buffer.from(tagB64, "base64"));
+    return Buffer.concat([decipher.update(enc), decipher.final()]);
+};
+
+const receiveDb = (fileName) => (req, res, next) => {
     const want = String(req.headers["x-sha256"] || "");
     if (!/^[0-9a-f]{64}$/.test(want)) return res.status(400).json({ error: "x-sha256 header is required" });
 
     const dataDir = path.join(panelDir(), "data");
     fs.mkdirSync(dataDir, { recursive: true });
-    const tmp = path.join(dataDir, `samples.sqlite.incoming-${Date.now()}`);
+    const tmp = path.join(dataDir, `${fileName}.incoming-${Date.now()}`);
     const hash = crypto.createHash("sha256");
     let bytes = 0;
     const hasher = new Transform({
@@ -264,12 +276,26 @@ router.put("/samples", refuseWhileOnline, (req, res, next) => {
             fs.rmSync(tmp, { force: true });
             return next(err);
         }
-        if (hash.digest("hex") !== want) {
+        let digest = hash.digest("hex");
+        const iv = req.headers["x-iv"];
+        const tag = req.headers["x-tag"];
+        if (iv && tag) {
+            let plain;
+            try {
+                plain = decryptBuffer(fs.readFileSync(tmp), String(iv), String(tag));
+            } catch {
+                fs.rmSync(tmp, { force: true });
+                return res.status(400).json({ error: `${fileName} could not be decrypted with this node's key` });
+            }
+            fs.writeFileSync(tmp, plain, { mode: 0o600 });
+            digest = crypto.createHash("sha256").update(plain).digest("hex");
+        }
+        if (digest !== want) {
             fs.rmSync(tmp, { force: true });
-            return res.status(400).json({ error: "samples.sqlite failed its checksum" });
+            return res.status(400).json({ error: `${fileName} failed its checksum` });
         }
         try {
-            const dest = path.join(dataDir, "samples.sqlite");
+            const dest = path.join(dataDir, fileName);
             const stamp = stampNow();
             for (const suffix of ["", "-wal", "-shm"]) setAside(dest + suffix, stamp);
             fs.renameSync(tmp, dest);
@@ -278,7 +304,10 @@ router.put("/samples", refuseWhileOnline, (req, res, next) => {
             next(e);
         }
     });
-});
+};
+
+router.put("/samples", refuseWhileOnline, receiveDb("samples.sqlite"));
+router.put("/shared", refuseWhileOnline, receiveDb("shared.sqlite"));
 
 /**
  * POST /panel-host/start

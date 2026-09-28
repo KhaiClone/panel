@@ -100,7 +100,7 @@ function _dispatch(order, event) {
     bus.emit("event", { orderId: order.orderId, at: Date.now(), ...event });
     if (!order.webhookUrl) return;
     // Địa chỉ và x-api-key đi theo project đã đăng ký webhook (callbackService).
-    callbacks.send(order.webhookUrl, order.webhookBotId ?? null, { ...event, orderId: order.orderId, ref: order.ref ?? null });
+    callbacks.send(order.webhookUrl, order.webhookBotId ?? null, { ...event, orderId: order.orderId, ref: order.ref ?? null }, "badge.event");
 }
 
 // ── Truy cập DB ──────────────────────────────────────────────────────────────────

@@ -88,6 +88,8 @@ const fence = (details) => {
             "This process has stopped all background work.",
     );
     if (wasActive) suspendWork().catch(() => {});
+    // …and leaves the Discord bus to the panel that replaced it.
+    require("./discordBus").stop().catch(() => {});
 };
 
 module.exports = { get, isActive, guard, activate, enterMaintenance, exitMaintenance, fence };

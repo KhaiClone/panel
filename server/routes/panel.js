@@ -4,6 +4,9 @@ const integrations = require("../services/integrationService");
 const panelMigration = require("../services/panelMigration");
 const panelDomains = require("../services/panelDomains");
 const nodeService = require("../services/nodeService");
+const sharedStore = require("../services/sharedStore");
+const discordBus = require("../services/discordBus");
+const decorSitePublisher = require("../services/decorSitePublisher");
 const apiKeys = require("../services/apiKeyService");
 const callbacks = require("../services/callbackService");
 const executor = require("../services/executor");
@@ -406,6 +409,59 @@ router.delete("/api-keys/:id", async (req, res, next) => {
     try {
         await apiKeys.revoke(req.params.id);
         res.json(await apiKeysOverview());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Shared data (services/sharedStore.js) and the Discord bus (services/discordBus.js)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /api/panel/shared — names, owners, sizes; bus status and recent traffic; decor site. */
+router.get("/shared", async (req, res, next) => {
+    try {
+        const bots = await db.find("bots");
+        const names = new Map(bots.map((b) => [b._id, b.name]));
+        const caps = discordBus.capabilities();
+        res.json({
+            names: sharedStore.overview().map((n) => ({ ...n, ownerName: names.get(n.owner) || null })),
+            bus: discordBus.status(),
+            capabilities: Object.entries(caps).map(([botId, c]) => ({ botId, name: names.get(botId) || null, ...c })),
+            recent: discordBus.recent(20).map((r) => ({ ...r, targetName: names.get(r.target) || null })),
+            decorSite: decorSitePublisher.status(),
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/panel/shared/declare { name, kind: "collection" | "value", botId } — reserve a name for a project. */
+router.post("/shared/declare", async (req, res, next) => {
+    try {
+        const { name, kind, botId } = req.body || {};
+        if (!(await db.findOne("bots", { _id: botId }))) return res.status(404).json({ error: "Project not found" });
+        res.json(sharedStore.declare(name, kind, botId));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/panel/shared/ping { botId } — a harmless round trip over the Discord bus. */
+router.post("/shared/ping", async (req, res, next) => {
+    try {
+        const started = Date.now();
+        const result = await discordBus.request(req.body?.botId, "ping", { at: started }, { timeoutMs: 30_000 });
+        res.json({ ok: true, ms: Date.now() - started, result });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/panel/shared/decor-site/publish — push the decor snapshot now (even if unchanged). */
+router.post("/shared/decor-site/publish", async (req, res, next) => {
+    try {
+        res.json(await decorSitePublisher.publish({ force: true }));
     } catch (err) {
         next(err);
     }

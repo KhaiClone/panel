@@ -110,7 +110,7 @@ function _dispatchWebhook(accountId, event) {
         ref: hook.ref ?? null,
         username: hook.username ?? null,
         plan: "single",
-    });
+    }, "quest.event");
 }
 
 function _updateLive(accountId, evt) {

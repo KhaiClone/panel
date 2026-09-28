@@ -23,17 +23,25 @@ const sendWebhook = async (webhookUrl, payload) => {
 };
 
 /**
- * Send a Discord DM to a buyer via the arnto-auto DM API.
- * No-op if the "dm" integration (linked project, or ARNTO_DM_URL) or
- * ARNTO_DM_API_KEY is not configured.
+ * Send a Discord DM to a buyer. The bot that announced "dm.send" on the
+ * Discord bus delivers it (the panel calls nothing); without one, the old
+ * arnto-auto DM API — a no-op unless the "dm" integration (linked project, or
+ * ARNTO_DM_URL) and ARNTO_DM_API_KEY are configured.
  * Errors never crash the caller — webhook alerts remain the source of truth.
  *
  * @param {string} buyerID - Discord user ID
  * @param {Object} payload - { content?, embeds?, components? }
  */
 const sendDM = async (buyerID, payload) => {
+    if (!buyerID) return;
+    const discordBus = require("./discordBus");
+    const via = discordBus.handlerOf("dm.send");
+    if (via) {
+        await discordBus.notify(via, "dm.send", { buyerID, ...payload }).catch((err) => console.warn(`[Discord] DM to ${buyerID} not queued: ${err.message}`));
+        return;
+    }
     const key = process.env.ARNTO_DM_API_KEY;
-    if (!key || !buyerID) return;
+    if (!key) return;
 
     try {
         const url = await require("./integrationService").baseUrl("dm");
@@ -240,11 +248,12 @@ const sendLavalinkReport = async ({ title, color, version, url, description, res
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Send the database file to DISCORD_BACKUP_WEBHOOK.
+ * Send a database file to DISCORD_BACKUP_WEBHOOK.
  *
  * @param {string} filePath - Path to the file to back up
+ * @param {string} fileName - Name it is attached as
  */
-const sendBackup = async (filePath) => {
+const sendBackup = async (filePath, fileName = "panel.sqlite") => {
     const webhookUrl = process.env.DISCORD_BACKUP_WEBHOOK;
     if (!webhookUrl || !fs.existsSync(filePath)) return;
 
@@ -266,7 +275,7 @@ const sendBackup = async (filePath) => {
                             inline: true,
                         },
                     ],
-                    footer: { text: "panel.sqlite" },
+                    footer: { text: fileName },
                     timestamp: new Date().toISOString(),
                 },
             ],
@@ -275,9 +284,8 @@ const sendBackup = async (filePath) => {
 
     const content = fs.readFileSync(filePath);
 
-    // Attach as "panel.sqlite"
     form.append("file", content, {
-        filename: "panel.sqlite",
+        filename: fileName,
         contentType: "application/octet-stream",
     });
 

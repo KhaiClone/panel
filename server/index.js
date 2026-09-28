@@ -88,7 +88,9 @@ app.use(
     }),
 );
 
-app.use(express.json({ limit: "2mb" })); // env files could be a bit large
+// env files could be a bit large. Shared data brings its own, larger parser.
+const jsonBody = express.json({ limit: "2mb" });
+app.use((req, res, next) => (req.path.startsWith("/api/external/data") ? next() : jsonBody(req, res, next)));
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  API Routes
@@ -114,6 +116,7 @@ app.use("/api/github", authMiddleware, githubRoutes);
 app.use("/api/proxy", authMiddleware, proxyRoutes);
 // /api/proxy pins a bot's IP to a VPS; /api/proxies is the panel's own egress pool.
 app.use("/api/proxies", authMiddleware, proxiesRoutes);
+app.use("/api/external/data", apiKeyMiddleware, require("./routes/dataExternal"));
 app.use("/api/external/quests", apiKeyMiddleware, questExternalRoutes);
 app.use("/api/external/pricing", apiKeyMiddleware, pricingExternalRoutes);
 app.use("/api/external/badges", apiKeyMiddleware, badgeExternalRoutes);
@@ -171,6 +174,10 @@ const startBackgroundServices = () => {
     // Re-claim every agent: one that was down at boot, or restarted since, learns
     // where its panel gateway should forward — and a newer panel fences this one.
     setInterval(lifecycle.guard(() => panelLease.claimAll().catch(() => {})), 5 * 60 * 1000);
+    // Commands to the bots go through Discord, never over the network.
+    require("./services/discordBus").start().catch((e) => console.error("[Bus] start failed:", e.message));
+    // The public decor site's data snapshot follows the shared decor data.
+    require("./services/decorSitePublisher").start();
 };
 
 /**
