@@ -425,7 +425,7 @@ export default function Layout() {
 const PANEL_STATE_TEXT = {
     starting: "The panel is starting — changes are briefly paused.",
     maintenance: "The panel is moving to another server — changes are paused for a few minutes. Bots keep running.",
-    fenced: "This panel has been replaced by one on another server — nothing here runs any more. Open the panel's address again (details under Panel Settings).",
+    fenced: "This panel has been replaced by one on another server — nothing here runs any more.",
 };
 
 /**
@@ -434,13 +434,18 @@ const PANEL_STATE_TEXT = {
  */
 function PanelStateBanner() {
     const [state, setState] = useState("active");
+    const [movedTo, setMovedTo] = useState(null);
 
     useEffect(() => {
         let alive = true;
         const check = () =>
             fetch("/api/health")
                 .then((r) => r.json())
-                .then((d) => { if (alive && d?.state) setState(d.state); })
+                .then((d) => {
+                    if (!alive || !d?.state) return;
+                    setState(d.state);
+                    setMovedTo(d.movedTo || null);
+                })
                 .catch(() => { /* unreachable — keep the last known state */ });
         check();
         const t = setInterval(check, 15_000);
@@ -457,6 +462,7 @@ function PanelStateBanner() {
             borderBottom: "1px solid var(--border)",
         }}>
             {PANEL_STATE_TEXT[state] || `Panel state: ${state}`}
+            {bad && movedTo && <> Open <a href={movedTo} style={{ color: "inherit", textDecoration: "underline" }}>{movedTo}</a>.</>}
         </div>
     );
 }

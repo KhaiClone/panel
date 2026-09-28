@@ -1,6 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const net = require("net");
+const dns = require("dns").promises;
 const path = require("path");
 const crypto = require("crypto");
 const Database = require("better-sqlite3");
@@ -12,7 +13,7 @@ const panelLease = require("./panelLease");
 const agentCrypto = require("./agentCrypto");
 const integrations = require("./integrationService");
 const callbacks = require("./callbackService");
-const cloudflare = require("./cloudflareService");
+const domainsSvc = require("./panelDomains");
 const { setEnvKey, envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,7 +24,8 @@ const { setEnvKey, envValue } = require("../utils/envText");
 //
 //    preflight   read-only checks; run as often as you like
 //    prepare     firewall access for the new host on every agent, then on the
-//                target: git pull, deps, client build, nginx site. Nothing is
+//                target: git pull, deps, client build, HTTPS for its own
+//                domains. Nothing is
 //                paused — the panel keeps working.
 //    move        maintenance (background work paused, writes refused) →
 //                snapshot panel.sqlite / samples.sqlite → .env with the new
@@ -43,7 +45,6 @@ const PANEL_DB = path.join(DATA_DIR, "panel.sqlite");
 const SAMPLES_DB = process.env.SAMPLES_DB_PATH || path.join(DATA_DIR, "samples.sqlite");
 const MARKER = path.join(DATA_DIR, "migration-in.json");
 const LOG_KEY = "panel_migrations";
-const PANEL_DOMAINS_KEY = "panel_domains";
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
 
 const MB = 1024 * 1024;
@@ -85,8 +86,6 @@ const backupSqlite = async (src, dest) => {
         conn.close();
     }
 };
-
-const panelDomains = async () => ((await db.get(PANEL_DOMAINS_KEY)) || []).map((d) => d.domain);
 
 // ── Move log (travels with the DB, so the new panel can close the entry) ──────
 
@@ -278,7 +277,8 @@ const preflight = async (targetNodeId) => {
     }
     add("info", "user", `The panel will run as "${status.user}" from ${status.dir}`);
 
-    ctx.domains = await panelDomains();
+    // Domains never move between nodes — only the target's own ones matter.
+    ctx.domains = domainsSvc.ofNode(await domainsSvc.list(), target._id).map((d) => d.domain);
     if (ctx.domains.length && !status.nginx) {
         add(
             "error",
@@ -291,7 +291,7 @@ const preflight = async (targetNodeId) => {
     // Probed from THIS machine: a firewall that drops the port shows up as a
     // timeout, while "refused" means open with nothing listening yet (nginx
     // comes with Prepare, the panel with the move). A firewall that admits only
-    // Cloudflare also times out from here — hence a warning, not an error.
+    // some addresses also times out from here — hence a warning, not an error.
     const publicPorts = ctx.domains.length ? [80, 443] : [panelPort()];
     const blocked = [];
     for (const port of publicPorts) {
@@ -302,7 +302,7 @@ const preflight = async (targetNodeId) => {
         add(
             "warn",
             "public",
-            `${target.name} does not answer on port ${blocked.join(", ")} from here. Unless its firewall admits only Cloudflare, ` +
+            `${target.name} does not answer on port ${blocked.join(", ")} from here. Unless its firewall deliberately admits only some addresses, ` +
                 `the panel would be unreachable after the move. On ${target.name}: sudo ufw allow ${publicPorts.join(",")}/tcp`,
         );
     } else {
@@ -460,21 +460,45 @@ const preflight = async (targetNodeId) => {
     if (link.overlay) add("ok", "transfer", "The data goes through the WireGuard tunnel");
     else add("warn", "transfer", `The WireGuard tunnel to ${target.name} is not reachable — the data (encrypted with its agent key) goes over the public network`);
 
-    // ── DNS ──────────────────────────────────────────────────────────────────
+    // ── Domains: each node has its own, pointing at it for good ──────────────
     if (!ctx.domains.length) {
-        add("info", "dns", `No panel domain — after the move the panel answers on ${target.name}'s address`);
-    } else if (cloudflare.configured()) {
-        try {
-            const zone = await cloudflare.verify();
-            const outside = ctx.domains.filter((d) => d !== zone.name && !d.endsWith(`.${zone.name}`));
-            if (outside.length) add("warn", "dns", `Not in the Cloudflare zone ${zone.name}: ${outside.join(", ")} — change those by hand`);
-            if (!net.isIPv4(target.host)) add("warn", "dns", `${target.host} is not an IPv4 address — the A record cannot be set automatically`);
-            else add("ok", "dns", `DNS: ${ctx.domains.join(", ")} → ${target.host} via Cloudflare (${zone.name})`);
-        } catch (err) {
-            add("warn", "dns", `${err.message} — DNS would have to be changed by hand`);
+        add(
+            "info",
+            "dns",
+            `${target.name} has no panel domain — after the move the panel answers at http://${target.host}:${panelPort()}. ` +
+                `Add one under Custom Domains (node ${target.name}) for a name and HTTPS.`,
+        );
+    }
+    for (const d of ctx.domains) {
+        const ips = await dns.resolve4(d).catch((err) => err);
+        if (ips instanceof Error) add("warn", `dns:${d}`, `${d} does not resolve (${ips.code || ips.message}) — point its A record at ${target.host}`);
+        else if (ips.includes(target.host)) add("ok", `dns:${d}`, `${d} → ${target.host}`);
+        else add("warn", `dns:${d}`, `${d} resolves to ${ips.join(", ")}, not ${target.host} — HTTPS cannot be issued for it there`);
+    }
+
+    // ── Panel gateways: every node's 127.0.0.1:4201 will forward to the target ──
+    // Probed from each node: "refused" is fine (open, the panel is not there yet).
+    const targetAddr = nodeAddress(target);
+    const gatewayFrom = others.filter((n) => !offline.includes(n.name));
+    const gatewayProbes = await Promise.all(
+        gatewayFrom.map((n) =>
+            nodeService
+                .agentRequest(n, "post", "/panel-host/probe", { data: { targets: [{ host: targetAddr, port: panelPort() }] }, timeout: 15_000 })
+                .then((r) => ({ n, r: r.results?.[0] }))
+                .catch((err) => ({ n, r: { ok: false, error: err.message } })),
+        ),
+    );
+    for (const { n, r } of gatewayProbes) {
+        if (r?.ok || r?.error === "ECONNREFUSED") {
+            add("ok", `gateway:${n._id}`, `${n.name} can reach ${targetAddr}:${panelPort()} — its panel gateway will follow the move`);
+        } else {
+            add(
+                "error",
+                `gateway:${n._id}`,
+                `${n.name} cannot reach ${targetAddr}:${panelPort()} (${r?.error || "no answer"}) — projects there calling 127.0.0.1:4201 would lose the panel. ` +
+                    `On ${target.name}: ${ufwHint(target, n, panelPort())}`,
+            );
         }
-    } else {
-        add("warn", "dns", `DNS is not automated (CF_API_TOKEN / CF_ZONE_ID unset) — after the move, point ${ctx.domains.join(", ")} to ${target.host}`);
     }
 
     // ── What gets paused ─────────────────────────────────────────────────────
@@ -545,12 +569,24 @@ const startPrepare = async (targetNodeId) => {
             });
 
             if (domains.length) {
-                await runStep(`nginx site for ${domains.join(", ")} on ${target.name}`, async (step) => {
-                    await nodeService.agentRequest(target, "post", "/nginx/panel-config", {
-                        data: { domains, port: panelPort() },
-                        timeout: 60_000,
-                    });
-                    step.detail = "HTTP only for now — HTTPS is issued once the domain points there";
+                await runStep(`HTTPS for ${domains.join(", ")} on ${target.name}`, async (step) => {
+                    const [w] = await domainsSvc.sync({ nodeIds: [target._id] });
+                    if (!w.ok) throw new Error(`nginx on ${target.name}: ${w.error}`);
+                    const lines = [];
+                    for (const d of domainsSvc.ofNode(await domainsSvc.list(), target._id)) {
+                        if (d.sslEnabled) {
+                            lines.push(`${d.domain}: certificate already there`);
+                            continue;
+                        }
+                        try {
+                            await domainsSvc.issueCert(d.domain);
+                            lines.push(`${d.domain}: certificate issued`);
+                        } catch (err) {
+                            step.warn = true;
+                            lines.push(`${d.domain}: no certificate (${err.message.split("\n")[0]}) — does its DNS point at ${target.host}?`);
+                        }
+                    }
+                    step.detail = `${lines.join("\n")}\nUntil the move they redirect to the current panel.`;
                 });
             }
 
@@ -574,7 +610,7 @@ const startMove = async (targetNodeId, { confirmName } = {}) => {
         const first = pf.checks.find((c) => c.level === "error");
         throw httpError(400, `Preflight failed: ${first?.message || "no checks ran"}`);
     }
-    const { target, domains } = pf.ctx;
+    const { target } = pf.ctx;
     if (confirmName !== target.name) throw httpError(400, `Type "${target.name}" to confirm`);
 
     newJob("move", target);
@@ -694,18 +730,19 @@ const startMove = async (targetNodeId, { confirmName } = {}) => {
                 );
             });
 
+            const url = domainsSvc.publicUrl(await domainsSvc.list(), target);
             finish("done", null, {
                 target: { _id: target._id, name: target.name, host: target.host },
-                domains,
-                dnsAutomated: cloudflare.configured(),
+                url,
                 port: panelPort(),
             });
-            lifecycle.fence({ reason: "moved", to: target.name, byNodeId: target._id });
+            lifecycle.fence({ reason: "moved", to: target.name, byNodeId: target._id, url });
         } catch (err) {
             if (!committed) committed = await leaseClaimedAnywhere(newEpoch).catch(() => false);
             if (committed) {
                 finish("failed", `${err.message}. The panel on ${target.name} has already taken control — do not retry; check it there.`);
-                lifecycle.fence({ reason: "moved", to: target.name, byNodeId: target._id });
+                const url = domainsSvc.publicUrl(await domainsSvc.list().catch(() => []), target);
+                lifecycle.fence({ reason: "moved", to: target.name, byNodeId: target._id, url });
             } else {
                 // Undo whatever reached the target (retire also sets its imported .env aside).
                 await nodeService.agentRequest(target, "post", "/panel-host/retire", { timeout: 30_000 }).catch(() => {});
@@ -748,6 +785,8 @@ const finalizeIncoming = async () => {
     }
 
     console.log(`[Move] Taking over from node ${marker.fromNodeId} at epoch ${marker.epoch}`);
+    // Domains from before per-node domains belonged to the node the panel left.
+    await domainsSvc.normalize(marker.fromNodeId);
     if (marker.epoch > panelLease.current()) await panelLease.set(marker.epoch, here);
 
     const from = await db.findOne("nodes", { _id: marker.fromNodeId });
@@ -769,8 +808,9 @@ const finalizeIncoming = async () => {
 };
 
 /**
- * After the new panel is active: stop the old one, point DNS here, re-issue
- * HTTPS, and leave a notification that says what happened and what is left.
+ * After the new panel is active: stop the old one, flip the domain vhosts
+ * (proxy here, redirect everywhere else), and leave a notification that says
+ * what happened and what is left.
  */
 const followUp = async (marker) => {
     const notes = [];
@@ -793,40 +833,24 @@ const followUp = async (marker) => {
         }
     }
 
-    const domains = (await db.get(PANEL_DOMAINS_KEY)) || [];
-    if (domains.length) {
-        if (cloudflare.configured() && net.isIPv4(here.host)) {
-            for (const d of domains) {
-                try {
-                    const r = await cloudflare.pointARecord(d.domain, here.host);
-                    notes.push(`DNS ${d.domain} → ${here.host} (${r.action}${r.proxied ? ", proxied" : ""})`);
-                } catch (err) {
-                    notes.push(`DNS ${d.domain}: ${err.message}`);
-                }
-            }
-        } else {
-            notes.push(`Point ${domains.map((d) => d.domain).join(", ")} to ${here.host} — DNS is not automated`);
-        }
-
-        // certbot can only succeed once the name resolves here.
-        const secured = domains.filter((d) => d.sslEnabled);
-        if (secured.length) {
-            await sleep(20_000);
-            const still = [];
-            for (const d of secured) {
-                try {
-                    await panelService.enablePanelSSL(d.domain);
-                    notes.push(`HTTPS re-issued for ${d.domain}`);
-                } catch (err) {
-                    still.push(d.domain);
-                    notes.push(`HTTPS for ${d.domain} not set up yet (${err.message.split("\n")[0]}) — use its SSL button once DNS points here`);
-                }
-            }
-            if (still.length) {
-                await db.set(PANEL_DOMAINS_KEY, domains.map((d) => (still.includes(d.domain) ? { ...d, sslEnabled: false } : d)));
-            }
+    // Domains never move and DNS never changes: flip the vhosts instead — this
+    // node's domains now serve the panel, every other node's redirect here.
+    for (const r of await domainsSvc.sync()) {
+        notes.push(
+            r.ok
+                ? `nginx on ${r.name}: ${r.nodeId === here._id ? "serving the panel" : "redirecting here"}`
+                : `nginx on ${r.name || r.nodeId} not updated: ${r.error}`,
+        );
+    }
+    for (const d of domainsSvc.ofNode(await domainsSvc.list(), here._id).filter((x) => !x.sslEnabled)) {
+        try {
+            await domainsSvc.issueCert(d.domain);
+            notes.push(`HTTPS issued for ${d.domain}`);
+        } catch (err) {
+            notes.push(`HTTPS for ${d.domain} not set up (${err.message.split("\n")[0]}) — use its SSL button`);
         }
     }
+    notes.push(`Open the panel at ${domainsSvc.publicUrl(await domainsSvc.list(), here)}`);
 
     await updateLog(marker.migrationId, { status: "done", finishedAt: Date.now(), notes }).catch(() => {});
     try {

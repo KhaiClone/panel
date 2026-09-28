@@ -54,6 +54,7 @@ delete process.env.ARNTO_QUEST_WEBHOOK_URL;
 process.env.SHOP_API_URL = "http://127.0.0.1:45299";
 process.env.JWT_SECRET = "test-jwt-secret";
 process.env.PANEL_API_KEY = "shared-secret";
+process.env.PORT = "1975";
 
 const lifecycle = require("../server/services/lifecycle");
 const lifecycleGate = require("../server/middleware/lifecycleGate");
@@ -65,6 +66,7 @@ const { envValue } = require("../server/utils/envText");
 const apiKeys = require("../server/services/apiKeyService");
 const { apiKeyMiddleware } = require("../server/middleware/apiKey");
 const callbacks = require("../server/services/callbackService");
+const panelDomains = require("../server/services/panelDomains");
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -417,6 +419,82 @@ const gate = (method, p) => {
         assert.ok(!("webhookUrl" in monthly[5]));
         assert.deepStrictEqual((await fakeDb.get("badge_orders"))[0], { _id: "b1", webhookUrl: "http://10.88.0.4:5555/hook", status: "done" });
         assert.strictEqual(await callbacks.relocateOrphans("10.88.0.4"), 0);
+    });
+
+    console.log("panel gateway address");
+
+    const sangs = { _id: "node-panel", name: "sangs", host: "160.191.87.150", wgOverlayIp: "10.88.0.4" };
+    await test("each agent learns the panel's address as seen from its own node", () => {
+        assert.strictEqual(panelLease.panelUrlFor(sangs, sangs), "http://127.0.0.1:1975");
+        assert.strictEqual(panelLease.panelUrlFor({ _id: "node-dio" }, sangs), "http://10.88.0.4:1975");
+        assert.strictEqual(panelLease.panelUrlFor({ _id: "node-dio" }, { _id: "p", host: "14.225.211.157" }), "http://14.225.211.157:1975");
+        assert.strictEqual(panelLease.panelUrlFor({ _id: "node-dio" }, { _id: "p", host: "2001:db8::1" }), "http://[2001:db8::1]:1975");
+        assert.strictEqual(panelLease.panelUrlFor({ _id: "node-dio" }, null), null);
+    });
+
+    await test("claimAll sends every agent its own panelUrl", async () => {
+        const claims = [];
+        const fakeAgent = http.createServer((req, res) => {
+            let body = "";
+            req.on("data", (c) => (body += c));
+            req.on("end", () => {
+                claims.push({ port: req.socket.localPort, body: JSON.parse(body || "{}") });
+                res.setHeader("content-type", "application/json");
+                res.end("{}");
+            });
+        });
+        const a = http.createServer(fakeAgent.listeners("request")[0]);
+        const portA = await new Promise((r) => fakeAgent.listen(0, "127.0.0.1", () => r(fakeAgent.address().port)));
+        const portB = await new Promise((r) => a.listen(0, "127.0.0.1", () => r(a.address().port)));
+        await fakeDb.set("nodes", [
+            { _id: "node-panel", name: "sangs", host: "127.0.0.1", port: portA, apiKey: "k", wgOverlayIp: "10.88.0.4" },
+            { _id: "node-dio", name: "dio", host: "127.0.0.1", port: portB, apiKey: "k" },
+        ]);
+        await panelLease.claimAll();
+        fakeAgent.close();
+        a.close();
+        const byPort = Object.fromEntries(claims.map((c) => [c.port, c.body]));
+        assert.strictEqual(byPort[portA].panelUrl, "http://127.0.0.1:1975");
+        assert.strictEqual(byPort[portB].panelUrl, "http://10.88.0.4:1975");
+        assert.strictEqual(byPort[portB].panelNodeId, "node-panel");
+    });
+
+    console.log("panel domains (one or more per node)");
+
+    const rows = [
+        { domain: "panel.example.com", nodeId: "node-panel", sslEnabled: true, addedAt: 1 },
+        { domain: "old.example.com", nodeId: "node-panel", sslEnabled: false, addedAt: 0 },
+        { domain: "panel-poke.example.com", nodeId: "node-poke", sslEnabled: true, addedAt: 2 },
+    ];
+
+    await test("the panel's address is the first domain of its node, https once it has a certificate", () => {
+        assert.strictEqual(panelDomains.publicUrl(rows, sangs), "http://old.example.com");
+        assert.strictEqual(panelDomains.publicUrl(rows.slice(0, 1).concat(rows[2]), sangs), "https://panel.example.com");
+        assert.strictEqual(panelDomains.publicUrl([], sangs), "http://160.191.87.150:1975");
+    });
+
+    await test("the panel's node proxies its domains, every other node redirects to the panel", () => {
+        const plan = panelDomains.planSites(rows, sangs);
+        assert.deepStrictEqual(plan.get("node-panel"), [
+            { domain: "panel.example.com", mode: "proxy", port: 1975 },
+            { domain: "old.example.com", mode: "proxy", port: 1975 },
+        ]);
+        assert.deepStrictEqual(plan.get("node-poke"), [{ domain: "panel-poke.example.com", mode: "redirect", to: "http://old.example.com" }]);
+    });
+
+    await test("after a move the same domains flip — no DNS change anywhere", () => {
+        const poke = { _id: "node-poke", name: "pokeclaw", host: "14.225.211.157" };
+        const plan = panelDomains.planSites(rows, poke);
+        assert.deepStrictEqual(plan.get("node-poke"), [{ domain: "panel-poke.example.com", mode: "proxy", port: 1975 }]);
+        assert.ok(plan.get("node-panel").every((s) => s.mode === "redirect" && s.to === "https://panel-poke.example.com"));
+    });
+
+    await test("normalize: domains from before per-node domains get the given node, once", async () => {
+        await fakeDb.set("panel_domains", [{ domain: "a.example.com", sslEnabled: true }, { domain: "b.example.com", nodeId: "node-poke" }]);
+        assert.strictEqual(await panelDomains.normalize("node-panel"), 1);
+        assert.deepStrictEqual((await fakeDb.get("panel_domains")).map((d) => d.nodeId), ["node-panel", "node-poke"]);
+        assert.strictEqual(await panelDomains.normalize("node-dio"), 0);
+        assert.strictEqual((await fakeDb.get("panel_domains"))[0].nodeId, "node-panel");
     });
 
     if (failures) {

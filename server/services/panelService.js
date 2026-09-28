@@ -4,7 +4,7 @@ const nodeService = require("./nodeService");
 //  Panel self-management — a thin client over the agent on the panel's own node.
 //
 //  The panel runs no shell. Everything it needs done to itself (read its .env,
-//  restart, rebuild, rotate logs, publish its own vhost) is asked of the agent
+//  restart, rebuild, rotate logs) is asked of the agent
 //  living on the same machine, through the very same API used for every other
 //  node. That agent must have PANEL_DIR set; without it these endpoints answer
 //  503 and say so.
@@ -174,14 +174,6 @@ const logrotateStatus = () => call("get", "/logrotate", { timeout: 20_000 });
 const logrotateInstall = () => call("post", "/logrotate/install", { timeout: 200_000 });
 const logrotateSet = (settings) => call("put", "/logrotate", { data: settings, timeout: 60_000 });
 
-// ── The panel's own nginx vhost ─────────────────────────────────────────────
-
-const writePanelVhost = (domains, port) =>
-    call("post", "/nginx/panel-config", { data: { domains, port }, timeout: 60_000 });
-
-const enablePanelSSL = (domain, email = null) =>
-    call("post", "/nginx/ssl", { data: { domain, email }, timeout: 130_000 });
-
 module.exports = {
     getPanelPM2Name,
     getPanelStatus,
@@ -194,6 +186,4 @@ module.exports = {
     logrotateStatus,
     logrotateInstall,
     logrotateSet,
-    writePanelVhost,
-    enablePanelSSL,
 };

@@ -52,18 +52,35 @@ const superseded = (node, body) => {
 };
 
 /**
- * Claim every enabled node at the current epoch. A node that already follows a
- * newer panel fences this one (inside agentRequest). Offline nodes and agents
- * too old to know /lease are reported, not fatal.
+ * Where `node`'s panel gateway reaches this panel (agent/services/panelGateway.js):
+ * loopback on the panel's own node, its WireGuard IP (else public host) elsewhere.
+ * The panel listens on 0.0.0.0, so only the firewall decides — a move's
+ * preflight checks every node can get through.
+ */
+const panelUrlFor = (node, panelNode) => {
+    const port = parseInt(process.env.PORT, 10) || 3000;
+    if (!panelNode) return null;
+    if (node._id === panelNode._id) return `http://127.0.0.1:${port}`;
+    const host = panelNode.wgOverlayIp || panelNode.host;
+    return host ? `http://${host.includes(":") ? `[${host}]` : host}:${port}` : null;
+};
+
+/**
+ * Claim every enabled node at the current epoch, telling each where its
+ * gateway finds this panel. A node that already follows a newer panel fences
+ * this one (inside agentRequest). Offline nodes and agents too old to know
+ * /lease are reported, not fatal. Repeated every few minutes while active, so
+ * an agent that was down at boot, or restarted since, learns the address too.
  */
 const claimAll = async () => {
     const nodeService = require("./nodeService");
     const nodes = (await nodeService.getNodes()).filter((n) => n.enabled !== false);
+    const panelNode = nodes.find((n) => n._id === process.env.PANEL_NODE_ID) || null;
     return Promise.all(
         nodes.map(async (node) => {
             try {
                 await nodeService.agentRequest(node, "post", "/lease", {
-                    data: { epoch, panelNodeId: process.env.PANEL_NODE_ID || null },
+                    data: { epoch, panelNodeId: process.env.PANEL_NODE_ID || null, panelUrl: panelUrlFor(node, panelNode) },
                     timeout: 8000,
                 });
                 return { nodeId: node._id, name: node.name, ok: true };
@@ -74,4 +91,4 @@ const claimAll = async () => {
     );
 };
 
-module.exports = { load, current, set, headers, superseded, claimAll, HEADER, SUPERSEDED };
+module.exports = { load, current, set, headers, superseded, claimAll, panelUrlFor, HEADER, SUPERSEDED };

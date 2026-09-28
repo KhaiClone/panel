@@ -16,6 +16,10 @@ const path = require("path");
 //
 //  Requests WITHOUT the header pass: older panels, and the few read-only probes
 //  a panel deliberately sends unfenced (reading /lease itself).
+//
+//  A claim also carries panelUrl — where the panel answers as seen from THIS
+//  machine (127.0.0.1 on its own node, its WireGuard IP elsewhere). The panel
+//  gateway (services/panelGateway.js) forwards local projects' calls there.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // PANEL_LEASE_PATH lets the test suite use a throwaway file; production never sets it.
@@ -33,12 +37,24 @@ const read = () => {
         cache = {
             epoch: Number.isInteger(raw.epoch) ? raw.epoch : 0,
             panelNodeId: raw.panelNodeId || null,
+            panelUrl: raw.panelUrl || null,
             updatedAt: raw.updatedAt || null,
         };
     } catch {
-        cache = { epoch: 0, panelNodeId: null, updatedAt: null };
+        cache = { epoch: 0, panelNodeId: null, panelUrl: null, updatedAt: null };
     }
     return cache;
+};
+
+/** http(s)://host[:port] and nothing else — the gateway puts the request path after it. */
+const validPanelUrl = (url) => {
+    if (typeof url !== "string" || !/^https?:\/\/[A-Za-z0-9.\-[\]:]+$/.test(url)) return false;
+    try {
+        const u = new URL(url);
+        return !u.username && !u.password && u.pathname === "/" && !u.search;
+    } catch {
+        return false;
+    }
 };
 
 /** Atomic write: a half-written lease would reset the epoch to 0 on the next read. */
@@ -51,17 +67,28 @@ const write = (lease) => {
 
 /**
  * Follow the panel at `epoch`. Claims at or above the current epoch win (the
- * same panel re-claims on every boot); a lower one is refused.
+ * same panel re-claims on every boot, and every few minutes to keep panelUrl
+ * fresh); a lower one is refused. A claim without panelUrl (an older panel)
+ * keeps the known one only for the same epoch — a new epoch is a new panel.
  */
-const claim = (epoch, panelNodeId) => {
+const claim = (epoch, panelNodeId, panelUrl) => {
     if (!Number.isInteger(epoch) || epoch < 1) {
         const err = new Error("epoch must be a positive integer");
         err.status = 400;
         throw err;
     }
+    if (panelUrl != null && !validPanelUrl(panelUrl)) {
+        const err = new Error("panelUrl must look like http://host:port");
+        err.status = 400;
+        throw err;
+    }
     const current = read();
     if (epoch < current.epoch) return { ok: false, lease: current };
-    const next = { epoch, panelNodeId: panelNodeId || null, updatedAt: Date.now() };
+    const url = panelUrl ?? (epoch === current.epoch ? current.panelUrl : null);
+    if (epoch === current.epoch && (panelNodeId || null) === current.panelNodeId && url === current.panelUrl) {
+        return { ok: true, lease: current }; // a periodic re-claim: nothing to write
+    }
+    const next = { epoch, panelNodeId: panelNodeId || null, panelUrl: url, updatedAt: Date.now() };
     write(next);
     return { ok: true, lease: next };
 };

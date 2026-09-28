@@ -96,8 +96,10 @@ app.use(express.json({ limit: "2mb" })); // env files could be a bit large
 // Public liveness probe. A panel move polls it through the target's agent and
 // waits for state "active" at the new epoch; nothing sensitive in it.
 app.get("/api/health", (req, res) => {
-    const { state } = lifecycle.get();
-    res.json({ ok: state === "active", state, epoch: panelLease.current() });
+    const { state, info } = lifecycle.get();
+    // A replaced panel says where the panel went (its public address, not a secret).
+    const movedTo = state === "fenced" ? info?.url || null : undefined;
+    res.json({ ok: state === "active", state, epoch: panelLease.current(), movedTo });
 });
 // Starting / moving / replaced: refuse writes (see middleware/lifecycleGate.js).
 app.use("/api", lifecycleGate);
@@ -166,6 +168,9 @@ const startBackgroundServices = () => {
     questMonthly.start();
     // Auto Badge: resume interrupted orders + the ~26h verification sweep.
     badgeService.start();
+    // Re-claim every agent: one that was down at boot, or restarted since, learns
+    // where its panel gateway should forward — and a newer panel fences this one.
+    setInterval(lifecycle.guard(() => panelLease.claimAll().catch(() => {})), 5 * 60 * 1000);
 };
 
 /**
@@ -184,6 +189,10 @@ const bootstrap = async () => {
     } catch (err) {
         console.error("[Move] Could not finish taking over:", err.message);
     }
+    // Panel domains from before they belonged to a node: they point at this one.
+    await require("./services/panelDomains").normalize(process.env.PANEL_NODE_ID).catch((err) =>
+        console.error("[Panel] Could not assign legacy domains to this node:", err.message),
+    );
 
     const claims = await panelLease.claimAll();
     const missed = claims.filter((c) => !c.ok);

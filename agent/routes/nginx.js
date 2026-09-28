@@ -108,4 +108,54 @@ router.post("/panel-config", async (req, res, next) => {
     }
 });
 
+// A redirect target is a bare origin: scheme, host, optional port — nothing
+// that could smuggle nginx syntax into the config.
+const validOrigin = (u) => typeof u === "string" && /^https?:\/\/[a-zA-Z0-9.-]+(:\d{1,5})?$/.test(u);
+
+/**
+ * POST /nginx/panel-sites
+ * body: { sites: [{ domain, mode: "proxy", port } | { domain, mode: "redirect", to }] }
+ * This node's share of the panel's domains (services/nginx.js writePanelSites).
+ * An empty list removes the vhost. → { certs: [domains with a certificate here] }
+ */
+router.post("/panel-sites", async (req, res, next) => {
+    try {
+        const { sites } = req.body || {};
+        if (!Array.isArray(sites)) return res.status(400).json({ error: "sites must be an array" });
+        const clean = [];
+        for (const s of sites) {
+            if (!validDomain(s?.domain)) return res.status(400).json({ error: `Invalid domain: "${s?.domain}"` });
+            if (s.mode === "proxy") {
+                const p = parseInt(s.port, 10);
+                if (!p || p < 1 || p > 65535) return res.status(400).json({ error: `Invalid port for ${s.domain}` });
+                clean.push({ domain: s.domain, mode: "proxy", port: p });
+            } else if (s.mode === "redirect") {
+                if (!validOrigin(s.to)) return res.status(400).json({ error: `Invalid redirect target for ${s.domain}` });
+                clean.push({ domain: s.domain, mode: "redirect", to: s.to });
+            } else {
+                return res.status(400).json({ error: `Unknown mode for ${s.domain}` });
+            }
+        }
+        res.json(await nginx.writePanelSites(clean));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /nginx/panel-cert   body: { domain, email? }
+ * certbot certonly for a panel domain (the vhost is rewritten by the panel afterwards).
+ */
+router.post("/panel-cert", async (req, res, next) => {
+    try {
+        const { domain, email } = req.body || {};
+        if (!validDomain(domain)) return res.status(400).json({ error: "Valid domain is required" });
+        if (email && !validEmail(email)) return res.status(400).json({ error: "Invalid email" });
+        await nginx.issuePanelCert(domain, email || null);
+        res.json({ ok: true, domain });
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;

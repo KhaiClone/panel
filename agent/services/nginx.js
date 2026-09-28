@@ -218,4 +218,153 @@ const writePanelConfig = async (domains, port) => {
     await reloadNginx();
 };
 
-module.exports = { writeConfig, removeConfig, configExists, listConfigs, enableSSL, reloadNginx, writePanelConfig };
+// ─── The panel's own domains, one vhost file per node ──────────────────────────
+//
+// Each panel domain belongs to one node (its DNS points there). On the node that
+// runs the panel it is proxied to the panel; on every other node it redirects to
+// wherever the panel runs now. The panel decides which is which and sends the
+// whole list; this side only renders it.
+//
+// HTTPS comes from the certificate on disk, not from certbot editing this file:
+// certificates are issued with `certbot certonly` (issuePanelCert), and every
+// render adds the 443 block for a domain that has one. Rewriting the file —
+// adding a domain, a move flipping proxy ↔ redirect — can therefore never drop
+// HTTPS, which the old certbot-edited panel-self.conf did.
+
+const LE_LIVE = "/etc/letsencrypt/live";
+const LE_OPTIONS = "/etc/letsencrypt/options-ssl-nginx.conf";
+const LE_DHPARAM = "/etc/letsencrypt/ssl-dhparams.pem";
+
+/** /etc/letsencrypt is root-only, so existence is tested through sudo. */
+const rootFileExists = async (file) => {
+    try {
+        await execAsync(`${SUDO}test -f "${file}"`);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+const hasCert = (domain) => rootFileExists(`${LE_LIVE}/${domain}/fullchain.pem`);
+
+/**
+ * Render panel-self.conf. sites: [{ domain, mode: "proxy", port } | { domain, mode: "redirect", to }]
+ * ctx: { certs: Set<domain>, options: bool, dhparam: bool } — what exists on disk.
+ * Pure, so it is tested without nginx.
+ */
+const buildPanelSites = (sites, ctx) => {
+    const proxy = (port) => `        proxy_pass http://127.0.0.1:${port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_cache_bypass $http_upgrade;`;
+    const body = (s) => (s.mode === "proxy" ? proxy(s.port) : `        return 302 ${s.to}$request_uri;`);
+
+    return sites
+        .map((s) => {
+            if (!ctx.certs.has(s.domain)) {
+                return `server {
+    listen 80;
+    server_name ${s.domain};
+
+    location / {
+${body(s)}
+    }
+}`;
+            }
+            // A location-level redirect (not a server-level return) leaves room
+            // for the ACME challenge certbot inserts when it renews.
+            const extras = [
+                ctx.options ? `    include ${LE_OPTIONS};` : null,
+                ctx.dhparam ? `    ssl_dhparam ${LE_DHPARAM};` : null,
+            ].filter(Boolean).join("\n");
+            return `server {
+    listen 80;
+    server_name ${s.domain};
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${s.domain};
+    ssl_certificate ${LE_LIVE}/${s.domain}/fullchain.pem;
+    ssl_certificate_key ${LE_LIVE}/${s.domain}/privkey.pem;
+${extras}
+
+    location / {
+${body(s)}
+    }
+}`;
+        })
+        .join("\n\n") + "\n";
+};
+
+/**
+ * Write the panel's vhost for this node (empty list = remove it), test it,
+ * reload. A config that fails `nginx -t` is rolled back to the previous file.
+ * Returns { certs: [domains with a certificate here] }.
+ */
+const writePanelSites = async (sites) => {
+    if (!sites.length) {
+        await execAsync(`${SUDO}rm -f "${PANEL_CONF}"`).catch(() => {});
+        await reloadNginx().catch(() => {});
+        return { certs: [] };
+    }
+    const certs = new Set();
+    for (const s of sites) if (await hasCert(s.domain)) certs.add(s.domain);
+    const content = buildPanelSites(sites, {
+        certs,
+        options: await rootFileExists(LE_OPTIONS),
+        dhparam: await rootFileExists(LE_DHPARAM),
+    });
+
+    let previous = null;
+    try { previous = fs.readFileSync(PANEL_CONF, "utf8"); } catch { /* none yet */ }
+    await putFile(PANEL_CONF, content);
+    try {
+        await execAsync(`${SUDO}nginx -t`);
+    } catch (err) {
+        if (previous !== null) await putFile(PANEL_CONF, previous).catch(() => {});
+        else await execAsync(`${SUDO}rm -f "${PANEL_CONF}"`).catch(() => {});
+        const detail = (err.stderr || err.message || "").trim().split("\n").slice(0, 4).join(" | ");
+        throw new Error(`nginx config test failed: ${detail}`);
+    }
+    await reloadNginx();
+    return { certs: [...certs] };
+};
+
+/**
+ * Issue (or keep) a certificate for a panel domain WITHOUT letting certbot edit
+ * nginx files. Needs the domain's port-80 server block (writePanelSites first)
+ * and DNS pointing at this node. The deploy hook is saved in the renewal config,
+ * so nginx picks up renewed certificates too.
+ */
+const issuePanelCert = async (domain, email = null) => {
+    const emailFlag = email ? `-m ${email} --agree-tos` : "--register-unsafely-without-email --agree-tos";
+    await execAsync(
+        `${SUDO}certbot certonly --nginx -d ${domain} ${emailFlag} --non-interactive --keep-until-expiring ` +
+            `--deploy-hook "nginx -s reload"`,
+        { timeout: 120_000 },
+    );
+};
+
+module.exports = {
+    writeConfig,
+    removeConfig,
+    configExists,
+    listConfigs,
+    enableSSL,
+    reloadNginx,
+    writePanelConfig,
+    buildPanelSites,
+    writePanelSites,
+    issuePanelCert,
+};

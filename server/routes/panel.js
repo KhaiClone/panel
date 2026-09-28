@@ -2,6 +2,8 @@ const express = require("express");
 const panelService = require("../services/panelService");
 const integrations = require("../services/integrationService");
 const panelMigration = require("../services/panelMigration");
+const panelDomains = require("../services/panelDomains");
+const nodeService = require("../services/nodeService");
 const apiKeys = require("../services/apiKeyService");
 const callbacks = require("../services/callbackService");
 const executor = require("../services/executor");
@@ -11,8 +13,6 @@ const router = express.Router();
 
 // This router runs no shell and touches no filesystem. Everything it does to
 // the panel's own machine goes through that machine's agent (services/panelService).
-const PANEL_DOMAINS_KEY = "panel_domains";
-const panelPort = () => parseInt(process.env.PORT) || 3000;
 
 /** Parse .env text into the {key, value} rows the editor expects. */
 const parseEnv = (raw) => {
@@ -168,69 +168,48 @@ router.put("/env", async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  GET /api/panel/domains
-//  List all custom domains configured for this panel.
+//  Panel domains — one or more per node (services/panelDomains.js). On the node
+//  running the panel they proxy to it, on every other node they redirect to it.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /api/panel/domains → { domains, nodes, panelNodeId, publicUrl } */
 router.get("/domains", async (req, res, next) => {
     try {
-        const domains = (await db.get(PANEL_DOMAINS_KEY)) || [];
-        res.json(domains);
+        const rows = await panelDomains.list();
+        const nodes = await nodeService.getNodes();
+        const panelNodeId = nodeService.panelNodeId();
+        const here = nodes.find((n) => n._id === panelNodeId) || null;
+        const names = new Map(nodes.map((n) => [n._id, n.name]));
+        res.json({
+            domains: rows.map((d) => ({ ...d, nodeName: names.get(d.nodeId) || null, isPanelNode: d.nodeId === panelNodeId })),
+            nodes: nodes.map((n) => ({ _id: n._id, name: n.name, host: n.host, isPanelNode: n._id === panelNodeId })),
+            panelNodeId,
+            publicUrl: panelDomains.publicUrl(rows, here),
+        });
     } catch (err) {
         next(err);
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  POST /api/panel/domains
-//  Add a custom domain for the panel. Writes an nginx reverse-proxy config.
-//  Body: { domain: string }
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * POST /api/panel/domains   Body: { domain, nodeId? }
+ * nodeId = the node the domain's DNS points at (default: the panel's node).
+ */
 router.post("/domains", async (req, res, next) => {
     try {
-        const { domain } = req.body;
-        if (!domain || typeof domain !== "string") {
-            return res.status(400).json({ error: "domain is required" });
-        }
-        const clean = domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
-        if (!clean || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(clean)) {
-            return res.status(400).json({ error: "Invalid domain name" });
-        }
-
-        const existing = (await db.get(PANEL_DOMAINS_KEY)) || [];
-        if (existing.find(d => d.domain === clean)) {
-            return res.status(409).json({ error: "Domain already added" });
-        }
-
-        const newEntry = { domain: clean, sslEnabled: false, addedAt: Date.now() };
-        const updated = [...existing, newEntry];
-
-        await panelService.writePanelVhost(updated.map(d => d.domain), panelPort());
-        await db.set(PANEL_DOMAINS_KEY, updated);
-
-        console.log(`[Panel] Domain added: ${clean}`);
-        res.json(newEntry);
+        const entry = await panelDomains.add({ domain: req.body?.domain, nodeId: req.body?.nodeId });
+        console.log(`[Panel] Domain added: ${entry.domain} (node ${entry.nodeId})`);
+        res.json(entry);
     } catch (err) {
         next(err);
     }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  DELETE /api/panel/domains/:domain
-//  Remove a custom domain and update the nginx config.
-// ─────────────────────────────────────────────────────────────────────────────
+/** DELETE /api/panel/domains/:domain */
 router.delete("/domains/:domain", async (req, res, next) => {
     try {
         const domain = decodeURIComponent(req.params.domain);
-        const existing = (await db.get(PANEL_DOMAINS_KEY)) || [];
-        const filtered = existing.filter(d => d.domain !== domain);
-
-        if (filtered.length === existing.length) {
-            return res.status(404).json({ error: "Domain not found" });
-        }
-
-        await panelService.writePanelVhost(filtered.map(d => d.domain), panelPort());
-        await db.set(PANEL_DOMAINS_KEY, filtered);
-
+        await panelDomains.remove(domain);
         console.log(`[Panel] Domain removed: ${domain}`);
         res.json({ ok: true });
     } catch (err) {
@@ -283,28 +262,38 @@ router.put("/logrotate", async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  POST /api/panel/domains/:domain/ssl
-//  Run certbot to issue SSL for the given panel domain.
-//  Body: { email?: string }
+//  POST /api/panel/domains/:domain/ssl   Body: { email? }
+//  Let's Encrypt for the domain, on the node its DNS points at.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/domains/:domain/ssl", async (req, res, next) => {
     try {
         const domain = decodeURIComponent(req.params.domain);
-        const existing = (await db.get(PANEL_DOMAINS_KEY)) || [];
-        const entry = existing.find(d => d.domain === domain);
-
-        if (!entry) {
-            return res.status(404).json({ error: "Domain not found" });
-        }
-
-        const { email } = req.body;
-        await panelService.enablePanelSSL(domain, email || null);
-
-        const updated = existing.map(d => d.domain === domain ? { ...d, sslEnabled: true } : d);
-        await db.set(PANEL_DOMAINS_KEY, updated);
-
+        const entry = await panelDomains.issueCert(domain, req.body?.email || null);
         console.log(`[Panel] SSL enabled for domain: ${domain}`);
-        res.json({ ok: true, domain, sslEnabled: true });
+        res.json({ ok: true, domain, sslEnabled: !!entry?.sslEnabled });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Panel gateway — every agent's 127.0.0.1:4201 door to wherever the panel
+//  runs (agent/services/panelGateway.js). GET /api/panel/gateway → one row per node.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/gateway", async (req, res, next) => {
+    try {
+        const nodes = (await nodeService.getNodes()).filter((n) => n.enabled !== false);
+        const rows = await Promise.all(
+            nodes.map(async (n) => {
+                try {
+                    const g = await nodeService.agentRequest(n, "get", "/lease/gateway", { timeout: 8000 });
+                    return { nodeId: n._id, name: n.name, ...g };
+                } catch (err) {
+                    return { nodeId: n._id, name: n.name, error: err.status === 404 ? "agent too old (needs 1.8.0)" : err.message };
+                }
+            }),
+        );
+        res.json({ nodes: rows });
     } catch (err) {
         next(err);
     }
@@ -359,23 +348,30 @@ router.get("/api-keys", async (req, res, next) => {
     }
 });
 
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 /**
- * POST /api/panel/api-keys   Body: { botId, label?, writeEnv = true, envKey = "PANEL_API_KEY" }
+ * POST /api/panel/api-keys
+ * Body: { botId, label?, writeEnv = true, envKey = "PANEL_API_KEY", urlKey = "PANEL_API_URL" | null }
  * New key for a project. With writeEnv it goes straight into that project's
  * .env as envKey (through its agent) and is never shown; without, the response
- * carries it once. A failed .env write revokes the key again.
+ * carries it once. urlKey (when set) also points the project at the panel
+ * gateway on its own node — http://127.0.0.1:4201 — so it never needs the
+ * panel's address. A failed .env write revokes the key again.
  */
 router.post("/api-keys", async (req, res, next) => {
     try {
         const { botId, label, writeEnv = true } = req.body || {};
         const envKey = String(req.body?.envKey || "PANEL_API_KEY").trim();
-        if (writeEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envKey)) {
-            return res.status(400).json({ error: `Invalid .env key name: "${envKey}"` });
-        }
+        const urlKey = req.body?.urlKey === null ? null : String(req.body?.urlKey || "PANEL_API_URL").trim();
+        if (writeEnv && !ENV_NAME_RE.test(envKey)) return res.status(400).json({ error: `Invalid .env key name: "${envKey}"` });
+        if (writeEnv && urlKey && !ENV_NAME_RE.test(urlKey)) return res.status(400).json({ error: `Invalid .env key name: "${urlKey}"` });
+
         const { key, record } = await apiKeys.create({ botId, label });
         if (!writeEnv) return res.status(201).json({ record, key });
 
         const bot = await db.findOne("bots", { _id: record.botId });
+        let gatewayUrl = null;
         try {
             let current = "";
             try {
@@ -383,13 +379,23 @@ router.post("/api-keys", async (req, res, next) => {
             } catch (err) {
                 if (err.status !== 404) throw err;
             }
-            await executor.fsWrite(bot, ".env", setEnvKey(current, envKey, key));
+            let text = setEnvKey(current, envKey, key);
+            if (urlKey) {
+                const node = await nodeService.getNode(bot.nodeId);
+                const g = await nodeService.agentRequest(node, "get", "/lease/gateway", { timeout: 8000 }).catch(() => null);
+                if (!g?.localUrl) {
+                    throw new Error(`the panel gateway is not running on ${node.name}${g?.error ? ` (${g.error})` : " — update its agent to 1.8.0"}`);
+                }
+                gatewayUrl = g.localUrl;
+                text = setEnvKey(text, urlKey, gatewayUrl);
+            }
+            await executor.fsWrite(bot, ".env", text);
         } catch (err) {
             await apiKeys.revoke(record._id).catch(() => {});
             return res.status(502).json({ error: `Could not write ${bot.name}'s .env (${err.message}) — the key was revoked, nothing changed` });
         }
-        console.log(`[ApiKeys] New key ${record.prefix}… for ${bot.name}, written to its .env as ${envKey}`);
-        res.status(201).json({ record, wroteEnv: envKey });
+        console.log(`[ApiKeys] New key ${record.prefix}… for ${bot.name}, written to its .env as ${envKey}${gatewayUrl ? ` (+ ${urlKey}=${gatewayUrl})` : ""}`);
+        res.status(201).json({ record, wroteEnv: envKey, gateway: gatewayUrl ? { key: urlKey, url: gatewayUrl } : null });
     } catch (err) {
         next(err);
     }

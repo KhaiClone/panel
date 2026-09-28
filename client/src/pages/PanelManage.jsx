@@ -383,20 +383,27 @@ function GitHubSection() {
 }
 
 // ── PanelDomainsSection ───────────────────────────────────────────────────────
+// Each domain belongs to the node its DNS points at, for good. On the node that
+// runs the panel it serves the panel; on the others it redirects to it — so a
+// move changes no DNS (server/services/panelDomains.js).
 
 function PanelDomainsSection() {
-    const [domains, setDomains] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState(null); // { domains, nodes, panelNodeId, publicUrl }
     const [newDomain, setNewDomain] = useState("");
+    const [nodeId, setNodeId] = useState("");
     const [adding, setAdding] = useState(false);
     const [sslLoading, setSslLoading] = useState({});
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [error, setError] = useState("");
 
     const fetchDomains = useCallback(async () => {
-        try { const { data } = await api.get("/panel/domains"); setDomains(data); }
-        catch { /* ignore */ }
-        finally { setLoading(false); }
+        try {
+            const { data: d } = await api.get("/panel/domains");
+            setData(d);
+            setNodeId((cur) => cur || d.panelNodeId || "");
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to load domains");
+        }
     }, []);
 
     useEffect(() => { fetchDomains(); }, [fetchDomains]);
@@ -406,57 +413,73 @@ function PanelDomainsSection() {
         if (!newDomain.trim()) return;
         setAdding(true); setError("");
         try {
-            const { data } = await api.post("/panel/domains", { domain: newDomain.trim() });
-            setDomains(d => [...d, data]);
+            await api.post("/panel/domains", { domain: newDomain.trim(), nodeId }, { timeout: 90_000 });
             setNewDomain("");
+            await fetchDomains();
         } catch (err) {
             setError(err.response?.data?.error || "Failed to add domain");
         } finally { setAdding(false); }
     };
 
     const handleDelete = async (domain) => {
+        setError("");
         try {
-            await api.delete(`/panel/domains/${encodeURIComponent(domain)}`);
-            setDomains(d => d.filter(x => x.domain !== domain));
+            await api.delete(`/panel/domains/${encodeURIComponent(domain)}`, { timeout: 90_000 });
+            await fetchDomains();
         } catch (err) {
             setError(err.response?.data?.error || "Failed to remove domain");
         } finally { setDeleteConfirm(null); }
     };
 
     const handleSSL = async (domain) => {
-        setSslLoading(s => ({ ...s, [domain]: true })); setError("");
+        setSslLoading((s) => ({ ...s, [domain]: true })); setError("");
         try {
-            await api.post(`/panel/domains/${encodeURIComponent(domain)}/ssl`);
-            setDomains(d => d.map(x => x.domain === domain ? { ...x, sslEnabled: true } : x));
+            await api.post(`/panel/domains/${encodeURIComponent(domain)}/ssl`, {}, { timeout: 200_000 });
+            await fetchDomains();
         } catch (err) {
-            setError(err.response?.data?.error || "SSL issuance failed — ensure domain points to this server");
-        } finally { setSslLoading(s => ({ ...s, [domain]: false })); }
+            setError(err.response?.data?.error || "SSL issuance failed — make sure the domain points at its node");
+        } finally { setSslLoading((s) => ({ ...s, [domain]: false })); }
     };
+
+    if (!data) {
+        return <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>{error || "Loading…"}</div>;
+    }
+    const { domains, nodes } = data;
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {deleteConfirm && (
                 <ConfirmModal
                     title={`Remove Domain "${deleteConfirm}"`}
-                    message={`This will remove the nginx config for "${deleteConfirm}" and reload nginx. The domain will no longer point to this panel.`}
+                    message={`This removes "${deleteConfirm}" from its node's nginx config. Its certificate stays on disk.`}
                     confirmText="Remove"
                     onConfirm={() => handleDelete(deleteConfirm)}
                     onCancel={() => setDeleteConfirm(null)}
                 />
             )}
 
-            {/* Add domain form */}
-            <form onSubmit={handleAdd} style={{ display: "flex", gap: 8 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                Give every node that may host the panel its own domain, pointing at that node for good. The domains of the node
+                running the panel serve it; the others redirect to it. Moving the panel changes no DNS — and Prepare issues the
+                new node's certificates in advance. The panel is at <a href={data.publicUrl} className="mono">{data.publicUrl}</a>.
+            </p>
+
+            <form onSubmit={handleAdd} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <input
                     className="input mono"
-                    style={{ flex: 1, fontSize: 13 }}
+                    style={{ flex: "2 1 200px", minWidth: 0, fontSize: 13 }}
                     placeholder="panel.example.com"
                     value={newDomain}
-                    onChange={e => { setNewDomain(e.target.value); setError(""); }}
+                    onChange={(e) => { setNewDomain(e.target.value); setError(""); }}
                     disabled={adding}
                     spellCheck={false}
                 />
-                <button type="submit" className="btn-primary" disabled={adding || !newDomain.trim()} style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+                <select className="input" value={nodeId} onChange={(e) => setNodeId(e.target.value)} disabled={adding} style={{ flex: "1 1 160px", minWidth: 0 }} title="The node this domain's DNS points at">
+                    {nodes.map((n) => (
+                        <option key={n._id} value={n._id}>{n.name} ({n.host}){n.isPanelNode ? " — panel" : ""}</option>
+                    ))}
+                </select>
+                <button type="submit" className="btn-primary" disabled={adding || !newDomain.trim() || !nodeId} style={{ fontSize: 13, whiteSpace: "nowrap" }}>
                     {adding ? "Adding…" : "+ Add Domain"}
                 </button>
             </form>
@@ -467,11 +490,9 @@ function PanelDomainsSection() {
                 </div>
             )}
 
-            {loading ? (
-                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>Loading…</div>
-            ) : domains.length === 0 ? (
+            {domains.length === 0 ? (
                 <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
-                    No domains configured. Add one above to access the panel via a custom domain.
+                    No domains configured. Add one above to reach the panel by name.
                 </div>
             ) : (
                 <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
@@ -479,15 +500,20 @@ function PanelDomainsSection() {
                         <div
                             key={d.domain}
                             style={{
-                                display: "flex", alignItems: "center", gap: 12,
+                                display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
                                 padding: "12px 14px",
                                 borderBottom: i < domains.length - 1 ? "1px solid var(--border-light)" : "none",
                             }}
                         >
                             <span style={{ fontSize: 15, flexShrink: 0 }}>🌐</span>
-                            <span className="mono" style={{ flex: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {d.sslEnabled ? `https://${d.domain}` : `http://${d.domain}`}
-                            </span>
+                            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                                <div className="mono" style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {d.sslEnabled ? `https://${d.domain}` : `http://${d.domain}`}
+                                </div>
+                                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                                    {d.nodeName || "unknown node"} · {d.isPanelNode ? "serves the panel" : "redirects to the panel"}
+                                </div>
+                            </div>
                             {d.sslEnabled ? (
                                 <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 SSL</span>
                             ) : (
@@ -496,7 +522,7 @@ function PanelDomainsSection() {
                                     disabled={sslLoading[d.domain]}
                                     className="btn-ghost"
                                     style={{ fontSize: 11, padding: "3px 8px", color: "var(--text-muted)", whiteSpace: "nowrap", flexShrink: 0 }}
-                                    title="Enable HTTPS via Let's Encrypt"
+                                    title="Let's Encrypt, issued on the domain's node"
                                 >
                                     {sslLoading[d.domain] ? "Issuing…" : "Enable SSL"}
                                 </button>
@@ -513,6 +539,56 @@ function PanelDomainsSection() {
                     ))}
                 </div>
             )}
+        </div>
+    );
+}
+
+// ── Panel gateway: every node's 127.0.0.1:4201 door to the panel ─────────────
+
+function PanelGatewaySection() {
+    const [rows, setRows] = useState(null);
+    const [error, setError] = useState("");
+    const load = useCallback(() => {
+        setError("");
+        api.get("/panel/gateway", { timeout: 60_000 }).then((r) => setRows(r.data.nodes)).catch((err) => setError(err.response?.data?.error || "Failed to load"));
+    }, []);
+    useEffect(load, [load]);
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                Projects call the panel's API at <span className="mono">http://127.0.0.1:4201</span> on whatever node they run on. The agent there
+                forwards to the panel holding its node — so neither moving the panel nor migrating a project needs a .env change.
+                Set it with <strong>API Keys</strong> below (PANEL_API_URL).
+            </p>
+            {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
+            {!rows ? (
+                !error && <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>Loading…</p>
+            ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {rows.map((g) => {
+                        const ok = g.listening && g.panelUrl && g.reach?.ok;
+                        const why = g.error
+                            ? g.error
+                            : !g.listening
+                              ? "not listening"
+                              : !g.panelUrl
+                                ? "does not know the panel yet"
+                                : g.reach?.ok
+                                  ? `→ ${g.panelUrl}`
+                                  : `→ ${g.panelUrl} unreachable (${g.reach?.error || "?"})`;
+                        return (
+                            <div key={g.nodeId} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+                                <span>{ok ? "✅" : "⚠️"}</span>
+                                <strong style={{ color: "var(--text)" }}>{g.name}</strong>
+                                {g.localUrl && <span className="mono" style={{ color: "var(--text-dim)" }}>{g.localUrl}</span>}
+                                <span className="mono" style={{ color: ok ? "var(--text-muted)" : "#f59e0b", overflowWrap: "anywhere" }}>{why}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            <div><button className="btn-ghost" onClick={load} style={{ padding: "4px 10px", fontSize: 12 }}>Refresh</button></div>
         </div>
     );
 }
@@ -612,7 +688,7 @@ const fmtWhen = (ts) => (ts ? new Date(ts).toLocaleString() : "never");
 function ApiKeysSection() {
     const { bots } = useData();
     const [data, setData] = useState(null);
-    const [form, setForm] = useState({ botId: "", label: "", envKey: "PANEL_API_KEY", writeEnv: true });
+    const [form, setForm] = useState({ botId: "", label: "", envKey: "PANEL_API_KEY", writeEnv: true, setUrl: true, urlKey: "PANEL_API_URL" });
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [created, setCreated] = useState(null); // { record, key?, wroteEnv? }
@@ -627,7 +703,8 @@ function ApiKeysSection() {
     const create = async () => {
         setBusy(true); setError(""); setCreated(null); setRestart(null);
         try {
-            const { data: r } = await api.post("/panel/api-keys", form);
+            const { setUrl, ...rest } = form;
+            const { data: r } = await api.post("/panel/api-keys", { ...rest, urlKey: setUrl ? form.urlKey : null }, { timeout: 60_000 });
             setCreated(r);
             setForm((f) => ({ ...f, botId: "", label: "" }));
             load();
@@ -684,6 +761,12 @@ function ApiKeysSection() {
                         Write it into the project's .env as
                     </label>
                     <input className="input mono" value={form.envKey} disabled={!form.writeEnv} onChange={(e) => setForm({ ...form, envKey: e.target.value })} style={{ width: 170 }} />
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }} title="Points the project at the panel gateway on its own node — no panel address in its .env">
+                        <input type="checkbox" checked={form.writeEnv && form.setUrl} disabled={!form.writeEnv} onChange={(e) => setForm({ ...form, setUrl: e.target.checked })} />
+                        and
+                    </label>
+                    <input className="input mono" value={form.urlKey} disabled={!form.writeEnv || !form.setUrl} onChange={(e) => setForm({ ...form, urlKey: e.target.value })} style={{ width: 150 }} />
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>= panel gateway</span>
                     <button className="btn-primary" disabled={!form.botId || busy} onClick={create} style={{ padding: "6px 12px", fontSize: 12, marginLeft: "auto" }}>
                         {busy ? "Creating…" : "Create key"}
                     </button>
@@ -693,7 +776,8 @@ function ApiKeysSection() {
             {created?.wroteEnv && (
                 <div className="card" style={{ padding: 12, borderColor: "#4ade80", fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                     <span>
-                        ✅ Written to <strong>{created.record.botName}</strong>'s .env as <span className="mono">{created.wroteEnv}</span>. It takes effect when the project restarts.
+                        ✅ Written to <strong>{created.record.botName}</strong>'s .env as <span className="mono">{created.wroteEnv}</span>
+                        {created.gateway && <>, with <span className="mono">{created.gateway.key}={created.gateway.url}</span></>}. It takes effect when the project restarts.
                     </span>
                     <button className="btn-ghost" disabled={restart === "running" || restart === "done"} onClick={() => restartProject(created.record.botId)} style={{ padding: "4px 10px", fontSize: 12, marginLeft: "auto" }}>
                         {restart === "running" ? "Restarting…" : restart === "done" ? "Restarted ✓" : `Restart ${created.record.botName} now`}
@@ -758,20 +842,15 @@ const STEP_ICON = { running: "⏳", ok: "✅", warn: "⚠️", error: "❌" };
 
 function MoveResult({ result }) {
     if (!result?.target) return null;
-    const { target, domains, dnsAutomated, port } = result;
+    const { target, url, port } = result;
+    const href = url || `http://${target.host}:${port}`;
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
             <p style={{ margin: 0, color: "#4ade80", fontWeight: 700 }}>The panel now runs on {target.name}. This copy is being stopped.</p>
-            {domains?.length ? (
-                dnsAutomated ? (
-                    <p style={{ margin: 0 }}>Cloudflare is pointing {domains.join(", ")} at <span className="mono">{target.host}</span> — reload in a minute.</p>
-                ) : (
-                    <p style={{ margin: 0 }}>Point {domains.join(", ")} at <span className="mono">{target.host}</span> with your DNS provider, then reload.</p>
-                )
-            ) : (
-                <p style={{ margin: 0 }}>It answers on <span className="mono">{target.host}:{port}</span> (if that port is reachable).</p>
-            )}
-            <div><button className="btn-primary" onClick={() => window.location.reload()} style={{ padding: "6px 12px", fontSize: 12 }}>Reload</button></div>
+            <p style={{ margin: 0 }}>
+                It answers at <span className="mono">{href}</span>. This node's domains will redirect there once the new panel has flipped them.
+            </p>
+            <div><a className="btn-primary" href={href} style={{ padding: "6px 12px", fontSize: 12, display: "inline-block" }}>Open the new panel</a></div>
         </div>
     );
 }
@@ -881,6 +960,7 @@ function PanelMoveSection() {
             {state === "fenced" && (
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#f87171" }}>
                     This panel has been replaced{ov.lifecycle.info?.to ? ` — it now runs on ${ov.lifecycle.info.to}` : ""}. Nothing here runs any more.
+                    {ov.lifecycle.info?.url && <> Open <a href={ov.lifecycle.info.url} className="mono">{ov.lifecycle.info.url}</a>.</>}
                 </p>
             )}
 
@@ -894,7 +974,7 @@ function PanelMoveSection() {
                 <button className="btn-ghost" disabled={!targetId || checking || !idle} onClick={runCheck} style={{ padding: "6px 12px", fontSize: 12 }}>
                     {checking ? "Checking…" : "Check"}
                 </button>
-                <button className="btn-primary" disabled={!pf?.canPrepare || !idle} onClick={start("prepare")} style={{ padding: "6px 12px", fontSize: 12 }} title="Firewall access, dependencies, client build and nginx site on the new host — nothing is paused">
+                <button className="btn-primary" disabled={!pf?.canPrepare || !idle} onClick={start("prepare")} style={{ padding: "6px 12px", fontSize: 12 }} title="Firewall access, dependencies, client build and HTTPS for its domains on the new host — nothing is paused">
                     Prepare
                 </button>
             </div>
@@ -1364,7 +1444,7 @@ export default function PanelManage() {
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 16 }}>🌐</span>
                     <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Custom Domains</h2>
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>Reverse-proxied via nginx</span>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>One per node, via nginx</span>
                 </div>
                 <div style={{ padding: 16 }}>
                     <PanelDomainsSection />
@@ -1392,6 +1472,18 @@ export default function PanelManage() {
                 </div>
                 <div style={{ padding: 16 }}>
                     <ApiKeysSection />
+                </div>
+            </div>
+
+            {/* Panel gateway */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🚪</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Panel Gateway</h2>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>127.0.0.1:4201 on every node</span>
+                </div>
+                <div style={{ padding: 16 }}>
+                    <PanelGatewaySection />
                 </div>
             </div>
 

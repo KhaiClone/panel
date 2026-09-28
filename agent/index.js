@@ -59,3 +59,6 @@ require("./services/term").createTermSocket(server);
 
 // General-purpose authenticated HTTPS forward proxy (CONNECT) on the agent port.
 require("./services/proxy").createProxy(server);
+
+// Panel gateway: 127.0.0.1:PANEL_GATEWAY_PORT → wherever the panel runs now.
+require("./services/panelGateway").start();

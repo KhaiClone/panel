@@ -404,12 +404,13 @@ nodes. Quests and badge orders pause for the few minutes of the move and resume
 on the new panel.
 
 **Before the first move**, run **Rebuild & Restart** once so every agent
-knows the lease and `/panel-host` endpoints (agent ≥ 1.7.0).
+knows the lease, `/panel-host`, the panel gateway and the per-node panel vhost
+(agent ≥ 1.8.0).
 
 | Step | What happens | Panel keeps working? |
 |------|--------------|----------------------|
-| Check | Read-only: target online and prepared, same commit, port free, disk/RAM, every agent reachable *from the target*, integrations, SSH keys, DNS | Yes |
-| Prepare | UFW rule on every other agent for the target's IP, then on the target: `git pull`, deps, client build, nginx site (HTTP) | Yes |
+| Check | Read-only: target online and prepared, same commit, port free, disk/RAM, every agent reachable *from the target*, every node's gateway able to reach the target, integrations, callbacks, SSH keys, the target's domains resolving to it | Yes |
+| Prepare | UFW rule on every other agent for the target's IP, then on the target: `git pull`, deps, client build, HTTPS certificates for its own domains | Yes |
 | Move | Pause background work → snapshot `panel.sqlite` / `samples.sqlite` → `.env` with the new `PANEL_NODE_ID` → import on the target (WireGuard when reachable, always AES-GCM with its agent key) → start it → wait until it reports active | Writes refused for a few minutes |
 
 **Fencing.** Every panel has an *epoch*; every agent remembers the highest one it
@@ -420,12 +421,27 @@ retired (`pm2 delete`, `.env` → `.env.retired-<ts>`, `data/` kept). Before tha
 commit point any failure rolls back and the old panel carries on; after it
 nothing is rolled back, so two panels never both run expiry or quests.
 
-**After the move** the new panel points the domain at itself through Cloudflare
-when `CF_API_TOKEN` / `CF_ZONE_ID` are set (otherwise the page and a
-notification say which record to change), then re-runs certbot for domains that
-had HTTPS. With Cloudflare's proxy on, certbot may need SSL mode *Full* and a
-moment for DNS; the domain's SSL button retries. The old node's
-`panel-self.conf` is left in place.
+**Domains belong to nodes, DNS never changes.** Under **Panel Settings →
+Custom Domains** every domain is added *for a node* — the one its A record
+points at, for good (e.g. `panel.example.com` → sangs, `panel-poke.example.com`
+→ pokeclaw). On the node running the panel its domains serve the panel; on
+every other node they `302` to it. Each node's `panel-self.conf` is rendered by
+its agent from that list, with the HTTPS block added for any domain that has a
+certificate on disk — so rewriting it never drops HTTPS. Certificates are issued
+with `certbot certonly --nginx` (plus a reload deploy hook for renewals) on the
+domain's own node: Prepare does it for the target in advance, and after the
+move the new panel flips every node's vhost (proxy here, redirect elsewhere). A
+replaced panel's `/api/health` reports `movedTo`, and its banner links there.
+
+**Panel gateway.** Projects that call the panel (arnto-auto → `/api/external/*`)
+use `PANEL_API_URL=http://127.0.0.1:4201`. Every agent listens there (loopback
+only, `PANEL_GATEWAY_PORT` in the agent's `.env`) and forwards each request
+unchanged to the panel holding its node — the claim carries that address:
+`127.0.0.1:<PORT>` on the panel's own node, its WireGuard IP elsewhere, re-sent
+every 5 minutes. After a move the gateways follow at once; no project `.env`
+changes, whichever side moved. The panel port must accept the other nodes over
+`wg0`; Check prints the `ufw` command for any node that cannot reach the target.
+**Panel Settings → Panel Gateway** shows each node's gateway and where it points.
 
 **Integrations.** The panel calls arnto-auto (DM), shop and assistant. Link each
 one to its project + port under **Panel Settings → Integrations**: the address is
@@ -440,7 +456,8 @@ the `webhookUrl` their caller registered (arnto-auto sends
 `http://localhost:1942/api/quest-event`). `localhost` there means the CALLER's
 machine, so give each calling project its own key under **Panel Settings → API
 Keys** (the page can write it straight into the project's `.env` as
-`PANEL_API_KEY`; restart the project afterwards). The panel then stores who
+`PANEL_API_KEY`, together with `PANEL_API_URL` = the gateway on the project's
+node; restart the project afterwards). The panel then stores who
 registered each callback, and at send time points `localhost` at wherever that
 project runs — `127.0.0.1` on the panel's node, its WireGuard IP otherwise — and
 signs it with that project's key (the caller checks `x-api-key` against the one
@@ -454,15 +471,18 @@ Order when switching a project to its own key: link it under Integrations
 first (so its older callbacks, registered with the shared key, get its key
 too), then create the key, then restart the project.
 
-**The target** needs nginx + certbot when the panel has a domain
+**The target** needs nginx + certbot when it has a domain
 (`apt install nginx certbot python3-certbot-nginx`) and must accept ports 80 and
 443 (or the panel port, without a domain). Check probes them from the current
-host: a timeout means a firewall drops them — expected only if it admits
-Cloudflare alone.
+host: a timeout means a firewall drops them.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/health` | Public: `{ ok, state, epoch }` — `state` is `starting`, `active`, `maintenance` or `fenced` |
+| `GET` | `/api/health` | Public: `{ ok, state, epoch, movedTo? }` — `state` is `starting`, `active`, `maintenance` or `fenced`; a fenced panel names the new address |
+| `GET` | `/api/panel/domains` | `{ domains, nodes, panelNodeId, publicUrl }` |
+| `POST` | `/api/panel/domains` | `{ domain, nodeId }` — nodeId = where its DNS points (default: the panel's node) |
+| `POST` | `/api/panel/domains/:domain/ssl` | Let's Encrypt on the domain's node |
+| `GET` | `/api/panel/gateway` | Each node's panel gateway: listening, forwarding to, reachable |
 | `GET` | `/api/panel/migration` | State, running/last job, nodes, recent moves |
 | `POST` | `/api/panel/migration/preflight` | `{ targetNodeId }` → checks |
 | `POST` | `/api/panel/migration/prepare` | `{ targetNodeId }` — runs in the background |
