@@ -77,7 +77,7 @@ function _isPurgeable(r) {
     return Number.isFinite(at) && at <= Date.now();
 }
 function _webhook(rec, event) {
-    if (!rec.webhookUrl) return;
+    if (!rec.webhookUrl && !rec.webhookBotId) return;
     // Address and x-api-key follow the project that registered it (callbackService).
     // username + plan let arnto-auto say whose account this is in the
     // notification it posts, without asking the panel for the record.
@@ -110,7 +110,7 @@ async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = nul
         monthlyExpiresAt,
         webhookUrl: webhookUrl ?? existing?.webhookUrl ?? null,
         // The owner goes with the URL: a new URL brings its caller's project.
-        webhookBotId: webhookUrl ? webhookBotId : (existing?.webhookBotId ?? null),
+        webhookBotId: webhookUrl || webhookBotId ? webhookBotId : (existing?.webhookBotId ?? null),
         ref: ref ?? existing?.ref ?? null,
         addedAt: existing?.addedAt ?? Date.now(),
         updatedAt: Date.now(),

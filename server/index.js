@@ -56,11 +56,11 @@ const lavalinkUpdater = require("./services/lavalinkUpdater");
 //
 // NOTE: bots with no nodeId (or the legacy "local") are resolved at read time by
 // nodeService.resolveNodeId → PANEL_NODE_ID, never rewritten in the DB.
+// (BOTS_ROOT_DIR / SITES_ROOT_DIR belong to each node's agent, not to the panel.)
 const required = [
     "ADMIN_USERNAME",
     "ADMIN_PASSWORD_HASH",
     "JWT_SECRET",
-    "BOTS_ROOT_DIR",
 ];
 for (const key of required) {
     if (!process.env[key]) {
@@ -196,6 +196,11 @@ const bootstrap = async () => {
     } catch (err) {
         console.error("[Move] Could not finish taking over:", err.message);
     }
+    // Callbacks registered before per-project keys get their owner written down,
+    // so they reach their project on the Discord bus without any address.
+    await require("./services/callbackService").stampOwners().catch((err) =>
+        console.error("[Panel] Could not record callback owners:", err.message),
+    );
     // Panel domains from before they belonged to a node: they point at this one.
     await require("./services/panelDomains").normalize(process.env.PANEL_NODE_ID).catch((err) =>
         console.error("[Panel] Could not assign legacy domains to this node:", err.message),

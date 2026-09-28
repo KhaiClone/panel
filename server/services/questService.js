@@ -101,7 +101,7 @@ const webhooks = new Map();
 // Forward meaningful events to the account's webhook (arnto-auto → notify the buyer).
 function _dispatchWebhook(accountId, event) {
     const hook = webhooks.get(accountId);
-    if (!hook?.url) return;
+    if (!hook?.url && !hook?.botId) return;
     if (!["quest_start", "quest_done", "status", "removed"].includes(event.type)) return;
     // Address and x-api-key follow the project that registered it (callbackService).
     callbacks.send(hook.url, hook.botId, {
@@ -268,9 +268,9 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
     // Preserve an existing webhook if the caller didn't supply a new one.
     const hookUrl = webhookUrl ?? existing?.webhookUrl ?? null;
     // The owner goes with the URL: a new URL brings its caller's project.
-    const hookBotId = webhookUrl ? webhookBotId : (existing?.webhookBotId ?? null);
+    const hookBotId = webhookUrl || webhookBotId ? webhookBotId : (existing?.webhookBotId ?? null);
     const hookRef = ref ?? existing?.webhookRef ?? null;
-    if (hookUrl) webhooks.set(accountId, { url: hookUrl, botId: hookBotId, ref: hookRef, username: resolved.username });
+    if (hookUrl || hookBotId) webhooks.set(accountId, { url: hookUrl, botId: hookBotId, ref: hookRef, username: resolved.username });
     const record = {
         accountId,
         username: resolved.username,
@@ -512,7 +512,7 @@ async function restore() {
             await removeAccount(rec.accountId).catch(() => {});
             continue;
         }
-        if (rec.webhookUrl)
+        if (rec.webhookUrl || rec.webhookBotId)
             webhooks.set(rec.accountId, {
                 url: rec.webhookUrl,
                 botId: rec.webhookBotId ?? null,

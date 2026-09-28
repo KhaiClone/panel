@@ -601,86 +601,6 @@ const LOGROTATE_FIELDS = [
     { key: "rotateInterval", label: "Rotate at (cron)", hint: "Forced rotation schedule — default is midnight daily", placeholder: "0 0 * * *", width: 110 },
 ];
 
-// ── Integrations: where the panel reaches arnto-auto / shop / assistant ───────
-
-const INTEGRATION_SOURCE = {
-    project: { label: "linked", color: "#4ade80" },
-    env: { label: ".env URL", color: "var(--text-muted)" },
-    default: { label: "default", color: "var(--text-muted)" },
-    none: { label: "off", color: "var(--text-dim)" },
-    error: { label: "broken", color: "#f87171" },
-};
-
-function IntegrationsSection() {
-    const { bots } = useData();
-    const [rows, setRows] = useState(null);
-    const [draft, setDraft] = useState({}); // name → { botId, port }
-    const [saving, setSaving] = useState(null);
-    const [error, setError] = useState("");
-
-    const apply = (data) => {
-        setRows(data);
-        setDraft(Object.fromEntries(data.map((r) => [r.name, { botId: r.link?.botId || "", port: r.link?.port || "" }])));
-    };
-
-    useEffect(() => {
-        api.get("/panel/integrations").then((r) => apply(r.data)).catch((err) => setError(err.response?.data?.error || "Failed to load integrations"));
-    }, []);
-
-    const save = async (name, unlink = false) => {
-        setSaving(name); setError("");
-        try {
-            const d = draft[name] || {};
-            const { data } = await api.put(`/panel/integrations/${name}`, unlink ? { botId: null } : { botId: d.botId, port: Number(d.port) });
-            apply(data);
-        } catch (err) {
-            setError(err.response?.data?.error || "Failed to save");
-        } finally { setSaving(null); }
-    };
-
-    if (!rows) return <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>{error || "Loading…"}</p>;
-
-    return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-                Link each integration to the project that serves it. The panel then works out the address on every call —
-                127.0.0.1 on the same node, that node's WireGuard IP otherwise — so migrating the project or moving the panel keeps it working.
-                Unlinked ones keep using their .env URL.
-            </p>
-            {error && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{error}</p>}
-            {rows.map((r) => {
-                const d = draft[r.name] || { botId: "", port: "" };
-                const src = INTEGRATION_SOURCE[r.source] || INTEGRATION_SOURCE.none;
-                const setField = (k) => (e) => setDraft((x) => ({ ...x, [r.name]: { ...d, [k]: e.target.value } }));
-                return (
-                    <div key={r.name} className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                            <strong style={{ fontSize: 13, color: "var(--text)" }}>{r.label}</strong>
-                            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: src.color }}>{src.label}</span>
-                            <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: r.error ? "#f87171" : "var(--text-dim)", overflowWrap: "anywhere" }}>
-                                {r.error || r.url || `not configured (${r.env})`}
-                            </span>
-                        </div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <select className="input" value={d.botId} onChange={setField("botId")} style={{ flex: "1 1 220px", minWidth: 0 }}>
-                                <option value="">— choose the project —</option>
-                                {bots.map((b) => <option key={b._id} value={b._id}>{b.name} ({b.pm2Name})</option>)}
-                            </select>
-                            <input className="input mono" type="number" min="1" max="65535" placeholder="port" value={d.port} onChange={setField("port")} style={{ width: 110 }} />
-                            <button className="btn-primary" disabled={!d.botId || !d.port || saving === r.name} onClick={() => save(r.name)} style={{ padding: "6px 12px", fontSize: 12 }}>
-                                {saving === r.name ? "Saving…" : "Link"}
-                            </button>
-                            {r.link && (
-                                <button className="btn-ghost" disabled={saving === r.name} onClick={() => save(r.name, true)} style={{ padding: "6px 12px", fontSize: 12 }}>Unlink</button>
-                            )}
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
-
 // ── API keys: one per project calling /api/external ─────────────────────────
 
 const fmtWhen = (ts) => (ts ? new Date(ts).toLocaleString() : "never");
@@ -826,7 +746,7 @@ function ApiKeysSection() {
                             <span style={{ color: "var(--text-muted)" }}>{c.sources.join(", ")}</span>
                             {c.ownerBotId
                                 ? <span style={{ color: "#4ade80" }}>→ follows {c.ownerName}</span>
-                                : <span style={{ color: "#facc15" }}>→ no known project: link the project under Integrations on this port</span>}
+                                : <span style={{ color: "#facc15" }}>→ no known project: pinned to this node when the panel moves</span>}
                         </div>
                     ))}
                 </div>
@@ -1591,18 +1511,6 @@ export default function PanelManage() {
                 </div>
                 <div style={{ padding: 16 }}>
                     <PanelDomainsSection />
-                </div>
-            </div>
-
-            {/* Integrations */}
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>🔗</span>
-                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Integrations</h2>
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>How the panel reaches arnto-auto, shop and assistant</span>
-                </div>
-                <div style={{ padding: 16 }}>
-                    <IntegrationsSection />
                 </div>
             </div>
 

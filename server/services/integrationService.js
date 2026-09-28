@@ -15,6 +15,12 @@ const nodeService = require("./nodeService");
 //  firewall must accept that port on wg0 — the panel-move preflight checks.)
 //
 //  An unlinked integration keeps using its .env URL exactly as before.
+//
+//  SUPERSEDED: the panel no longer calls these projects — their shared data
+//  lives on the panel and commands go over the Discord bus (sharedStore,
+//  discordBus). What remains used: addressFor / isLoopbackUrl, and the stored
+//  links, which tell callbackService.stampOwners who owns an older localhost
+//  callback.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const KEY = "integrations";

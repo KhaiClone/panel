@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const questService = require("../services/questService");
 const questMonthly = require("../services/questMonthly");
+const discordBus = require("../services/discordBus");
 
 // Mounted behind authMiddleware (see index.js). Discord Quest runner —
 // standalone (does NOT talk to the ArnTo-Auto bot).
@@ -57,17 +58,17 @@ router.post("/preview", async (req, res, next) => {
  * POST /api/quests/start { token, mode, selectedQuestIds, ref, months }
  * Manual add (bypasses arnto-auto). `ref` = the owner's Discord user id so the
  * bot can tell whose token this is (and DM them). mode "monthly" activates a monthly
- * plan instead of an immediate run. The webhook back to arnto is taken from the
- * ARNTO_QUEST_WEBHOOK_URL env so completion DMs reach the owner. It has no
- * owner of its own: a localhost one follows the project linked under
- * Integrations on its port (services/callbackService.js).
+ * plan instead of an immediate run. Its quest events go to the project that
+ * handles "quest.event" on the Discord bus (arnto-auto), which tells the owner.
  */
 router.post("/start", async (req, res, next) => {
     try {
         const { token, mode, selectedQuestIds, ref, months } = req.body || {};
         if (!token) return res.status(400).json({ error: "Thiếu token." });
         const ownerRef = ref ? String(ref).trim() : null;
-        const webhookUrl = process.env.ARNTO_QUEST_WEBHOOK_URL || null;
+        // No URL: the callback is addressed to a project, delivered on the bus.
+        const webhookBotId = discordBus.handlerOf("quest.event");
+        const webhookUrl = null;
 
         if (mode === "monthly") {
             return res.status(201).json(
@@ -76,6 +77,7 @@ router.post("/start", async (req, res, next) => {
                     months: months || 1,
                     ref: ownerRef,
                     webhookUrl,
+                    webhookBotId,
                 }),
             );
         }
@@ -86,6 +88,7 @@ router.post("/start", async (req, res, next) => {
                 selectedQuestIds,
                 ref: ownerRef,
                 webhookUrl,
+                webhookBotId,
             }),
         );
     } catch (err) {

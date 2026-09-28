@@ -98,7 +98,7 @@ function _err(message, status = 400, extra = {}) {
 
 function _dispatch(order, event) {
     bus.emit("event", { orderId: order.orderId, at: Date.now(), ...event });
-    if (!order.webhookUrl) return;
+    if (!order.webhookUrl && !order.webhookBotId) return;
     // Địa chỉ và x-api-key đi theo project đã đăng ký webhook (callbackService).
     callbacks.send(order.webhookUrl, order.webhookBotId ?? null, { ...event, orderId: order.orderId, ref: order.ref ?? null }, "badge.event");
 }
@@ -308,7 +308,7 @@ async function createOrder({
         sent: 0,
         total: 0,
         webhookUrl,
-        webhookBotId: webhookUrl ? webhookBotId : null,
+        webhookBotId: webhookUrl || webhookBotId ? webhookBotId : null,
         createdAt: Date.now(),
         paidAt: Date.now(),
         sentAt: null,

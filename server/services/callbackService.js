@@ -29,7 +29,7 @@ const discordBus = require("./discordBus");
 // Where callback URLs are stored: a `webhookUrl` (+ `webhookBotId`) per record,
 // plus the .env keys that hold one for callbacks the panel registers itself.
 const CALLBACK_MODELS = ["quest_accounts", "quest_monthly", "badge_orders"];
-const CALLBACK_ENV = ["ARNTO_QUEST_WEBHOOK_URL"];
+const CALLBACK_ENV = [];
 
 const LOOPBACK_HOST_RE = /^(https?:\/\/)(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?=[:/]|$)/i;
 
@@ -105,7 +105,7 @@ const send = (url, ownerBotId, body, busCmd = null) => {
 
 /**
  * Every loopback callback the panel holds, grouped by URL and owner:
- * [{ url, ownerBotId, ownerName, sources: ["10 in quest_monthly", ".env ARNTO_QUEST_WEBHOOK_URL"] }]
+ * [{ url, ownerBotId, ownerName, sources: ["10 in quest_monthly", "11 in badge_orders"] }]
  * ownerBotId null = an orphan.
  */
 const audit = async () => {
@@ -137,6 +137,38 @@ const audit = async () => {
 };
 
 /**
+ * Write the owner onto every stored callback that has none but can be resolved
+ * (the Integrations stand-in above) — once, at boot, before anything sends.
+ * From then on a callback reaches its project by owner (the Discord bus), and
+ * neither an address nor an Integrations link is needed. Returns the count.
+ */
+const stampOwners = async () => {
+    let count = 0;
+    for (const model of CALLBACK_MODELS) {
+        const rows = (await db.get(model)) || [];
+        let changed = false;
+        const next = [];
+        for (const r of rows) {
+            if (typeof r?.webhookUrl !== "string" || r.webhookBotId) {
+                next.push(r);
+                continue;
+            }
+            const owner = await ownerOf(r.webhookUrl, null);
+            if (!owner) {
+                next.push(r);
+                continue;
+            }
+            changed = true;
+            count++;
+            next.push({ ...r, webhookBotId: owner._id });
+        }
+        if (changed) await db.set(model, next);
+    }
+    if (count) console.log(`[Callback] Recorded the owner of ${count} older callback(s)`);
+    return count;
+};
+
+/**
  * Rewrite ORPHAN loopback callbacks to `host` (the panel's old node, during a
  * move) — one write per collection. Owned ones are left alone: they follow
  * their project. Returns the count.
@@ -162,4 +194,4 @@ const relocateOrphans = async (host) => {
     return count;
 };
 
-module.exports = { CALLBACK_ENV, relocateUrl, portOf, ownerOf, resolve, send, audit, relocateOrphans };
+module.exports = { CALLBACK_ENV, relocateUrl, portOf, ownerOf, resolve, send, audit, relocateOrphans, stampOwners };

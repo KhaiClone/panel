@@ -1,6 +1,5 @@
 const express = require("express");
 const panelService = require("../services/panelService");
-const integrations = require("../services/integrationService");
 const panelMigration = require("../services/panelMigration");
 const panelDomains = require("../services/panelDomains");
 const nodeService = require("../services/nodeService");
@@ -297,35 +296,6 @@ router.get("/gateway", async (req, res, next) => {
             }),
         );
         res.json({ nodes: rows });
-    } catch (err) {
-        next(err);
-    }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Integrations — where the panel reaches arnto-auto / shop / assistant
-//  (services/integrationService.js)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** GET /api/panel/integrations — one row per integration, with its resolved URL. */
-router.get("/integrations", async (req, res, next) => {
-    try {
-        res.json(await integrations.list());
-    } catch (err) {
-        next(err);
-    }
-});
-
-/**
- * PUT /api/panel/integrations/:name
- * Body: { botId, port } to link it to a project, or { botId: null } to go back
- * to the .env URL.
- */
-router.put("/integrations/:name", async (req, res, next) => {
-    try {
-        const { botId, port } = req.body || {};
-        await integrations.setLink(req.params.name, botId ? { botId, port } : null);
-        res.json(await integrations.list());
     } catch (err) {
         next(err);
     }

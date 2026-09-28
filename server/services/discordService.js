@@ -23,10 +23,8 @@ const sendWebhook = async (webhookUrl, payload) => {
 };
 
 /**
- * Send a Discord DM to a buyer. The bot that announced "dm.send" on the
- * Discord bus delivers it (the panel calls nothing); without one, the old
- * arnto-auto DM API — a no-op unless the "dm" integration (linked project, or
- * ARNTO_DM_URL) and ARNTO_DM_API_KEY are configured.
+ * Send a Discord DM to a buyer: the bot that announced "dm.send" on the Discord
+ * bus delivers it (the panel calls nothing). No such bot = no DM.
  * Errors never crash the caller — webhook alerts remain the source of truth.
  *
  * @param {string} buyerID - Discord user ID
@@ -36,25 +34,8 @@ const sendDM = async (buyerID, payload) => {
     if (!buyerID) return;
     const discordBus = require("./discordBus");
     const via = discordBus.handlerOf("dm.send");
-    if (via) {
-        await discordBus.notify(via, "dm.send", { buyerID, ...payload }).catch((err) => console.warn(`[Discord] DM to ${buyerID} not queued: ${err.message}`));
-        return;
-    }
-    const key = process.env.ARNTO_DM_API_KEY;
-    if (!key) return;
-
-    try {
-        const url = await require("./integrationService").baseUrl("dm");
-        if (!url) return;
-        await axios.post(
-            `${url.replace(/\/$/, "")}/api/dm`,
-            { buyerID, ...payload },
-            { headers: { "x-api-key": key }, timeout: 5000 },
-        );
-    } catch (err) {
-        const detail = err.response?.data?.error || err.message;
-        console.warn(`[Discord] DM to ${buyerID} failed: ${detail}`);
-    }
+    if (!via) return;
+    await discordBus.notify(via, "dm.send", { buyerID, ...payload }).catch((err) => console.warn(`[Discord] DM to ${buyerID} not queued: ${err.message}`));
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

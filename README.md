@@ -200,14 +200,17 @@ nano .env
 | `ADMIN_USERNAME`         | Yes      | Panel login username — the panel's ONLY account               |
 | `ADMIN_PASSWORD_HASH`    | Yes      | bcrypt hash of that account's password (see below)            |
 | `JWT_SECRET`             | Yes      | Long random string for signing JWTs                           |
-| `BOTS_ROOT_DIR`          | Yes      | Absolute path to bots folder, e.g. `/root/bots`               |
-| `SITES_ROOT_DIR`         | No       | Absolute path to websites folder (defaults to `BOTS_ROOT_DIR`)|
+| `PANEL_NODE_ID`          | Yes      | `_id` of the node record this panel runs on                   |
+| `PANEL_DISCORD_TOKEN`    | No       | The panel's own Discord bot — posts commands on the bus       |
+| `PANEL_BUS_CHANNEL_ID`   | No       | Private channel of the Discord bus (see Shared Data below)    |
 | `DISCORD_ALERT_WEBHOOK`  | No       | Webhook URL for expiry warnings and removal alerts            |
 | `DISCORD_BACKUP_WEBHOOK` | No       | Webhook URL for hourly DB backups                             |
-| `BUYER_BOT_TOKEN`        | No       | Discord bot token for the buyer-facing bot                    |
-| `PANEL_API_KEY`          | No       | Shared key for the external API — prefer per-project keys (Panel Settings → API Keys) |
-| `PANEL_PM2_NAME`         | No       | PM2 process name for the panel (auto-detected under PM2)      |
+| `QUEST_ENC_SECRET`       | Auto Quest | Encrypts stored Discord tokens (64 hex chars)               |
+| `DECOR_SITE_GITHUB_TOKEN`| No       | Publishes the decor site's data snapshot (fine-grained, Contents r/w) |
+| `PANEL_API_KEY`          | No       | Legacy shared key for `/api/external/*` — projects use their own keys |
 | `CLIENT_URL`             | No       | Vite dev server URL — only needed in development              |
+
+`BOTS_ROOT_DIR` / `SITES_ROOT_DIR` belong to each node's **agent** `.env`, not the panel's.
 
 **Generate your password hash:**
 
@@ -409,7 +412,7 @@ knows the lease, `/panel-host`, the panel gateway and the per-node panel vhost
 
 | Step | What happens | Panel keeps working? |
 |------|--------------|----------------------|
-| Check | Read-only: target online and prepared, same commit, port free, disk/RAM, every agent reachable *from the target*, every node's gateway able to reach the target, integrations, callbacks, SSH keys, the target's domains resolving to it | Yes |
+| Check | Read-only: target online and prepared, same commit, port free, disk/RAM, every agent reachable *from the target*, every node's gateway able to reach the target, callbacks, SSH keys, the target's domains resolving to it | Yes |
 | Prepare | UFW rule on every other agent for the target's IP, then on the target: `git pull`, deps, client build, HTTPS certificates for its own domains | Yes |
 | Move | Pause background work → snapshot `panel.sqlite` / `samples.sqlite` → `.env` with the new `PANEL_NODE_ID` → import on the target (WireGuard when reachable, always AES-GCM with its agent key) → start it → wait until it reports active | Writes refused for a few minutes |
 
@@ -443,33 +446,11 @@ changes, whichever side moved. The panel port must accept the other nodes over
 `wg0`; Check prints the `ufw` command for any node that cannot reach the target.
 **Panel Settings → Panel Gateway** shows each node's gateway and where it points.
 
-**Integrations.** The panel calls arnto-auto (DM), shop and assistant. Link each
-one to its project + port under **Panel Settings → Integrations**: the address is
-then worked out per call — `127.0.0.1` on the same node, the node's WireGuard IP
-otherwise — so moving the panel or migrating the project keeps it working.
-Unlinked ones use their `.env` URL, and a `localhost` URL blocks the move. A
-project's port must accept the panel over `wg0`; Check prints the `ufw` command
-for any that does not.
-
-**API keys and callbacks.** Quest accounts, monthly plans and badge orders store
-the `webhookUrl` their caller registered (arnto-auto sends
-`http://localhost:1942/api/quest-event`). `localhost` there means the CALLER's
-machine, so give each calling project its own key under **Panel Settings → API
-Keys** (the page can write it straight into the project's `.env` as
-`PANEL_API_KEY`, together with `PANEL_API_URL` = the gateway on the project's
-node; restart the project afterwards). The panel then stores who
-registered each callback, and at send time points `localhost` at wherever that
-project runs — `127.0.0.1` on the panel's node, its WireGuard IP otherwise — and
-signs it with that project's key (the caller checks `x-api-key` against the one
-key it holds). Callbacks registered with the shared key, and
-`ARNTO_QUEST_WEBHOOK_URL`, belong to the project linked under Integrations on
-the same port. Anything with no owner is an *orphan*: a move pins it to the old
-node's address, and Check lists it. Neither the panel nor the project needs a
-`.env` change when either one moves.
-
-Order when switching a project to its own key: link it under Integrations
-first (so its older callbacks, registered with the shared key, get its key
-too), then create the key, then restart the project.
+**The bots.** The panel never calls a bot, so moving it changes nothing for
+them: they reach it through their gateway and receive its commands on the Discord
+bus (see *Shared Data & Discord Bus*). Their shared data is in
+`data/shared.sqlite`, which the move carries — mandatory, and encrypted with the
+target agent's key (it holds customer orders); a failure rolls the move back.
 
 **The target** needs nginx + certbot when it has a domain
 (`apt install nginx certbot python3-certbot-nginx`) and must accept ports 80 and
@@ -487,12 +468,67 @@ host: a timeout means a firewall drops them.
 | `POST` | `/api/panel/migration/preflight` | `{ targetNodeId }` → checks |
 | `POST` | `/api/panel/migration/prepare` | `{ targetNodeId }` — runs in the background |
 | `POST` | `/api/panel/migration/start` | `{ targetNodeId, confirmName }` — the move, in the background |
-| `GET` | `/api/panel/integrations` | Each integration and its resolved URL |
-| `PUT` | `/api/panel/integrations/:name` | `{ botId, port }` to link, `{ botId: null }` to unlink |
 
 Limits: `panel.sqlite` travels as JSON (the agent accepts 15 MB); history is
 streamed and skipped with a warning if it fails. Moving back is the same
 procedure in the other direction.
+
+---
+
+## 🗄️ Shared Data & Discord Bus
+
+The panel is the hub: **bots call the panel, the panel never calls a bot.**
+
+**Shared data.** Collections a bot and the panel both use (the shop's `orders` +
+`nextOrderId`, the assistant's `decors`, `importedDecors`, `prices`,
+`decorCategories`) live in the panel's `data/shared.sqlite` — one row per record,
+never the whole array per write. A bot keeps its QuickDB calls unchanged: its
+`extensions/QuickDB.js` (canonical copy `bot-lib/QuickDB.js`) sends the names listed
+in `PANEL_SHARED` to `/api/external/data` through its gateway, with its own key;
+every other name stays in its `json.sqlite`. Reads are `GET` (still answered while
+the panel moves), writes `POST`; when the panel is unreachable a read answers the
+last value the bot saw, a write fails. Only the owning project can touch a name.
+
+To move a collection: **Panel Settings → Shared Data** → *Declare* it for the
+project, add it to that project's `PANEL_SHARED`, restart the project — its first
+start uploads its local copy once (`adoptShared()`), and from then on the panel is
+the only truth. The Decors and Orders pages read the panel's copy directly.
+
+**Discord bus.** When the panel needs a bot to act (complete an order, DM a buyer,
+report quest progress, resolve a decor), its own Discord bot (`PANEL_DISCORD_TOKEN`)
+posts a command in one private channel (`PANEL_BUS_CHANNEL_ID`), mentioning the
+target bot; the bot runs it and replies to that message. Both envelopes are
+HMAC-signed with the target project's key, so a message from anyone else is
+ignored. A bot (`bot-lib/PanelBus.js`) announces the commands it handles when it
+starts; the panel only uses the bus for a bot that did. Every 5 minutes, and on
+start, a bot re-reads the last 3 days of the channel, so a command posted while it
+was down still runs — each id once. The outbox lives in `shared.sqlite` and travels
+with a move. Every bot must be a member of the server that holds the channel (the
+arnto bots keep it via `PANEL_BUS_GUILD_ID` instead of leaving). *Ping* on the Panel
+page is a harmless round trip.
+
+| Bot | Shared data (`PANEL_SHARED`) | Bus commands |
+|-----|-------------------------------|--------------|
+| ArnTo-Shop | `orders`, `nextOrderId` | `order.complete`, `order.cancel` |
+| ArnTo-assistant | `decors`, `importedDecors`, `prices`, `decorCategories` | `decor.preview`, `decor.import` |
+| ArnTo-Auto | — | `quest.event`, `badge.event`, `dm.send` |
+
+A bot's `.env`: `PANEL_API_URL=http://127.0.0.1:4201`, `PANEL_API_KEY=<its own key>`,
+`PANEL_SHARED=…`, optionally `PANEL_SHARED_TTL_MS` (read cache) and `PANEL_BUS_GUILD_ID`.
+
+The public decor site (static) gets `data/decors.json` + `data/categories.json`
+committed a minute after the decor data changes, when `DECOR_SITE_GITHUB_TOKEN` is
+set. `shared.sqlite` is also in the hourly Discord backup (gzipped).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/external/data` | Project key: its names + the bus channel and the panel's bot id |
+| `POST` | `/api/external/data` | `{ op: "hello", commands }` — a bot announces its bus commands |
+| `GET` | `/api/external/data/:name?op=get\|find\|findOne&query=` | Read |
+| `POST` | `/api/external/data/:name` | `{ op, query, data, items, value, by }` — write; `op: "adopt"` once |
+| `GET` | `/api/panel/shared` | Names, owners, sizes, bus status, recent commands, decor site |
+| `POST` | `/api/panel/shared/declare` | `{ name, kind, botId }` |
+| `POST` | `/api/panel/shared/ping` | `{ botId }` — round trip over the bus |
 
 ---
 
@@ -571,7 +607,8 @@ LAVALINK_PM2_NAME=lavalink
 - The JWT expires after **24 hours** — you must re-login after that
 - The `.env` file is in `.gitignore` — **never commit it**
 - All API routes are JWT-protected except `/api/auth/login`
-- External API routes (`/api/external/*`) take an `x-api-key`: the shared `PANEL_API_KEY`, or a project's own key (stored as sha256 + an AES-GCM copy under `JWT_SECRET`; revocable one by one)
+- External API routes (`/api/external/*`) take an `x-api-key`: a project's own key (stored as sha256 + an AES-GCM copy under `JWT_SECRET`; revocable one by one), or the legacy shared `PANEL_API_KEY` if set (never for shared data)
+- The Discord bus channel carries buyer ids and DM text: keep it private to the bots; commands and replies are HMAC-signed with the target's key
 - SSE log streaming authenticates via a query-param token (browsers cannot set `Authorization` headers on `EventSource`)
 - Helmet is used to set secure HTTP headers (CSP disabled intentionally to serve the React SPA)
 - **Place the panel behind nginx + HTTPS in production** (see example below)

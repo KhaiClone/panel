@@ -1,15 +1,12 @@
 const sharedStore = require("./sharedStore");
 const discordBus = require("./discordBus");
-const assistantService = require("./assistantService");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Decors for the panel's Decors page.
 //
 //  The data (decors, importedDecors, prices, decorCategories) is shared data
-//  owned by ArnTo-assistant (services/sharedStore.js). Once the assistant has
-//  adopted it, everything here reads and writes the panel's own copy; before
-//  that, it still asks the assistant's HTTP API (assistantService) — so the
-//  panel can be deployed first and switches by itself.
+//  owned by ArnTo-assistant (services/sharedStore.js): everything here reads
+//  and writes the panel's own copy. The panel never calls the assistant.
 //
 //  Resolving a decor from a Discord link needs the assistant's Discord shop
 //  session, so preview / import are asked of the assistant over the Discord bus.
@@ -25,6 +22,9 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
 
 /** Shared once every decor name is active in the store. */
 const onPanel = () => NAMES.every((n) => sharedStore.nameRow(n)?.state === "active");
+const requirePanel = () => {
+    if (!onPanel()) throw httpError(503, "The decor data is not on the panel yet — the assistant moves it here on its next start (PANEL_SHARED)");
+};
 const owner = () => sharedStore.nameRow("importedDecors")?.owner || null;
 const read = (name, op = "get", query) => sharedStore.run(name, op, { query });
 const write = (name, op, args) => sharedStore.run(name, op, args);
@@ -95,12 +95,12 @@ const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw) => {
 const sortCategories = (cats) => [...cats].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
 const listDecors = async () => {
-    if (!onPanel()) return assistantService.listDecors();
+    requirePanel();
     return buildDecorList(read("decors"), read("importedDecors"), read("prices"));
 };
 
 const listCategories = async () => {
-    if (!onPanel()) return assistantService.listCategories();
+    requirePanel();
     return sortCategories(read("decorCategories"));
 };
 
@@ -157,12 +157,12 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
 };
 
 const listPrices = async () => {
-    if (!onPanel()) return assistantService.listPrices();
+    requirePanel();
     return buildPriceReport(read("decors"), read("importedDecors"), read("prices"));
 };
 
 const upsertPrice = async (body = {}) => {
-    if (!onPanel()) return assistantService.upsertPrice(body);
+    requirePanel();
     const { type } = body;
     const original = Number(body.original);
     const price = Number(body.price);
@@ -177,7 +177,7 @@ const upsertPrice = async (body = {}) => {
 };
 
 const deletePrice = async (type, rawOriginal) => {
-    if (!onPanel()) return assistantService.deletePrice(type, rawOriginal);
+    requirePanel();
     const original = Number(rawOriginal);
     if (!PRICE_TYPES.includes(type)) throw httpError(400, "type không hợp lệ.");
     if (!Number.isFinite(original)) throw httpError(400, "original không hợp lệ.");
@@ -187,7 +187,7 @@ const deletePrice = async (type, rawOriginal) => {
 };
 
 const updateDecor = async (skuId, body = {}) => {
-    if (!onPanel()) return assistantService.updateDecor(skuId, body);
+    requirePanel();
     const existing = read("importedDecors", "findOne", { sku_id: skuId });
     if (!existing) throw httpError(404, "Không tìm thấy decor đã import với sku_id này.");
     const patch = {};
@@ -207,7 +207,7 @@ const updateDecor = async (skuId, body = {}) => {
 };
 
 const deleteDecor = async (skuId) => {
-    if (!onPanel()) return assistantService.deleteDecor(skuId);
+    requirePanel();
     if (!read("importedDecors", "findOne", { sku_id: skuId })) throw httpError(404, "Không tìm thấy decor đã import với sku_id này.");
     write("importedDecors", "findOneAndDelete", { query: { sku_id: skuId } });
     return { message: `Đã xóa decor "${skuId}" khỏi importedDecors.` };
@@ -215,12 +215,12 @@ const deleteDecor = async (skuId) => {
 
 // Resolving needs the assistant (its Discord shop session): ask it on the bus.
 const previewDecor = async (fields) => {
-    if (!onPanel()) return assistantService.previewDecor(fields);
+    requirePanel();
     return discordBus.request(owner(), "decor.preview", fields, { timeoutMs: 45_000 });
 };
 
 const importDecor = async (fields) => {
-    if (!onPanel()) return assistantService.importDecor(fields);
+    requirePanel();
     return discordBus.request(owner(), "decor.import", fields, { timeoutMs: 60_000 });
 };
 

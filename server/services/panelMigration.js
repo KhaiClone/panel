@@ -15,6 +15,7 @@ const integrations = require("./integrationService");
 const callbacks = require("./callbackService");
 const domainsSvc = require("./panelDomains");
 const sharedStore = require("./sharedStore");
+const discordBus = require("./discordBus");
 const { setEnvKey, envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -339,33 +340,10 @@ const preflight = async (targetNodeId) => {
         add("error", "agents", `The agent on ${tooOld.join(", ")} is too old to take part in a move — run "Rebuild & Restart" (it updates every agent) first`);
     }
 
-    // Integrations, as the NEW panel will resolve them.
-    const integrationTargets = [];
-    for (const name of Object.keys(integrations.DEFS)) {
-        const label = integrations.DEFS[name].label;
-        let r;
-        try {
-            r = await integrations.resolve(name, { fromNodeId: target._id });
-        } catch (err) {
-            add("error", `integration:${name}`, err.message);
-            continue;
-        }
-        if (r.source === "env" && integrations.isLoopbackUrl(r.url)) {
-            add(
-                "error",
-                `integration:${name}`,
-                `${label} uses ${integrations.DEFS[name].env}=${r.url} — after the move that address is ${target.name} itself. Link it to its project under Integrations first.`,
-            );
-        } else if (r.source === "project" && !r.local) {
-            integrationTargets.push({ name, label, ...r });
-        } else if (r.source === "project") {
-            add("ok", `integration:${name}`, `${label} → ${r.botName} on the same node (127.0.0.1:${r.port})`);
-        }
-    }
-
-    // Callback URLs saying "localhost" (callbackService). Owned ones follow
-    // their project, so check the target can reach where it runs; orphans are
-    // rewritten to this node by the move (finalizeIncoming).
+    // Callback URLs saying "localhost" (callbackService). Owned ones whose
+    // project runs the Discord bus are delivered there — no address involved;
+    // other owned ones follow their project, so check the target can reach it;
+    // orphans are rewritten to this node by the move (finalizeIncoming).
     const fromNode = await nodeService.getNode(currentId).catch(() => null);
     const fromAddr = nodeAddress(fromNode);
     const callbackTargets = [];
@@ -373,8 +351,14 @@ const preflight = async (targetNodeId) => {
         if (!callbackTargets.some((x) => x.host === t.host && x.port === t.port)) callbackTargets.push(t);
     };
     const groups = await callbacks.audit();
+    const caps = discordBus.capabilities();
     for (const g of groups.filter((x) => x.ownerBotId)) {
         const port = callbacks.portOf(g.url);
+        const onBus = ["quest.event", "badge.event"].some((c) => caps[g.ownerBotId]?.commands?.includes(c));
+        if (onBus && discordBus.configured()) {
+            add("ok", `callback:${g.ownerBotId}`, `Callbacks of ${g.ownerName} (${g.sources.join(", ")}) go over the Discord bus — no address needed`);
+            continue;
+        }
         try {
             const owner = await db.findOne("bots", { _id: g.ownerBotId });
             const addr = await integrations.addressFor(owner, port, target._id);
@@ -396,8 +380,8 @@ const preflight = async (targetNodeId) => {
             "callbacks",
             `Callback URLs saying "localhost" with no known project (meaning ${fromNode.name}): ` +
                 orphans.map((c) => `${c.url} — ${c.sources.join(", ")}`).join("; ") +
-                `. The move pins them to ${fromAddr}. Give the project that registers them its own API key, or link it ` +
-                `under Integrations on that port, and they follow the project instead.`,
+                `. The move pins them to ${fromAddr}. Give the project that registers them its own API key and the ` +
+                `Discord bus library, and they follow the project instead.`,
         );
         for (const c of orphans) {
             const u = new URL(callbacks.relocateUrl(c.url, fromAddr));
@@ -407,7 +391,6 @@ const preflight = async (targetNodeId) => {
 
     const probeTargets = [
         ...others.map((n) => ({ host: n.host, port: n.port })),
-        ...integrationTargets.map((t) => ({ host: t.host, port: t.port })),
         ...callbackTargets.map((t) => ({ host: t.host, port: t.port })),
     ];
     let probe = [];
@@ -427,19 +410,6 @@ const preflight = async (targetNodeId) => {
                 "error",
                 `reach:${n._id}`,
                 `${target.name} cannot reach the agent on ${n.name} (${n.host}:${n.port}${p?.error ? `, ${p.error}` : ""}) — Prepare adds a firewall rule for it on ${n.name}`,
-            );
-        }
-    }
-    for (const t of integrationTargets) {
-        const p = reachable(t.host, t.port);
-        if (p?.ok) add("ok", `integration:${t.name}`, `${t.label} → ${t.botName} at ${t.url}`);
-        else {
-            const node = await nodeService.getNode(t.nodeId).catch(() => null);
-            add(
-                "error",
-                `integration:${t.name}`,
-                `${target.name} cannot reach ${t.label} at ${t.url}${p?.error ? ` (${p.error})` : ""}. ` +
-                    `On ${node?.name || "that node"}: ${ufwHint(node, target, t.port)}`,
             );
         }
     }
