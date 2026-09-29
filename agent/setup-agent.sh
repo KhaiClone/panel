@@ -37,7 +37,11 @@ BOTS_DIR="/root/bots"
 SITES_DIR="/root/sites"
 
 if [ "$(id -u)" != "0" ]; then
-    echo "Run this as root (sudo bash $0 ...)" >&2
+    if [ -n "$JOIN_URL" ]; then
+        echo "Run it as root: sudo bash $0" >&2
+    else
+        echo "Run it as root: sudo bash $0 <PANEL_IP> [AGENT_PORT] [REPO_URL]" >&2
+    fi
     exit 1
 fi
 

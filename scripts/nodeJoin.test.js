@@ -139,7 +139,7 @@ const bashAvailable = (() => {
         const r = await nodeJoin.create({ name: "vps4", ip: "203.0.113.10" });
         assert.ok(r.token.length >= 30);
         assert.ok(r.secure);
-        assert.strictEqual(r.command, `curl -sSL 'https://panel.example.com/api/join/${r.token}/install.sh' -o join-node.sh && bash join-node.sh`);
+        assert.strictEqual(r.command, `curl -sSL 'https://panel.example.com/api/join/${r.token}/install.sh' -o join-node.sh && sudo bash join-node.sh`);
         const raw = JSON.stringify(store.get("node_join_invites"));
         assert.ok(!raw.includes(r.token), "token stored in clear");
         assert.strictEqual(r.invite.tokenHash, undefined);

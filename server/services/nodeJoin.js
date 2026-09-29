@@ -141,9 +141,10 @@ const scriptUrl = (baseUrl, token) => `${baseUrl}/api/join/${token}/install.sh`;
 
 /**
  * What the admin pastes. No `curl -f`: an expired or used command gets a small
- * script back that says so, instead of a bare "error 410".
+ * script back that says so, instead of a bare "error 410". `sudo` on bash, not
+ * curl: only the setup needs root, and it works the same from a root shell.
  */
-const commandFor = (baseUrl, token) => `curl -sSL ${shq(scriptUrl(baseUrl, token))} -o join-node.sh && bash join-node.sh`;
+const commandFor = (baseUrl, token) => `curl -sSL ${shq(scriptUrl(baseUrl, token))} -o join-node.sh && sudo bash join-node.sh`;
 
 // ── API ──────────────────────────────────────────────────────────────────────
 

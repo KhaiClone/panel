@@ -379,7 +379,7 @@ operations on behalf of the panel.
 The panel shows one command; run it as root on that VPS (Ubuntu 22.04/24.04):
 
 ```bash
-curl -sSL 'https://panel.example.com/api/join/<token>/install.sh' -o join-node.sh && bash join-node.sh
+curl -sSL 'https://panel.example.com/api/join/<token>/install.sh' -o join-node.sh && sudo bash join-node.sh
 ```
 
 It is `agent/setup-agent.sh` with the settings filled in by the panel. It installs
