@@ -81,6 +81,11 @@ nodeService.agentRequest = async (node, method, urlPath, opts = {}) => {
 };
 panelDomains.currentUrl = async () => "https://panel.example.com";
 panelService.getPanelStatus = async () => ({ git: { commitHash: COMMIT, branch: "main" } });
+// Hermetic by default: the real ones read this machine's ~/.ssh, walk every
+// node or ask GitHub. A test that looks at one of them swaps it in itself.
+keySync.syncAllToNode = async () => ({ pushed: [], failed: [], gitConfig: true, gitConfigError: null });
+wgService.syncMesh = async () => [];
+lavalinkStore.get = async () => ({ enabled: false });
 
 const reset = async () => {
     store.clear();
@@ -349,15 +354,25 @@ const bashAvailable = (() => {
             "/lease": new Error("[Node vps4] ECONNRESET"),
             "/ufw/allow-from": (n, o) => ({ message: `${o.data.ip} may now reach port ${o.data.port} on ${o.data.iface}` }),
             "/panel-host/probe": { results: [{ ok: true }] },
+            "/logrotate/ensure": { installed: true, status: "online", changed: true, config: { max_size: "50M", retain: "7", compress: "true" } },
         };
         try {
             const progress = [];
             const steps = await nodeSetup.provision(node, { onStep: (s) => progress.push(s.map((x) => x.status).join(",")) });
-            assert.deepStrictEqual(steps.map((s) => s.status), ["ok", "ok", "error", "ok", "warn"]);
+            assert.deepStrictEqual(steps.map((s) => s.label), [
+                "SSH keys and git config",
+                "WireGuard mesh",
+                "Follow this panel (lease)",
+                "Panel reachable for the panel gateway",
+                "PM2 log rotation",
+                "Lavalink",
+            ]);
+            assert.deepStrictEqual(steps.map((s) => s.status), ["ok", "ok", "error", "ok", "ok", "warn"]);
             assert.match(steps[2].detail, /ECONNRESET/);
-            assert.match(steps[4].detail, /Java/);
+            assert.strictEqual(steps[4].detail, "pm2-logrotate installed (max 50M per log, keep 7, gzip)");
+            assert.match(steps[5].detail, /Java/);
             assert.strictEqual(progress[0], "running");
-            assert.strictEqual(progress.at(-1), "ok,ok,error,ok,warn");
+            assert.strictEqual(progress.at(-1), "ok,ok,error,ok,ok,warn");
             // The panel's node lets the new node's WireGuard IP through to the panel port, on wg0 only…
             const allow = calls.find((c) => c.urlPath === "/ufw/allow-from");
             assert.strictEqual(allow.node, "sangs");
@@ -372,6 +387,19 @@ const bashAvailable = (() => {
             lavalinkStore.get = saved.get;
             lavalinkService.installOnNode = saved.install;
         }
+    });
+
+    await test("provision: pm2-logrotate already there is kept; a node that opted out is a warning", async () => {
+        const node = await fakeDb.create("nodes", { name: "vps4", host: "203.0.113.10", port: 4200, apiKey: "k4", enabled: true });
+        const logrotateStep = async () => (await nodeSetup.provision(node)).find((s) => s.label === "PM2 log rotation");
+        agentReplies = { "/logrotate/ensure": { installed: true, status: "online", changed: false, config: { max_size: "100M", retain: "3", compress: "false" } } };
+        let s = await logrotateStep();
+        assert.strictEqual(s.status, "ok");
+        assert.strictEqual(s.detail, "pm2-logrotate already there (online; max 100M per log, keep 3)");
+        agentReplies = { "/logrotate/ensure": { installed: false, status: "not_installed", changed: false, skipped: "PM2_LOGROTATE=off on this node" } };
+        s = await logrotateStep();
+        assert.strictEqual(s.status, "warn");
+        assert.match(s.detail, /PM2_LOGROTATE=off/);
     });
 
     await test("provision: a node with no WireGuard identity is an error that says what to install", async () => {

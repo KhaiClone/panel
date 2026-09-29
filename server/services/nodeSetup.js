@@ -9,7 +9,8 @@ const panelLease = require("./panelLease");
 //    register()   validate, check the agent answers with this key, save.
 //    provision()  what a new node needs from the panel, in order:
 //                   SSH keys + git config → WireGuard mesh → lease claim →
-//                   the panel reachable for its gateway → Lavalink.
+//                   the panel reachable for its gateway → pm2-logrotate →
+//                   Lavalink.
 //
 //  provision() never throws: each step reports ok / warn / error on its own, so
 //  one missing piece (no Java, GitHub briefly down) does not undo the others.
@@ -137,6 +138,18 @@ const openGateway = async (node) => {
     return { detail: `${rule}\n${fresh.name} reaches the panel at ${target.host}:${target.port}` };
 };
 
+/**
+ * The agent installs pm2-logrotate on its own at start; this waits for that
+ * (the agent runs one install at a time) and reports what the node has.
+ */
+const ensureLogrotate = async (node) => {
+    const r = await nodeService.agentRequest(node, "post", "/logrotate/ensure", { timeout: 200_000 });
+    if (r.skipped) return { warn: true, detail: `Not installed: ${r.skipped}` };
+    const c = r.config || {};
+    const limits = `max ${c.max_size || "?"} per log, keep ${c.retain || "?"}${String(c.compress) === "true" ? ", gzip" : ""}`;
+    return { detail: r.changed ? `pm2-logrotate installed (${limits})` : `pm2-logrotate already there (${r.status}; ${limits})` };
+};
+
 const installLavalink = async (node) => {
     const settings = await require("./lavalinkStore").get();
     if (!settings.enabled) return { detail: "Lavalink is disabled in the panel settings — skipped" };
@@ -151,6 +164,7 @@ const STEPS = [
     ["WireGuard mesh", joinMesh],
     ["Follow this panel (lease)", claimLease],
     ["Panel reachable for the panel gateway", openGateway],
+    ["PM2 log rotation", ensureLogrotate],
     ["Lavalink", installLavalink],
 ];
 

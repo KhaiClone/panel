@@ -9,8 +9,9 @@
 #  drop it from the WireGuard mesh.
 #
 #  What it removes — only what the setup (or the agent) put there:
-#    - panel-agent and lavalink from that user's PM2; that user's PM2 itself
-#      and its boot service when nothing else is left in it
+#    - panel-agent and lavalink from that user's PM2, and pm2-logrotate when
+#      the agent installed it; that user's PM2 itself and its boot service
+#      when nothing else is left in it
 #    - wg0, if /etc/wireguard/wg0.conf was written by bot-panel
 #    - the UFW rules for the agent port and WireGuard (51820/udp), and for
 #      80/443 when the setup added those; UFW is turned off again if the
@@ -152,6 +153,11 @@ if command -v pm2 >/dev/null 2>&1; then
             as_user pm2 delete "$p" >/dev/null && say "PM2: removed $p"
         fi
     done
+    # pm2-logrotate, when the agent is what installed it (it leaves this marker then).
+    if [ -f "$H/.pm2/.bot-panel-logrotate" ]; then
+        as_user pm2 uninstall pm2-logrotate >/dev/null 2>&1 && say "PM2: removed pm2-logrotate"
+        rm -f "$H/.pm2/.bot-panel-logrotate"
+    fi
     as_user pm2 save --force >/dev/null 2>&1
     if [ "$(as_user pm2 jlist 2>/dev/null)" = "[]" ]; then
         if [ -f "/etc/systemd/system/pm2-$TARGET_USER.service" ]; then

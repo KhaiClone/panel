@@ -9,7 +9,8 @@ const os = require("os");
 //  pm2-logrotate management, owned entirely by the agent.
 //
 //  Lets the panel install and configure the pm2-logrotate module on any node so
-//  PM2 logs can never fill a disk. A 2.9G pm2.log once filled a disk here and
+//  PM2 logs can never fill a disk — and every agent installs it into its own
+//  PM2 on start when it is missing (ensureOnBoot). A 2.9G pm2.log once filled a disk here and
 //  corrupted dump.pm2, losing every process on reboot — that is what this guards.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,9 @@ const safeEnv = { ...process.env, PATH: SAFE_PATH };
 const PM2_HOME = process.env.PM2_HOME || path.join(os.homedir(), ".pm2");
 const MODULE_CONF_PATH = path.join(PM2_HOME, "module_conf.json");
 const MODULE_NAME = "pm2-logrotate";
+// Left when the module was absent and the agent installed it, so
+// uninstall-agent.sh removes it again — and only then.
+const MARKER_PATH = path.join(PM2_HOME, ".bot-panel-logrotate");
 
 // Editable settings and their validation rules. Anything not listed here is
 // rejected, which also keeps `pm2 set` arguments shell-safe — do not loosen
@@ -97,13 +101,61 @@ const setConfig = async (settings) => {
  * and apply sensible defaults so it protects the disk out of the box.
  */
 const install = async () => {
+    const wasThere = (await getStatus()).status !== "not_installed";
     await execAsync(`pm2 install ${MODULE_NAME} --no-color`, {
         env: safeEnv,
         timeout: 180_000,
         maxBuffer: 10 * 1024 * 1024,
     });
+    if (!wasThere) {
+        try { fs.writeFileSync(MARKER_PATH, `${new Date().toISOString()}\n`); } catch { /* only uninstall reads it */ }
+    }
     await setConfig({ max_size: "50M", retain: "7", compress: "true", rotateModule: "true" });
     return getStatus();
 };
 
-module.exports = { getStatus, install, setConfig };
+// One install at a time: the boot-time check and the panel's setup step
+// usually ask within seconds of each other, and two `pm2 install` runs in the
+// same ~/.pm2/modules trip over each other.
+let inFlight = null;
+
+/**
+ * Install with the defaults unless the module is already in this PM2 — an
+ * existing install and its settings are left exactly as they are.
+ * Resolves to getStatus() plus `changed` (true when this call installed it).
+ */
+const ensureInstalled = ({ status = getStatus, run = install } = {}) => {
+    if (!inFlight) {
+        inFlight = (async () => {
+            const before = await status();
+            if (before.status === "unknown") {
+                throw new Error(`Could not read PM2's process list — is pm2 installed in ${SAFE_PATH.split(":").join(" or ")}?`);
+            }
+            if (before.status !== "not_installed") return { ...before, changed: false };
+            return { ...(await run()), changed: true };
+        })().finally(() => {
+            inFlight = null;
+        });
+    }
+    return inFlight;
+};
+
+/** PM2_LOGROTATE=off in the agent's .env: this node manages its logs itself. */
+const optedOut = () => String(process.env.PM2_LOGROTATE || "").toLowerCase() === "off";
+
+/**
+ * Every agent keeps PM2's logs from filling its disk, from the moment it is
+ * set up: shortly after start, ensure the module. PM2_LOGROTATE=off opts out.
+ */
+const ensureOnBoot = (delayMs = 5000) => {
+    if (optedOut()) return;
+    setTimeout(() => {
+        ensureInstalled()
+            .then((r) => {
+                if (r.changed) console.log(`[Agent] ${MODULE_NAME} installed (max 50M per log, keep 7, gzip)`);
+            })
+            .catch((err) => console.warn(`[Agent] Could not install ${MODULE_NAME}:`, err.message.split("\n")[0]));
+    }, delayMs).unref();
+};
+
+module.exports = { getStatus, install, setConfig, ensureInstalled, ensureOnBoot, optedOut, MARKER_PATH };

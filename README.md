@@ -409,7 +409,15 @@ on a machine that is a node already.
 | WireGuard mesh | An overlay IP is assigned (10.88.0.x) and the mesh is re-pushed to every node |
 | Follow this panel (lease) | Claimed at the current epoch at once; its gateway `127.0.0.1:4201` learns the panel's address |
 | Panel reachable for the panel gateway | `ufw allow in on wg0 from <new overlay IP> to any port <PORT>` on the panel's node, then probed from the new node (an agent older than 1.10.0 there adds the rule without `in on wg0`) |
+| PM2 log rotation | pm2-logrotate in the agent's PM2: max 50M per log, keep 7, gzip (see below) |
 | Lavalink | Installed and started when auto-install is on |
+
+**pm2-logrotate on every node.** Every agent installs pm2-logrotate into its
+own PM2 a few seconds after it starts, when the module is missing. A node
+therefore has it from its setup, and the nodes that exist already get it on
+their next agent restart (**Rebuild & Restart** restarts them all). An existing
+install and its settings are left alone. `PM2_LOGROTATE=off` in the agent's
+`.env` opts a node out.
 
 A failed step is reported but does not undo the others. Its page (WireGuard,
 Lavalink, GitHub Keys) can retry it.
@@ -449,8 +457,9 @@ sudo bash uninstall-agent.sh <USER>   # the account the agent ran as, e.g. root
 
 It undoes the setup, keeping only what was there before it:
 
-- **PM2**: panel-agent and lavalink leave that user's PM2. That user's PM2 and
-  its boot service go too when nothing else is left in it.
+- **PM2**: panel-agent and lavalink leave that user's PM2, and pm2-logrotate
+  does too when the agent installed it. That user's PM2 and its boot service go
+  too when nothing else is left in it.
 - **Network**: a bot-panel `wg0` and the UFW rules for the agent port and
   51820/udp are removed, and so are the 80/443 rules when the setup added them.
   UFW is turned off again if the setup is what turned it on.

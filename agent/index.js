@@ -62,3 +62,7 @@ require("./services/proxy").createProxy(server);
 
 // Panel gateway: 127.0.0.1:PANEL_GATEWAY_PORT → wherever the panel runs now.
 require("./services/panelGateway").start();
+
+// pm2-logrotate in this agent's PM2, installed with defaults if missing
+// (PM2_LOGROTATE=off opts out) — PM2 logs must never fill a node's disk.
+require("./services/logrotate").ensureOnBoot();
