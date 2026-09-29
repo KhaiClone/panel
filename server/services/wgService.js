@@ -86,7 +86,7 @@ async function syncMesh() {
         try {
             await setupNode(n, nodes);
         } catch (e) {
-            results.push({ node: n.name, ok: false, stage: "setup", error: e.message });
+            results.push({ nodeId: n._id, node: n.name, ok: false, stage: "setup", error: e.message });
         }
     }
     nodes = await nodeService.getNodes(); // reload with fresh identities
@@ -95,9 +95,9 @@ async function syncMesh() {
     for (const n of nodes.filter((x) => x.enabled !== false && x.wgPubKey)) {
         try {
             await pushToNode(n, nodes);
-            results.push({ node: n.name, ok: true, overlayIp: n.wgOverlayIp });
+            results.push({ nodeId: n._id, node: n.name, ok: true, overlayIp: n.wgOverlayIp });
         } catch (e) {
-            results.push({ node: n.name, ok: false, stage: "push", error: e.message });
+            results.push({ nodeId: n._id, node: n.name, ok: false, stage: "push", error: e.message });
         }
     }
     return results;

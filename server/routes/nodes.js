@@ -3,6 +3,8 @@ const router = express.Router();
 
 const db = require("../db");
 const nodeService = require("../services/nodeService");
+const nodeSetup = require("../services/nodeSetup");
+const nodeJoin = require("../services/nodeJoin");
 const history = require("../services/historyService");
 
 // Mounted behind authMiddleware (see index.js).
@@ -44,81 +46,72 @@ router.get("/history", (req, res, next) => {
     }
 });
 
+// ── One-command join (services/nodeJoin.js) ──────────────────────────────────
+// The admin side: create / watch / revoke invites. The new VPS talks to the
+// public routes/join.js with the token.
+
+/** GET /api/nodes/invites — recent invites (last 24h), newest first. */
+router.get("/invites", async (req, res, next) => {
+    try {
+        res.json(await nodeJoin.list());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/nodes/invites   body: { name, ip, port?, origin? }
+ * → { invite, token, command, secure }. The token is shown this once.
+ * origin is the address the admin's browser uses for the panel — the command
+ * uses it when the panel has no HTTPS address of its own.
+ */
+router.post("/invites", async (req, res, next) => {
+    try {
+        res.status(201).json(await nodeJoin.create(req.body || {}));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** GET /api/nodes/invites/:inviteId — status and provisioning steps. */
+router.get("/invites/:inviteId", async (req, res, next) => {
+    try {
+        res.json(await nodeJoin.get(req.params.inviteId));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** DELETE /api/nodes/invites/:inviteId — revoke a pending invite. */
+router.delete("/invites/:inviteId", async (req, res, next) => {
+    try {
+        res.json(await nodeJoin.revoke(req.params.inviteId));
+    } catch (err) {
+        next(err);
+    }
+});
+
 /**
  * POST /api/nodes
  * Register a worker node. Connection is tested before saving.
- * Body: { name, host, port, apiKey }
+ * Body: { name, host, port, apiKey, controlHost? }
  */
 router.post("/", async (req, res, next) => {
     try {
         const { name, host, port, apiKey, controlHost } = req.body;
-        if (!name || !host || !port || !apiKey) {
-            return res.status(400).json({ error: "name, host, port, and apiKey are required" });
-        }
+        const node = await nodeSetup.register({ name, host, port, apiKey, controlHost });
 
-        const parsedPort = parseInt(port, 10);
-        if (isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-            return res.status(400).json({ error: "Invalid port" });
-        }
-
-        const existing = await db.findOne("nodes", { host, port: parsedPort });
-        if (existing) {
-            return res.status(409).json({ error: `A node at ${host}:${parsedPort} already exists ("${existing.name}")` });
-        }
-
-        // Verify the agent is reachable with this key before saving.
-        // controlHost is included so the health check uses the very address the
-        // panel will actually call — testing the public IP and then talking to
-        // loopback would validate the wrong path.
-        const candidate = { name, host, port: parsedPort, apiKey, controlHost: controlHost || undefined };
-        const healthy = await nodeService.checkNodeHealth(candidate);
-        if (!healthy) {
-            return res.status(400).json({
-                error: `Cannot reach the agent at ${host}:${parsedPort} — check that the agent is running, the API key matches, and the firewall allows this panel's IP`,
-            });
-        }
-
-        const node = await db.create("nodes", {
-            name,
-            host,
-            port: parsedPort,
-            apiKey,
-            // Optional: address for panel → agent traffic only. host stays the
-            // public address (WireGuard endpoint + egress proxy use it).
-            ...(controlHost ? { controlHost } : {}),
-            enabled: true,
-            createdAt: Date.now(),
-        });
-
-        // Mark online right away so key sync targets it without waiting for the poll
-        try { require("../services/nodeService").markOnline(node._id); } catch { /* optional */ }
-
-        // Push all existing SSH keys + git config to the fresh node (best-effort,
-        // don't block registration on it)
-        require("../services/keySyncService")
-            .syncAllToNode(node)
-            .catch((err) => console.error(`[Nodes] Initial key sync to "${node.name}" failed:`, err.message));
-
-        // Auto-join the WireGuard overlay: set up this node then re-push the mesh to
-        // all (best-effort — the agent may need the /wg-capable code deployed first).
-        require("../services/wgService")
-            .syncMesh()
-            .catch((err) => console.error(`[Nodes] WG mesh sync after adding "${node.name}" failed:`, err.message));
-
-        // Every node ships with a Lavalink: same shared config, latest release,
-        // started under PM2. Best-effort like the two above — registration must
-        // not fail because Java is missing or GitHub is briefly unreachable. The
-        // Lavalink page shows the outcome and offers a manual Install.
-        require("../services/lavalinkStore")
-            .get()
-            .then((s) => {
-                if (!s.enabled || !s.autoInstallOnNewNode) return null;
-                return require("../services/lavalinkService").installOnNode(node);
+        // SSH keys, WireGuard, lease, panel gateway, Lavalink — best-effort and in
+        // the background: registration must not fail because Java is missing or
+        // GitHub is briefly unreachable. Each page shows its own outcome.
+        nodeSetup
+            .provision(node)
+            .then((steps) => {
+                for (const s of steps.filter((x) => x.status !== "ok")) {
+                    console.warn(`[Nodes] "${node.name}" — ${s.label}: ${s.status}${s.detail ? ` (${s.detail})` : ""}`);
+                }
             })
-            .then((r) => {
-                if (r && !r.ok) console.warn(`[Lavalink] Auto-install on "${node.name}" failed:`, r.error || r.skipped);
-            })
-            .catch((err) => console.error(`[Lavalink] Auto-install on "${node.name}" failed:`, err.message));
+            .catch((err) => console.error(`[Nodes] Setting up "${node.name}" failed:`, err.message));
 
         const { apiKey: _hidden, ...safe } = node;
         res.status(201).json(safe);

@@ -76,19 +76,28 @@ const claimAll = async () => {
     const nodeService = require("./nodeService");
     const nodes = (await nodeService.getNodes()).filter((n) => n.enabled !== false);
     const panelNode = nodes.find((n) => n._id === process.env.PANEL_NODE_ID) || null;
-    return Promise.all(
-        nodes.map(async (node) => {
-            try {
-                await nodeService.agentRequest(node, "post", "/lease", {
-                    data: { epoch, panelNodeId: process.env.PANEL_NODE_ID || null, panelUrl: panelUrlFor(node, panelNode) },
-                    timeout: 8000,
-                });
-                return { nodeId: node._id, name: node.name, ok: true };
-            } catch (err) {
-                return { nodeId: node._id, name: node.name, ok: false, status: err.status || null, error: err.message };
-            }
-        }),
-    );
+    return Promise.all(nodes.map((node) => claimNode(node, panelNode)));
 };
 
-module.exports = { load, current, set, headers, superseded, claimAll, panelUrlFor, HEADER, SUPERSEDED };
+const claimNode = async (node, panelNode) => {
+    const nodeService = require("./nodeService");
+    const panelUrl = panelUrlFor(node, panelNode);
+    try {
+        await nodeService.agentRequest(node, "post", "/lease", {
+            data: { epoch, panelNodeId: process.env.PANEL_NODE_ID || null, panelUrl },
+            timeout: 8000,
+        });
+        return { nodeId: node._id, name: node.name, ok: true, panelUrl };
+    } catch (err) {
+        return { nodeId: node._id, name: node.name, ok: false, status: err.status || null, error: err.message };
+    }
+};
+
+/** Claim one node now — a node just added should not wait for the next round. */
+const claim = async (node) => {
+    const nodeService = require("./nodeService");
+    const panelNode = (await nodeService.getNodes()).find((n) => n._id === process.env.PANEL_NODE_ID) || null;
+    return claimNode(node, panelNode);
+};
+
+module.exports = { load, current, set, headers, superseded, claimAll, claim, panelUrlFor, HEADER, SUPERSEDED };

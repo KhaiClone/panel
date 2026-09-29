@@ -21,14 +21,26 @@ const closePort = async (port) => {
     } catch { /* rule may not exist */ }
 };
 
+/** Interface names ufw accepts after "in on" (Linux caps them at 15 chars). */
+const IFACE_RE = /^[a-zA-Z0-9_.-]{1,15}$/;
+
+/**
+ * The ufw rule text for allowFrom. `iface` narrows it to traffic arriving on
+ * that interface — "wg0" for a peer's WireGuard address. Callers validate ip,
+ * port and iface first: the text goes into a shell command.
+ */
+const allowFromRule = (ip, port, iface = null) =>
+    `allow ${iface ? `in on ${iface} ` : ""}from ${ip} to any port ${port} proto tcp comment 'bot-panel: panel access'`;
+
 /**
  * Let one IP reach one TCP port — how a node that is about to host the panel is
- * given access to this agent. Inserted at the top so an earlier DENY for the
- * port cannot shadow it; `ufw insert 1` refuses on an empty rule set, where a
- * plain allow is equivalent anyway.
+ * given access to this agent, and how a new node's panel gateway is let through
+ * to the panel. Inserted at the top so an earlier DENY for the port cannot
+ * shadow it; `ufw insert 1` refuses on an empty rule set, where a plain allow
+ * is equivalent anyway.
  */
-const allowFrom = async (ip, port) => {
-    const rule = `allow from ${ip} to any port ${port} proto tcp comment 'bot-panel: panel access'`;
+const allowFrom = async (ip, port, iface = null) => {
+    const rule = allowFromRule(ip, port, iface);
     try {
         await execAsync(`${SUDO}ufw insert 1 ${rule}`);
     } catch {
@@ -62,4 +74,4 @@ const status = async () => {
     return stdout;
 };
 
-module.exports = { openPort, closePort, allowFrom, isPortFree, findFreePort, status };
+module.exports = { openPort, closePort, allowFrom, allowFromRule, IFACE_RE, isPortFree, findFreePort, status };

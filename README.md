@@ -373,18 +373,54 @@ operations on behalf of the panel.
 - **Existing bots** are migrated to `nodeId: "local"` on first startup and
   behave exactly as before.
 
-### Setting up a worker node
+### Adding a node — one command
+
+**Systems → Add node → One command**: enter a name and the new VPS's public IP.
+The panel shows one command; run it as root on that VPS (Ubuntu 22.04/24.04):
+
+```bash
+curl -sSL 'https://panel.example.com/api/join/<token>/install.sh' -o join-node.sh && bash join-node.sh
+```
+
+It is `agent/setup-agent.sh` with the settings filled in by the panel. It installs
+Node 22, PM2, git, nginx, certbot, WireGuard and Java 17, clones the repo at the
+**panel's own commit**, generates the agent key and opens the agent port to the
+panel's IP only (plus whatever port sshd listens on). Then it starts the agent
+and registers it. The panel then sets the node up and the script prints each
+step (the modal shows the same):
+
+| Step | What happens |
+|------|--------------|
+| SSH keys and git config | Every key on the panel's GitHub Keys page is copied over |
+| WireGuard mesh | An overlay IP is assigned (10.88.0.x) and the mesh is re-pushed to every node |
+| Follow this panel (lease) | Claimed at the current epoch at once; its gateway `127.0.0.1:4201` learns the panel's address |
+| Panel reachable for the panel gateway | `ufw allow in on wg0 from <new overlay IP> to any port <PORT>` on the panel's node, then probed from the new node (an agent older than 1.10.0 there adds the rule without `in on wg0`) |
+| Lavalink | Installed and started when auto-install is on |
+
+A failed step is reported but does not undo the others. Its page (WireGuard,
+Lavalink, GitHub Keys) can retry it.
+
+**The token.** It works once and expires after 30 minutes. The panel stores only
+its sha256, and it is bound to the IP typed into the form: the panel calls the
+agent at that IP itself to check the key, so a leaked command cannot register
+any other machine. The agent key travels encrypted with the token (AES-256-GCM).
+Over plain HTTP anyone who reads the traffic can read both, so the form warns
+when the panel has no HTTPS address. If a run fails before the node is saved
+(firewall, agent not up), the command stays valid: fix the cause and run it
+again. The repo URL comes from the panel checkout's `origin` as public https;
+set `NODE_JOIN_REPO_URL` in the panel's `.env` to override it.
+
+### Adding a node — by hand
 
 ```bash
 # On the fresh worker VPS (Ubuntu 22.04/24.04), as root:
 curl -fsSL https://raw.githubusercontent.com/<your-repo>/main/agent/setup-agent.sh -o setup-agent.sh
 sudo bash setup-agent.sh <PANEL_IP> [AGENT_PORT] [REPO_URL]
-# → installs Node 22 + PM2 + git, clones the repo, generates an API key,
-#   restricts the agent port to the panel's IP via UFW, starts the agent under PM2.
 ```
 
-Then in the panel: **Systems → Add Node**, paste the host/port/API key the
-script printed. The connection is verified before the node is saved.
+Then **Systems → Add node → Manual**, and paste the host/port/API key the script
+printed. The connection is verified before the node is saved, and the same setup
+steps run in the background.
 
 ### Node API summary
 
@@ -395,6 +431,13 @@ script printed. The connection is verified before the node is saved.
 | `PUT` | `/api/nodes/:id` | Update node (enable/disable, key rotation) |
 | `DELETE` | `/api/nodes/:id` | Remove node (blocked while bots live on it) |
 | `POST` | `/api/nodes/:id/test` | Live connection + stats check |
+| `GET` | `/api/nodes/invites` | Join invites of the last 24 h |
+| `POST` | `/api/nodes/invites` | `{ name, ip, port?, origin? }` → `{ invite, token, command, secure }` (token shown once) |
+| `GET` | `/api/nodes/invites/:id` | Status and setup steps |
+| `DELETE` | `/api/nodes/invites/:id` | Revoke a pending invite |
+| `GET` | `/api/join/:token/install.sh` | Public: the setup script for that invite |
+| `POST` | `/api/join/:token` | Public: the script's callback `{ apiKey (encrypted with the token), agentPort }` |
+| `GET` | `/api/join/:token` | Public: setup progress, for the script |
 
 ---
 

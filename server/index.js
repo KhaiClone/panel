@@ -130,6 +130,8 @@ app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
 app.use("/api/nodes", authMiddleware, nodeRoutes);
+// Public: a new VPS joining with the one-command setup (token-guarded, see routes/join.js).
+app.use("/api/join", require("./routes/join"));
 app.use("/api/shop", authMiddleware, shopOrderRoutes);
 app.use("/api/decors", authMiddleware, decorRoutes);
 app.use("/api/quests", authMiddleware, questRoutes);

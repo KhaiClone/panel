@@ -69,15 +69,28 @@ const syncGitConfigToAllNodes = () => forEachNode((node) => pushGitConfigToNode(
 
 /**
  * Full sync of every key (that has private material) + git config to one node.
- * Used when a node is first registered.
+ * Used when a node is first registered. Never throws: returns what went where,
+ * { pushed: [name], failed: [{ name, error }], gitConfig, gitConfigError }.
  */
 const syncAllToNode = async (node) => {
+    const out = { pushed: [], failed: [], gitConfig: false, gitConfigError: null };
     for (const k of await syncableKeys()) {
-        try { await pushKeyToNode(node, k.name); }
-        catch (err) { console.error(`[KeySync] Failed to push "${k.name}" to ${node.name}:`, err.message); }
+        try {
+            await pushKeyToNode(node, k.name);
+            out.pushed.push(k.name);
+        } catch (err) {
+            console.error(`[KeySync] Failed to push "${k.name}" to ${node.name}:`, err.message);
+            out.failed.push({ name: k.name, error: err.message });
+        }
     }
-    try { await pushGitConfigToNode(node); }
-    catch (err) { console.error(`[KeySync] Failed to push git config to ${node.name}:`, err.message); }
+    try {
+        await pushGitConfigToNode(node);
+        out.gitConfig = true;
+    } catch (err) {
+        console.error(`[KeySync] Failed to push git config to ${node.name}:`, err.message);
+        out.gitConfigError = err.message;
+    }
+    return out;
 };
 
 /**
