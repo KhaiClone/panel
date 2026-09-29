@@ -12,8 +12,9 @@
 #    - panel-agent and lavalink from that user's PM2; that user's PM2 itself
 #      and its boot service when nothing else is left in it
 #    - wg0, if /etc/wireguard/wg0.conf was written by bot-panel
-#    - the UFW rules for the agent port and WireGuard (51820/udp); UFW is
-#      turned off again if the setup is what turned it on
+#    - the UFW rules for the agent port and WireGuard (51820/udp), and for
+#      80/443 when the setup added those; UFW is turned off again if the
+#      setup is what turned it on
 #    - SSH keys the panel copied over (those with a "# GitHub key:" entry in
 #      ~/.ssh/config) and their config entries
 #    - ~/panel, ~/lavalink, ~/.panel-node, and ~/bots / ~/sites when empty
@@ -177,6 +178,12 @@ if command -v ufw >/dev/null 2>&1; then
     NUMS=$(ufw status numbered 2>/dev/null | grep -E "(^|[^0-9])($AGENT_PORT/tcp|51820/udp)([^0-9]|$)" | sed -n 's/^\[ *\([0-9]\+\)\].*/\1/p' | sort -rn)
     for n in $NUMS; do ufw --force delete "$n" >/dev/null; done
     [ -n "$NUMS" ] && say "UFW: removed the rules for $AGENT_PORT/tcp and 51820/udp"
+    # HTTP(S): only when the setup's own run added the rule (recorded then).
+    for p in 80 443; do
+        if [ "$(state "UFW_ADDED_$p")" = "yes" ]; then
+            ufw --force delete allow "$p/tcp" >/dev/null 2>&1 && say "UFW: removed the $p/tcp rule the setup added"
+        fi
+    done
     # Off again if the setup turned it on: recorded by the setup, or — for a
     # setup from before that record — ufw.conf, which `ufw enable` rewrites
     # only when UFW actually goes from off to on.

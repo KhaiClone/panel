@@ -25,7 +25,7 @@
 #    3. Clones the panel repo (agent lives inside it) to ~/panel — on the
 #       panel's own commit when it says which
 #    4. Generates a random AGENT_API_KEY and writes agent/.env
-#    5. Firewall: SSH from anywhere, agent port ONLY from the panel IP
+#    5. Firewall: SSH and HTTP(S) from anywhere, agent port ONLY from the panel IP
 #    6. Starts the agent under that user's PM2 and enables boot persistence
 #    7. (one command only) Registers with the panel and prints what it set up
 #
@@ -207,13 +207,19 @@ fi
 # 6. Firewall ─────────────────────────────────────────────────────────────────
 echo "[setup] Configuring UFW..."
 if ufw status | grep -q "Status: inactive"; then
-    echo "[setup] UFW was off — turning it on with SSH and the agent port open. Open anything else this machine serves with: sudo ufw allow <port>/tcp"
+    echo "[setup] UFW was off — turning it on with SSH, HTTP(S) and the agent port open. Open anything else this machine serves with: sudo ufw allow <port>/tcp"
 fi
 # Whatever port sshd really listens on — enabling UFW with only 22 open would
 # lock out a server whose SSH runs elsewhere.
 SSH_PORT=$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}' || true)
 ufw allow "${SSH_PORT:-22}/tcp"
 ufw allow from "$PANEL_IP" to any port "$AGENT_PORT" proto tcp
+# nginx on every node serves its panel domain (the panel, or a redirect to it)
+# and project websites, and certbot proves a domain over port 80. Remembered
+# only when this run added the rule, so uninstall removes only that.
+for p in 80 443; do
+    if ! ufw allow "$p/tcp" | grep -q "Skipping"; then remember "UFW_ADDED_$p" yes; fi
+done
 ufw --force enable
 ufw status | head -10
 

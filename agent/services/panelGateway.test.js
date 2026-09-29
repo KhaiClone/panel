@@ -1,6 +1,6 @@
 /**
- * Standalone checks for the panel gateway, the lease's panelUrl and the panel
- * vhost renderer — no test framework needed.
+ * Standalone checks for the panel gateway, the lease's panelUrl, the panel
+ * vhost renderer and certbot's failure message — no test framework needed.
  * Run:  node agent/services/panelGateway.test.js
  *
  * The gateway is how local projects reach the panel wherever it runs, so the
@@ -21,7 +21,8 @@ fs.rmSync(LEASE, { force: true });
 
 const lease = require("./panelLease");
 const gateway = require("./panelGateway");
-const { buildPanelSites } = require("./nginx");
+const nginx = require("./nginx");
+const { buildPanelSites } = nginx;
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -191,6 +192,33 @@ const call = (port, { method = "GET", path: p = "/", headers = {}, body } = {}) 
         // the 301 sits in `location /`, never at server level (certbot renewals need that)
         assert.ok(/location \/ \{\s+return 301 https:\/\/\$host\$request_uri;\s+\}/.test(out));
         assert.ok(!/server_name panel\.example\.com;\s+return/.test(out));
+    });
+
+    console.log("nginx.certbotFailure");
+
+    const CERTBOT_STDERR = "Saving debug log to /var/log/letsencrypt/letsencrypt.log\nSome challenges have failed.\nAsk for help or search for solutions at https://community.letsencrypt.org.";
+    const challenge = (type, detail) => ({
+        stdout: `Certbot failed to authenticate some domains (authenticator: nginx). The Certificate Authority reported these problems:\n  Domain: p.example.com\n  Type:   ${type}\n  Detail: ${detail}\n\nHint: The Certificate Authority failed to verify the temporary nginx configuration changes made by Certbot.\n`,
+        stderr: CERTBOT_STDERR,
+        message: `Command failed: sudo certbot certonly --nginx -d p.example.com\n${CERTBOT_STDERR}`,
+    });
+
+    await test("a firewalled port 80: the CA's detail from stdout, and the ufw command", () => {
+        const e = nginx.certbotFailure("p.example.com", challenge("connection", "203.0.113.10: Fetching http://p.example.com/.well-known/acme-challenge/x: Timeout during connect (likely firewall problem)"));
+        assert.strictEqual(
+            e.message,
+            "certbot could not get a certificate for p.example.com (connection): 203.0.113.10: Fetching http://p.example.com/.well-known/acme-challenge/x: Timeout during connect (likely firewall problem). Port 80 of this VPS is not reachable from the internet — on it: sudo ufw allow 80,443/tcp",
+        );
+    });
+
+    await test("DNS and a wrong server get their own hints", () => {
+        assert.match(nginx.certbotFailure("p.example.com", challenge("dns", "DNS problem: NXDOMAIN looking up A for p.example.com")).message, /\(dns\): DNS problem.*does not resolve to this VPS/);
+        assert.match(nginx.certbotFailure("p.example.com", challenge("unauthorized", "104.21.0.1: Invalid response from http://p.example.com/.well-known/acme-challenge/x: 404")).message, /Another server answered/);
+    });
+
+    await test("not a challenge failure: the raw reason, without the command line", () => {
+        const e = nginx.certbotFailure("p.example.com", { stderr: "sudo: certbot: command not found", message: "Command failed: sudo certbot certonly --nginx -d p.example.com\nsudo: certbot: command not found" });
+        assert.strictEqual(e.message, "sudo: certbot: command not found");
     });
 
     fs.rmSync(LEASE, { force: true });

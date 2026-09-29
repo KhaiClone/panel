@@ -157,6 +157,47 @@ const listConfigs = () => {
 };
 
 /**
+ * Why certbot failed, in one line. The CA's verdict ("Type: connection …
+ * Detail: 203.0.113.10: Fetching http://…/.well-known/acme-challenge/…: Timeout
+ * during connect (likely firewall problem)") goes to stdout, while exec's error
+ * message carries only stderr — "Some challenges have failed", which says
+ * nothing. Pure, so it is tested without certbot.
+ */
+const certbotFailure = (domain, { stdout = "", stderr = "", message = "" } = {}) => {
+    const out = `${stdout}\n${stderr}`;
+    const field = (name) => (out.match(new RegExp(`^\\s*${name}:\\s*(.+)$`, "m")) || [])[1]?.trim() || null;
+    const type = field("Type");
+    const detail = field("Detail");
+    let hint = null;
+    if (/Timeout during connect|firewall problem|Connection refused/i.test(out)) {
+        hint = "Port 80 of this VPS is not reachable from the internet — on it: sudo ufw allow 80,443/tcp";
+    } else if (/DNS problem|NXDOMAIN|no valid A records|SERVFAIL/i.test(out)) {
+        hint = `${domain} does not resolve to this VPS yet — point its A record here and wait for DNS`;
+    } else if (/unauthorized|Invalid response/i.test(out)) {
+        hint = `Another server answered for ${domain} — its DNS points elsewhere, or a proxy in front (Cloudflare) does not pass /.well-known/acme-challenge through`;
+    } else if (/too many (certificates|failed authorizations)|rateLimited/i.test(out)) {
+        hint = "Let's Encrypt rate limit — wait an hour before trying again";
+    }
+    if (!type && !detail && !hint) {
+        // Not a challenge failure (certbot missing, sudo refused…): the raw error says more.
+        return new Error(message.split("\n").filter((l) => !/^Command failed:/.test(l)).join(" ").trim() || message);
+    }
+    let msg = `certbot could not get a certificate for ${domain}`;
+    if (type) msg += ` (${type})`;
+    if (detail) msg += `: ${detail}`;
+    if (hint) msg += `. ${hint}`;
+    return new Error(msg);
+};
+
+const runCertbot = async (domain, cmd) => {
+    try {
+        await execAsync(cmd, { timeout: 120_000 });
+    } catch (err) {
+        throw certbotFailure(domain, err);
+    }
+};
+
+/**
  * Run certbot to issue/renew SSL for the given domain.
  * Requires certbot and nginx to be installed, and the domain to point to this node.
  *
@@ -167,10 +208,7 @@ const enableSSL = async (domain, email = null) => {
     const emailFlag = email
         ? `-m ${email} --agree-tos`
         : "--register-unsafely-without-email --agree-tos";
-    await execAsync(
-        `${SUDO}certbot --nginx -d ${domain} ${emailFlag} --non-interactive`,
-        { timeout: 120_000 },
-    );
+    await runCertbot(domain, `${SUDO}certbot --nginx -d ${domain} ${emailFlag} --non-interactive`);
 };
 
 /**
@@ -349,10 +387,10 @@ const writePanelSites = async (sites) => {
  */
 const issuePanelCert = async (domain, email = null) => {
     const emailFlag = email ? `-m ${email} --agree-tos` : "--register-unsafely-without-email --agree-tos";
-    await execAsync(
+    await runCertbot(
+        domain,
         `${SUDO}certbot certonly --nginx -d ${domain} ${emailFlag} --non-interactive --keep-until-expiring ` +
             `--deploy-hook "nginx -s reload"`,
-        { timeout: 120_000 },
     );
 };
 
@@ -367,4 +405,5 @@ module.exports = {
     buildPanelSites,
     writePanelSites,
     issuePanelCert,
+    certbotFailure,
 };

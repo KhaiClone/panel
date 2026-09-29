@@ -387,7 +387,8 @@ It is `agent/setup-agent.sh` with the settings filled in by the panel. It instal
 Node 22, PM2, git, nginx, certbot, WireGuard, Java 17 and build tools (the
 agent's terminal module compiles on install). It clones the repo at
 the **panel's own commit**, generates the agent key and opens the agent port to
-the panel's IP only (plus whatever port sshd listens on). Then it starts the
+the panel's IP only. It also opens the port sshd listens on, and 80/443 for
+nginx (panel domains, websites, and certbot's check). Then it starts the
 agent and registers it. The panel then sets the node up and the script prints
 each step (the modal shows the same):
 
@@ -451,8 +452,8 @@ It undoes the setup, keeping only what was there before it:
 - **PM2**: panel-agent and lavalink leave that user's PM2. That user's PM2 and
   its boot service go too when nothing else is left in it.
 - **Network**: a bot-panel `wg0` and the UFW rules for the agent port and
-  51820/udp are removed. UFW is turned off again if the setup is what turned it
-  on.
+  51820/udp are removed, and so are the 80/443 rules when the setup added them.
+  UFW is turned off again if the setup is what turned it on.
 - **Files**: the SSH keys the panel copied, `~/panel` and `~/lavalink` are
   removed, and so are `~/bots` / `~/sites` when they are empty.
 - **Packages**: exactly the packages apt's `history.log` shows the setup *newly*
