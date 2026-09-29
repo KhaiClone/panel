@@ -384,7 +384,8 @@ curl -sSL 'https://panel.example.com/api/join/<token>/install.sh' -o join-node.s
 ```
 
 It is `agent/setup-agent.sh` with the settings filled in by the panel. It installs
-Node 22, PM2, git, nginx, certbot, WireGuard and Java 17. It clones the repo at
+Node 22, PM2, git, nginx, certbot, WireGuard, Java 17 and build tools (the
+agent's terminal module compiles on install). It clones the repo at
 the **panel's own commit**, generates the agent key and opens the agent port to
 the panel's IP only (plus whatever port sshd listens on). Then it starts the
 agent and registers it. The panel then sets the node up and the script prints
@@ -445,13 +446,26 @@ curl -fsSL https://raw.githubusercontent.com/<your-repo>/main/agent/uninstall-ag
 sudo bash uninstall-agent.sh <USER>   # the account the agent ran as, e.g. root
 ```
 
-It removes panel-agent and lavalink from that user's PM2, plus that user's PM2
-and its boot service when nothing else is left in it. It also removes a
-bot-panel `wg0`, the UFW rules for the agent port and 51820/udp, the SSH keys
-the panel copied, `~/panel`, `~/lavalink`, and `~/bots` / `~/sites` when they
-are empty. It refuses to run on the node that hosts the panel. Installed
-packages and UFW itself stay. If UFW was off before the setup, run
-`sudo ufw disable` afterwards.
+It undoes the setup, keeping only what was there before it:
+
+- **PM2**: panel-agent and lavalink leave that user's PM2. That user's PM2 and
+  its boot service go too when nothing else is left in it.
+- **Network**: a bot-panel `wg0` and the UFW rules for the agent port and
+  51820/udp are removed. UFW is turned off again if the setup is what turned it
+  on.
+- **Files**: the SSH keys the panel copied, `~/panel` and `~/lavalink` are
+  removed, and so are `~/bots` / `~/sites` when they are empty.
+- **Packages**: exactly the packages apt's `history.log` shows the setup *newly*
+  installed are purged (nginx, certbot, WireGuard, Java, build tools, Node.js and their
+  dependencies). So are the global PM2 and the NodeSource apt source. Packages
+  that were already there and every upgrade stay. apt is asked first, and
+  nothing is purged if it would take anything else with it. `--keep-packages`
+  skips this part.
+
+It refuses to run on the node that hosts the panel. The setup keeps what it
+found (UFW on or off, Node/PM2 present or not) in
+`/var/lib/bot-panel-agent/state`. For a machine set up before that record
+existed, the script works it out from apt's history and file dates.
 
 ### Node API summary
 

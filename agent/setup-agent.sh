@@ -19,7 +19,8 @@
 #  commands it runs through sudo (ufw, wg, nginx, certbot, …).
 #
 #  What it does:
-#    1. Installs Node.js 22, git, PM2, UFW, nginx, certbot, WireGuard, Java 17
+#    1. Installs Node.js 22, git, PM2, UFW, nginx, certbot, WireGuard, Java 17,
+#       build tools (for the agent's native terminal module)
 #    2. Creates ~/bots and ~/sites of that user
 #    3. Clones the panel repo (agent lives inside it) to ~/panel — on the
 #       panel's own commit when it says which
@@ -28,7 +29,9 @@
 #    6. Starts the agent under that user's PM2 and enables boot persistence
 #    7. (one command only) Registers with the panel and prints what it set up
 #
-#  agent/uninstall-agent.sh undoes all of it.
+#  agent/uninstall-agent.sh undoes all of it; what it needs to know about the
+#  machine before (UFW on or off, Node/PM2 there or not) is kept in
+#  /var/lib/bot-panel-agent/state.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 # The sbin directories too, whatever shell this came from: ufw, nginx and
@@ -88,16 +91,31 @@ if ss -Hltn "sport = :$AGENT_PORT" 2>/dev/null | grep -q .; then
     fi
 fi
 
+# What this machine looked like before, for uninstall-agent.sh. Each key is
+# written once — a second run must not overwrite what the first one found.
+# (Newly installed packages need no record: apt's history.log has them.)
+STATE_DIR=/var/lib/bot-panel-agent
+mkdir -p "$STATE_DIR"
+remember() { grep -qs "^$1=" "$STATE_DIR/state" || echo "$1=$2" >> "$STATE_DIR/state"; }
+remember SETUP_STARTED "$(date +%s)"
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+    remember UFW_WAS_ACTIVE yes
+else
+    remember UFW_WAS_ACTIVE no
+fi
+
 # 1. Base packages ────────────────────────────────────────────────────────────
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl git ufw ca-certificates nginx certbot python3-certbot-nginx python3-venv python3-pip wireguard-tools
+# build-essential: the agent's node-pty has no Linux prebuilds and compiles on install.
+apt-get install -y curl git ufw ca-certificates nginx certbot python3-certbot-nginx python3-venv python3-pip wireguard-tools build-essential
 # Lavalink needs Java 17+. Not fatal: the node works without it, and the
 # Lavalink page shows what is missing.
 apt-get install -y openjdk-17-jre-headless || echo "[setup] WARNING: could not install Java 17 — Lavalink will not run until it is installed"
 
 if ! command -v node >/dev/null 2>&1; then
     echo "[setup] Installing Node.js 22 (NodeSource)..."
+    remember NODESOURCE_ADDED yes
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
 fi
@@ -105,6 +123,7 @@ echo "[setup] node $(node -v) / npm $(npm -v)"
 
 if ! command -v pm2 >/dev/null 2>&1; then
     echo "[setup] Installing PM2..."
+    remember PM2_INSTALLED yes
     npm install -g pm2
 fi
 
