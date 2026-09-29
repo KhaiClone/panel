@@ -376,18 +376,30 @@ operations on behalf of the panel.
 ### Adding a node — one command
 
 **Systems → Add node → One command**: enter a name and the new VPS's public IP.
-The panel shows one command; run it as root on that VPS (Ubuntu 22.04/24.04):
+The panel shows one command. Run it on that VPS (Ubuntu 22.04/24.04), logged in
+as the account that should own the agent:
 
 ```bash
 curl -sSL 'https://panel.example.com/api/join/<token>/install.sh' -o join-node.sh && sudo bash join-node.sh
 ```
 
 It is `agent/setup-agent.sh` with the settings filled in by the panel. It installs
-Node 22, PM2, git, nginx, certbot, WireGuard and Java 17, clones the repo at the
-**panel's own commit**, generates the agent key and opens the agent port to the
-panel's IP only (plus whatever port sshd listens on). Then it starts the agent
-and registers it. The panel then sets the node up and the script prints each
-step (the modal shows the same):
+Node 22, PM2, git, nginx, certbot, WireGuard and Java 17. It clones the repo at
+the **panel's own commit**, generates the agent key and opens the agent port to
+the panel's IP only (plus whatever port sshd listens on). Then it starts the
+agent and registers it. The panel then sets the node up and the script prints
+each step (the modal shows the same):
+
+**Which account.** The agent runs as the user who typed `sudo`: the repo goes in
+`~/panel`, projects in `~/bots` and `~/sites`, and the agent and Lavalink run in
+that user's PM2 (`pm2 ls` as that user), with a `pm2-<user>` boot service. The
+agent runs ufw, wg, nginx and certbot through `sudo` with no one there to type a
+password, so the script adds `/etc/sudoers.d/bot-panel-agent-<user>` for exactly
+those commands. That list includes cp/mv/bash, so it is root-equivalent for that
+user, the same trust an agent running as root has. From a root shell (`su -`)
+it all goes to root. `AGENT_USER=<name>` picks another account. The script
+stops before changing anything when the agent port is already taken, for example
+on a machine that is a node already.
 
 | Step | What happens |
 |------|--------------|
@@ -413,7 +425,7 @@ set `NODE_JOIN_REPO_URL` in the panel's `.env` to override it.
 ### Adding a node — by hand
 
 ```bash
-# On the fresh worker VPS (Ubuntu 22.04/24.04), as root:
+# On the fresh worker VPS (Ubuntu 22.04/24.04), as the account that should own the agent:
 curl -fsSL https://raw.githubusercontent.com/<your-repo>/main/agent/setup-agent.sh -o setup-agent.sh
 sudo bash setup-agent.sh <PANEL_IP> [AGENT_PORT] [REPO_URL]
 ```
@@ -421,6 +433,25 @@ sudo bash setup-agent.sh <PANEL_IP> [AGENT_PORT] [REPO_URL]
 Then **Systems → Add node → Manual**, and paste the host/port/API key the script
 printed. The connection is verified before the node is saved, and the same setup
 steps run in the background.
+
+### Removing a node
+
+Remove it on the panel first (the node's page → **Remove**; refused while
+projects still live on it). The other nodes then drop it from the WireGuard
+mesh. Then, on the machine:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<your-repo>/main/agent/uninstall-agent.sh -o uninstall-agent.sh
+sudo bash uninstall-agent.sh <USER>   # the account the agent ran as, e.g. root
+```
+
+It removes panel-agent and lavalink from that user's PM2, plus that user's PM2
+and its boot service when nothing else is left in it. It also removes a
+bot-panel `wg0`, the UFW rules for the agent port and 51820/udp, the SSH keys
+the panel copied, `~/panel`, `~/lavalink`, and `~/bots` / `~/sites` when they
+are empty. It refuses to run on the node that hosts the panel. Installed
+packages and UFW itself stay. If UFW was off before the setup, run
+`sudo ufw disable` afterwards.
 
 ### Node API summary
 

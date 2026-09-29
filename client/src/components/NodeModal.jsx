@@ -206,6 +206,7 @@ function JoinForm({ onClose, onSaved }) {
                 <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
                     The panel makes one command for the new VPS (Ubuntu 22.04 / 24.04). It installs the agent, WireGuard and
                     Java, registers the node, and the panel then copies SSH keys, joins it to the mesh and installs Lavalink.
+                    The agent runs as the account that runs the command (its home, its PM2).
                 </p>
                 <div>
                     <label className="label">Name *</label>
@@ -237,7 +238,7 @@ function JoinForm({ onClose, onSaved }) {
     return (
         <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
-                <label className="label">Run as root on {created.invite.ip}</label>
+                <label className="label">Run on {created.invite.ip}, as the account that should own the agent</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
                     <pre className="mono" style={{ flex: 1, margin: 0, padding: "10px 12px", fontSize: 12, borderRadius: 8, background: "var(--bg-input)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", userSelect: "all" }}>
                         {created.command}
