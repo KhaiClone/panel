@@ -167,6 +167,18 @@ const tokenerPortOf = (doc) => {
     }
 };
 
+/**
+ * The tokener port for ONE node: the shared config's, unless that node's
+ * switch on the Lavalink page is off (null: remove the panel's own there).
+ * Nothing else about the tokener varies, so every node that runs one runs the
+ * same one. An unreadable config stays undefined — "leave it alone" — even for
+ * a switched-off node.
+ */
+const tokenerPortFor = (settings, nodeId, eff = effective(settings)) => {
+    if (eff.tokenerPort === undefined) return undefined;
+    return settings?.nodes?.[nodeId]?.tokenerEnabled === false ? null : eff.tokenerPort;
+};
+
 /** Pull the values the panel needs out of an application.yml. Never throws. */
 const parseYaml = (text) => {
     const empty = { port: null, address: null, password: null, plugins: [], sources: {}, filters: {}, tokenerPort: null, error: null };
@@ -434,6 +446,7 @@ module.exports = {
     hasYoutubePlugin,
     parseYaml,
     effective,
+    tokenerPortFor,
     applyEdits,
     describeUnsupported,
     SOURCE_KEYS,

@@ -29,11 +29,35 @@ const tokenerProof = async (result) => {
     return result;
 };
 
-/** GET /lavalink/status — everything the panel's Lavalink page shows for this node. */
+/**
+ * GET /lavalink/status?tokenerPort=8081 — everything the panel's Lavalink page
+ * shows for this node. The port lets a tokener the panel did not start be
+ * recognised there.
+ */
 router.get("/status", async (req, res, next) => {
     try {
-        const [status, tokenerStatus] = await Promise.all([lavalink.status(), tokener.status()]);
+        const wanted = parseInt(req.query.tokenerPort, 10) || null;
+        const [status, tokenerStatus] = await Promise.all([lavalink.status(), tokener.status(wanted)]);
         res.json({ ...status, tokener: tokenerStatus });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /lavalink/tokener   body: { tokenerPort }
+ * The panel's per-node switch, applied now without touching Lavalink. Same
+ * rule as a sync: started only where Lavalink runs, removed anywhere.
+ */
+router.post("/tokener", async (req, res, next) => {
+    try {
+        const { tokenerPort } = req.body || {};
+        const live = await require("../services/pm2").getBotStatus(lavalink.PM2_NAME);
+        const result =
+            live.status === "online" || !tokenerPort
+                ? await tokenerUp(tokenerPort)
+                : { wanted: true, port: tokenerPort, running: false, note: "Lavalink is not running here — the tokener starts with it" };
+        res.json({ tokener: await tokenerProof(result) });
     } catch (err) {
         next(err);
     }

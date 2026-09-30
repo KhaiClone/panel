@@ -209,6 +209,16 @@ router.post("/nodes/:id/sync", withNode(async (node, req, res) => {
     res.json(await lavalink.syncNode(node, { restart: req.body?.restart !== false }));
 }));
 
+/**
+ * POST /api/lavalink/nodes/:id/tokener   body: { enabled: boolean }
+ * The per-node spotify-tokener switch, applied on the node at once. Declared
+ * before /:action, which would otherwise take "tokener" for an unknown action.
+ */
+router.post("/nodes/:id/tokener", withNode(async (node, req, res) => {
+    if (typeof req.body?.enabled !== "boolean") return res.status(400).json({ error: "enabled must be true or false" });
+    res.json(await lavalink.setTokener(node, req.body.enabled));
+}));
+
 /** POST /api/lavalink/nodes/:id/:action — start | stop | restart | rollback */
 router.post("/nodes/:id/:action", withNode(async (node, req, res) => {
     const { action } = req.params;

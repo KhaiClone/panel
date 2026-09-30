@@ -14,7 +14,7 @@
 const assert = require("assert");
 
 const {
-    renderYaml, sha256, hasYoutubePlugin, parseYaml, effective, applyEdits, describeUnsupported,
+    renderYaml, sha256, hasYoutubePlugin, parseYaml, effective, tokenerPortFor, applyEdits, describeUnsupported,
 } = require("../server/services/lavalinkConfig");
 const { cmpVersion } = require("../server/services/lavalinkUpdater");
 const { pm2MemoryCeiling } = require("../agent/services/lavalink");
@@ -235,6 +235,17 @@ ok("effective: form mode wants no tokener, a file says which, a broken file leav
     assert.strictEqual(effective({ ...BASE, yamlOverride: yaml }).tokenerPort, 8081);
     // undefined, not null: null would make every agent REMOVE its tokener over a typo.
     assert.strictEqual(effective({ ...BASE, yamlOverride: "server:\n  port: 1\n bad: [" }).tokenerPort, undefined);
+});
+
+ok("tokenerPortFor: every node gets the config's port unless its own switch is off", () => {
+    const yaml = withLavasrc({ customTokenEndpoint: "http://localhost:8081/api/token" });
+    const settings = { ...BASE, yamlOverride: yaml, nodes: { a: { state: "running" }, b: { tokenerEnabled: false } } };
+    assert.strictEqual(tokenerPortFor(settings, "a"), 8081); // on by default
+    assert.strictEqual(tokenerPortFor(settings, "never-seen"), 8081);
+    assert.strictEqual(tokenerPortFor(settings, "b"), null);
+    // A broken file leaves every tokener alone — a switched-off node included.
+    const broken = { ...settings, yamlOverride: "server:\n  port: 1\n bad: [" };
+    assert.strictEqual(tokenerPortFor(broken, "b"), undefined);
 });
 
 // ── applyEdits ───────────────────────────────────────────────────────────────

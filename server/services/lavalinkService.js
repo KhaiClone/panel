@@ -2,7 +2,7 @@ const axios = require("axios");
 
 const nodeService = require("./nodeService");
 const store = require("./lavalinkStore");
-const { renderYaml, sha256, effective } = require("./lavalinkConfig");
+const { renderYaml, sha256, effective, tokenerPortFor } = require("./lavalinkConfig");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Lavalink orchestration.
@@ -84,10 +84,20 @@ const _stateOf = (raw, inSync) => {
     return "stopped";
 };
 
-const statusOfNode = async (node, desiredSha, eff = null) => {
-    const base = { nodeId: node._id, nodeName: node.name, host: node.host };
+const statusOfNode = async (node, desiredSha, eff = null, settings = null) => {
+    const base = {
+        nodeId: node._id,
+        nodeName: node.name,
+        host: node.host,
+        tokenerEnabled: settings?.nodes?.[node._id]?.tokenerEnabled !== false,
+    };
     try {
-        const raw = await nodeService.agentRequest(node, "get", "/lavalink/status", { timeout: STATUS_TIMEOUT });
+        // The config's port even for a node whose switch is off: that is where a
+        // tokener the panel did not start would be answering.
+        const raw = await nodeService.agentRequest(node, "get", "/lavalink/status", {
+            params: eff?.tokenerPort ? { tokenerPort: eff.tokenerPort } : undefined,
+            timeout: STATUS_TIMEOUT,
+        });
         const inSync = Boolean(desiredSha) && raw.configSha === desiredSha;
 
         // pm2 can only say a JVM is alive. Lavalink's own /v4/stats says whether
@@ -122,7 +132,7 @@ const statusAll = async () => {
     const eff = effective(settings);
     const nodes = await managedNodes();
 
-    const results = await Promise.all(nodes.map((n) => statusOfNode(n, desiredSha, eff)));
+    const results = await Promise.all(nodes.map((n) => statusOfNode(n, desiredSha, eff, settings)));
 
     // Cache what we learned so the Discord report can name versions even when a
     // node is unreachable at the time the report is built.
@@ -160,7 +170,7 @@ const syncNode = async (node, { settings, yaml, restart = true } = {}) => {
                 password: eff.password,
                 address: eff.address,
                 heap: s.heap,
-                tokenerPort: eff.tokenerPort,
+                tokenerPort: tokenerPortFor(s, node._id, eff),
             },
             timeout: 120_000,
         });
@@ -225,7 +235,7 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
                 password: eff.password,
                 address: eff.address,
                 heap: settings.heap,
-                tokenerPort: eff.tokenerPort,
+                tokenerPort: tokenerPortFor(settings, node._id, eff),
                 start,
             },
             timeout: LONG_TIMEOUT,
@@ -290,7 +300,7 @@ const updateNode = async (node, release) => {
                 password: eff.password,
                 address: eff.address,
                 heap: settings.heap,
-                tokenerPort: eff.tokenerPort,
+                tokenerPort: tokenerPortFor(settings, node._id, eff),
             },
             timeout: LONG_TIMEOUT,
         });
@@ -337,9 +347,31 @@ const control = async (node, action) => {
                   password: eff.password,
                   address: eff.address,
                   heap: settings.heap,
-                  tokenerPort: eff.tokenerPort,
+                  tokenerPort: tokenerPortFor(settings, node._id, eff),
               };
     return nodeService.agentRequest(node, "post", `/lavalink/${action}`, { timeout: 180_000, data });
+};
+
+/**
+ * The per-node spotify-tokener switch: remember it, then apply it on the node
+ * right away — Lavalink itself is not touched. On is the default; off removes
+ * the panel's own tokener there. A tokener the panel did not start is left
+ * alone either way (agent/services/spotifyTokener.js).
+ */
+const setTokener = async (node, enabled) => {
+    await store.setNodeState(node._id, { tokenerEnabled: Boolean(enabled) });
+    const settings = await store.get();
+    const base = { nodeId: node._id, nodeName: node.name, tokenerEnabled: Boolean(enabled) };
+    try {
+        const r = await nodeService.agentRequest(node, "post", "/lavalink/tokener", {
+            data: { tokenerPort: tokenerPortFor(settings, node._id) },
+            timeout: 90_000,
+        });
+        return { ...base, ok: true, tokener: r.tokener ?? null };
+    } catch (err) {
+        const error = err.status === 404 ? "This node's agent is too old for spotify-tokener — update it first" : err.message;
+        return { ...base, ok: false, error };
+    }
 };
 
 const logs = async (node, lines = 100) =>
@@ -356,5 +388,6 @@ module.exports = {
     installOnNode,
     updateNode,
     control,
+    setTokener,
     logs,
 };

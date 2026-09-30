@@ -457,7 +457,7 @@ sudo bash uninstall-agent.sh <USER>   # the account the agent ran as, e.g. root
 
 It undoes the setup, keeping only what was there before it:
 
-- **PM2**: panel-agent, lavalink and spotify-tokener leave that user's PM2, and pm2-logrotate
+- **PM2**: panel-agent, lavalink and the agent's own spotify-tokener leave that user's PM2, and pm2-logrotate
   does too when the agent installed it. That user's PM2 and its boot service go
   too when nothing else is left in it.
 - **Network**: a bot-panel `wg0` and the UFW rules for the agent port and
@@ -683,9 +683,20 @@ another VPS.
   whenever Lavalink runs: started before Lavalink, proven with a real token
   after, stopped with it, restarted by **Restart**, removed when the config
   stops asking for it. Without it every Spotify link fails while YouTube keeps
-  working. Chrome is a system package like Java: the setup installs Google
-  Chrome on amd64, and the page shows the command for nodes that lack it (then
-  **Sync** starts the tokener). The Lavalink logs include the tokener's.
+  working. The port comes from the one shared `application.yml`, so every node
+  runs the same tokener. Chrome is a system package like Java: the setup
+  installs Google Chrome on amd64, and the page shows the command for nodes
+  that lack it (then **Sync** starts the tokener). The Lavalink logs include
+  the tokener's.
+- **A tokener the panel did not start is never touched.** Something already
+  answering on that port (the Go original, a container) or a pm2 process named
+  `spotify-tokener` that the panel did not register means the node has one:
+  the page shows it, the panel starts nothing next to it, and never stops,
+  replaces or removes it. Only the process registered from
+  `~/lavalink/spotify-tokener` is the panel's.
+- **Per-node switch.** Each node card has an on/off switch for the tokener, on
+  by default. Off removes the panel's own tokener on that node at once, without
+  touching Lavalink; on starts it (if Lavalink runs) and proves it with a token.
 
 Agent env (all optional):
 
@@ -707,6 +718,7 @@ SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 | `POST` | `/api/lavalink/nodes/:id/install` | First-time setup (or clean reinstall) |
 | `POST` | `/api/lavalink/nodes/:id/update` | Bring one node to the latest release |
 | `POST` | `/api/lavalink/nodes/:id/sync` | Push the config to one node |
+| `POST` | `/api/lavalink/nodes/:id/tokener` | Per-node spotify-tokener switch (`{ enabled }`) |
 | `POST` | `/api/lavalink/nodes/:id/:action` | `start` · `stop` · `restart` · `rollback` |
 | `GET` | `/api/lavalink/nodes/:id/logs` | That node's Lavalink logs |
 

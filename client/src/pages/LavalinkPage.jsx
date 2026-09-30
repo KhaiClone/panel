@@ -120,13 +120,25 @@ const CHROME_INSTALL = {
  * spotify-tokener on one node — only shown when the config points LavaSrc's
  * customTokenEndpoint at the node. Without it Spotify links fail on that node
  * while YouTube keeps playing, which is why it gets a line of its own.
+ *
+ * The switch is per node and on by default. A tokener the panel did not start
+ * (already answering on the port, or a pm2 process by the same name) is shown
+ * and never touched, whichever way the switch is set.
  */
-function TokenerLine({ t, lavalinkRunning }) {
+function TokenerLine({ t, enabled, lavalinkRunning, busy, onToggle }) {
     let text;
     let color = "var(--text-dim)";
     if (!t) {
         text = "agent cũ — cập nhật agent";
         color = "var(--warning)";
+    } else if (t.external) {
+        text = `đã có sẵn trên node (không do panel quản lý) · 127.0.0.1:${t.port} — panel bỏ qua`;
+        color = "var(--text-muted)";
+    } else if (t.foreignPm2) {
+        text = `pm2 "${t.pm2Name}" không do panel tạo — panel bỏ qua`;
+        color = "var(--warning)";
+    } else if (!enabled) {
+        text = "đã tắt trên node này";
     } else if (!t.chrome?.present) {
         text = "chưa có Chrome";
         color = "var(--danger)";
@@ -146,15 +158,30 @@ function TokenerLine({ t, lavalinkRunning }) {
         text = "dừng cùng Lavalink";
     }
     return (
-        <p style={{ margin: "-4px 0 10px", fontSize: 11, color, wordBreak: "break-word" }}>
-            Spotify tokener: {text}
-        </p>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: "-4px 0 10px" }}>
+            <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 11, color, wordBreak: "break-word" }}>
+                Spotify tokener: {text}
+            </p>
+            {t && (
+                <label
+                    title="Bật/tắt spotify-tokener do panel quản lý trên node này"
+                    style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}
+                >
+                    <input type="checkbox" checked={enabled} disabled={!!busy} onChange={(e) => onToggle(e.target.checked)} />
+                    Bật
+                </label>
+            )}
+        </div>
     );
 }
 
 /** One line on what an action did to the tokener, or "" when there is nothing to say. */
 const tokenerNote = (t) => {
     if (!t?.wanted) return "";
+    if (t.external) {
+        const base = " Spotify tokener: node đã có sẵn một tokener không do panel quản lý — panel bỏ qua";
+        return t.health && !t.health.ok ? `${base}, nhưng nó không lấy được token: ${t.health.error}` : `${base}.`;
+    }
     if (t.error) return ` Spotify tokener: ${t.error}`;
     if (t.health && !t.health.ok) return ` Spotify tokener không lấy được token: ${t.health.error}`;
     return "";
@@ -169,7 +196,7 @@ const tokenerNote = (t) => {
  * `restarts` is on the card because a climbing count is the signature of the
  * crash loop that took an afternoon to find once.
  */
-function NodeCard({ n, busy, onAction, onLogs, wantsTokener }) {
+function NodeCard({ n, busy, onAction, onLogs, wantsTokener, onTokener }) {
     const meta = STATE_META[n.state] || { label: n.state || "unknown", color: "var(--text-dim)" };
     const live = n.live || {};
     const notInstalled = ["not-installed", "java-missing", "java-too-old"].includes(n.state);
@@ -225,7 +252,13 @@ function NodeCard({ n, busy, onAction, onLogs, wantsTokener }) {
                 {n.hasRollback ? " · có bản jar cũ để rollback" : ""}
             </p>
             {wantsTokener && n.online && n.state !== "agent-outdated" && (
-                <TokenerLine t={n.tokener} lavalinkRunning={running} />
+                <TokenerLine
+                    t={n.tokener}
+                    enabled={n.tokenerEnabled !== false}
+                    lavalinkRunning={running}
+                    busy={busy}
+                    onToggle={onTokener}
+                />
             )}
 
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -482,6 +515,18 @@ export default function LavalinkPage() {
             return `${node.nodeName}: ${label.toLowerCase()} xong.${tokenerNote(data.tokener)}`;
         });
 
+    const toggleTokener = (node, enabled) =>
+        run(`${enabled ? "Bật" : "Tắt"} Spotify tokener — ${node.nodeName}…`, async () => {
+            const { data } = await api.post(`/lavalink/nodes/${node.nodeId}/tokener`, { enabled }, LONG);
+            if (data.ok === false) throw new Error(data.error || "Thất bại");
+            const t = data.tokener;
+            if (!enabled) return `${node.nodeName}: đã tắt Spotify tokener.`;
+            const note = tokenerNote(t);
+            if (note) return `${node.nodeName}: đã bật.${note}`;
+            if (t && !t.running) return `${node.nodeName}: đã bật — Lavalink đang dừng, tokener sẽ chạy cùng Lavalink.`;
+            return `${node.nodeName}: đã bật Spotify tokener${t?.health?.ok ? " — lấy được token" : ""}.`;
+        });
+
     const openLogs = async (node) => {
         setErr("");
         try {
@@ -519,7 +564,15 @@ export default function LavalinkPage() {
     const needsJava = nodes.filter((n) => n.state === "java-missing" || n.state === "java-too-old");
     // Only when the config actually sends LavaSrc to a tokener on the node.
     const needsChrome = eff.tokenerPort
-        ? nodes.filter((n) => n.online && n.tokener && !n.tokener.chrome?.present)
+        ? nodes.filter(
+              (n) =>
+                  n.online &&
+                  n.tokenerEnabled !== false &&
+                  n.tokener &&
+                  !n.tokener.external &&
+                  !n.tokener.foreignPm2 &&
+                  !n.tokener.chrome?.present,
+          )
         : [];
     const chromeArches = [...new Set(needsChrome.map((n) => (n.tokener.arch === "arm64" ? "arm64" : "x64")))];
 
@@ -626,6 +679,7 @@ export default function LavalinkPage() {
                             onAction={(action, label) => nodeAction(n, action, label)}
                             onLogs={() => openLogs(n)}
                             wantsTokener={Boolean(eff.tokenerPort)}
+                            onTokener={(enabled) => toggleTokener(n, enabled)}
                         />
                     ))}
                 </div>

@@ -9,7 +9,8 @@
 #  drop it from the WireGuard mesh.
 #
 #  What it removes — only what the setup (or the agent) put there:
-#    - panel-agent, lavalink and spotify-tokener from that user's PM2, and pm2-logrotate when
+#    - panel-agent, lavalink and (when the agent started it) spotify-tokener
+#      from that user's PM2, and pm2-logrotate when
 #      the agent installed it; that user's PM2 itself and its boot service
 #      when nothing else is left in it
 #    - wg0, if /etc/wireguard/wg0.conf was written by bot-panel
@@ -149,11 +150,18 @@ echo "────────────────────────�
 
 # 1. PM2 ──────────────────────────────────────────────────────────────────────
 if command -v pm2 >/dev/null 2>&1; then
-    for p in panel-agent lavalink spotify-tokener; do
+    for p in panel-agent lavalink; do
         if as_user pm2 describe "$p" >/dev/null 2>&1; then
             as_user pm2 delete "$p" >/dev/null && say "PM2: removed $p"
         fi
     done
+    # spotify-tokener only when the agent started it (its script sits in
+    # ~/lavalink/spotify-tokener) — one set up by hand under that name stays.
+    if as_user pm2 describe spotify-tokener 2>/dev/null | grep -q "lavalink/spotify-tokener/.noflex-start.sh"; then
+        as_user pm2 delete spotify-tokener >/dev/null && say "PM2: removed spotify-tokener"
+    elif as_user pm2 describe spotify-tokener >/dev/null 2>&1; then
+        say "PM2: spotify-tokener was not started by the agent — kept"
+    fi
     # pm2-logrotate, when the agent is what installed it (it leaves this marker then).
     if [ -f "$H/.pm2/.bot-panel-logrotate" ]; then
         as_user pm2 uninstall pm2-logrotate >/dev/null 2>&1 && say "PM2: removed pm2-logrotate"
