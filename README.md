@@ -457,7 +457,7 @@ sudo bash uninstall-agent.sh <USER>   # the account the agent ran as, e.g. root
 
 It undoes the setup, keeping only what was there before it:
 
-- **PM2**: panel-agent and lavalink leave that user's PM2, and pm2-logrotate
+- **PM2**: panel-agent, lavalink and spotify-tokener leave that user's PM2, and pm2-logrotate
   does too when the agent installed it. That user's PM2 and its boot service go
   too when nothing else is left in it.
 - **Network**: a bot-panel `wg0` and the UFW rules for the agent port and
@@ -466,8 +466,8 @@ It undoes the setup, keeping only what was there before it:
 - **Files**: the SSH keys the panel copied, `~/panel` and `~/lavalink` are
   removed, and so are `~/bots` / `~/sites` when they are empty.
 - **Packages**: exactly the packages apt's `history.log` shows the setup *newly*
-  installed are purged (nginx, certbot, WireGuard, Java, build tools, Node.js and their
-  dependencies). So are the global PM2 and the NodeSource apt source. Packages
+  installed are purged (nginx, certbot, WireGuard, Java, Chrome, build tools, Node.js and their
+  dependencies). So are the global PM2 and the NodeSource and Google Chrome apt sources. Packages
   that were already there and every upgrade stay. apt is asked first, and
   nothing is purged if it would take anything else with it. `--keep-packages`
   skips this part.
@@ -673,12 +673,27 @@ another VPS.
   crosses that before it finishes booting — the node boots, reports ready, is
   SIGKILLed and restarts every 30 seconds with nothing in its log. The agent
   passes `2 × heap` (minimum 1G) so "no flag" is never relied on.
+- **Spotify needs spotify-tokener next to Lavalink.** LavaSrc loads Spotify
+  playlists and searches with the web player's anonymous token, which Spotify
+  only gives a real browser — so the config points `customTokenEndpoint` at a
+  small service driving headless Chrome (`agent/spotify-tokener.js`, a Node port
+  of [topi314/spotify-tokener](https://github.com/topi314/spotify-tokener)).
+  When `plugins.lavasrc.spotify.customTokenEndpoint` is `http://localhost:<port>`
+  (or `127.0.0.1`), the agent runs it on that port as pm2 `spotify-tokener`
+  whenever Lavalink runs: started before Lavalink, proven with a real token
+  after, stopped with it, restarted by **Restart**, removed when the config
+  stops asking for it. Without it every Spotify link fails while YouTube keeps
+  working. Chrome is a system package like Java: the setup installs Google
+  Chrome on amd64, and the page shows the command for nodes that lack it (then
+  **Sync** starts the tokener). The Lavalink logs include the tokener's.
 
-Agent env (both optional):
+Agent env (all optional):
 
 ```bash
 LAVALINK_DIR=~/lavalink       # fixed directory — never taken from a request
 LAVALINK_PM2_NAME=lavalink
+SPOTIFY_TOKENER_PM2_NAME=spotify-tokener
+SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 ```
 
 | Method | Path | Description |

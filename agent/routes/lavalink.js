@@ -1,24 +1,50 @@
 const express = require("express");
 const router = express.Router();
 const lavalink = require("../services/lavalink");
+const tokener = require("../services/spotifyTokener");
 
 // Lavalink lives at this agent's fixed LAVALINK_DIR. No endpoint here takes a
 // path — see the SECURITY note in services/lavalink.js.
 
+// ── spotify-tokener rides along ──────────────────────────────────────────────
+// It follows Lavalink (services/spotifyTokener.js), so every call that starts
+// Lavalink brings it in line first — LavaSrc may want a token the moment
+// Lavalink is up — and proves it with a real token after Lavalink answered,
+// when Chrome has had the JVM's boot time to warm up. Neither step ever fails
+// the Lavalink call: without the tokener only Spotify links are affected, and
+// the outcome goes back to the panel as `tokener`.
+
+/** `tokenerPort` undefined → a panel from before the tokener: leave it alone. */
+const tokenerUp = async (tokenerPort, opts) => {
+    if (tokenerPort === undefined) return null;
+    try {
+        return await tokener.ensure(tokenerPort || null, opts);
+    } catch (err) {
+        return { wanted: Boolean(tokenerPort), port: tokenerPort || null, running: false, error: err.message };
+    }
+};
+
+const tokenerProof = async (result) => {
+    if (result?.running) result.health = await tokener.verify(result.port);
+    return result;
+};
+
 /** GET /lavalink/status — everything the panel's Lavalink page shows for this node. */
 router.get("/status", async (req, res, next) => {
     try {
-        res.json(await lavalink.status());
+        const [status, tokenerStatus] = await Promise.all([lavalink.status(), tokener.status()]);
+        res.json({ ...status, tokener: tokenerStatus });
     } catch (err) {
         next(err);
     }
 });
 
-/** GET /lavalink/logs?lines=100 */
+/** GET /lavalink/logs?lines=100 — Lavalink's, then spotify-tokener's when it exists. */
 router.get("/logs", async (req, res, next) => {
     try {
         const lines = Math.min(parseInt(req.query.lines) || 100, 500);
-        res.json({ logs: await lavalink.logs(lines) });
+        const [main, extra] = await Promise.all([lavalink.logs(lines), tokener.logs(lines)]);
+        res.json({ logs: extra ? `${main}\n\n──── ${tokener.PM2_NAME} ────\n${extra}` : main });
     } catch (err) {
         next(err);
     }
@@ -39,23 +65,30 @@ router.post("/stats", async (req, res, next) => {
 });
 
 /**
- * PUT /lavalink/config   body: { content, restart?, port?, password?, heap? }
+ * PUT /lavalink/config   body: { content, restart?, port?, password?, heap?, tokenerPort? }
  * Writes the panel's application.yml. Restarting is the caller's choice: the
  * panel only restarts nodes whose config actually changed.
+ *
+ * The tokener is brought in line even when the file did not change — a sync is
+ * how a node that predates it (or just got Chrome) gets one. Only where
+ * Lavalink runs, though: syncing a stopped node must not start anything.
  */
 router.put("/config", async (req, res, next) => {
     try {
-        const { content, restart, port, password, address, heap } = req.body;
+        const { content, restart, port, password, address, tokenerPort } = req.body;
         const result = lavalink.writeConfig(content);
 
-        if (!restart || !result.changed) return res.json({ ...result, restarted: false });
-
         const live = await require("../services/pm2").getBotStatus(lavalink.PM2_NAME);
-        if (live.status !== "online") return res.json({ ...result, restarted: false });
+        const running = live.status === "online";
+        const tokenerResult = running || !tokenerPort ? await tokenerUp(tokenerPort) : null;
+
+        if (!restart || !result.changed || !running) {
+            return res.json({ ...result, restarted: false, tokener: await tokenerProof(tokenerResult) });
+        }
 
         await lavalink.restart();
         const health = await lavalink.health({ port, password, address });
-        res.json({ ...result, restarted: true, health });
+        res.json({ ...result, restarted: true, health, tokener: await tokenerProof(tokenerResult) });
     } catch (err) {
         next(err);
     }
@@ -63,7 +96,7 @@ router.put("/config", async (req, res, next) => {
 
 /**
  * POST /lavalink/install
- * body: { content, jarUrl, expectedSize, version, port, password, heap, start? }
+ * body: { content, jarUrl, expectedSize, version, port, password, heap, tokenerPort?, start? }
  *
  * One call does the whole first-time setup — java check, config, jar, start,
  * health — so the panel does not have to orchestrate five round trips and
@@ -74,7 +107,7 @@ router.put("/config", async (req, res, next) => {
  */
 router.post("/install", async (req, res, next) => {
     try {
-        const { content, jarUrl, expectedSize, version, port, password, address, heap, start = true } = req.body;
+        const { content, jarUrl, expectedSize, version, port, password, address, heap, tokenerPort, start = true } = req.body;
         if (!jarUrl) return res.status(400).json({ error: "jarUrl is required" });
 
         const java = await lavalink.javaInfo();
@@ -100,10 +133,19 @@ router.post("/install", async (req, res, next) => {
             return res.json({ installed: true, started: false, jar, java, status: await lavalink.status() });
         }
 
+        const tokenerResult = await tokenerUp(tokenerPort);
         await lavalink.start(heap);
         const health = await lavalink.health({ port, password, address });
 
-        res.json({ installed: true, started: true, jar, health, java, status: await lavalink.status() });
+        res.json({
+            installed: true,
+            started: true,
+            jar,
+            health,
+            java,
+            tokener: await tokenerProof(tokenerResult),
+            status: await lavalink.status(),
+        });
     } catch (err) {
         next(err);
     }
@@ -111,7 +153,7 @@ router.post("/install", async (req, res, next) => {
 
 /**
  * POST /lavalink/update
- * body: { jarUrl, expectedSize, version, port, password, heap }
+ * body: { jarUrl, expectedSize, version, port, password, heap, tokenerPort? }
  *
  * Swap the jar and prove the new one works. A failed health check puts the old
  * jar back and restarts it — a node must never be left down by an auto-update
@@ -124,7 +166,7 @@ router.post("/install", async (req, res, next) => {
  */
 router.post("/update", async (req, res, next) => {
     try {
-        const { jarUrl, expectedSize, version, port, password, address, heap } = req.body;
+        const { jarUrl, expectedSize, version, port, password, address, heap, tokenerPort } = req.body;
         if (!jarUrl) return res.status(400).json({ error: "jarUrl is required" });
 
         const before = await require("../services/pm2").getBotStatus(lavalink.PM2_NAME);
@@ -141,10 +183,20 @@ router.post("/update", async (req, res, next) => {
                 note: "Node was not running — the jar was replaced and left stopped",
             });
         }
+        const tokenerResult = await tokenerUp(tokenerPort);
         await lavalink.start(heap); // re-registers the process against the new jar
         const health = await lavalink.health({ port, password, address });
 
-        if (health.ok) return res.json({ updated: true, rolledBack: false, started: true, jar, health });
+        if (health.ok) {
+            return res.json({
+                updated: true,
+                rolledBack: false,
+                started: true,
+                jar,
+                health,
+                tokener: await tokenerProof(tokenerResult),
+            });
+        }
 
         let rolledBack = false;
         let rollbackHealth = null;
@@ -176,44 +228,56 @@ router.post("/update", async (req, res, next) => {
     }
 });
 
-/** POST /lavalink/start   body: { heap, port, password } */
+/** POST /lavalink/start   body: { heap, port, password, tokenerPort } */
 router.post("/start", async (req, res, next) => {
     try {
-        const { heap, port, password, address } = req.body || {};
+        const { heap, port, password, address, tokenerPort } = req.body || {};
+        const tokenerResult = await tokenerUp(tokenerPort);
         const output = await lavalink.start(heap);
-        res.json({ output, health: await lavalink.health({ port, password, address }) });
+        const health = await lavalink.health({ port, password, address });
+        res.json({ output, health, tokener: await tokenerProof(tokenerResult) });
     } catch (err) {
         next(err);
     }
 });
 
-/** POST /lavalink/restart   body: { port, password } */
+/**
+ * POST /lavalink/restart   body: { port, password, tokenerPort }
+ * Restarts a running tokener too: a wedged Chrome is exactly what someone
+ * pressing Restart on a node whose Spotify links fail is trying to clear.
+ */
 router.post("/restart", async (req, res, next) => {
     try {
-        const { port, password, address } = req.body || {};
+        const { port, password, address, tokenerPort } = req.body || {};
+        const tokenerResult = await tokenerUp(tokenerPort, { force: true });
         const output = await lavalink.restart();
-        res.json({ output, health: await lavalink.health({ port, password, address }) });
+        const health = await lavalink.health({ port, password, address });
+        res.json({ output, health, tokener: await tokenerProof(tokenerResult) });
     } catch (err) {
         next(err);
     }
 });
 
-/** POST /lavalink/stop */
+/** POST /lavalink/stop — the tokener goes with it. */
 router.post("/stop", async (req, res, next) => {
     try {
-        res.json({ output: await lavalink.stop() });
+        const output = await lavalink.stop();
+        await tokener.stop().catch(() => {});
+        res.json({ output });
     } catch (err) {
         next(err);
     }
 });
 
-/** POST /lavalink/rollback   body: { heap, port, password } — manual undo of an update. */
+/** POST /lavalink/rollback   body: { heap, port, password, tokenerPort } — manual undo of an update. */
 router.post("/rollback", async (req, res, next) => {
     try {
-        const { heap, port, password, address } = req.body || {};
+        const { heap, port, password, address, tokenerPort } = req.body || {};
         lavalink.rollback();
+        const tokenerResult = await tokenerUp(tokenerPort);
         await lavalink.start(heap);
-        res.json({ rolledBack: true, health: await lavalink.health({ port, password, address }) });
+        const health = await lavalink.health({ port, password, address });
+        res.json({ rolledBack: true, health, tokener: await tokenerProof(tokenerResult) });
     } catch (err) {
         next(err);
     }

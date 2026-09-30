@@ -109,6 +109,57 @@ function Metric({ label, value, dim }) {
     );
 }
 
+// Chrome is a system package, so — like Java — the page shows the command and
+// the agent never runs it. Google publishes no Linux arm64 build.
+const CHROME_INSTALL = {
+    x64: "wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo apt-get install -y /tmp/chrome.deb",
+    arm64: "sudo snap install chromium",
+};
+
+/**
+ * spotify-tokener on one node — only shown when the config points LavaSrc's
+ * customTokenEndpoint at the node. Without it Spotify links fail on that node
+ * while YouTube keeps playing, which is why it gets a line of its own.
+ */
+function TokenerLine({ t, lavalinkRunning }) {
+    let text;
+    let color = "var(--text-dim)";
+    if (!t) {
+        text = "agent cũ — cập nhật agent";
+        color = "var(--warning)";
+    } else if (!t.chrome?.present) {
+        text = "chưa có Chrome";
+        color = "var(--danger)";
+    } else if (t.live?.status === "online") {
+        if (t.health?.lastError) {
+            text = `lỗi: ${t.health.lastError}`;
+            color = "var(--danger)";
+        } else {
+            text = `đang chạy · 127.0.0.1:${t.port}`;
+            if (t.health?.lastTokenAt) text += ` · token ${fmtSince(t.health.lastTokenAt)} trước`;
+            color = "var(--success)";
+        }
+    } else if (lavalinkRunning) {
+        text = "chưa chạy — bấm Đồng bộ hoặc Restart";
+        color = "var(--warning)";
+    } else {
+        text = "dừng cùng Lavalink";
+    }
+    return (
+        <p style={{ margin: "-4px 0 10px", fontSize: 11, color, wordBreak: "break-word" }}>
+            Spotify tokener: {text}
+        </p>
+    );
+}
+
+/** One line on what an action did to the tokener, or "" when there is nothing to say. */
+const tokenerNote = (t) => {
+    if (!t?.wanted) return "";
+    if (t.error) return ` Spotify tokener: ${t.error}`;
+    if (t.health && !t.health.ok) return ` Spotify tokener không lấy được token: ${t.health.error}`;
+    return "";
+};
+
 /**
  * One node, one card.
  *
@@ -118,7 +169,7 @@ function Metric({ label, value, dim }) {
  * `restarts` is on the card because a climbing count is the signature of the
  * crash loop that took an afternoon to find once.
  */
-function NodeCard({ n, busy, onAction, onLogs }) {
+function NodeCard({ n, busy, onAction, onLogs, wantsTokener }) {
     const meta = STATE_META[n.state] || { label: n.state || "unknown", color: "var(--text-dim)" };
     const live = n.live || {};
     const notInstalled = ["not-installed", "java-missing", "java-too-old"].includes(n.state);
@@ -173,6 +224,9 @@ function NodeCard({ n, busy, onAction, onLogs }) {
                 {n.java?.present ? `Java ${n.java.major ?? "?"}` : "chưa có Java"} · {fmtGB(n.freeBytes)} trống
                 {n.hasRollback ? " · có bản jar cũ để rollback" : ""}
             </p>
+            {wantsTokener && n.online && n.state !== "agent-outdated" && (
+                <TokenerLine t={n.tokener} lavalinkRunning={running} />
+            )}
 
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {notInstalled ? (
@@ -425,7 +479,7 @@ export default function LavalinkPage() {
             const { data } = await api.post(`/lavalink/nodes/${node.nodeId}/${action}`, {}, LONG);
             if (data.ok === false) throw new Error(data.error || "Thất bại");
             if (data.health && data.health.ok === false) return `${node.nodeName}: chưa trả lời /version (${data.health.error})`;
-            return `${node.nodeName}: ${label.toLowerCase()} xong.`;
+            return `${node.nodeName}: ${label.toLowerCase()} xong.${tokenerNote(data.tokener)}`;
         });
 
     const openLogs = async (node) => {
@@ -463,6 +517,11 @@ export default function LavalinkPage() {
     const versions = [...new Set(nodes.filter((n) => n.version).map((n) => n.version))];
     const fleetVersion = versions.length === 1 ? versions[0] : versions.length ? "không đồng nhất" : null;
     const needsJava = nodes.filter((n) => n.state === "java-missing" || n.state === "java-too-old");
+    // Only when the config actually sends LavaSrc to a tokener on the node.
+    const needsChrome = eff.tokenerPort
+        ? nodes.filter((n) => n.online && n.tokener && !n.tokener.chrome?.present)
+        : [];
+    const chromeArches = [...new Set(needsChrome.map((n) => (n.tokener.arch === "arm64" ? "arm64" : "x64")))];
 
     return (
         <div className="fade-in page-compact">
@@ -566,6 +625,7 @@ export default function LavalinkPage() {
                             busy={busy}
                             onAction={(action, label) => nodeAction(n, action, label)}
                             onLogs={() => openLogs(n)}
+                            wantsTokener={Boolean(eff.tokenerPort)}
                         />
                     ))}
                 </div>
@@ -579,6 +639,22 @@ export default function LavalinkPage() {
                     {needsJava.map((n) => n.nodeName).join(", ")} chưa có Java 17+. Panel không tự cài gói hệ thống —
                     chạy tay trên node đó:{" "}
                     <code style={{ color: "var(--text)" }}>sudo apt-get install -y openjdk-21-jre-headless</code>
+                </div>
+            )}
+
+            {needsChrome.length > 0 && (
+                <div
+                    className="card"
+                    style={{ padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "var(--warning)" }}
+                >
+                    {needsChrome.map((n) => n.nodeName).join(", ")} chưa có Chrome, nên spotify-tokener không chạy được
+                    và link Spotify sẽ lỗi trên node đó. Chạy tay trên node rồi bấm Đồng bộ:
+                    {chromeArches.map((arch) => (
+                        <div key={arch} style={{ marginTop: 6 }}>
+                            {chromeArches.length > 1 && <span>{arch === "arm64" ? "ARM64: " : "x86_64: "}</span>}
+                            <code style={{ color: "var(--text)", wordBreak: "break-all" }}>{CHROME_INSTALL[arch]}</code>
+                        </div>
+                    ))}
                 </div>
             )}
 

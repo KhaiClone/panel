@@ -20,7 +20,8 @@
 #
 #  What it does:
 #    1. Installs Node.js 22, git, PM2, UFW, nginx, certbot, WireGuard, Java 17,
-#       build tools (for the agent's native terminal module)
+#       Google Chrome (amd64, for spotify-tokener), build tools (for the
+#       agent's native terminal module)
 #    2. Creates ~/bots and ~/sites of that user
 #    3. Clones the panel repo (agent lives inside it) to ~/panel — on the
 #       panel's own commit when it says which
@@ -112,6 +113,20 @@ apt-get install -y curl git ufw ca-certificates nginx certbot python3-certbot-ng
 # Lavalink needs Java 17+. Not fatal: the node works without it, and the
 # Lavalink page shows what is missing.
 apt-get install -y openjdk-17-jre-headless || echo "[setup] WARNING: could not install Java 17 — Lavalink will not run until it is installed"
+# spotify-tokener (next to Lavalink) gets Spotify's anonymous token through a
+# headless Chrome. Not fatal either: only Spotify links need it. Google ships
+# no Linux arm64 build, so those nodes are told what to run instead.
+if [ "$(dpkg --print-architecture)" = "amd64" ]; then
+    CHROME_TMP=$(mktemp -d)
+    if curl -fsSL -o "$CHROME_TMP/google-chrome-stable_current_amd64.deb" https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb; then
+        apt-get install -y "$CHROME_TMP/google-chrome-stable_current_amd64.deb" || echo "[setup] WARNING: could not install Google Chrome — Spotify links will fail until it is installed"
+    else
+        echo "[setup] WARNING: could not download Google Chrome — Spotify links will fail until it is installed"
+    fi
+    rm -rf "$CHROME_TMP"
+else
+    echo "[setup] NOTE: no Google Chrome for $(dpkg --print-architecture) — for Spotify links run: sudo snap install chromium"
+fi
 
 if ! command -v node >/dev/null 2>&1; then
     echo "[setup] Installing Node.js 22 (NodeSource)..."

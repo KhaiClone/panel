@@ -153,7 +153,15 @@ const syncNode = async (node, { settings, yaml, restart = true } = {}) => {
     const eff = effective(s);
     try {
         const result = await nodeService.agentRequest(node, "put", "/lavalink/config", {
-            data: { content, restart, port: eff.port, password: eff.password, address: eff.address, heap: s.heap },
+            data: {
+                content,
+                restart,
+                port: eff.port,
+                password: eff.password,
+                address: eff.address,
+                heap: s.heap,
+                tokenerPort: eff.tokenerPort,
+            },
             timeout: 120_000,
         });
         await store.setNodeState(node._id, { configSha: result.sha, lastSyncAt: Date.now(), error: null });
@@ -217,6 +225,7 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
                 password: eff.password,
                 address: eff.address,
                 heap: settings.heap,
+                tokenerPort: eff.tokenerPort,
                 start,
             },
             timeout: LONG_TIMEOUT,
@@ -230,7 +239,15 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
             lastSyncAt: Date.now(),
             error: ok ? null : `Installed but did not answer /version: ${result.health?.error}`,
         });
-        return { nodeId: node._id, nodeName: node.name, ok, started: start, version: rel.version, health: result.health };
+        return {
+            nodeId: node._id,
+            nodeName: node.name,
+            ok,
+            started: start,
+            version: rel.version,
+            health: result.health,
+            tokener: result.tokener ?? null,
+        };
     } catch (err) {
         await store.setNodeState(node._id, { error: err.message });
         return { nodeId: node._id, nodeName: node.name, ok: false, error: err.message };
@@ -273,6 +290,7 @@ const updateNode = async (node, release) => {
                 password: eff.password,
                 address: eff.address,
                 heap: settings.heap,
+                tokenerPort: eff.tokenerPort,
             },
             timeout: LONG_TIMEOUT,
         });
@@ -290,6 +308,7 @@ const updateNode = async (node, release) => {
             started: result.started !== false,
             version: release.version,
             health: result.health,
+            tokener: result.tokener ?? null,
         };
     } catch (err) {
         // agentRequest flattens the agent's error body to a message, and the
@@ -310,7 +329,16 @@ const updateNode = async (node, release) => {
 const control = async (node, action) => {
     const settings = await store.get();
     const eff = effective(settings);
-    const data = action === "stop" ? {} : { port: eff.port, password: eff.password, address: eff.address, heap: settings.heap };
+    const data =
+        action === "stop"
+            ? {}
+            : {
+                  port: eff.port,
+                  password: eff.password,
+                  address: eff.address,
+                  heap: settings.heap,
+                  tokenerPort: eff.tokenerPort,
+              };
     return nodeService.agentRequest(node, "post", `/lavalink/${action}`, { timeout: 180_000, data });
 };
 
