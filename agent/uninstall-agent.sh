@@ -102,6 +102,7 @@ MAIN = re.compile(r"^apt-get install -y curl git ufw ca-certificates nginx certb
 SETUP = [
     MAIN,
     re.compile(r"^apt-get install -y openjdk-17-jre-headless$"),
+    re.compile(r"^apt-get install -y aria2$"),
     re.compile(r"^apt-get install -y \S*/google-chrome-stable_current_amd64\.deb$"),
     re.compile(r"^apt-get install -y nodejs$"),
     re.compile(r"install -y .*ca-certificates curl gnupg"),  # NodeSource's own prerequisites

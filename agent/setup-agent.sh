@@ -20,7 +20,7 @@
 #
 #  What it does:
 #    1. Installs Node.js 22, git, PM2, UFW, nginx, certbot, WireGuard, Java 17,
-#       Google Chrome (amd64, for spotify-tokener), build tools (for the
+#       Google Chrome (amd64, fetched with aria2, for spotify-tokener), build tools (for the
 #       agent's native terminal module)
 #    2. Creates ~/bots and ~/sites of that user
 #    3. Clones the panel repo (agent lives inside it) to ~/panel — on the
@@ -116,10 +116,29 @@ apt-get install -y openjdk-17-jre-headless || echo "[setup] WARNING: could not i
 # spotify-tokener (next to Lavalink) gets Spotify's anonymous token through a
 # headless Chrome. Not fatal either: only Spotify links need it. Google ships
 # no Linux arm64 build, so those nodes are told what to run instead.
+#
+# The .deb is ~140MB, and some VPS get only a few hundred KB/s — at worst tens —
+# per international connection while 16 connections together run at full speed
+# (measured on a Vietnix/VNPT node: 1 connection 468 KB/s, 8 together 4.2 MB/s).
+# So aria2c, in 1MB pieces so all 16 connections stay busy to the last byte;
+# curl only when aria2 cannot be installed (it lives in universe).
+# NEEDRESTART_MODE=l: list the daemons using old libraries, restart none — on a
+# re-run one of them is this user's pm2, i.e. every bot and the agent itself.
 if [ "$(dpkg --print-architecture)" = "amd64" ]; then
+    apt-get install -y aria2 || echo "[setup] NOTE: could not install aria2 — downloading Chrome over one connection"
+    CHROME_URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
     CHROME_TMP=$(mktemp -d)
-    if curl -fsSL -o "$CHROME_TMP/google-chrome-stable_current_amd64.deb" https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb; then
-        apt-get install -y "$CHROME_TMP/google-chrome-stable_current_amd64.deb" || echo "[setup] WARNING: could not install Google Chrome — Spotify links will fail until it is installed"
+    CHROME_DEB="$CHROME_TMP/google-chrome-stable_current_amd64.deb"
+    CHROME_OK=no
+    echo "[setup] Downloading Google Chrome (~140MB)..."
+    if command -v aria2c >/dev/null 2>&1; then
+        aria2c -x16 -s16 -k1M --max-tries=5 --retry-wait=3 --summary-interval=0 --console-log-level=warn \
+            --download-result=hide -d "$CHROME_TMP" -o google-chrome-stable_current_amd64.deb "$CHROME_URL" && CHROME_OK=yes
+    else
+        curl -fL --progress-bar -o "$CHROME_DEB" "$CHROME_URL" && CHROME_OK=yes
+    fi
+    if [ "$CHROME_OK" = "yes" ]; then
+        NEEDRESTART_MODE=l apt-get install -y "$CHROME_DEB" || echo "[setup] WARNING: could not install Google Chrome — Spotify links will fail until it is installed"
     else
         echo "[setup] WARNING: could not download Google Chrome — Spotify links will fail until it is installed"
     fi
