@@ -377,6 +377,26 @@ const setTokener = async (node, enabled) => {
 const logs = async (node, lines = 100) =>
     nodeService.agentRequest(node, "get", "/lavalink/logs", { params: { lines }, timeout: 30_000 });
 
+/**
+ * Live log of Lavalink or the node's spotify-tokener: the agent's SSE stream of
+ * `pm2 logs` — the last `lines` lines, then every new one as it is written.
+ *
+ * It goes through the agent's generic per-process stream (the one project logs
+ * use), so any agent serves Lavalink's. The pm2 names come from the node's own
+ * status: both are configurable in the agent's env, and only the agent knows.
+ */
+const streamLogs = async (node, which, lines = 200) => {
+    const raw = await nodeService.agentRequest(node, "get", "/lavalink/status", { timeout: STATUS_TIMEOUT });
+    const t = raw.tokener;
+    if (which === "tokener" && !(t?.managed || t?.foreignPm2)) {
+        const e = new Error("There is no spotify-tokener in pm2 on this node");
+        e.status = 404;
+        throw e;
+    }
+    const pm2Name = which === "tokener" ? t.pm2Name : raw.pm2Name;
+    return require("./executor").streamBotLogs({ nodeId: node._id, pm2Name }, lines);
+};
+
 module.exports = {
     latestRelease,
     assetFor,
@@ -390,4 +410,5 @@ module.exports = {
     control,
     setTokener,
     logs,
+    streamLogs,
 };

@@ -636,6 +636,12 @@ Every node runs its own Lavalink, so a music bot connects to `127.0.0.1:<port>`
 on the machine it already lives on instead of reaching across the internet to
 another VPS.
 
+- **The page.** Two tabs. **Node** is a table, one row per node (state, players,
+  version, RAM, uptime, restarts, tokener); a row opens into its controls, the
+  tokener switch and a **live log** of Lavalink or the tokener — the last 200
+  lines, then every new one as pm2 writes it (SSE through the agent's
+  `pm2 logs`, closed when the row closes). Status refreshes itself every 30s
+  while the page is visible. **Cấu hình** holds the shared config.
 - **One config for the whole fleet.** The panel owns `application.yml`: you edit
   port, password, heap, sources and plugins once on **/lavalink**, and the same
   rendered file is pushed to every node. A node whose file differs shows as
@@ -721,6 +727,7 @@ SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 | `POST` | `/api/lavalink/nodes/:id/tokener` | Per-node spotify-tokener switch (`{ enabled }`) |
 | `POST` | `/api/lavalink/nodes/:id/:action` | `start` · `stop` · `restart` · `rollback` |
 | `GET` | `/api/lavalink/nodes/:id/logs` | That node's Lavalink logs |
+| `GET` | `/api/lavalink/nodes/:id/logs/stream` | Live log over SSE (`which=lavalink\|tokener`, `lines`, `token`) |
 
 ---
 

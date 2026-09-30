@@ -234,4 +234,50 @@ router.get("/nodes/:id/logs", withNode(async (node, req, res) => {
     res.json(await lavalink.logs(node, lines));
 }));
 
+/**
+ * GET /api/lavalink/nodes/:id/logs/stream?which=lavalink|tokener&lines=200&token=…
+ * Live log over Server-Sent Events: the last `lines` lines, then each new one.
+ * The token rides in the query string — EventSource cannot set a header, and
+ * authMiddleware reads it there too.
+ *
+ * A failure is sent as a `panel-error` event rather than a status code: once
+ * the stream is open the headers are gone, and the page has to tell "the node
+ * said no" (stop) apart from "the connection dropped" (reconnect).
+ */
+router.get("/nodes/:id/logs/stream", withNode(async (node, req, res) => {
+    const which = req.query.which === "tokener" ? "tokener" : "lavalink";
+    const lines = Math.min(parseInt(req.query.lines, 10) || 200, 1000);
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 15_000);
+    // Registered before the agent is asked: a viewer who closes the row while
+    // the node's status is still being read must not leave `pm2 logs` running.
+    let upstream = null;
+    let closed = false;
+    req.on("close", () => {
+        closed = true;
+        clearInterval(keepAlive);
+        upstream?.data.destroy();
+    });
+
+    try {
+        upstream = await lavalink.streamLogs(node, which, lines);
+    } catch (err) {
+        clearInterval(keepAlive);
+        if (!closed) {
+            res.write(`event: panel-error\ndata: ${String(err.message).split("\n")[0]}\n\n`);
+            res.end();
+        }
+        return;
+    }
+    if (closed) return upstream.data.destroy();
+    upstream.data.pipe(res);
+    upstream.data.on("error", () => res.end());
+}));
+
 module.exports = router;
