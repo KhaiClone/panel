@@ -17,7 +17,8 @@ const lifecycle = require("./lifecycle");
 //
 //  Stored per key: sha256 for lookup, and the key itself AES-GCM-encrypted
 //  with JWT_SECRET — needed to sign callbacks, and a leaked panel.sqlite alone
-//  (the hourly Discord backup) does not reveal it.
+//  does not reveal it. (The hourly Discord backup carries .env too, so its
+//  channel does — keep that channel private.)
 //  Last use lives under its own DB key so a usage stamp can never overwrite a
 //  concurrent revoke (quick.db rewrites a whole value per write).
 // ─────────────────────────────────────────────────────────────────────────────

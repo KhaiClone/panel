@@ -1,6 +1,4 @@
 const axios = require("axios");
-const FormData = require("form-data");
-const fs = require("fs");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Core
@@ -224,59 +222,6 @@ const sendLavalinkReport = async ({ title, color, version, url, description, res
     });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Backup
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Send a database file to DISCORD_BACKUP_WEBHOOK.
- *
- * @param {string} filePath - Path to the file to back up
- * @param {string} fileName - Name it is attached as
- */
-const sendBackup = async (filePath, fileName = "panel.sqlite") => {
-    const webhookUrl = process.env.DISCORD_BACKUP_WEBHOOK;
-    if (!webhookUrl || !fs.existsSync(filePath)) return;
-
-    const form = new FormData();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    
-    // Webhook body
-    form.append(
-        "payload_json",
-        JSON.stringify({
-            embeds: [
-                {
-                    title: "💾 Hourly Database Backup",
-                    color: 0x5865f2,
-                    fields: [
-                        {
-                            name: "🕐 Timestamp",
-                            value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
-                            inline: true,
-                        },
-                    ],
-                    footer: { text: fileName },
-                    timestamp: new Date().toISOString(),
-                },
-            ],
-        }),
-    );
-
-    const content = fs.readFileSync(filePath);
-
-    form.append("file", content, {
-        filename: fileName,
-        contentType: "application/octet-stream",
-    });
-
-    try {
-        await axios.post(webhookUrl, form, { headers: form.getHeaders() });
-    } catch (err) {
-        console.error(`[Discord] Backup error: ${err.message}`);
-    }
-};
-
 module.exports = {
     sendWebhook,
     sendDM,
@@ -284,5 +229,4 @@ module.exports = {
     sendExpiryRemoval,
     sendExpirySuspended,
     sendLavalinkReport,
-    sendBackup,
 };

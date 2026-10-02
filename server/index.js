@@ -1,3 +1,7 @@
+// A backup waiting in restore/ (dropped there by hand, or staged by Panel
+// Settings → Backup & Rollback) replaces the data and .env BEFORE anything
+// reads them — so this must stay ahead of dotenv. See services/backupArchive.js.
+require("./services/backupArchive").restore();
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");

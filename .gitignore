@@ -14,7 +14,11 @@ scripts/snapshots/
 agent/.panel-lease.json
 agent/.panel-lease.json.tmp
 
-# Kept aside by the panel .env editor, panel moves and imports
+# Backup files waiting to be restored at the next start (services/backupArchive.js)
+restore/
+
+# Kept aside by the panel .env editor, panel moves, imports and restores
 .env.bak-*
+.env.restore-tmp
 .env.retired-*
 .env.pre-import-*

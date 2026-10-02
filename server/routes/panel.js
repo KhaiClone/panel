@@ -6,6 +6,7 @@ const nodeService = require("../services/nodeService");
 const sharedStore = require("../services/sharedStore");
 const discordBus = require("../services/discordBus");
 const decorSitePublisher = require("../services/decorSitePublisher");
+const backupService = require("../services/backupService");
 const apiKeys = require("../services/apiKeyService");
 const callbacks = require("../services/callbackService");
 const executor = require("../services/executor");
@@ -435,6 +436,48 @@ router.post("/shared/decor-site/publish", async (req, res, next) => {
     } catch (err) {
         next(err);
     }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Backups on Discord and rolling back to one (services/backupService.js)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /api/panel/backups — schedule, last run, recent backups, files waiting in restore/, last restore. */
+router.get("/backups", (req, res) => {
+    res.json(backupService.overview());
+});
+
+/** POST /api/panel/backups/run — send a backup now. */
+router.post("/backups/run", async (req, res) => {
+    const result = await backupService.performBackup({ reason: "manual" });
+    res.status(result.ok ? 200 : 502).json(result.ok ? result : { error: result.error });
+});
+
+/** POST /api/panel/backups/inspect   Body: { source } (message link or id) — download, verify, compare. Writes nothing. */
+router.post("/backups/inspect", async (req, res, next) => {
+    try {
+        res.json(await backupService.inspect(req.body?.source));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/panel/backups/restore   Body: { source, parts: { panel, shared, env } }
+ * Stage the chosen parts in restore/ and restart the panel — it restores them
+ * on the way up. Answers before the restart takes the panel down.
+ */
+router.post("/backups/restore", async (req, res, next) => {
+    try {
+        res.json(await backupService.rollback(req.body?.source, req.body?.parts || {}));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** DELETE /api/panel/backups/pending — drop the backup files waiting in restore/. */
+router.delete("/backups/pending", (req, res) => {
+    res.json({ removed: backupService.clearPending() });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

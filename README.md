@@ -49,7 +49,7 @@
 - 🔑 SSH key manager — generate, store, and test deploy keys for private GitHub repos
 - ⚙️ Git config editor — set global `user.name` / `user.email` for git operations
 - 🛠️ Panel self-management — restart or rebuild the panel itself from the UI, view/edit panel `.env`
-- 🗃️ Hourly DB backup sent to Discord as a JSON attachment
+- 🗃️ Hourly backup to Discord (databases + `.env`, verified pieces) and one-click rollback from a message link
 - 🧮 Memory monitor service — runs every minute; restarts any bot that exceeds its limit and fires a notification
 - 🎵 Lavalink fleet — one audio server per node, one shared config edited on the panel, and a 02:00 daily release check that updates every node and reports to Discord
 
@@ -95,9 +95,10 @@ root/
     │   │   ├── notifications.js     ← In-panel notification inbox
     │   │   └── external.js          ← External API (API-key protected)
     │   ├── services/
-    │   │   ├── discordService.js    ← Webhook alerts + backup file sender
+    │   │   ├── discordService.js    ← Webhook alerts
     │   │   ├── expiryService.js     ← Hourly expiry check + auto-removal
-    │   │   ├── backupService.js     ← Hourly DB dump to Discord
+    │   │   ├── backupService.js     ← Hourly backup to Discord + rollback
+    │   │   ├── backupArchive.js     ← Backup file format + restore at start
     │   │   ├── memoryMonitorService.js ← Per-minute memory overflow checker
     │   │   ├── githubService.js     ← SSH key generation + ~/.ssh/config manager
     │   │   └── panelService.js      ← Panel restart / client rebuild helpers
@@ -204,7 +205,7 @@ nano .env
 | `PANEL_DISCORD_TOKEN`    | No       | The panel's own Discord bot — posts commands on the bus       |
 | `PANEL_BUS_CHANNEL_ID`   | No       | Private channel of the Discord bus (see Shared Data below)    |
 | `DISCORD_ALERT_WEBHOOK`  | No       | Webhook URL for expiry warnings and removal alerts            |
-| `DISCORD_BACKUP_WEBHOOK` | No       | Webhook URL for hourly DB backups                             |
+| `DISCORD_BACKUP_WEBHOOK` | No       | Webhook URL for the hourly backup (DBs + `.env` — keep it private) |
 | `QUEST_ENC_SECRET`       | Auto Quest | Encrypts stored Discord tokens (64 hex chars)               |
 | `DECOR_SITE_GITHUB_TOKEN`| No       | Publishes the decor site's data snapshot (fine-grained, Contents r/w) |
 | `PANEL_API_KEY`          | No       | Legacy shared key for `/api/external/*` — projects use their own keys |
@@ -618,7 +619,7 @@ The public decor site reads `GET /api/public/decors` and `/api/public/decors/cat
 (no auth, read-only) live on every visit, through its own Vercel function that finds
 the active panel. Its fallback, `data/decors.json` + `data/categories.json`, is
 committed a minute after the decor data changes, when `DECOR_SITE_GITHUB_TOKEN` is
-set. `shared.sqlite` is also in the hourly Discord backup (gzipped).
+set. `shared.sqlite` is also in the hourly Discord backup (see Backup & Rollback).
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -629,6 +630,67 @@ set. `shared.sqlite` is also in the hourly Discord backup (gzipped).
 | `GET` | `/api/panel/shared` | Names, owners, sizes, bus status, recent commands, decor site |
 | `POST` | `/api/panel/shared/declare` | `{ name, kind, botId }` |
 | `POST` | `/api/panel/shared/ping` | `{ botId }` — round trip over the bus |
+
+---
+
+## 💾 Backup & Rollback
+
+Same mechanism as `template-discord-bot` (its `BACKUP.md`), extended to the panel's
+two databases. Format and restore: `server/services/backupArchive.js`; sending,
+reading a message back and the rollback flow: `server/services/backupService.js`.
+
+**Backup** — every hour at :30 (`BACKUP_INTERVAL_HOURS`), only while the panel is
+active, ONE message to `DISCORD_BACKUP_WEBHOOK`:
+
+```
+20261002-1430__b7f3a1c9__env.txt
+20261002-1430__b7f3a1c9__panel-000-of-001.gz
+20261002-1430__3c9e0d12__shared-000-of-001.gz
+```
+
+Each database is a `VACUUM INTO` snapshot (consistent while the panel writes, WAL
+included), gzipped, cut in 9 MB pieces. `<hash8>` = first 8 hex of the SHA-256 of the
+**uncompressed** database (env.txt carries the panel's). More than 9 pieces → nothing is
+sent and the log says so. `samples.sqlite` (resource history) is not backed up. Each
+sent message is recorded in `data/backup-index.json` (message ids — attachment URLs
+expire after 24 h), outside `panel.sqlite` so a rollback does not erase the list.
+
+**Rollback from the panel** — Panel Settings → Backup & Rollback: paste the message's
+link (Copy Message Link) or pick one from the list → **Check backup** downloads the
+files through the backup webhook (it can read what it sent; else through the panel's
+Discord bot), verifies every piece and checksum and shows what differs from now
+(records per collection, `.env` key names — never values). Choose `panel.sqlite`,
+`shared.sqlite`, `.env` (off by default) → **Roll back & restart** stages the files in
+`restore/` and has the agent restart the panel.
+
+**Rollback by hand** (panel down) — download every file of the message, put them in
+`restore/` in the panel directory, `pm2 restart bot-panel`. Leaving out `env.txt`
+keeps the current `.env`; leaving out a database's pieces keeps that database.
+
+**On start** (`server/index.js`, first line, before dotenv): nothing happens unless
+`restore/` holds backup files. Then: newest backup only; any missing piece, checksum
+mismatch or non-SQLite data → **nothing is touched**, the panel starts with its data and
+Panel Settings shows why. Otherwise the current files are renamed `*.bak-<ts>` (with
+their `-wal`/`-shm`/`-journal`), the restored ones are put in place, and the sources
+in `restore/` are deleted — which also disarms it for the next restart. Two things are
+never rolled back, because they say which panel this is: the **fencing epoch** in
+`panel.sqlite` keeps the current (higher) value — an older one would get the panel
+fenced by its own agents — and `.env` keeps this machine's `PANEL_NODE_ID`. A backup
+taken while the panel ran on another node gets the node fix-up of a move (the old
+node's loopback `controlHost` cleared, this node's set). Result: `data/restore-last.json`.
+
+Disaster recovery on a NEW machine works the same way, with one limit: a backup older
+than the last panel move carries an older epoch, and the agents will fence it.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/panel/backups` | Schedule, last run, recent backups, files in `restore/`, last restore |
+| `POST` | `/api/panel/backups/run` | Send a backup now |
+| `POST` | `/api/panel/backups/inspect` | `{ source }` — download, verify, compare; writes nothing |
+| `POST` | `/api/panel/backups/restore` | `{ source, parts: { panel, shared, env } }` — stage in `restore/` + restart |
+| `DELETE` | `/api/panel/backups/pending` | Drop the files waiting in `restore/` |
+
+Checks: `node scripts/backupArchive.test.js`.
 
 ---
 
@@ -743,6 +805,7 @@ SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 - All API routes are JWT-protected except `/api/auth/login`
 - External API routes (`/api/external/*`) take an `x-api-key`: a project's own key (stored as sha256 + an AES-GCM copy under `JWT_SECRET`; revocable one by one), or the legacy shared `PANEL_API_KEY` if set (never for shared data)
 - The Discord bus channel carries buyer ids and DM text: keep it private to the bots; commands and replies are HMAC-signed with the target's key
+- The backup channel holds `panel.sqlite` (agent keys), `shared.sqlite` (orders) AND `.env` (`JWT_SECRET`, `QUEST_ENC_SECRET` — the keys to every encrypted token): anyone who can read it owns the panel. Keep it private
 - SSE log streaming authenticates via a query-param token (browsers cannot set `Authorization` headers on `EventSource`)
 - Helmet is used to set secure HTTP headers (CSP disabled intentionally to serve the React SPA)
 - **Place the panel behind nginx + HTTPS in production** (see example below)
@@ -801,8 +864,8 @@ cd client && npm run build
 # Generate a new bcrypt password hash
 node -e "const b=require('bcryptjs'); console.log(b.hashSync('YOUR_PASSWORD', 10));"
 
-# Manually trigger a database backup
-node -e "require('./server/services/backupService').performBackup()"
+# Manually send a backup (or: Panel Settings → Backup & Rollback → Backup now)
+node -e "require('dotenv').config();require('./server/services/backupService').performBackup()"
 
 # Manually trigger an expiry check
 node -e "require('./server/services/expiryService').checkExpiry()"
