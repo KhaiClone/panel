@@ -134,6 +134,8 @@ app.use("/api/nodes", authMiddleware, nodeRoutes);
 app.use("/api/join", require("./routes/join"));
 app.use("/api/shop", authMiddleware, shopOrderRoutes);
 app.use("/api/decors", authMiddleware, decorRoutes);
+// Public, read-only: the decor site's live data (routes/decorsPublic.js).
+app.use("/api/public/decors", require("./routes/decorsPublic"));
 app.use("/api/quests", authMiddleware, questRoutes);
 app.use("/api/pricing", authMiddleware, pricingRoutes);
 app.use("/api/badges", authMiddleware, badgeRoutes);

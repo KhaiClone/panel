@@ -614,7 +614,9 @@ page is a harmless round trip.
 A bot's `.env`: `PANEL_API_URL=http://127.0.0.1:4201`, `PANEL_API_KEY=<its own key>`,
 `PANEL_SHARED=…`, optionally `PANEL_SHARED_TTL_MS` (read cache) and `PANEL_BUS_GUILD_ID`.
 
-The public decor site (static) gets `data/decors.json` + `data/categories.json`
+The public decor site reads `GET /api/public/decors` and `/api/public/decors/categories`
+(no auth, read-only) live on every visit, through its own Vercel function that finds
+the active panel. Its fallback, `data/decors.json` + `data/categories.json`, is
 committed a minute after the decor data changes, when `DECOR_SITE_GITHUB_TOKEN` is
 set. `shared.sqlite` is also in the hourly Discord backup (gzipped).
 
