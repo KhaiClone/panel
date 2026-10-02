@@ -9,7 +9,8 @@
 #  drop it from the WireGuard mesh.
 #
 #  What it removes — only what the setup (or the agent) put there:
-#    - panel-agent and lavalink from that user's PM2, and pm2-logrotate when
+#    - panel-agent, lavalink and (when the agent started it) spotify-tokener
+#      from that user's PM2, and pm2-logrotate when
 #      the agent installed it; that user's PM2 itself and its boot service
 #      when nothing else is left in it
 #    - wg0, if /etc/wireguard/wg0.conf was written by bot-panel
@@ -21,9 +22,9 @@
 #    - ~/panel, ~/lavalink, ~/.panel-node, and ~/bots / ~/sites when empty
 #    - /etc/sudoers.d/bot-panel-agent-<user>
 #    - packages: exactly those apt's history.log shows the setup NEWLY
-#      installed (nginx, certbot, WireGuard, Java, Node.js and their
-#      dependencies…), the global PM2 it installed, and the NodeSource apt
-#      source. Packages that were already there are kept, and so is every
+#      installed (nginx, certbot, WireGuard, Java, Chrome, Node.js and their
+#      dependencies…), the global PM2 it installed, and the NodeSource and
+#      Google Chrome apt sources. Packages that were already there are kept, and so is every
 #      upgrade. apt is asked first, and nothing is removed if it would take
 #      anything else with it. --keep-packages skips this part.
 #
@@ -101,6 +102,8 @@ MAIN = re.compile(r"^apt-get install -y curl git ufw ca-certificates nginx certb
 SETUP = [
     MAIN,
     re.compile(r"^apt-get install -y openjdk-17-jre-headless$"),
+    re.compile(r"^apt-get install -y aria2$"),
+    re.compile(r"^apt-get install -y \S*/google-chrome-stable_current_amd64\.deb$"),
     re.compile(r"^apt-get install -y nodejs$"),
     re.compile(r"install -y .*ca-certificates curl gnupg"),  # NodeSource's own prerequisites
 ]
@@ -153,6 +156,13 @@ if command -v pm2 >/dev/null 2>&1; then
             as_user pm2 delete "$p" >/dev/null && say "PM2: removed $p"
         fi
     done
+    # spotify-tokener only when the agent started it (its script sits in
+    # ~/lavalink/spotify-tokener) — one set up by hand under that name stays.
+    if as_user pm2 describe spotify-tokener 2>/dev/null | grep -q "lavalink/spotify-tokener/.noflex-start.sh"; then
+        as_user pm2 delete spotify-tokener >/dev/null && say "PM2: removed spotify-tokener"
+    elif as_user pm2 describe spotify-tokener >/dev/null 2>&1; then
+        say "PM2: spotify-tokener was not started by the agent — kept"
+    fi
     # pm2-logrotate, when the agent is what installed it (it leaves this marker then).
     if [ -f "$H/.pm2/.bot-panel-logrotate" ]; then
         as_user pm2 uninstall pm2-logrotate >/dev/null 2>&1 && say "PM2: removed pm2-logrotate"
@@ -306,6 +316,11 @@ else
                   /etc/apt/preferences.d/nodejs /etc/apt/preferences.d/nsolid
             say "Removed the NodeSource apt source"
         fi
+        # Chrome's package registers Google's apt repository on install.
+        case " $PKGS " in *" google-chrome-stable "*)
+            rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
+            say "Removed the Google Chrome apt source" ;;
+        esac
         case " $PKGS " in *" nginx-common "*|*" nginx "*)
             rm -rf /etc/nginx /var/log/nginx /var/lib/nginx
             rm -f /var/www/html/index.nginx-debian.html

@@ -69,7 +69,9 @@ const DEFAULTS = {
     lastUpdateAt: null,
     lastError: null,
 
-    nodes: {}, // nodeId → { state, version, configSha, lastSyncAt, error }
+    // Per node: state (state, version, configSha, lastSyncAt, error) plus the
+    // one per-node choice, tokenerEnabled — false turns spotify-tokener off there.
+    nodes: {}, // nodeId → { state, version, configSha, lastSyncAt, error, tokenerEnabled }
 };
 
 const _bad = (message) => {

@@ -2,7 +2,7 @@ const axios = require("axios");
 
 const nodeService = require("./nodeService");
 const store = require("./lavalinkStore");
-const { renderYaml, sha256, effective } = require("./lavalinkConfig");
+const { renderYaml, sha256, effective, tokenerPortFor } = require("./lavalinkConfig");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Lavalink orchestration.
@@ -84,10 +84,20 @@ const _stateOf = (raw, inSync) => {
     return "stopped";
 };
 
-const statusOfNode = async (node, desiredSha, eff = null) => {
-    const base = { nodeId: node._id, nodeName: node.name, host: node.host };
+const statusOfNode = async (node, desiredSha, eff = null, settings = null) => {
+    const base = {
+        nodeId: node._id,
+        nodeName: node.name,
+        host: node.host,
+        tokenerEnabled: settings?.nodes?.[node._id]?.tokenerEnabled !== false,
+    };
     try {
-        const raw = await nodeService.agentRequest(node, "get", "/lavalink/status", { timeout: STATUS_TIMEOUT });
+        // The config's port even for a node whose switch is off: that is where a
+        // tokener the panel did not start would be answering.
+        const raw = await nodeService.agentRequest(node, "get", "/lavalink/status", {
+            params: eff?.tokenerPort ? { tokenerPort: eff.tokenerPort } : undefined,
+            timeout: STATUS_TIMEOUT,
+        });
         const inSync = Boolean(desiredSha) && raw.configSha === desiredSha;
 
         // pm2 can only say a JVM is alive. Lavalink's own /v4/stats says whether
@@ -122,7 +132,7 @@ const statusAll = async () => {
     const eff = effective(settings);
     const nodes = await managedNodes();
 
-    const results = await Promise.all(nodes.map((n) => statusOfNode(n, desiredSha, eff)));
+    const results = await Promise.all(nodes.map((n) => statusOfNode(n, desiredSha, eff, settings)));
 
     // Cache what we learned so the Discord report can name versions even when a
     // node is unreachable at the time the report is built.
@@ -153,7 +163,15 @@ const syncNode = async (node, { settings, yaml, restart = true } = {}) => {
     const eff = effective(s);
     try {
         const result = await nodeService.agentRequest(node, "put", "/lavalink/config", {
-            data: { content, restart, port: eff.port, password: eff.password, address: eff.address, heap: s.heap },
+            data: {
+                content,
+                restart,
+                port: eff.port,
+                password: eff.password,
+                address: eff.address,
+                heap: s.heap,
+                tokenerPort: tokenerPortFor(s, node._id, eff),
+            },
             timeout: 120_000,
         });
         await store.setNodeState(node._id, { configSha: result.sha, lastSyncAt: Date.now(), error: null });
@@ -217,6 +235,7 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
                 password: eff.password,
                 address: eff.address,
                 heap: settings.heap,
+                tokenerPort: tokenerPortFor(settings, node._id, eff),
                 start,
             },
             timeout: LONG_TIMEOUT,
@@ -230,7 +249,15 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
             lastSyncAt: Date.now(),
             error: ok ? null : `Installed but did not answer /version: ${result.health?.error}`,
         });
-        return { nodeId: node._id, nodeName: node.name, ok, started: start, version: rel.version, health: result.health };
+        return {
+            nodeId: node._id,
+            nodeName: node.name,
+            ok,
+            started: start,
+            version: rel.version,
+            health: result.health,
+            tokener: result.tokener ?? null,
+        };
     } catch (err) {
         await store.setNodeState(node._id, { error: err.message });
         return { nodeId: node._id, nodeName: node.name, ok: false, error: err.message };
@@ -273,6 +300,7 @@ const updateNode = async (node, release) => {
                 password: eff.password,
                 address: eff.address,
                 heap: settings.heap,
+                tokenerPort: tokenerPortFor(settings, node._id, eff),
             },
             timeout: LONG_TIMEOUT,
         });
@@ -290,6 +318,7 @@ const updateNode = async (node, release) => {
             started: result.started !== false,
             version: release.version,
             health: result.health,
+            tokener: result.tokener ?? null,
         };
     } catch (err) {
         // agentRequest flattens the agent's error body to a message, and the
@@ -310,12 +339,63 @@ const updateNode = async (node, release) => {
 const control = async (node, action) => {
     const settings = await store.get();
     const eff = effective(settings);
-    const data = action === "stop" ? {} : { port: eff.port, password: eff.password, address: eff.address, heap: settings.heap };
+    const data =
+        action === "stop"
+            ? {}
+            : {
+                  port: eff.port,
+                  password: eff.password,
+                  address: eff.address,
+                  heap: settings.heap,
+                  tokenerPort: tokenerPortFor(settings, node._id, eff),
+              };
     return nodeService.agentRequest(node, "post", `/lavalink/${action}`, { timeout: 180_000, data });
+};
+
+/**
+ * The per-node spotify-tokener switch: remember it, then apply it on the node
+ * right away — Lavalink itself is not touched. On is the default; off removes
+ * the panel's own tokener there. A tokener the panel did not start is left
+ * alone either way (agent/services/spotifyTokener.js).
+ */
+const setTokener = async (node, enabled) => {
+    await store.setNodeState(node._id, { tokenerEnabled: Boolean(enabled) });
+    const settings = await store.get();
+    const base = { nodeId: node._id, nodeName: node.name, tokenerEnabled: Boolean(enabled) };
+    try {
+        const r = await nodeService.agentRequest(node, "post", "/lavalink/tokener", {
+            data: { tokenerPort: tokenerPortFor(settings, node._id) },
+            timeout: 90_000,
+        });
+        return { ...base, ok: true, tokener: r.tokener ?? null };
+    } catch (err) {
+        const error = err.status === 404 ? "This node's agent is too old for spotify-tokener — update it first" : err.message;
+        return { ...base, ok: false, error };
+    }
 };
 
 const logs = async (node, lines = 100) =>
     nodeService.agentRequest(node, "get", "/lavalink/logs", { params: { lines }, timeout: 30_000 });
+
+/**
+ * Live log of Lavalink or the node's spotify-tokener: the agent's SSE stream of
+ * `pm2 logs` — the last `lines` lines, then every new one as it is written.
+ *
+ * It goes through the agent's generic per-process stream (the one project logs
+ * use), so any agent serves Lavalink's. The pm2 names come from the node's own
+ * status: both are configurable in the agent's env, and only the agent knows.
+ */
+const streamLogs = async (node, which, lines = 200) => {
+    const raw = await nodeService.agentRequest(node, "get", "/lavalink/status", { timeout: STATUS_TIMEOUT });
+    const t = raw.tokener;
+    if (which === "tokener" && !(t?.managed || t?.foreignPm2)) {
+        const e = new Error("There is no spotify-tokener in pm2 on this node");
+        e.status = 404;
+        throw e;
+    }
+    const pm2Name = which === "tokener" ? t.pm2Name : raw.pm2Name;
+    return require("./executor").streamBotLogs({ nodeId: node._id, pm2Name }, lines);
+};
 
 module.exports = {
     latestRelease,
@@ -328,5 +408,7 @@ module.exports = {
     installOnNode,
     updateNode,
     control,
+    setTokener,
     logs,
+    streamLogs,
 };

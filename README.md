@@ -457,7 +457,7 @@ sudo bash uninstall-agent.sh <USER>   # the account the agent ran as, e.g. root
 
 It undoes the setup, keeping only what was there before it:
 
-- **PM2**: panel-agent and lavalink leave that user's PM2, and pm2-logrotate
+- **PM2**: panel-agent, lavalink and the agent's own spotify-tokener leave that user's PM2, and pm2-logrotate
   does too when the agent installed it. That user's PM2 and its boot service go
   too when nothing else is left in it.
 - **Network**: a bot-panel `wg0` and the UFW rules for the agent port and
@@ -466,8 +466,8 @@ It undoes the setup, keeping only what was there before it:
 - **Files**: the SSH keys the panel copied, `~/panel` and `~/lavalink` are
   removed, and so are `~/bots` / `~/sites` when they are empty.
 - **Packages**: exactly the packages apt's `history.log` shows the setup *newly*
-  installed are purged (nginx, certbot, WireGuard, Java, build tools, Node.js and their
-  dependencies). So are the global PM2 and the NodeSource apt source. Packages
+  installed are purged (nginx, certbot, WireGuard, Java, Chrome, build tools, Node.js and their
+  dependencies). So are the global PM2 and the NodeSource and Google Chrome apt sources. Packages
   that were already there and every upgrade stay. apt is asked first, and
   nothing is purged if it would take anything else with it. `--keep-packages`
   skips this part.
@@ -638,6 +638,12 @@ Every node runs its own Lavalink, so a music bot connects to `127.0.0.1:<port>`
 on the machine it already lives on instead of reaching across the internet to
 another VPS.
 
+- **The page.** Two tabs. **Node** is a table, one row per node (state, players,
+  version, RAM, uptime, restarts, tokener); a row opens into its controls, the
+  tokener switch and a **live log** of Lavalink or the tokener — the last 200
+  lines, then every new one as pm2 writes it (SSE through the agent's
+  `pm2 logs`, closed when the row closes). Status refreshes itself every 30s
+  while the page is visible. **Cấu hình** holds the shared config.
 - **One config for the whole fleet.** The panel owns `application.yml`: you edit
   port, password, heap, sources and plugins once on **/lavalink**, and the same
   rendered file is pushed to every node. A node whose file differs shows as
@@ -675,12 +681,38 @@ another VPS.
   crosses that before it finishes booting — the node boots, reports ready, is
   SIGKILLed and restarts every 30 seconds with nothing in its log. The agent
   passes `2 × heap` (minimum 1G) so "no flag" is never relied on.
+- **Spotify needs spotify-tokener next to Lavalink.** LavaSrc loads Spotify
+  playlists and searches with the web player's anonymous token, which Spotify
+  only gives a real browser — so the config points `customTokenEndpoint` at a
+  small service driving headless Chrome (`agent/spotify-tokener.js`, a Node port
+  of [topi314/spotify-tokener](https://github.com/topi314/spotify-tokener)).
+  When `plugins.lavasrc.spotify.customTokenEndpoint` is `http://localhost:<port>`
+  (or `127.0.0.1`), the agent runs it on that port as pm2 `spotify-tokener`
+  whenever Lavalink runs: started before Lavalink, proven with a real token
+  after, stopped with it, restarted by **Restart**, removed when the config
+  stops asking for it. Without it every Spotify link fails while YouTube keeps
+  working. The port comes from the one shared `application.yml`, so every node
+  runs the same tokener. Chrome is a system package like Java: the setup
+  installs Google Chrome on amd64, and the page shows the command for nodes
+  that lack it (then **Sync** starts the tokener). The Lavalink logs include
+  the tokener's.
+- **A tokener the panel did not start is never touched.** Something already
+  answering on that port (the Go original, a container) or a pm2 process named
+  `spotify-tokener` that the panel did not register means the node has one:
+  the page shows it, the panel starts nothing next to it, and never stops,
+  replaces or removes it. Only the process registered from
+  `~/lavalink/spotify-tokener` is the panel's.
+- **Per-node switch.** Each node card has an on/off switch for the tokener, on
+  by default. Off removes the panel's own tokener on that node at once, without
+  touching Lavalink; on starts it (if Lavalink runs) and proves it with a token.
 
-Agent env (both optional):
+Agent env (all optional):
 
 ```bash
 LAVALINK_DIR=~/lavalink       # fixed directory — never taken from a request
 LAVALINK_PM2_NAME=lavalink
+SPOTIFY_TOKENER_PM2_NAME=spotify-tokener
+SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 ```
 
 | Method | Path | Description |
@@ -694,8 +726,10 @@ LAVALINK_PM2_NAME=lavalink
 | `POST` | `/api/lavalink/nodes/:id/install` | First-time setup (or clean reinstall) |
 | `POST` | `/api/lavalink/nodes/:id/update` | Bring one node to the latest release |
 | `POST` | `/api/lavalink/nodes/:id/sync` | Push the config to one node |
+| `POST` | `/api/lavalink/nodes/:id/tokener` | Per-node spotify-tokener switch (`{ enabled }`) |
 | `POST` | `/api/lavalink/nodes/:id/:action` | `start` · `stop` · `restart` · `rollback` |
 | `GET` | `/api/lavalink/nodes/:id/logs` | That node's Lavalink logs |
+| `GET` | `/api/lavalink/nodes/:id/logs/stream` | Live log over SSE (`which=lavalink\|tokener`, `lines`, `token`) |
 
 ---
 

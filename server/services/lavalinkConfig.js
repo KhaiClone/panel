@@ -143,9 +143,45 @@ const _bad = (message) => {
     return e;
 };
 
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * The port spotify-tokener must listen on for this config, or null for none.
+ *
+ * LavaSrc fetches Spotify's anonymous token from `customTokenEndpoint`; when
+ * that points at the node itself, the agent runs the tokener there next to
+ * Lavalink (agent/services/spotifyTokener.js). An endpoint on another host is
+ * somebody else's to run, and a disabled Spotify source needs none.
+ */
+const tokenerPortOf = (doc) => {
+    const lavasrc = doc?.plugins?.lavasrc;
+    if (!lavasrc || lavasrc.sources?.spotify === false) return null;
+    const endpoint = lavasrc.spotify?.customTokenEndpoint;
+    if (typeof endpoint !== "string" || !endpoint.trim()) return null;
+    try {
+        const url = new URL(endpoint.trim());
+        if (url.protocol !== "http:" || !LOOPBACK.has(url.hostname)) return null;
+        return url.port ? Number(url.port) : 80;
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * The tokener port for ONE node: the shared config's, unless that node's
+ * switch on the Lavalink page is off (null: remove the panel's own there).
+ * Nothing else about the tokener varies, so every node that runs one runs the
+ * same one. An unreadable config stays undefined — "leave it alone" — even for
+ * a switched-off node.
+ */
+const tokenerPortFor = (settings, nodeId, eff = effective(settings)) => {
+    if (eff.tokenerPort === undefined) return undefined;
+    return settings?.nodes?.[nodeId]?.tokenerEnabled === false ? null : eff.tokenerPort;
+};
+
 /** Pull the values the panel needs out of an application.yml. Never throws. */
 const parseYaml = (text) => {
-    const empty = { port: null, address: null, password: null, plugins: [], sources: {}, filters: {}, error: null };
+    const empty = { port: null, address: null, password: null, plugins: [], sources: {}, filters: {}, tokenerPort: null, error: null };
     try {
         const doc = YAML.parse(text);
         if (!doc || typeof doc !== "object") return { ...empty, error: "application.yml is not a YAML mapping" };
@@ -173,6 +209,7 @@ const parseYaml = (text) => {
                 : [],
             sources: serverNode.sources && typeof serverNode.sources === "object" ? serverNode.sources : {},
             filters: serverNode.filters && typeof serverNode.filters === "object" ? serverNode.filters : {},
+            tokenerPort: tokenerPortOf(doc),
             error: null,
         };
     } catch (err) {
@@ -190,6 +227,10 @@ const parseYaml = (text) => {
  * A file that will not parse keeps the stored values and reports `parseError`:
  * the nodes still hold whatever bytes were pushed to them, so guessing would be
  * worse than saying "I could not read this".
+ *
+ * `tokenerPort` is null in form mode — the form renders no LavaSrc block — and
+ * undefined for an unreadable file, which the agent reads as "leave the tokener
+ * as it is" rather than "remove it".
  */
 const effective = (settings = {}) => {
     const base = {
@@ -201,13 +242,14 @@ const effective = (settings = {}) => {
         plugins: Array.isArray(settings.plugins) ? settings.plugins : [],
         sources: settings.sources || {},
         filters: settings.filters || {},
+        tokenerPort: null,
     };
 
     const override = settings.yamlOverride;
     if (typeof override !== "string" || !override.trim()) return base;
 
     const parsed = parseYaml(override);
-    if (parsed.error) return { ...base, custom: true, parseError: parsed.error };
+    if (parsed.error) return { ...base, custom: true, parseError: parsed.error, tokenerPort: undefined };
 
     return {
         custom: true,
@@ -218,6 +260,7 @@ const effective = (settings = {}) => {
         plugins: parsed.plugins,
         sources: parsed.sources,
         filters: parsed.filters,
+        tokenerPort: parsed.tokenerPort,
     };
 };
 
@@ -403,6 +446,7 @@ module.exports = {
     hasYoutubePlugin,
     parseYaml,
     effective,
+    tokenerPortFor,
     applyEdits,
     describeUnsupported,
     SOURCE_KEYS,

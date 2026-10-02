@@ -14,7 +14,7 @@
 const assert = require("assert");
 
 const {
-    renderYaml, sha256, hasYoutubePlugin, parseYaml, effective, applyEdits, describeUnsupported,
+    renderYaml, sha256, hasYoutubePlugin, parseYaml, effective, tokenerPortFor, applyEdits, describeUnsupported,
 } = require("../server/services/lavalinkConfig");
 const { cmpVersion } = require("../server/services/lavalinkUpdater");
 const { pm2MemoryCeiling } = require("../agent/services/lavalink");
@@ -189,6 +189,63 @@ ok("effective on unparseable YAML keeps the stored values and says why", () => {
     assert.strictEqual(e.custom, true);
     assert.ok(e.parseError);
     assert.strictEqual(e.port, BASE.port);
+});
+
+// ── tokenerPort ──────────────────────────────────────────────────────────────
+//
+// Nodes set up by the panel had Lavalink with LavaSrc pointed at a
+// spotify-tokener on localhost:8081 that nothing ever started, so every Spotify
+// link failed while YouTube worked. The agent now runs the tokener wherever the
+// config points LavaSrc at the node itself — and nowhere else.
+
+// HAND_WRITTEN plus a LavaSrc block under its top-level plugins: settings.
+const withLavasrc = (spotify, sources = { spotify: true }) =>
+    HAND_WRITTEN +
+    [
+        "    lavasrc:",
+        "        sources:",
+        ...Object.entries(sources).map(([k, v]) => `            ${k}: ${v}`),
+        "        spotify:",
+        ...Object.entries(spotify).map(([k, v]) => `            ${k}: ${JSON.stringify(v)}`),
+        "",
+    ].join("\n");
+
+ok("a loopback customTokenEndpoint gives the tokener its port", () => {
+    assert.strictEqual(parseYaml(withLavasrc({ customTokenEndpoint: "http://localhost:8081/api/token" })).tokenerPort, 8081);
+    assert.strictEqual(parseYaml(withLavasrc({ customTokenEndpoint: "http://127.0.0.1:9000/api/token" })).tokenerPort, 9000);
+    assert.strictEqual(parseYaml(withLavasrc({ customTokenEndpoint: "http://localhost/api/token" })).tokenerPort, 80);
+});
+
+ok("no endpoint, another host, or https means no tokener on the node", () => {
+    assert.strictEqual(parseYaml(HAND_WRITTEN).tokenerPort, null);
+    assert.strictEqual(parseYaml(withLavasrc({ clientId: "x" })).tokenerPort, null);
+    assert.strictEqual(parseYaml(withLavasrc({ customTokenEndpoint: "http://10.0.0.5:8081/api/token" })).tokenerPort, null);
+    assert.strictEqual(parseYaml(withLavasrc({ customTokenEndpoint: "https://localhost:8081/api/token" })).tokenerPort, null);
+    assert.strictEqual(parseYaml(withLavasrc({ customTokenEndpoint: "not a url" })).tokenerPort, null);
+});
+
+ok("a disabled Spotify source needs no tokener", () => {
+    const yaml = withLavasrc({ customTokenEndpoint: "http://localhost:8081/api/token" }, { spotify: false });
+    assert.strictEqual(parseYaml(yaml).tokenerPort, null);
+});
+
+ok("effective: form mode wants no tokener, a file says which, a broken file leaves it alone", () => {
+    assert.strictEqual(effective(BASE).tokenerPort, null);
+    const yaml = withLavasrc({ customTokenEndpoint: "http://localhost:8081/api/token" });
+    assert.strictEqual(effective({ ...BASE, yamlOverride: yaml }).tokenerPort, 8081);
+    // undefined, not null: null would make every agent REMOVE its tokener over a typo.
+    assert.strictEqual(effective({ ...BASE, yamlOverride: "server:\n  port: 1\n bad: [" }).tokenerPort, undefined);
+});
+
+ok("tokenerPortFor: every node gets the config's port unless its own switch is off", () => {
+    const yaml = withLavasrc({ customTokenEndpoint: "http://localhost:8081/api/token" });
+    const settings = { ...BASE, yamlOverride: yaml, nodes: { a: { state: "running" }, b: { tokenerEnabled: false } } };
+    assert.strictEqual(tokenerPortFor(settings, "a"), 8081); // on by default
+    assert.strictEqual(tokenerPortFor(settings, "never-seen"), 8081);
+    assert.strictEqual(tokenerPortFor(settings, "b"), null);
+    // A broken file leaves every tokener alone — a switched-off node included.
+    const broken = { ...settings, yamlOverride: "server:\n  port: 1\n bad: [" };
+    assert.strictEqual(tokenerPortFor(broken, "b"), undefined);
 });
 
 // ── applyEdits ───────────────────────────────────────────────────────────────
