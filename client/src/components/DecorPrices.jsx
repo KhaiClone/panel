@@ -16,6 +16,8 @@ import api from "../api/client";
 //  actually use but have no price are called out at the top.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 3: "Frame" };
+
 const money = (n) =>
     typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—";
 
@@ -26,6 +28,13 @@ const th = {
     whiteSpace: "nowrap",
 };
 const td = { padding: "6px 8px", verticalAlign: "middle" };
+
+// A decor tier is unpriced when decors use it and the lookup they need is
+// missing. `gift` is looked up with the Nitro original only, so a tier used
+// only as a non-Nitro price (giftCount 0) never needs one.
+const unpriced = (t) =>
+    t.decorCount > 0 &&
+    (t.login === null || (t.giftCount > 0 && t.gift === null));
 
 // Accepts "111000", "111.000", "111,000" — panel users paste all three.
 const parseAmount = (raw) => {
@@ -39,7 +48,7 @@ const parseAmount = (raw) => {
  * One editable price cell. Saves on blur or Enter, and only when the value
  * actually changed — so tabbing through the table does not fire writes.
  */
-function PriceCell({ type, original, value, onSave, onClear }) {
+function PriceCell({ type, original, value, onSave, onClear, needed = true }) {
     const [draft, setDraft] = useState(value === null ? "" : String(value));
     const [state, setState] = useState(null); // "saving" | "saved" | "error"
 
@@ -78,7 +87,7 @@ function PriceCell({ type, original, value, onSave, onClear }) {
             ? "var(--danger)"
             : state === "saved"
               ? "var(--success)"
-              : value === null
+              : value === null && needed
                 ? "var(--warning, #f59e0b)"
                 : "var(--border)";
 
@@ -86,7 +95,7 @@ function PriceCell({ type, original, value, onSave, onClear }) {
         <input
             className="input mono"
             inputMode="numeric"
-            placeholder="not set"
+            placeholder={needed ? "not set" : "not needed"}
             value={draft}
             disabled={state === "saving"}
             onChange={(e) => setDraft(e.target.value)}
@@ -104,6 +113,85 @@ function PriceCell({ type, original, value, onSave, onClear }) {
                 borderColor: border,
             }}
         />
+    );
+}
+
+/**
+ * "USED BY" cell: the count, and every decor / bundle on that tier when
+ * opened. Tiers with no price start open — those are the ones to fix.
+ */
+function UsedBy({ unit, items, missing }) {
+    const [open, setOpen] = useState(missing);
+
+    useEffect(() => {
+        if (missing) setOpen(true);
+    }, [missing]);
+
+    if (items.length === 0)
+        return <span style={{ color: "var(--text-dim)" }}>unused</span>;
+
+    return (
+        <div>
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                title={open ? "Hide the list" : "Show every one"}
+                style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    font: "inherit",
+                    color: "inherit",
+                    cursor: "pointer",
+                    textAlign: "left",
+                }}
+            >
+                <span style={{ color: "var(--text-dim)" }}>
+                    {open ? "▾" : "▸"}
+                </span>{" "}
+                {items.length} {unit}
+                {!open && (
+                    <span style={{ color: "var(--text-dim)" }}>
+                        {" "}
+                        · {items[0].name}
+                        {items.length > 1 && ` +${items.length - 1}`}
+                    </span>
+                )}
+            </button>
+            {open && (
+                <div
+                    style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 4,
+                        marginTop: 6,
+                    }}
+                >
+                    {items.map((d) => (
+                        <span
+                            key={d.sku_id}
+                            title={`SKU ${d.sku_id}`}
+                            style={{
+                                padding: "2px 8px",
+                                borderRadius: 999,
+                                fontSize: 11,
+                                background: "var(--bg-input)",
+                                border: `1px solid ${missing ? "var(--warning-border)" : "var(--border)"}`,
+                                color: "var(--text)",
+                            }}
+                        >
+                            {d.name}
+                            {d.type !== 1000 && (
+                                <span style={{ color: "var(--text-dim)" }}>
+                                    {" "}
+                                    · {TYPE_LABEL[d.type] ?? d.type}
+                                </span>
+                            )}
+                        </span>
+                    ))}
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -236,10 +324,8 @@ export default function DecorPrices({ onChange }) {
     // A tier is a problem when decors use it but it has no price: those decors
     // are being served at 0đ right now.
     const gaps = useMemo(() => {
-        if (!data) return { decor: [], bundle: [], decorCount: 0 };
-        const decor = data.decorTiers.filter(
-            (t) => t.decorCount > 0 && (t.login === null || t.gift === null),
-        );
+        if (!data) return { decor: [], bundle: [], decorCount: 0, bundleCount: 0 };
+        const decor = data.decorTiers.filter(unpriced);
         const bundle = data.bundleTiers.filter(
             (t) => t.bundleCount > 0 && t.giftBundle === null,
         );
@@ -247,6 +333,7 @@ export default function DecorPrices({ onChange }) {
             decor,
             bundle,
             decorCount: decor.reduce((n, t) => n + t.decorCount, 0),
+            bundleCount: bundle.reduce((n, t) => n + t.bundleCount, 0),
         };
     }, [data]);
 
@@ -340,7 +427,8 @@ export default function DecorPrices({ onChange }) {
                 >
                     {gaps.decor.length} decor tier(s) and {gaps.bundle.length}{" "}
                     bundle tier(s) have no price — {gaps.decorCount} decor(s)
-                    are showing 0đ on the shop right now.
+                    and {gaps.bundleCount} bundle(s) are showing 0đ on the shop
+                    right now. Their names are listed under USED BY.
                 </div>
             )}
 
@@ -434,6 +522,10 @@ export default function DecorPrices({ onChange }) {
                                                 value={t.gift}
                                                 onSave={save}
                                                 onClear={clear}
+                                                needed={
+                                                    t.decorCount === 0 ||
+                                                    t.giftCount > 0
+                                                }
                                             />
                                         </td>
                                         <td
@@ -443,31 +535,11 @@ export default function DecorPrices({ onChange }) {
                                                 fontSize: 12,
                                             }}
                                         >
-                                            {t.decorCount === 0 ? (
-                                                <span
-                                                    style={{
-                                                        color: "var(--text-dim)",
-                                                    }}
-                                                >
-                                                    unused
-                                                </span>
-                                            ) : (
-                                                <span
-                                                    title={t.samples.join(", ")}
-                                                >
-                                                    {t.decorCount} decor
-                                                    {t.samples.length > 0 && (
-                                                        <span
-                                                            style={{
-                                                                color: "var(--text-dim)",
-                                                            }}
-                                                        >
-                                                            {" "}
-                                                            · {t.samples[0]}
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            )}
+                                            <UsedBy
+                                                unit="decor"
+                                                items={t.decors}
+                                                missing={unpriced(t)}
+                                            />
                                         </td>
                                     </tr>
                                 ))
@@ -567,31 +639,11 @@ export default function DecorPrices({ onChange }) {
                                                 fontSize: 12,
                                             }}
                                         >
-                                            {t.bundleCount === 0 ? (
-                                                <span
-                                                    style={{
-                                                        color: "var(--text-dim)",
-                                                    }}
-                                                >
-                                                    unused
-                                                </span>
-                                            ) : (
-                                                <span
-                                                    title={t.samples.join(", ")}
-                                                >
-                                                    {t.bundleCount} bundle
-                                                    {t.samples.length > 0 && (
-                                                        <span
-                                                            style={{
-                                                                color: "var(--text-dim)",
-                                                            }}
-                                                        >
-                                                            {" "}
-                                                            · {t.samples[0]}
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            )}
+                                            <UsedBy
+                                                unit="bundle"
+                                                items={t.bundles}
+                                                missing={t.giftBundle === null}
+                                            />
                                         </td>
                                     </tr>
                                 ))

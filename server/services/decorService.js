@@ -104,16 +104,17 @@ const listCategories = async () => {
     return sortCategories(read("decorCategories"));
 };
 
-/** Price tiers and how many decors use each (the assistant's listPrices). */
+/** Price tiers and every decor / bundle using each (the assistant's listPrices). */
 const buildPriceReport = (decorsRaw, importedRaw, prices) => {
     const decors = [...decorsRaw, ...importedRaw];
     const { getPrice, hasPrice } = priceLookup(prices);
     const priceOf = (type, original) => (hasPrice(type, original) ? getPrice(type, original) : null);
+    const ref = (d) => ({ sku_id: d.sku_id, name: d.name, type: d.type });
 
     const decorTiers = new Map();
     const tier = (original) => {
         if (!decorTiers.has(original)) {
-            decorTiers.set(original, { original, login: priceOf("login", original), gift: priceOf("gift", original), decorCount: 0, samples: [] });
+            decorTiers.set(original, { original, login: priceOf("login", original), gift: priceOf("gift", original), decorCount: 0, giftCount: 0, decors: [] });
         }
         return decorTiers.get(original);
     };
@@ -123,8 +124,11 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
             if (typeof original !== "number") continue;
             const t = tier(original);
             t.decorCount++;
-            if (t.samples.length < 3) t.samples.push(d.name);
+            t.decors.push(ref(d));
         }
+        // `gift` is only looked up with the Nitro original: a tier used only as a
+        // non-Nitro price never needs one (giftCount 0).
+        if (typeof d.prices.withNitro === "number" && !d.noGift) tier(d.prices.withNitro).giftCount++;
     }
 
     const decorMap = Object.fromEntries(decors.map((d) => [d.sku_id, d]));
@@ -133,21 +137,24 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
         if (b.type !== 1000) continue;
         const members = (b.items || []).map((s) => decorMap[s]).filter(Boolean);
         const total = members.reduce((sum, m) => sum + getPrice("gift", m.prices?.withNitro), 0);
-        if (!bundleTiers.has(total)) bundleTiers.set(total, { total, giftBundle: priceOf("gift-bundle", total), bundleCount: 0, samples: [] });
+        if (!bundleTiers.has(total)) bundleTiers.set(total, { total, giftBundle: priceOf("gift-bundle", total), bundleCount: 0, bundles: [] });
         const t = bundleTiers.get(total);
         t.bundleCount++;
-        if (t.samples.length < 3) t.samples.push(b.name);
+        t.bundles.push(ref(b));
     }
 
     for (const p of prices) {
         if (p.type === "gift-bundle") {
-            if (!bundleTiers.has(p.original)) bundleTiers.set(p.original, { total: p.original, giftBundle: p.price, bundleCount: 0, samples: [] });
+            if (!bundleTiers.has(p.original)) bundleTiers.set(p.original, { total: p.original, giftBundle: p.price, bundleCount: 0, bundles: [] });
         } else if (!decorTiers.has(p.original)) {
             tier(p.original);
         }
     }
 
     const byNumber = (key) => (a, b) => a[key] - b[key];
+    const byName = (a, b) => String(a.name).localeCompare(String(b.name), "vi");
+    for (const t of decorTiers.values()) t.decors.sort(byName);
+    for (const t of bundleTiers.values()) t.bundles.sort(byName);
     return {
         types: PRICE_TYPES,
         rows: prices.map(({ type, original, price }) => ({ type, original, price })),
