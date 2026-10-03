@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
+import ConfirmModal from "./ConfirmModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Decor price table — the assistant's `prices` lookup, edited from the panel.
@@ -48,8 +49,10 @@ const parseAmount = (raw) => {
 /**
  * One editable price cell. Saves on blur or Enter, and only when the value
  * actually changed — so tabbing through the table does not fire writes.
+ * A set price also gets a ✕ that asks before removing it (emptying the field
+ * still removes it too).
  */
-function PriceCell({ type, original, value, onSave, onClear, needed = true }) {
+function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = true }) {
     const [draft, setDraft] = useState(value === null ? "" : String(value));
     const [state, setState] = useState(null); // "saving" | "saved" | "error"
 
@@ -93,27 +96,47 @@ function PriceCell({ type, original, value, onSave, onClear, needed = true }) {
                 : "var(--border)";
 
     return (
-        <input
-            className="input mono"
-            inputMode="numeric"
-            placeholder={needed ? "not set" : "not needed"}
-            value={draft}
-            disabled={state === "saving"}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-                if (e.key === "Enter") e.target.blur();
-                if (e.key === "Escape")
-                    setDraft(value === null ? "" : String(value));
-            }}
-            title="Leave empty to remove this tier"
-            style={{
-                width: 120,
-                padding: "5px 8px",
-                fontSize: 12,
-                borderColor: border,
-            }}
-        />
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <input
+                className="input mono"
+                inputMode="numeric"
+                placeholder={needed ? "not set" : "not needed"}
+                value={draft}
+                disabled={state === "saving"}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") e.target.blur();
+                    if (e.key === "Escape")
+                        setDraft(value === null ? "" : String(value));
+                }}
+                title="Leave empty (or press ✕) to remove this price"
+                style={{
+                    width: 120,
+                    padding: "5px 8px",
+                    fontSize: 12,
+                    borderColor: border,
+                }}
+            />
+            {value !== null && onRemove && (
+                <button
+                    type="button"
+                    className="btn-ghost"
+                    title="Remove this price"
+                    aria-label={`Remove the ${type} price for ${original}`}
+                    disabled={state === "saving"}
+                    onClick={() => onRemove(type, original)}
+                    style={{
+                        padding: "3px 7px",
+                        fontSize: 12,
+                        lineHeight: 1,
+                        color: "var(--danger)",
+                    }}
+                >
+                    ✕
+                </button>
+            )}
+        </div>
     );
 }
 
@@ -285,6 +308,8 @@ export default function DecorPrices({ onChange }) {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
     const [onlyMissing, setOnlyMissing] = useState(false);
+    // { type, original, used } while the ✕ confirmation is open.
+    const [removing, setRemoving] = useState(null);
 
     const fetchPrices = useCallback(async () => {
         try {
@@ -320,6 +345,21 @@ export default function DecorPrices({ onChange }) {
     const clear = async (type, original) => {
         await api.delete(`/decors/prices/${type}/${original}`);
         await afterWrite();
+    };
+    const askRemove = (type, original, used) =>
+        setRemoving({ type, original, used });
+    const confirmRemove = async () => {
+        const { type, original } = removing;
+        setRemoving(null);
+        try {
+            await clear(type, original);
+        } catch (err) {
+            alert(
+                err.response?.data?.message ||
+                    err.response?.data?.error ||
+                    "Could not remove this price",
+            );
+        }
     };
 
     // A tier is a problem when decors use it but it has no price: those decors
@@ -372,6 +412,19 @@ export default function DecorPrices({ onChange }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {removing && (
+                <ConfirmModal
+                    title={`Remove the ${removing.type} price for ${money(removing.original)}?`}
+                    message={
+                        removing.used > 0
+                            ? `${removing.used} ${removing.type === "gift-bundle" ? "bundle(s)" : "decor(s)"} still use this tier: they show 0đ / "Chưa có mốc giá" until you set a new price. The row stays in the table for as long as they use it.`
+                            : "Nothing uses this tier any more — the row disappears from the table."
+                    }
+                    confirmText="Remove"
+                    onConfirm={confirmRemove}
+                    onCancel={() => setRemoving(null)}
+                />
+            )}
             <div
                 style={{
                     display: "flex",
@@ -514,6 +567,9 @@ export default function DecorPrices({ onChange }) {
                                                 value={t.login}
                                                 onSave={save}
                                                 onClear={clear}
+                                                onRemove={(ty, o) =>
+                                                    askRemove(ty, o, t.loginCount)
+                                                }
                                                 needed={
                                                     t.decorCount === 0 ||
                                                     t.loginCount > 0
@@ -527,6 +583,9 @@ export default function DecorPrices({ onChange }) {
                                                 value={t.gift}
                                                 onSave={save}
                                                 onClear={clear}
+                                                onRemove={(ty, o) =>
+                                                    askRemove(ty, o, t.giftCount)
+                                                }
                                                 needed={
                                                     t.decorCount === 0 ||
                                                     t.giftCount > 0
@@ -635,6 +694,9 @@ export default function DecorPrices({ onChange }) {
                                                 value={t.giftBundle}
                                                 onSave={save}
                                                 onClear={clear}
+                                                onRemove={(ty, o) =>
+                                                    askRemove(ty, o, t.bundleCount)
+                                                }
                                             />
                                         </td>
                                         <td
