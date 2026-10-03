@@ -122,7 +122,10 @@ router.post("/", async (req, res, next) => {
 
 /**
  * PUT /api/nodes/:id
- * Body: { name?, host?, port?, apiKey?, enabled?, controlHost? }
+ * Body: { name?, host?, port?, apiKey?, enabled?, controlHost?, questProxy? }
+ *
+ * questProxy: false keeps the node out of the egress proxy pool (Auto Quest,
+ * Auto Badge — see proxyPool) while it still serves everything else.
  *
  * controlHost is the address the panel uses to reach this node's agent, and
  * nothing else. Sending "" clears it, falling back to host. Never confuse it
@@ -135,7 +138,7 @@ router.put("/:id", async (req, res, next) => {
         const node = await db.findOne("nodes", { _id: req.params.id });
         if (!node) return res.status(404).json({ error: "Node not found" });
 
-        const { name, host, port, apiKey, enabled, controlHost } = req.body;
+        const { name, host, port, apiKey, enabled, controlHost, questProxy } = req.body;
         const updates = {};
         if (name !== undefined) updates.name = name;
         if (host !== undefined) updates.host = host;
@@ -147,6 +150,7 @@ router.put("/:id", async (req, res, next) => {
         }
         if (apiKey !== undefined && apiKey !== "") updates.apiKey = apiKey;
         if (enabled !== undefined) updates.enabled = !!enabled;
+        if (questProxy !== undefined) updates.questProxy = !!questProxy;
 
         const updated = await db.findOneAndUpdate("nodes", { _id: req.params.id }, updates);
 

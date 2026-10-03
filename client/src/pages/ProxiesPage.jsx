@@ -96,15 +96,30 @@ function Badge({ children, color = "var(--text-dim)" }) {
 
 // ── Settings: which sources Auto Quest draws from ────────────────────────────
 
-function PoolSettings({ pool, onChange, saving }) {
+// Why a node is not an egress proxy (proxyPool._exclusion).
+const NODE_LEFT_OUT = {
+    disabled: "node is disabled",
+    optedOut: "switched off as a proxy",
+    offline: "offline right now",
+    notListed: "not in QUEST_PROXY_NODES",
+};
+
+function PoolSettings({ pool, featureLabel, onChange, onNodeToggle, saving }) {
     if (!pool) return null;
     const s = pool.settings;
-    const sourceLabel =
-        pool.activeSource === "proxy"
-            ? `${pool.activeCount} of your proxies`
-            : pool.activeSource === "node"
-              ? `${pool.activeCount} VPS node(s)`
-              : "nothing — Auto Quest runs from the panel's own IP";
+    // "Mix" draws from both at once — say how many of each.
+    const parts = [];
+    if (s.priority === "mixed" && pool.activeCount) {
+        if (s.useCustomProxies && pool.customProxies.length) parts.push(`${pool.customProxies.length} of your proxies`);
+        if (s.useNodes && pool.nodes.length) parts.push(`${pool.nodes.length} VPS node(s)`);
+    }
+    const sourceLabel = parts.length
+        ? parts.join(" + ")
+        : pool.activeSource === "proxy"
+          ? `${pool.activeCount} of your proxies`
+          : pool.activeSource === "node"
+            ? `${pool.activeCount} VPS node(s)`
+            : `nothing — ${featureLabel} runs from the panel's own IP`;
 
     const Row = ({ title, desc, field, count }) => (
         <div
@@ -133,7 +148,7 @@ function PoolSettings({ pool, onChange, saving }) {
     return (
         <div className="card" style={{ padding: "18px 20px", marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Auto Quest egress</h2>
+                <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{featureLabel} egress</h2>
                 <Badge color="var(--accent)">Using {sourceLabel}</Badge>
             </div>
             <Row
@@ -148,6 +163,28 @@ function PoolSettings({ pool, onChange, saving }) {
                 field="useNodes"
                 count={pool.nodes.length}
             />
+            {pool.allNodes?.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 0 12px", opacity: s.useNodes ? 1 : 0.55 }}>
+                    {pool.allNodes.map((n) => (
+                        <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", flexWrap: "wrap" }}>
+                            <span
+                                style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: n.reason ? "var(--text-dim)" : "var(--success)" }}
+                            />
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{n.label}</span>
+                            <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{n.endpoint}</span>
+                            <span style={{ fontSize: 11, color: n.reason ? "var(--warning)" : "var(--success)" }}>
+                                {n.reason ? NODE_LEFT_OUT[n.reason] || n.reason : "in the pool"}
+                            </span>
+                            <span style={{ marginLeft: "auto" }}>
+                                <Toggle checked={n.questProxy} disabled={saving} onChange={(v) => onNodeToggle(n, v)} />
+                            </span>
+                        </div>
+                    ))}
+                    <p style={{ margin: "4px 0 0 12px", fontSize: 11, color: "var(--text-dim)" }}>
+                        A node's switch counts for every feature. Adding or removing a node moves some accounts to a different IP.
+                    </p>
+                </div>
+            )}
             <div
                 style={{
                     display: "flex",
@@ -725,6 +762,20 @@ export default function ProxiesPage() {
         }
     };
 
+    // The per-node switch lives on the node record, shared by every feature.
+    const toggleNode = async (node, on) => {
+        setSavingSettings(true);
+        try {
+            await api.put(`/nodes/${node.id}`, { questProxy: on });
+            const { data } = await api.get(`/proxies/settings/${feature}`);
+            setPool(data);
+        } catch (e) {
+            setErr(e.response?.data?.error || "Failed to update the node.");
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
     const mark = (id, patch) => setRowState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
 
     const test = async (p) => {
@@ -842,7 +893,13 @@ export default function ProxiesPage() {
                 </span>
             </div>
 
-            <PoolSettings pool={pool} onChange={saveSettings} saving={savingSettings} />
+            <PoolSettings
+                pool={pool}
+                featureLabel={features.find((f) => f.key === feature)?.label || feature}
+                onChange={saveSettings}
+                onNodeToggle={toggleNode}
+                saving={savingSettings}
+            />
 
             {loading ? (
                 <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading…</p>

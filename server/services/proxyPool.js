@@ -102,20 +102,29 @@ function _restrictNames() {
         .filter(Boolean);
 }
 
+/** Why `node` is not an egress proxy right now, or null when it is. */
+function _exclusion(node, restrict) {
+    if (node.enabled === false) return "disabled";
+    if (node.questProxy === false) return "optedOut"; // switched off per node
+    if (nodeService.isNodeOffline(node._id)) return "offline"; // confirmed-down
+    if (restrict.length) {
+        const name = String(node.name).toLowerCase();
+        if (!restrict.some((w) => name === w || name.includes(w))) return "notListed";
+    }
+    return null;
+}
+
+/** Every node with why it is left out (null = in the pool), in a stable order. */
+async function _nodesWithReasons() {
+    const restrict = _restrictNames(); // empty → every agent qualifies
+    return (await nodeService.getNodes())
+        .map((node) => ({ node, reason: _exclusion(node, restrict) }))
+        .sort((a, b) => String(a.node._id).localeCompare(String(b.node._id)));
+}
+
 /** Agent nodes usable as proxies (enabled, not confirmed-down), in a stable order. */
 async function proxyNodes() {
-    const nodes = await nodeService.getNodes();
-    const restrict = _restrictNames(); // empty → every agent qualifies
-    return nodes
-        .filter((n) => {
-            if (n.enabled === false) return false;
-            if (n.questProxy === false) return false; // opted out per node
-            if (nodeService.isNodeOffline(n._id)) return false; // skip confirmed-down
-            if (!restrict.length) return true;
-            const name = String(n.name).toLowerCase();
-            return restrict.some((w) => name === w || name.includes(w));
-        })
-        .sort((a, b) => String(a._id).localeCompare(String(b._id)));
+    return (await _nodesWithReasons()).filter((x) => !x.reason).map((x) => x.node);
 }
 
 function _nodeProxyUrl(node) {
@@ -185,6 +194,15 @@ async function describePool(feature = "quest") {
         settings: s,
         customProxies: custom.map(strip),
         nodes: nodes.map(strip),
+        // Every node, so the page can say which ones are left out and why.
+        // `questProxy` is the per-node switch, shared by every feature.
+        allNodes: (await _nodesWithReasons()).map(({ node, reason }) => ({
+            id: node._id,
+            label: node.name,
+            endpoint: `${node.host}:${node.port}`,
+            questProxy: node.questProxy !== false,
+            reason,
+        })),
         // Which source auto quest is actually drawing from with these settings.
         activeSource: active.length ? active[0].kind : null,
         activeCount: active.length,
