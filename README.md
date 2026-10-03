@@ -621,6 +621,18 @@ the active panel. Its fallback, `data/decors.json` + `data/categories.json`, is
 committed a minute after the decor data changes, when `DECOR_SITE_GITHUB_TOKEN` is
 set. `shared.sqlite` is also in the hourly Discord backup (see Backup & Rollback).
 
+**Decor sale switches.** Every decor and bundle, loaded or imported, can stop being sold
+one way: `noLoginWithNitro`, `noLoginWithoutNitro`, `noGift` (a bundle's Gift Bundle) on
+its record — absent = sold. Set them on the Decors page (card chips, the detail window,
+or "Hàng loạt" for a theme / the current filter). A switched-off way sells for 0 in
+`/api/public/decors`; the decor site shows "Không bán loại này" (or "Ngừng bán" when all
+three are off) and the assistant's `/decor-find` says the same. `/decor-load` copies the
+flags onto the decors it rewrites — deploy the assistant before using them on loaded
+decors, or the next load wipes them. The price table's "unpriced" warning only counts
+ways that are sold (a bundle that sells a way needs its members' tiers for it).
+`PATCH /api/decors/:sku_id` (one; `category_sku_id` for imported only) and
+`PATCH /api/decors` `{ sku_ids, …flags }` (many).
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/external/data` | Project key: its names + the bus channel and the panel's bot id |

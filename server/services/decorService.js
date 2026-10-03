@@ -12,11 +12,21 @@ const discordBus = require("./discordBus");
 //  session, so preview / import are asked of the assistant over the Discord bus.
 //  The price arithmetic below is the assistant's decors.controller.js, verbatim
 //  in behaviour: the Decors page must not see a difference.
+//
+//  Sale switches: every decor and bundle, loaded or imported, may stop selling
+//  one way — a flag on its record, absent = for sale. A switched-off way sells
+//  for 0 here (what the decor site and the snapshot show), and the assistant's
+//  /decor-find says it is not sold; /decor-load carries the flags over when it
+//  rewrites `decors`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NAMES = ["decors", "importedDecors", "prices", "decorCategories"];
 const FRAME_API = () => process.env.DECOR_FRAME_API || "https://khaidevapi.onrender.com";
 const PRICE_TYPES = ["login", "gift", "gift-bundle"];
+
+/** Way of selling → the record flag that switches it off. `gift` is the bundle's gift-bundle too. */
+const SALE_FLAGS = { loginWithNitro: "noLoginWithNitro", loginWithoutNitro: "noLoginWithoutNitro", gift: "noGift" };
+const sells = (decor, way) => !decor?.[SALE_FLAGS[way]];
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
@@ -52,8 +62,13 @@ const priceLookup = (pricesRaw) => {
     };
 };
 
-/** GET /api/decors — decors + imported, with selling prices (the public site's shape). */
-const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw) => {
+/**
+ * GET /api/decors — decors + imported, with selling prices (the public site's
+ * shape). `sellingPrices` honours the sale switches (0 = not sold); with
+ * `tierPrices`, the Decors page also gets what each way costs from the price
+ * table regardless of them, so flipping a switch needs no reload.
+ */
+const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = false } = {}) => {
     const allDecors = [...decorsRaw, ...importedDecorsRaw];
     const importedSkuIds = new Set(importedDecorsRaw.map((d) => d.sku_id));
     const decorMap = Object.fromEntries(allDecors.map((d) => [d.sku_id, d]));
@@ -71,32 +86,44 @@ const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw) => {
                 loginWithoutNitro += getPrice("login", item.prices.withoutNitro);
                 totalGiftPrice += getPrice("gift", item.prices.withNitro);
             }
-            const giftBundle = decor.noGift ? 0 : getPrice("gift-bundle", totalGiftPrice);
+            const giftBundle = getPrice("gift-bundle", totalGiftPrice);
+            const tier = { loginWithNitro, loginWithoutNitro, giftBundle };
             return {
                 ...decor,
                 decorFrom: fromImported ? "importedDecors" : "decors",
-                sellingPrices: { loginWithNitro, loginWithoutNitro, giftBundle },
+                sellingPrices: {
+                    loginWithNitro: sells(decor, "loginWithNitro") ? loginWithNitro : 0,
+                    loginWithoutNitro: sells(decor, "loginWithoutNitro") ? loginWithoutNitro : 0,
+                    giftBundle: sells(decor, "gift") ? giftBundle : 0,
+                },
+                ...(tierPrices ? { tierPrices: tier } : {}),
                 items,
             };
         }
+        const tier = {
+            loginWithNitro: getPrice("login", decor.prices.withNitro),
+            loginWithoutNitro: getPrice("login", decor.prices.withoutNitro),
+            gift: getPrice("gift", decor.prices.withNitro),
+        };
         return {
             ...decor,
             decorFrom: fromImported ? "importedDecors" : "decors",
             ...(decor.type === 3 ? { frameURL: frameImageURL(decor) } : {}),
             sellingPrices: {
-                loginWithNitro: getPrice("login", decor.prices.withNitro),
-                loginWithoutNitro: getPrice("login", decor.prices.withoutNitro),
-                gift: decor.noGift ? 0 : getPrice("gift", decor.prices.withNitro),
+                loginWithNitro: sells(decor, "loginWithNitro") ? tier.loginWithNitro : 0,
+                loginWithoutNitro: sells(decor, "loginWithoutNitro") ? tier.loginWithoutNitro : 0,
+                gift: sells(decor, "gift") ? tier.gift : 0,
             },
+            ...(tierPrices ? { tierPrices: tier } : {}),
         };
     });
 };
 
 const sortCategories = (cats) => [...cats].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-const listDecors = async () => {
+const listDecors = async (opts) => {
     requirePanel();
-    return buildDecorList(read("decors"), read("importedDecors"), read("prices"));
+    return buildDecorList(read("decors"), read("importedDecors"), read("prices"), opts);
 };
 
 const listCategories = async () => {
@@ -104,7 +131,12 @@ const listCategories = async () => {
     return sortCategories(read("decorCategories"));
 };
 
-/** Price tiers and every decor / bundle using each (the assistant's listPrices). */
+/**
+ * Price tiers and every decor / bundle using each (the assistant's listPrices).
+ * A tier is needed only by the ways actually sold: `loginCount` / `giftCount`
+ * count the decors that need its login / gift price — through their own
+ * switches, or through a bundle that sells that way at the sum of its members.
+ */
 const buildPriceReport = (decorsRaw, importedRaw, prices) => {
     const decors = [...decorsRaw, ...importedRaw];
     const { getPrice, hasPrice } = priceLookup(prices);
@@ -112,29 +144,53 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
     const ref = (d) => ({ sku_id: d.sku_id, name: d.name, type: d.type });
 
     const decorTiers = new Map();
+    const users = new Map(); // original → { login, gift, any } sets of sku_id
     const tier = (original) => {
         if (!decorTiers.has(original)) {
-            decorTiers.set(original, { original, login: priceOf("login", original), gift: priceOf("gift", original), decorCount: 0, giftCount: 0, decors: [] });
+            decorTiers.set(original, {
+                original,
+                login: priceOf("login", original),
+                gift: priceOf("gift", original),
+                decorCount: 0,
+                loginCount: 0,
+                giftCount: 0,
+                decors: [],
+            });
+            users.set(original, { login: new Set(), gift: new Set(), any: new Set() });
         }
         return decorTiers.get(original);
     };
-    for (const d of decors) {
-        if (d.type === 1000 || !d.prices) continue;
-        for (const original of new Set([d.prices.withNitro, d.prices.withoutNitro])) {
-            if (typeof original !== "number") continue;
-            const t = tier(original);
+    /** Decor `d` needs the `kind` price ("login" | "gift") of tier `original`. */
+    const need = (original, kind, d) => {
+        if (typeof original !== "number") return;
+        const t = tier(original);
+        const u = users.get(original);
+        if (!u[kind].has(d.sku_id)) {
+            u[kind].add(d.sku_id);
+            t[kind === "login" ? "loginCount" : "giftCount"]++;
+        }
+        if (!u.any.has(d.sku_id)) {
+            u.any.add(d.sku_id);
             t.decorCount++;
             t.decors.push(ref(d));
         }
-        // `gift` is only looked up with the Nitro original: a tier used only as a
-        // non-Nitro price never needs one (giftCount 0).
-        if (typeof d.prices.withNitro === "number" && !d.noGift) tier(d.prices.withNitro).giftCount++;
+    };
+    const decorMap = Object.fromEntries(decors.map((d) => [d.sku_id, d]));
+    for (const d of decors) {
+        // A bundle sells at the sum of its members' prices: it needs theirs.
+        const members = d.type === 1000 ? (d.items || []).map((s) => decorMap[s]) : [d];
+        for (const m of members) {
+            if (!m?.prices || m.type === 1000) continue;
+            if (sells(d, "loginWithNitro")) need(m.prices.withNitro, "login", m);
+            if (sells(d, "loginWithoutNitro")) need(m.prices.withoutNitro, "login", m);
+            // `gift` is only looked up with the Nitro original.
+            if (sells(d, "gift")) need(m.prices.withNitro, "gift", m);
+        }
     }
 
-    const decorMap = Object.fromEntries(decors.map((d) => [d.sku_id, d]));
     const bundleTiers = new Map();
     for (const b of decors) {
-        if (b.type !== 1000) continue;
+        if (b.type !== 1000 || !sells(b, "gift")) continue;
         const members = (b.items || []).map((s) => decorMap[s]).filter(Boolean);
         const total = members.reduce((sum, m) => sum + getPrice("gift", m.prices?.withNitro), 0);
         if (!bundleTiers.has(total)) bundleTiers.set(total, { total, giftBundle: priceOf("gift-bundle", total), bundleCount: 0, bundles: [] });
@@ -193,12 +249,25 @@ const deletePrice = async (type, rawOriginal) => {
     return { message: "Đã xóa mốc giá", row: deleted };
 };
 
+/** The sale switches in a request body → { noLoginWithNitro, … } booleans; {} if none. */
+const salePatch = (body = {}) => {
+    const patch = {};
+    for (const flag of Object.values(SALE_FLAGS)) if (flag in body) patch[flag] = !!body[flag];
+    return patch;
+};
+
+/**
+ * PATCH one decor or bundle, loaded or imported: the sale switches, and for an
+ * imported one its theme (a loaded decor's theme comes from /decor-load).
+ */
 const updateDecor = async (skuId, body = {}) => {
     requirePanel();
-    const existing = read("importedDecors", "findOne", { sku_id: skuId });
-    if (!existing) throw httpError(404, "Không tìm thấy decor đã import với sku_id này.");
-    const patch = {};
+    const imported = read("importedDecors", "findOne", { sku_id: skuId });
+    const name = imported ? "importedDecors" : "decors";
+    if (!imported && !read("decors", "findOne", { sku_id: skuId })) throw httpError(404, "Không tìm thấy decor với sku_id này.");
+    const patch = salePatch(body);
     if ("category_sku_id" in body) {
+        if (!imported) throw httpError(400, "Theme của decor shop lấy từ /decor-load — chỉ đổi được theme của decor đã import.");
         const cat = body.category_sku_id;
         if (cat === null || cat === "") {
             patch.category_sku_id = null;
@@ -207,10 +276,25 @@ const updateDecor = async (skuId, body = {}) => {
             patch.category_sku_id = String(cat);
         }
     }
-    if ("noGift" in body) patch.noGift = !!body.noGift;
     if (Object.keys(patch).length === 0) throw httpError(400, "Không có trường nào để cập nhật.");
-    const updated = write("importedDecors", "findOneAndUpdate", { query: { sku_id: skuId }, data: patch });
+    const updated = write(name, "findOneAndUpdate", { query: { sku_id: skuId }, data: patch });
     return { message: "Đã cập nhật decor", decor: updated };
+};
+
+/** PATCH the sale switches of many decors at once (a theme, a filter). → { count } */
+const updateDecors = async (skuIds, body = {}) => {
+    requirePanel();
+    const ids = [...new Set((Array.isArray(skuIds) ? skuIds : []).map(String))];
+    if (!ids.length) throw httpError(400, "sku_ids phải là mảng sku_id.");
+    const patch = salePatch(body);
+    if (Object.keys(patch).length === 0) throw httpError(400, "Không có trạng thái bán nào để cập nhật.");
+    const importedIds = new Set(read("importedDecors").map((d) => d.sku_id));
+    const inImported = ids.filter((id) => importedIds.has(id));
+    const inLoaded = ids.filter((id) => !importedIds.has(id));
+    let count = 0;
+    if (inImported.length) count += write("importedDecors", "updateMany", { query: { sku_id: inImported }, data: patch }).count;
+    if (inLoaded.length) count += write("decors", "updateMany", { query: { sku_id: inLoaded }, data: patch }).count;
+    return { message: `Đã cập nhật ${count} decor`, count, patch };
 };
 
 const deleteDecor = async (skuId) => {
@@ -233,6 +317,7 @@ const importDecor = async (fields) => {
 
 module.exports = {
     NAMES,
+    SALE_FLAGS,
     onPanel,
     buildDecorList,
     buildPriceReport,
@@ -243,6 +328,7 @@ module.exports = {
     upsertPrice,
     deletePrice,
     updateDecor,
+    updateDecors,
     deleteDecor,
     previewDecor,
     importDecor,

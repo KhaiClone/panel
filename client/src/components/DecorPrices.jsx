@@ -29,12 +29,13 @@ const th = {
 };
 const td = { padding: "6px 8px", verticalAlign: "middle" };
 
-// A decor tier is unpriced when decors use it and the lookup they need is
-// missing. `gift` is looked up with the Nitro original only, so a tier used
-// only as a non-Nitro price (giftCount 0) never needs one.
+// A decor tier is unpriced when a decor sells a way that needs it and that
+// price is missing. The counts only include ways that are switched on (the
+// Decor tab's sale switches); `gift` is looked up with the Nitro original only,
+// so a tier used only as a non-Nitro price (giftCount 0) never needs one.
 const unpriced = (t) =>
-    t.decorCount > 0 &&
-    (t.login === null || (t.giftCount > 0 && t.gift === null));
+    (t.loginCount > 0 && t.login === null) ||
+    (t.giftCount > 0 && t.gift === null);
 
 // Accepts "111000", "111.000", "111,000" — panel users paste all three.
 const parseAmount = (raw) => {
@@ -513,6 +514,10 @@ export default function DecorPrices({ onChange }) {
                                                 value={t.login}
                                                 onSave={save}
                                                 onClear={clear}
+                                                needed={
+                                                    t.decorCount === 0 ||
+                                                    t.loginCount > 0
+                                                }
                                             />
                                         </td>
                                         <td style={td}>

@@ -5,10 +5,13 @@ const decorService = require("../services/decorService");
 // Mounted behind authMiddleware (see index.js). The data is shared data owned by
 // ArnTo-assistant and kept on the panel (services/decorService.js).
 
-/** GET /api/decors — all decors (loaded + imported) with computed prices */
+/**
+ * GET /api/decors — all decors (loaded + imported) with computed prices, plus
+ * `tierPrices` (each way's price ignoring the sale switches) for this page.
+ */
 router.get("/", async (req, res, next) => {
     try {
-        res.json(await decorService.listDecors());
+        res.json(await decorService.listDecors({ tierPrices: true }));
     } catch (err) {
         next(err);
     }
@@ -68,8 +71,25 @@ router.post("/import", async (req, res, next) => {
     }
 });
 
-/** PATCH /api/decors/import/:sku_id — update theme / gift flag of an imported decor */
-router.patch("/import/:sku_id", async (req, res, next) => {
+/**
+ * PATCH /api/decors — the sale switches of many decors at once.
+ * Body: { sku_ids: [...], noLoginWithNitro?, noLoginWithoutNitro?, noGift? }
+ */
+router.patch("/", async (req, res, next) => {
+    try {
+        const { sku_ids, ...flags } = req.body || {};
+        res.json(await decorService.updateDecors(sku_ids, flags));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * PATCH /api/decors/:sku_id — one decor or bundle, loaded or imported.
+ * Body: { noLoginWithNitro?, noLoginWithoutNitro?, noGift?, category_sku_id? (imported only) }
+ * /import/:sku_id is the same, kept for older callers.
+ */
+router.patch(["/:sku_id", "/import/:sku_id"], async (req, res, next) => {
     try {
         res.json(await decorService.updateDecor(req.params.sku_id, req.body));
     } catch (err) {
