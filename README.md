@@ -702,13 +702,17 @@ default stays in the bot's code.
   copy locally, so a panel that is away changes nothing. An admin version that
   does not parse or breaks a Discord limit **falls back to the default**.
 - **Variables everywhere** — `{bot.*}`, `{guild.*}`, `{now}`, the bot's own globals
-  (ArnTo-Shop: `{shop.*}`) and the admin's **custom variables** `{custom.*}`
+  (ArnTo-Shop: `{shop.*}`, ArnTo-Auto: `{auto.*}`) and the admin's **custom variables** `{custom.*}`
   (Embeds → Biến tùy chỉnh) — e.g. one colour used by every embed.
-- **Posted panels** — panels a bot posted (`/ticket-setup`, `/dg-setup`) are tracked;
+- **Posted panels** — panels a bot posted (`/ticket-setup`, `/dg-setup`, `/quest-setup`,
+  `/rb-setup`, `/badge-setup`, `/panel-setup`) are tracked;
   Embeds → Panel đã gửi re-renders them (bus `ui.refresh`) or adopts an older one by
   its message link (`ui.adopt`).
 
-Converted so far: ArnTo-Shop (all 96 messages) and Auto Deco Gift. Protocol text
+Converted so far: ArnTo-Shop (all 96 messages) and ArnTo-Auto (all 117: Auto Quest,
+Robux, Badge, Deco Gift, the bot-management panel, AutoBank's webhook log). A panel
+posted before its bot was converted is not tracked — adopt it once by its link.
+Still to come: ArnTo-assistant and the panel's own Discord messages. Protocol text
 other bots parse (`!dms`, `!blcadd`, `$mn`, `!done`, `!payed`) and developer
 commands are not templates.
 

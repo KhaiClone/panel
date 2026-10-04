@@ -238,6 +238,7 @@ export function SelectsEditor({ selects, defaults, onChange }) {
                             <Field label="Chữ mờ (placeholder)" slot={s} value={cur.placeholder} onChange={(v) => set(s, { placeholder: v })} />
                             {"label" in d && <Field label="Nhãn mỗi lựa chọn" slot={s} value={cur.label} onChange={(v) => set(s, { label: v })} />}
                             {"description" in d && <Field label="Mô tả mỗi lựa chọn" slot={s} value={cur.description} onChange={(v) => set(s, { description: v })} />}
+                            {"emoji" in d && <Field label="Emoji mỗi lựa chọn" slot={s} value={cur.emoji} onChange={(v) => set(s, { emoji: v })} />}
                         </div>
                         {Object.keys(d.options || {}).map((val) => {
                             const o = { ...(d.options[val] || {}), ...(selects?.[s]?.options?.[val] || {}) };
