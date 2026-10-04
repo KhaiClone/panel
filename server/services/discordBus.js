@@ -124,6 +124,27 @@ const fromMessage = async (msg) => {
     }
 };
 
+// ── Sealed payloads ──────────────────────────────────────────────────────────
+// A command can carry something only its target may read (a buyer's gift
+// links): the payload is AES-256-GCM-encrypted with a key derived from the
+// target project's own API key BEFORE it reaches the outbox, so the channel,
+// shared.sqlite and its backups hold ciphertext only. bot-lib/PanelBus.js
+// opens `{ sealed }` before the handler runs; the signature covers the sealed form.
+
+const sealKey = (projectKey) => crypto.createHash("sha256").update(`panel-bus-seal\n${projectKey}`).digest();
+const seal = (projectKey, value) => {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", sealKey(projectKey), iv);
+    const data = Buffer.concat([cipher.update(JSON.stringify(value ?? null), "utf8"), cipher.final()]);
+    return { sealed: Buffer.concat([iv, cipher.getAuthTag(), data]).toString("base64") };
+};
+const unseal = (projectKey, sealed) => {
+    const buf = Buffer.from(String(sealed), "base64");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", sealKey(projectKey), buf.subarray(0, 12));
+    decipher.setAuthTag(buf.subarray(12, 28));
+    return JSON.parse(Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString("utf8"));
+};
+
 // ── Targets ──────────────────────────────────────────────────────────────────
 
 /** A project that can receive commands: its Discord bot id and its own key. */
@@ -140,14 +161,17 @@ const targetOf = async (botId) => {
 
 // ── Sending ──────────────────────────────────────────────────────────────────
 
-/** Queue a command. → the outbox row. Delivery happens in the worker. */
-const enqueue = async (botId, cmd, payload = null) => {
-    await targetOf(botId); // fail fast on a project that cannot receive
+/**
+ * Queue a command. → the outbox row. Delivery happens in the worker.
+ * `sealed`: only the target can read the payload (see Sealed payloads).
+ */
+const enqueue = async (botId, cmd, payload = null, { sealed = false } = {}) => {
+    const { key } = await targetOf(botId); // fail fast on a project that cannot receive
     const id = crypto.randomUUID();
     const now = Date.now();
     table()
         .prepare("INSERT INTO bus (id, target, cmd, payload, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?)")
-        .run(id, botId, cmd, JSON.stringify(payload ?? null), now, now);
+        .run(id, botId, cmd, JSON.stringify(sealed ? seal(key, payload) : (payload ?? null)), now, now);
     kick();
     return rowToPublic(table().prepare("SELECT * FROM bus WHERE id = ?").get(id));
 };
@@ -156,8 +180,8 @@ const enqueue = async (botId, cmd, payload = null) => {
 const notify = (botId, cmd, payload) => enqueue(botId, cmd, payload);
 
 /** Send and wait for the bot's reply → its result; throws its error or on timeout. */
-const request = async (botId, cmd, payload, { timeoutMs = 30_000 } = {}) => {
-    const row = await enqueue(botId, cmd, payload);
+const request = async (botId, cmd, payload, { timeoutMs = 30_000, sealed = false } = {}) => {
+    const row = await enqueue(botId, cmd, payload, { sealed });
     return new Promise((resolve, reject) => {
         const onDone = (r) => {
             if (r.id !== row.id) return;
@@ -412,6 +436,8 @@ module.exports = {
     sign,
     verify,
     canonical,
+    seal,
+    unseal,
     VERSION,
     TAG,
 };

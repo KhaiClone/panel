@@ -318,6 +318,8 @@ const importDecor = async (fields) => {
 module.exports = {
     NAMES,
     SALE_FLAGS,
+    FRAME_API,
+    frameImageURL,
     onPanel,
     buildDecorList,
     buildPriceReport,

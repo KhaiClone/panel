@@ -109,6 +109,12 @@ const getStats = async () => {
 };
 
 const act = async (cmd, message, orderId) => {
+    // A Deco Gift order is finished by ArnTo-Auto's staff channel, which hands the
+    // gift links over first — Done here would close it with nothing delivered.
+    const stored = sharedStore.run("orders", "findOne", { query: { orderId: String(orderId) } });
+    if (stored?.source === "decoGift") {
+        throw Object.assign(new Error("Deco Gift orders are approved or cancelled in ArnTo-Auto's staff channel on Discord"), { status: 409 });
+    }
     const order = await discordBus.request(owner(), cmd, { orderId: String(orderId) }, { timeoutMs: 45_000 });
     return { message, order: enrich(order) };
 };

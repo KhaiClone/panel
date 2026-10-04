@@ -608,9 +608,15 @@ page is a harmless round trip.
 
 | Bot | Shared data (`PANEL_SHARED`) | Bus commands |
 |-----|-------------------------------|--------------|
-| ArnTo-Shop | `orders`, `nextOrderId` | `order.complete`, `order.cancel` |
-| ArnTo-assistant | `decors`, `importedDecors`, `prices`, `decorCategories` | `decor.preview`, `decor.import` |
+| ArnTo-Shop | `orders`, `nextOrderId` | `order.create`, `order.complete`, `order.cancel` |
+| ArnTo-assistant | `decors`, `importedDecors`, `prices`, `decorCategories` | `decor.preview`, `decor.import`, `decor.gift.deliver` |
 | ArnTo-Auto | — | `quest.event`, `badge.event`, `dm.send` |
+
+**Sealed commands.** A payload only the target may read (gift links) goes out as
+`{ sealed }` — AES-256-GCM under a key derived from the target project's own API key,
+applied before the outbox row is written (`discordBus.request(…, { sealed: true })`).
+The channel, `shared.sqlite` and its backups see ciphertext; `bot-lib/PanelBus.js`
+opens it before the handler runs. Bots need the current `PanelBus.js` to receive one.
 
 A bot's `.env`: `PANEL_API_URL=http://127.0.0.1:4201`, `PANEL_API_KEY=<its own key>`,
 `PANEL_SHARED=…`, optionally `PANEL_SHARED_TTL_MS` (read cache) and `PANEL_BUS_GUILD_ID`.
@@ -642,6 +648,30 @@ ways that are sold (a bundle that sells a way needs its members' tiers for it).
 | `GET` | `/api/panel/shared` | Names, owners, sizes, bus status, recent commands, decor site |
 | `POST` | `/api/panel/shared/declare` | `{ name, kind, botId }` |
 | `POST` | `/api/panel/shared/ping` | `{ botId }` — round trip over the bus |
+
+**Auto Deco Gift.** Buyers pick decors on ArnTo-Auto's Discord panel (`/dg-setup`) and
+pay by QR there; the panel connects the three bots (`server/services/decorGiftService.js`):
+
+1. Auto reads `GET /api/external/decor-gift/catalog` — decors sold as Gift (switch on,
+   priced; bundles at their Gift Bundle price), grouped by theme like the decor site,
+   with a list thumbnail and the `/decor-find` picture.
+2. Paid → `POST …/orders` → the shop's `order.create` opens a real `arnto_N` order in its
+   waiting list, like `/new` without a ticket, and DMs the bill. Idempotent on `paymentId`.
+   The order carries `source: "decoGift"`, has no ✅/❌ buttons, and the Orders page will
+   not complete or cancel it (409).
+3. An admin presses Duyệt in Auto's staff channel and types one gift link per decor →
+   `POST …/orders/:orderId/deliver` → the assistant DMs them (`decor.gift.deliver`,
+   sealed, once per order) → the shop completes the order. A closed DM comes back as
+   `{ delivered: false, reason: "dm_blocked" }` and nothing is completed.
+4. Hủy → `POST …/orders/:orderId/cancel` → the shop's `order.cancel`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/external/decor-gift/catalog` | `{ categories: [{ sku_id, name, count }], decors: [{ sku_id, name, type, typeLabel, category, price, thumb, image, members? }] }` |
+| `POST` | `/api/external/decor-gift/orders` | `{ paymentId, buyerId, sellerId, items, total }` → `{ orderId, messageId, waitingUrl }` |
+| `POST` | `/api/external/decor-gift/orders/:orderId/deliver` | `{ buyerId, items: [{ name, type, link }] }` → `{ delivered, completed, reason?, error? }` |
+| `POST` | `/api/external/decor-gift/orders/:orderId/complete` | Shop completes (retry after a delivery whose completion failed) |
+| `POST` | `/api/external/decor-gift/orders/:orderId/cancel` | Shop cancels |
 
 ---
 

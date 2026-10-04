@@ -222,7 +222,13 @@ export default function OrdersPage() {
                                                 </span>
                                             </td>
                                             <td style={{ padding: "10px 14px", whiteSpace: "nowrap", textAlign: "right" }}>
-                                                {o.status === "pending" && (
+                                                {o.status === "pending" && o.source === "decoGift" && (
+                                                    // Finished in ArnTo-Auto's staff channel, which delivers the gift links first.
+                                                    <span title="Approve or cancel it in ArnTo-Auto's Deco Gift staff channel on Discord" style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                                                        🎁 Deco Gift · Discord
+                                                    </span>
+                                                )}
+                                                {o.status === "pending" && o.source !== "decoGift" && (
                                                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                                                         <button className="btn-success" style={{ padding: "4px 10px", fontSize: 12 }} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
                                                             {busy === o.orderId ? "…" : "Complete"}

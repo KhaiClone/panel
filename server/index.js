@@ -130,6 +130,8 @@ app.use("/api/external/data", apiKeyMiddleware, require("./routes/dataExternal")
 app.use("/api/external/quests", apiKeyMiddleware, questExternalRoutes);
 app.use("/api/external/pricing", apiKeyMiddleware, pricingExternalRoutes);
 app.use("/api/external/badges", apiKeyMiddleware, badgeExternalRoutes);
+// ArnTo-Auto's Deco Gift panel: catalog, and shop orders over the bus (services/decorGiftService.js).
+app.use("/api/external/decor-gift", apiKeyMiddleware, require("./routes/decorGiftExternal"));
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
