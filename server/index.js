@@ -197,6 +197,8 @@ const startBackgroundServices = () => {
     require("./services/discordBus").start().catch((e) => console.error("[Bus] start failed:", e.message));
     // The public decor site's data snapshot follows the shared decor data.
     require("./services/decorSitePublisher").start();
+    // The panel's own Discord messages, listed on the Embeds page next to the bots'.
+    require("./services/panelTemplates").register();
 };
 
 /**

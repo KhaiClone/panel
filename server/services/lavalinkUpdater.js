@@ -103,13 +103,9 @@ const run = async ({ manual = false } = {}) => {
         // autoUpdate off: report the new version and let a human press the button.
         if (!settings.autoUpdate) {
             await discord.sendLavalinkReport({
-                title: "🎵 Lavalink có bản mới",
-                color: 0x5865f2,
+                kind: "available",
                 version: release.version,
                 url: release.url,
-                description:
-                    `Tự động cập nhật đang **tắt** — ${outdated.length} node vẫn ở bản cũ. ` +
-                    "Vào trang Lavalink của panel để cập nhật tay.",
                 results: outdated.map((n) => ({ nodeName: n.nodeName, ok: null, version: n.version })),
                 skipped,
             });
@@ -141,14 +137,9 @@ const run = async ({ manual = false } = {}) => {
         });
 
         await discord.sendLavalinkReport({
-            title: allOk ? "🎵 Lavalink đã cập nhật" : "⚠️ Lavalink cập nhật chưa trọn vẹn",
-            color: allOk ? 0x57f287 : 0xff8c00,
+            kind: allOk ? "updated" : "partial",
             version: release.version,
             url: release.url,
-            description: allOk
-                ? `Đã cập nhật ${results.length} node lên **${release.version}** và restart xong.`
-                : `${results.filter((r) => r.ok).length}/${results.length} node lên được **${release.version}**. ` +
-                  "Node lỗi đã được rollback về bản cũ và vẫn đang chạy.",
             results,
             skipped,
         });

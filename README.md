@@ -702,19 +702,25 @@ default stays in the bot's code.
   copy locally, so a panel that is away changes nothing. An admin version that
   does not parse or breaks a Discord limit **falls back to the default**.
 - **Variables everywhere** — `{bot.*}`, `{guild.*}`, `{now}`, the bot's own globals
-  (ArnTo-Shop: `{shop.*}`, ArnTo-Auto: `{auto.*}`) and the admin's **custom variables** `{custom.*}`
+  (ArnTo-Shop: `{shop.*}`, ArnTo-Auto: `{auto.*}`, ArnTo-assistant: `{assistant.*}`) and the admin's **custom variables** `{custom.*}`
   (Embeds → Biến tùy chỉnh) — e.g. one colour used by every embed.
 - **Posted panels** — panels a bot posted (`/ticket-setup`, `/dg-setup`, `/quest-setup`,
   `/rb-setup`, `/badge-setup`, `/panel-setup`) are tracked;
   Embeds → Panel đã gửi re-renders them (bus `ui.refresh`) or adopts an older one by
   its message link (`ui.adopt`).
 
-Converted so far: ArnTo-Shop (all 96 messages) and ArnTo-Auto (all 117: Auto Quest,
-Robux, Badge, Deco Gift, the bot-management panel, AutoBank's webhook log). A panel
-posted before its bot was converted is not tracked — adopt it once by its link.
-Still to come: ArnTo-assistant and the panel's own Discord messages. Protocol text
-other bots parse (`!dms`, `!blcadd`, `$mn`, `!done`, `!payed`) and developer
-commands are not templates.
+- **The panel's own messages** — expiry alerts (webhook + the buyer's DM), the Lavalink
+  report and the backup message are templates too: `server/templates/panel.js`, listed as
+  the project **Bot Panel** (`__panel` in `ui_catalog`, registered on start) and rendered
+  in-process by `services/panelTemplates.js` with the same fallback rules.
+
+Everything is converted: ArnTo-Shop (96 messages), ArnTo-Auto (117: Auto Quest, Robux,
+Badge, Deco Gift, the bot-management panel, AutoBank's webhook log), ArnTo-assistant
+(23: wallet DMs and salary log, ticket tools, scratch cards, `/fdone`, the secret form,
+decor views and admin replies, the Deco Gift link DM — a gift link an edited template
+drops is appended anyway) and the panel (5). A panel posted before its bot was converted
+is not tracked — adopt it once by its link. Protocol text other bots parse (`!dms`,
+`!blcadd`, `$mn`, `$rq`, `!done`, `!payed`) and developer commands are not templates.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -730,7 +736,7 @@ commands are not templates.
 | `POST` | `/api/ui/posted/adopt` | `{ key, link }` |
 
 Checks: `node scripts/uiTemplate.test.js`, `node scripts/messageTemplates.test.js`,
-`node scripts/uiTemplateService.test.js`.
+`node scripts/uiTemplateService.test.js`, `node scripts/panelTemplates.test.js`.
 
 ---
 

@@ -19,6 +19,8 @@ const T = require("../../bot-lib/uiTemplate");
 // ─────────────────────────────────────────────────────────────────────────────
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
+// The panel's own messages (services/panelTemplates.js) are a project of their own.
+const PANEL_ID = "__panel";
 const KEY_RE = /^[a-z0-9][a-z0-9_.-]{2,79}$/i;
 const CUSTOM_RE = /^[A-Za-z_]\w{0,40}$/;
 
@@ -137,7 +139,7 @@ const overview = async () => {
         version: version(),
         projects: catalogs().map((c) => ({
             botId: c.botId,
-            name: names.get(c.botId) || c.botId,
+            name: c.botId === PANEL_ID ? "Bot Panel (tin của panel)" : names.get(c.botId) || c.botId,
             updatedAt: c.updatedAt,
             canRefresh: discordBus.canHandle(c.botId, "ui.refresh"),
             types: c.types || {},
@@ -239,7 +241,16 @@ const adopt = async ({ key, link } = {}) => {
     return discordBus.request(found.botId, "ui.adopt", { key, guildId: m[1], channelId: m[2], messageId: m[3] }, { timeoutMs: 45_000 });
 };
 
+/** The admin's version of one template, or null (services/panelTemplates.js renders in-process). */
+const overrideOf = (key) => {
+    const r = raw().prepare("SELECT value FROM ui_overrides WHERE key = ?").get(key);
+    return r ? JSON.parse(r.value) : null;
+};
+
 module.exports = {
+    PANEL_ID,
+    overrideOf,
+    customVars: custom,
     saveCatalog,
     forBot,
     savePosted,
