@@ -132,6 +132,8 @@ app.use("/api/external/pricing", apiKeyMiddleware, pricingExternalRoutes);
 app.use("/api/external/badges", apiKeyMiddleware, badgeExternalRoutes);
 // ArnTo-Auto's Deco Gift panel: catalog, and shop orders over the bus (services/decorGiftService.js).
 app.use("/api/external/decor-gift", apiKeyMiddleware, require("./routes/decorGiftExternal"));
+// Message templates: bots upload their catalog and poll the admin's changes (services/uiTemplateService.js).
+app.use("/api/external/ui", apiKeyMiddleware, require("./routes/uiExternal"));
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -140,6 +142,7 @@ app.use("/api/nodes", authMiddleware, nodeRoutes);
 app.use("/api/join", require("./routes/join"));
 app.use("/api/shop", authMiddleware, shopOrderRoutes);
 app.use("/api/decors", authMiddleware, decorRoutes);
+app.use("/api/ui", authMiddleware, require("./routes/ui"));
 // Public, read-only: the decor site's live data (routes/decorsPublic.js).
 app.use("/api/public/decors", require("./routes/decorsPublic"));
 app.use("/api/quests", authMiddleware, questRoutes);
