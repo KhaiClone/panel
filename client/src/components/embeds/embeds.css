@@ -66,9 +66,10 @@
 .dp-option { color: #b5bac1; font-size: 12px; margin-top: 4px; }
 .dp-option span { color: #949ba4; }
 
-.dp-container { max-width: 520px; background: #2b2d31; border: 1px solid rgba(255, 255, 255, 0.05); border-left: 4px solid #1e1f22; border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-.dp-part { display: flex; flex-direction: column; gap: 2px; }
-.dp-part-label { font-size: 10px; color: #6d6f78; text-transform: uppercase; letter-spacing: 0.06em; font-family: Consolas, monospace; }
+.dp-container { max-width: 520px; background: #2b2d31; border: 1px solid rgba(255, 255, 255, 0.05); border-left: 4px solid #1e1f22; border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+.dp-parts { gap: 14px; }
+.dp-part { display: flex; flex-direction: column; gap: 4px; }
+.dp-part-label { font-size: 11px; color: #949ba4; font-family: Consolas, monospace; }
 
 /* Editor bits — pages/EmbedsPage.jsx */
 .emb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); flex-shrink: 0; display: inline-block; }

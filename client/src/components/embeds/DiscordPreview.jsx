@@ -333,35 +333,40 @@ export function MessagePreview({ msg, bot, selects = [] }) {
 }
 
 /**
- * A card: its words in order, with menus and buttons. The real layout is the
- * bot's (lists of items between these words) — this shows what each part says.
+ * A card: its words, menus and buttons — each part in a box of its own, under
+ * its slot name. Where each part goes is the bot's code: pieces of one view, or
+ * separate replies (a QR note, "order cancelled", "not found"…). The panel
+ * cannot tell which, so it never draws them as one message.
  */
 export function CardPreview({ color, parts, buttons, selects, bot }) {
     return (
         <div className="dp-root">
             <div className="dp-message">
                 <Header bot={bot} />
-                <div className="dp-body">
-                    <div className="dp-container" style={{ borderLeftColor: hex(color) }}>
-                        {parts.map((p) => (
-                            <div key={p.slot} className="dp-part">
-                                <div className="dp-part-label">{p.slot}</div>
-                                <Markdown text={p.text} />
+                <div className="dp-body dp-parts">
+                    {parts.map((p) => (
+                        <div key={p.slot} className="dp-part">
+                            <div className="dp-part-label">{p.slot}</div>
+                            <div className="dp-container" style={{ borderLeftColor: hex(color) }}>
+                                {String(p.text || "").trim() ? <Markdown text={p.text} /> : <div className="dp-empty">(trống)</div>}
                             </div>
-                        ))}
-                        {selects.map((s) => (
-                            <div key={s.slot} className="dp-part">
-                                <div className="dp-part-label">menu {s.slot}</div>
-                                <Select placeholder={s.placeholder} />
-                                {s.option && <div className="dp-option">{s.option.label}{s.option.description ? <span> — {s.option.description}</span> : null}</div>}
-                            </div>
-                        ))}
-                        {buttons.length > 0 && (
+                        </div>
+                    ))}
+                    {selects.map((s) => (
+                        <div key={s.slot} className="dp-part">
+                            <div className="dp-part-label">menu {s.slot}</div>
+                            <Select placeholder={s.placeholder} />
+                            {s.option && <div className="dp-option">{s.option.label}{s.option.description ? <span> — {s.option.description}</span> : null}</div>}
+                        </div>
+                    ))}
+                    {buttons.length > 0 && (
+                        <div className="dp-part">
+                            <div className="dp-part-label">nút</div>
                             <div className="dp-row">
                                 {buttons.map((b) => <Button key={b.slot} b={b} />)}
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -33,6 +33,10 @@ export default function CardEditor({ value, def, onChange }) {
             )}
             <div className="emb-section">
                 <span className="emb-section-title">Chữ</span>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>
+                    Mỗi ô là một đoạn chữ riêng, tên ô cho biết lúc nào bot dùng nó. Bot tự đặt từng đoạn vào chỗ của nó — có thể chung một tin, có thể là các câu trả lời
+                    khác nhau — nên bên xem trước mỗi đoạn có khung riêng.
+                </p>
                 {Object.keys(texts).map((slot) => (
                     <Field
                         key={slot}
