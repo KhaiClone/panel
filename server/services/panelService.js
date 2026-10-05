@@ -68,10 +68,12 @@ const rebuildPanel = async () => {
     try {
         return await call("post", "/self/rebuild-app", { timeout: 600_000 });
     } catch (err) {
-        // The agent answers 500 with the build output on failure — surface that
-        // rather than a bare transport error, the output is what's useful.
-        if (err.status === 409 || err.status === 500) {
-            return { success: false, buildOutput: "", message: err.message };
+        // The agent answers 500 (409 when one is already running) with the build
+        // output on failure — surface that rather than a bare transport error,
+        // the output is what's useful.
+        const status = err.status || err.agentStatus;
+        if (status === 409 || status === 500) {
+            return { success: false, buildOutput: err.agentBody?.buildOutput || "", message: err.agentBody?.message || err.message };
         }
         throw err;
     }

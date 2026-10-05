@@ -115,7 +115,15 @@ const agentRequest = async (
             if (body.output) e.output = body.output;
             throw e;
         }
-        throw new Error(`[Node ${node.name}] ${err.code || ""} ${err.message}`.trim());
+        const e = new Error(`[Node ${node.name}] ${err.code || ""} ${err.message}`.trim());
+        // An answer without `error` (e.g. /self/rebuild-app's { success, buildOutput,
+        // message }) — kept for the caller that knows its shape. Not `status`:
+        // the error handler would start forwarding the agent's status code.
+        if (err.response) {
+            e.agentStatus = err.response.status;
+            e.agentBody = body;
+        }
+        throw e;
     }
 };
 
