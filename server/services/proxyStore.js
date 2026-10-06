@@ -362,6 +362,9 @@ function _explain(err) {
     if (status) return `HTTP ${status} từ proxy.`;
     const code = err.code || "";
     if (code === "ECONNREFUSED") return "Proxy từ chối kết nối — sai host/port, hoặc proxy đã tắt.";
+    // Proxy xác thực bằng IP whitelist thường cắt kết nối thẳng thay vì trả 407.
+    if (code === "ECONNRESET")
+        return "Proxy cắt kết nối (ECONNRESET) — thường do IP của panel chưa nằm trong whitelist của nhà cung cấp.";
     if (code === "ETIMEDOUT" || code === "ECONNABORTED") return "Hết thời gian chờ — proxy không phản hồi.";
     if (code === "ENOTFOUND") return "Không phân giải được host của proxy.";
     return err.message || "Không kết nối được qua proxy.";

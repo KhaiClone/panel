@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const questService = require("../services/questService");
 const questMonthly = require("../services/questMonthly");
+const questSettings = require("../services/questSettings");
 const discordBus = require("../services/discordBus");
 
 // Mounted behind authMiddleware (see index.js). Discord Quest runner —
@@ -15,17 +16,18 @@ async function combinedList() {
         // UI can render the same quest cards + progress as single-quest accounts.
         const quests = questService.getLive(m.accountId);
         const completedCount = Object.values(quests).filter((q) => q.state === "done").length;
+        const busy = questMonthly.isRunning(m.accountId);
         return {
             accountId: m.accountId,
             username: m.username,
             mode: "monthly",
-            status: m.active ? "monthly" : "expired",
+            status: busy ? "running" : m.active ? "monthly" : "expired",
             monthlyExpiresAt: m.monthlyExpiresAt,
             // Expired plans are erased a week later unless renewed — the UI counts down.
             purgeAt: m.purgeAt,
             selectedQuestIds: [],
             completedCount,
-            running: false,
+            running: busy,
             ref: m.ref ?? null,
             quests,
         };
@@ -37,6 +39,96 @@ async function combinedList() {
 router.get("/", async (req, res, next) => {
     try {
         res.json(await combinedList());
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Control: schedule, pause, run now (declared before /:accountId routes, or
+//    "control" would be read as an account id) ─────────────────────────────────
+
+async function controlState() {
+    return { settings: await questSettings.get(), status: await questMonthly.status() };
+}
+
+/** GET /api/quests/control — settings + what the scheduler is doing */
+router.get("/control", async (req, res, next) => {
+    try {
+        res.json(await controlState());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** PATCH /api/quests/control/settings { run: {enabled,days,time}, enroll: {enabled,time}, concurrency, accountDelaySec } */
+router.patch("/control/settings", async (req, res, next) => {
+    try {
+        await questSettings.update(req.body || {});
+        // A time moved to earlier today is due now — don't wait for the minute tick.
+        questMonthly.kick();
+        res.json(await controlState());
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
+/**
+ * POST /api/quests/control/pause — stop everything: single-quest loops (resumable),
+ * the monthly pass and the enroll scan. New orders are stored and wait.
+ */
+router.post("/control/pause", async (req, res, next) => {
+    try {
+        await questSettings.setPaused(true);
+        questService.pauseAll();
+        questMonthly.stop();
+        res.json(await controlState());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/quests/control/resume — relaunch paused loops; a schedule missed today catches up */
+router.post("/control/resume", async (req, res, next) => {
+    try {
+        await questSettings.setPaused(false);
+        await questService.restore();
+        questMonthly.kick();
+        res.json(await controlState());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/quests/control/run { accountId? } — monthly pass now (all subscribers, or one) */
+router.post("/control/run", async (req, res, next) => {
+    try {
+        const accountId = req.body?.accountId ? String(req.body.accountId) : null;
+        await questMonthly.runNow({ accountId });
+        res.json(await controlState());
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
+/** POST /api/quests/control/enroll — daily enroll scan now */
+router.post("/control/enroll", async (req, res, next) => {
+    try {
+        await questMonthly.enrollNow();
+        res.json(await controlState());
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
+/** POST /api/quests/control/stop { what: "run" | "enroll" | "all" } — stop the pass / scan in flight */
+router.post("/control/stop", async (req, res, next) => {
+    try {
+        const what = req.body?.what || "all";
+        questMonthly.stop({ run: what !== "enroll", enroll: what !== "run" });
+        res.json(await controlState());
     } catch (err) {
         next(err);
     }
@@ -103,6 +195,16 @@ router.post("/:accountId/stop", async (req, res, next) => {
         await questService.stopAccount(req.params.accountId);
         res.json({ ok: true });
     } catch (err) {
+        next(err);
+    }
+});
+
+/** POST /api/quests/:accountId/resume — run a stopped/failed/finished single-quest account again */
+router.post("/:accountId/resume", async (req, res, next) => {
+    try {
+        res.json(await questService.resumeAccount(req.params.accountId));
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);
     }
 });

@@ -250,11 +250,14 @@ async function acquire(key, { feature = "quest" } = {}) {
     if (!pool) return NO_PROXY;
 
     const entry = pool[_hash(String(key)) % pool.length];
+    // Several runs can share one proxy (parallel monthly accounts, overlapping
+    // orders). Only the first may rotate it — for the others it IS mid-run.
+    const wasIdle = !isBusy(entry.id);
     _hold(entry.id);
 
     // Rotate BEFORE the run starts, never during: this is the only safe moment.
     // Throttled inside proxyStore, so simultaneous starts share one rotation.
-    if (entry.kind === "proxy" && entry.rotating) {
+    if (entry.kind === "proxy" && entry.rotating && wasIdle) {
         await proxyStore.rotate(entry.id, { reason: "run-start" }).catch(() => {});
     }
     if (entry.kind === "proxy") {
@@ -280,7 +283,7 @@ async function acquire(key, { feature = "quest" } = {}) {
             if (released) return;
             released = true;
             _drop(entry.id);
-            if (failed && entry.kind === "proxy" && entry.rotating) {
+            if (failed && entry.kind === "proxy" && entry.rotating && !isBusy(entry.id)) {
                 proxyStore.rotate(entry.id, { reason: "run-failed" }).catch(() => {});
             }
         },

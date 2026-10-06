@@ -9,6 +9,8 @@
  *     mode: "all" | "select", selectedQuestIds: [], status, completedCount,
  *     error, addedAt, updatedAt, retentionExpiresAt }
  * status: "running" | "done" | "stopped" | "token_dead" | "error"
+ * While Auto Quest is paused (questSettings) a "running" record is not looping; the
+ * API shows it as "paused" and restore() launches it on the resume.
  *
  * RETENTION — single-quest ("lẻ") accounts are kept for ONE WEEK only.
  * `retentionExpiresAt` is set to now + 7 days on every start and swept hourly;
@@ -29,6 +31,7 @@ const {
     _fields,
 } = require("./questEngine");
 const proxyPool = require("./proxyPool");
+const questSettings = require("./questSettings");
 const lifecycle = require("./lifecycle");
 const callbacks = require("./callbackService");
 
@@ -194,7 +197,12 @@ function _publicRec(r) {
         username: r.username,
         mode: r.mode,
         selectedQuestIds: r.selectedQuestIds ?? [],
-        status: r.status,
+        // Paused: the record keeps "running" (that is what the resume looks for),
+        // but nothing is looping.
+        status:
+            r.status === "running" && !running.has(r.accountId) && questSettings.peek().paused
+                ? "paused"
+                : r.status,
         completedCount: r.completedCount ?? 0,
         error: r.error ?? null,
         running: running.has(r.accountId),
@@ -252,11 +260,14 @@ async function previewToken(token) {
  * mode "select" → run only selectedQuestIds.
  */
 async function startAccount({ token, mode = "all", selectedQuestIds = [], webhookUrl, webhookBotId = null, ref }) {
-    const lease = await proxyPool.acquire(token);
-    const resolved = await resolveDiscordAccount(token, lease.agent);
+    // Paused: the order is stored like any other and waits for the resume, which
+    // launches it via restore(). Nothing runs yet, so no lease either.
+    const { paused } = await questSettings.get();
+    const lease = paused ? null : await proxyPool.acquire(token);
+    const resolved = await resolveDiscordAccount(token, lease ? lease.agent : await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         // A dead token is not the proxy's fault; anything else might be.
-        lease.release({ failed: !resolved.invalidToken });
+        lease?.release({ failed: !resolved.invalidToken });
         const e = new Error(resolved.reason);
         e.status = resolved.invalidToken ? 401 : 502;
         throw e;
@@ -294,8 +305,27 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
     // (Re)start the loop with the freshly resolved api. _stopLoop first, so the
     // previous run's lease is returned before this one is registered.
     _stopLoop(accountId);
-    _launch(accountId, resolved, record, lease);
+    if (!paused) _launch(accountId, resolved, record, lease);
     return _publicRec(record);
+}
+
+function _httpError(message, status) {
+    const e = new Error(message);
+    e.status = status;
+    return e;
+}
+
+/**
+ * Run a stored single-quest account again — stopped, failed or finished — with its
+ * saved token, mode and owner. Same as a new order: the one-week clock restarts.
+ */
+async function resumeAccount(accountId) {
+    const rec = await _getRec(accountId);
+    if (!rec || _isExpired(rec)) throw _httpError("Không tìm thấy account.", 404);
+    if (running.has(accountId)) throw _httpError("Account đang chạy rồi.", 409);
+    const token = _decrypt(rec);
+    if (!token) throw _httpError("Không giải mã được token (đổi secret?).", 409);
+    return startAccount({ token, mode: rec.mode, selectedQuestIds: rec.selectedQuestIds ?? [] });
 }
 
 /** Give the account's egress route back to the pool. Safe to call twice. */
@@ -396,6 +426,19 @@ async function suspendAll({ timeoutMs = 30_000 } = {}) {
 /** How many accounts are running right now (the panel-move preflight shows it). */
 const runningCount = () => running.size;
 
+/**
+ * The global pause (questSettings.paused is already set): stop every loop the same
+ * way a panel move does, so the DB keeps "running" and restore() resumes them. Does
+ * not wait — a loop notices within one heartbeat and exits without writing anything.
+ */
+function pauseAll() {
+    const ids = [...running.keys()];
+    for (const id of ids) _stopLoop(id);
+    // UI only — the buyer is not told about a pause.
+    for (const id of ids) emitExternalEvent(id, { type: "status", status: "paused" });
+    return ids.length;
+}
+
 async function _runLoop(accountId, completer, abort, record) {
     const mode = record.mode;
     const selected = new Set((record.selectedQuestIds ?? []).map(String));
@@ -481,11 +524,11 @@ async function _runLoop(accountId, completer, abort, record) {
             await _setStatus(accountId, "done");
         }
     } catch (err) {
+        // A stopped run was already unregistered by _stopLoop, lease included — and
+        // by now its slot may belong to a newer run of the same account (restart,
+        // pause → resume), which this one must not unregister.
+        if (err?.aborted || abort.stopped) return;
         running.delete(accountId);
-        if (err?.aborted) {
-            _releaseLease(accountId); // _stopLoop already released; this is the no-op path
-            return;
-        }
         if (isInvalidTokenError(err)) {
             _releaseLease(accountId);
             await _setStatus(accountId, "token_dead", {
@@ -504,8 +547,10 @@ async function _runLoop(accountId, completer, abort, record) {
 /** Restart accounts that were running before a server restart. */
 async function restore() {
     warmBuildNumber();
+    const { paused } = await questSettings.get();
     const recs = (await db.get(MODEL)) || [];
     let restored = 0;
+    let waiting = 0;
     for (const rec of recs) {
         // Past its week: erase instead of resuming — never re-arm a webhook for it.
         if (_isExpired(rec)) {
@@ -520,6 +565,12 @@ async function restore() {
                 username: rec.username,
             });
         if (rec.status !== "running") continue;
+        // Already looping (a resume racing a restart or a maintenance exit).
+        if (running.has(rec.accountId)) continue;
+        if (paused) {
+            waiting++;
+            continue;
+        }
         const token = _decrypt(rec);
         if (!token) {
             await _setStatus(rec.accountId, "token_dead", {
@@ -546,6 +597,7 @@ async function restore() {
         }
     }
     if (restored) console.log(`[Quest] Restored ${restored} account(s).`);
+    if (waiting) console.log(`[Quest] Paused — ${waiting} account(s) wait for the resume.`);
     return restored;
 }
 
@@ -555,6 +607,8 @@ module.exports = {
     getAccount,
     previewToken,
     startAccount,
+    resumeAccount,
+    pauseAll,
     stopAccount,
     removeAccount,
     restore,

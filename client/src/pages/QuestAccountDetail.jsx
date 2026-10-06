@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import api from "../api/client";
 import useQuestStream from "../hooks/useQuestStream";
@@ -5,6 +6,7 @@ import QuestCard from "../components/QuestCard";
 
 const STATUS = {
     running: { label: "Running", color: "var(--accent)" },
+    paused: { label: "Paused", color: "#38bdf8" },
     done: { label: "Completed", color: "var(--success)" },
     stopped: { label: "Stopped", color: "var(--text-dim)" },
     token_dead: { label: "Token error", color: "var(--warning)" },
@@ -42,7 +44,9 @@ function MetaItem({ label, children }) {
 export default function QuestAccountDetail() {
     const { accountId } = useParams();
     const navigate = useNavigate();
-    const { accounts, live } = useQuestStream();
+    const { accounts, live, reload } = useQuestStream();
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState(null);
 
     const a = accounts.find((x) => x.accountId === accountId);
     const quests = Object.entries(live[accountId] || {});
@@ -51,6 +55,21 @@ export default function QuestAccountDetail() {
     const doneCount = quests.filter(([, q]) => q.state === "done").length;
 
     const stop = () => api.post(`/quests/${accountId}/stop`).catch(() => {});
+    const runAgain = async () => {
+        setBusy(true);
+        setMsg(null);
+        try {
+            // Single account: relaunch from its stored token. Monthly: a pass for this account only.
+            if (a.mode === "monthly") await api.post("/quests/control/run", { accountId });
+            else await api.post(`/quests/${accountId}/resume`);
+            setMsg({ ok: true, text: a.mode === "monthly" ? "Monthly run started." : "Started again." });
+            reload();
+        } catch (e) {
+            setMsg({ ok: false, text: e.response?.data?.error || "Failed." });
+        } finally {
+            setBusy(false);
+        }
+    };
     const remove = () =>
         api
             .delete(`/quests/${accountId}`)
@@ -97,9 +116,17 @@ export default function QuestAccountDetail() {
                                 </span>
                             </div>
                             <div className="mobile-wrap" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                {a.status === "running" && (
+                                {/* A monthly account runs inside the shared pass — stop that from /quests. */}
+                                {a.status === "running" && a.mode !== "monthly" && (
                                     <button className="btn-warning" onClick={stop}>
                                         ⏸ Stop
+                                    </button>
+                                )}
+                                {(a.mode === "monthly"
+                                    ? a.status === "monthly"
+                                    : ["stopped", "error", "token_dead", "done"].includes(a.status)) && (
+                                    <button className="btn-success" disabled={busy} onClick={runAgain}>
+                                        {a.mode === "monthly" ? "▶ Run now" : "▶ Run again"}
                                     </button>
                                 )}
                                 <button className="btn-danger" onClick={remove}>
@@ -126,6 +153,12 @@ export default function QuestAccountDetail() {
                                 <MetaItem label="Data erased">{fmtDate(a.purgeAt)}</MetaItem>
                             )}
                         </div>
+
+                        {msg && (
+                            <p style={{ margin: "12px 0 0", fontSize: 12.5, color: msg.ok ? "var(--success)" : "var(--danger)" }}>
+                                {msg.text}
+                            </p>
+                        )}
 
                         {a.error && (
                             <div

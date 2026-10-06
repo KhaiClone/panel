@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
 import useQuestStream from "../hooks/useQuestStream";
+import QuestControl from "../components/QuestControl";
 
 // ── Shared status metadata (English) ─────────────────────────────────────────
 const STATUS = {
     running: { label: "Running", color: "var(--accent)" },
+    paused: { label: "Paused", color: "#38bdf8" },
     done: { label: "Completed", color: "var(--success)" },
     stopped: { label: "Stopped", color: "var(--text-dim)" },
     token_dead: { label: "Token error", color: "var(--warning)" },
@@ -307,6 +309,7 @@ export default function QuestsPage() {
     };
 
     const runningCount = accounts.filter((a) => a.status === "running").length;
+    const waitingCount = accounts.filter((a) => a.status === "paused").length;
     const monthlyCount = accounts.filter((a) => a.mode === "monthly").length;
     const doneCount = accounts.filter((a) => a.status === "done").length;
 
@@ -323,6 +326,13 @@ export default function QuestsPage() {
                     owner link included.
                 </p>
             </div>
+
+            {/* ── Scheduler: pause, run now, schedule ── */}
+            <QuestControl
+                runningCount={accounts.filter((a) => a.status === "running" && a.mode !== "monthly").length}
+                waitingCount={waitingCount}
+                onChanged={reload}
+            />
 
             {/* ── Egress (which IPs quest traffic uses) ── */}
             <EgressMenu />
