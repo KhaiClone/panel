@@ -66,35 +66,9 @@ const hookInfo = async (hook) => {
     return hookInfoCache;
 };
 
-/**
- * The words of a backup message: template panel.backup.message (server/templates/panel.js,
- * editable on the Embeds page). Rollback reads the attachments, never this text.
- */
-const backupContent = (built) => {
-    const { summary } = built;
-    try {
-        const { content, embeds } = require("./panelTemplates").message("panel.backup.message", {
-            ts: archive.readableTs(summary.ts),
-            dbs: Object.entries(summary.dbs).map(([kind, d]) => ({
-                kind,
-                size: archive.fmtSize(d.size),
-                gz: archive.fmtSize(d.gz),
-                chunks: d.chunks,
-                hash8: d.hash8,
-                __text: kind,
-            })),
-            env: !!summary.env,
-        });
-        return { content, embeds };
-    } catch (err) {
-        console.warn(`[Backup] message template: ${err.message}`);
-        return { content: built.content };
-    }
-};
-
-const send = async (hook, payload, files) => {
+const send = async (hook, content, files) => {
     const form = new FormData();
-    form.append("payload_json", JSON.stringify({ ...payload, allowed_mentions: { parse: [] } }));
+    form.append("payload_json", JSON.stringify({ content, allowed_mentions: { parse: [] } }));
     files.forEach((f, i) => form.append(`files[${i}]`, f.data, { filename: f.name, contentType: "application/octet-stream" }));
     const { data } = await axios.post(hook.base, form, {
         params: { wait: true, ...(hook.thread ? { thread_id: hook.thread } : {}) },
@@ -157,7 +131,7 @@ const performBackup = async ({ reason: why = "scheduled" } = {}) => {
             envFile: t.env,
             tmpDir: tmp,
         });
-        const msg = await send(hook, backupContent(built), built.files);
+        const msg = await send(hook, built.content, built.files);
         const info = await hookInfo(hook).catch(() => null);
 
         const entry = {

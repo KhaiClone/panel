@@ -52,6 +52,14 @@ const raw = () => {
             name TEXT PRIMARY KEY,
             value TEXT
         );
+
+        -- Left by the message-template system (Embeds page), removed 2026-10-06.
+        -- Nothing creates them any more; this also clears a copy restored from
+        -- an older backup or brought by a panel move.
+        DROP TABLE IF EXISTS ui_catalog;
+        DROP TABLE IF EXISTS ui_overrides;
+        DROP TABLE IF EXISTS ui_posted;
+        DELETE FROM kv WHERE name IN ('__ui.version', '__ui.custom');
     `);
     return conn;
 };
