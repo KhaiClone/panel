@@ -40,7 +40,7 @@ router.get("/", async (req, res, next) => {
 router.put("/bots/:id", async (req, res, next) => {
     try {
         const bot = await db.findOne("bots", { _id: req.params.id });
-        if (!bot) return res.status(404).json({ error: "Không tìm thấy bot." });
+        if (!bot) return res.status(404).json({ error: "Bot not found." });
 
         let egressNodeId = req.body?.egressNodeId ?? "";
         egressNodeId = egressNodeId ? String(egressNodeId).trim() : "";

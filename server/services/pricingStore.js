@@ -180,9 +180,9 @@ function _bad(message) {
 /** Đặt giá / bật tắt một mốc. price = null để xoá giá. */
 async function setTier(badgeKey, tierKey, patch = {}) {
     const cat = BADGE_CATALOG[badgeKey];
-    if (!cat) throw _bad(`Badge không hợp lệ: ${badgeKey}`);
+    if (!cat) throw _bad(`Invalid badge: ${badgeKey}`);
     if (!cat.tiers.some((t) => t.key === tierKey)) {
-        throw _bad(`Mốc không hợp lệ: ${tierKey}`);
+        throw _bad(`Invalid tier: ${tierKey}`);
     }
 
     const stored = (await db.get(KEY)) || {};
@@ -198,7 +198,7 @@ async function setTier(badgeKey, tierKey, patch = {}) {
         } else {
             const price = Number(patch.price);
             if (!Number.isFinite(price) || price < 0) {
-                throw _bad(`Giá không hợp lệ: ${patch.price}`);
+                throw _bad(`Invalid price: ${patch.price}`);
             }
             entry.price = Math.round(price);
         }
@@ -212,7 +212,7 @@ async function setTier(badgeKey, tierKey, patch = {}) {
 
 /** Patch phần cài đặt chung của một hệ thống auto. Key lạ bị bỏ qua. */
 async function updateFeature(feature, patch = {}) {
-    if (!DEFAULTS[feature]) throw _bad(`Hệ thống không hợp lệ: ${feature}`);
+    if (!DEFAULTS[feature]) throw _bad(`Invalid system: ${feature}`);
 
     const stored = (await db.get(KEY)) || {};
     const current = { ...DEFAULTS[feature], ...(stored[feature] ?? {}) };
@@ -224,7 +224,7 @@ async function updateFeature(feature, patch = {}) {
         } else {
             const num = Number(v);
             if (!Number.isFinite(num) || num < 0) {
-                throw _bad(`Giá trị không hợp lệ cho ${k}: ${v}`);
+                throw _bad(`Invalid value for ${k}: ${v}`);
             }
             current[k] = num;
         }
@@ -232,7 +232,7 @@ async function updateFeature(feature, patch = {}) {
     // Hệ số < 1 nghĩa là giảm giá cho khách không Nitro — hợp lệ. Nhưng 0 thì gần
     // như chắc chắn là gõ nhầm, và nó biến mọi đơn thành miễn phí.
     if (current.nonNitroSurcharge !== undefined && current.nonNitroSurcharge <= 0) {
-        throw _bad("nonNitroSurcharge phải lớn hơn 0");
+        throw _bad("nonNitroSurcharge must be greater than 0");
     }
 
     // Giá từng mốc chỉ đi qua setTier. Vòng lặp trên đã bỏ qua `badges` trong

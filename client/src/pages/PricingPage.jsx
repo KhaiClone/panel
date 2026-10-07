@@ -18,7 +18,7 @@ const RARITY_COLOR = {
     mythic: "#f59e0b",
 };
 
-const UNIT_VI = (u) => (u === "hours" ? "giờ" : u === "house" ? "nhà" : "game");
+const UNIT_VI = (u) => (u === "hours" ? "hours" : u === "house" ? "house" : "games");
 
 // Badge "choice" (HypeSquad) không có ngưỡng — đừng in ra NaN.
 const fmtUnit = (n, unit) =>
@@ -136,14 +136,14 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                         <span style={{ color: "var(--text-dim)", fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
                             badge_id {badge.badgeId} ·{" "}
                             {badge.kind === "choice"
-                                ? "chọn phương án · ăn ngay"
-                                : `${UNIT_VI(badge.unit)} · lên sau ~1 ngày`}
-                            {badge.usesReader === false ? " · không dùng reader" : ""}
+                                ? "pick an option · applies instantly"
+                                : `${UNIT_VI(badge.unit)} · shows up in ~1 day`}
+                            {badge.usesReader === false ? " · no reader needed" : ""}
                         </span>
                     </div>
                     {!badge.supported && (
                         <div style={{ fontSize: 12, color: "var(--warning)", marginTop: 4 }}>
-                            Chưa hỗ trợ — event stream trên /science chưa reverse xong
+                            Not supported yet — the /science event stream is not reverse-engineered yet
                         </div>
                     )}
                 </div>
@@ -163,7 +163,7 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                         opacity: dirty && badge.supported ? 1 : 0.5,
                     }}
                 >
-                    {saving ? "Đang lưu…" : dirty ? "Lưu thay đổi" : "Đã lưu"}
+                    {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
                 </button>
             </div>
 
@@ -172,11 +172,11 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                     <thead>
                         <tr style={{ color: "var(--text-dim)", fontSize: 11, textAlign: "left" }}>
                             <th style={{ padding: "6px 8px", fontWeight: 500 }}>#</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>MỐC / LỰA CHỌN</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>NGƯỠNG</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>ĐỘ HIẾM</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500, width: 150 }}>GIÁ (VNĐ)</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500, width: 70 }}>BÁN</th>
+                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>TIER / OPTION</th>
+                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>THRESHOLD</th>
+                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>RARITY</th>
+                            <th style={{ padding: "6px 8px", fontWeight: 500, width: 150 }}>PRICE (VND)</th>
+                            <th style={{ padding: "6px 8px", fontWeight: 500, width: 70 }}>ON SALE</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -210,7 +210,7 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                                             type="number"
                                             min="0"
                                             step="1000"
-                                            placeholder="chưa đặt"
+                                            placeholder="not set"
                                             value={d.price}
                                             disabled={!badge.supported}
                                             onChange={(e) =>
@@ -223,7 +223,7 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                                         <Toggle
                                             checked={d.enabled}
                                             disabled={!priced || !badge.supported}
-                                            title={priced ? "" : "Nhập giá trước khi bán"}
+                                            title={priced ? "" : "Set a price before selling"}
                                             onChange={(v) =>
                                                 setDraft(badgeKey, t.key, { enabled: v })
                                             }
@@ -320,7 +320,7 @@ export default function PricingPage() {
             }
             const { data } = await api.post(`/pricing/badge/${badgeKey}/bulk`, { tiers });
             hydrate(data);
-            setToast(`Đã lưu giá ${pricing.autoBadge.badges[badgeKey].label}`);
+            setToast(`Saved the ${pricing.autoBadge.badges[badgeKey].label} prices`);
         } catch (err) {
             setError(err.response?.data?.error || err.message);
         } finally {
@@ -339,7 +339,7 @@ export default function PricingPage() {
                 forfeitOnWrongTier: settings.forfeitOnWrongTier,
             });
             hydrate(data);
-            setToast("Đã lưu cài đặt");
+            setToast("Settings saved");
         } catch (err) {
             setError(err.response?.data?.error || err.message);
         } finally {
@@ -356,7 +356,7 @@ export default function PricingPage() {
                 monthlyPrice: Number(others.questMonthlyPrice),
             });
             hydrate(data);
-            setToast("Đã lưu giá các hệ thống khác");
+            setToast("Saved the other systems' prices");
         } catch (err) {
             setError(err.response?.data?.error || err.message);
         } finally {
@@ -367,7 +367,7 @@ export default function PricingPage() {
     if (!pricing || !settings) {
         return (
             <div style={{ padding: 24, color: "var(--text-muted)" }}>
-                {error ? <span style={{ color: "var(--danger)" }}>{error}</span> : "Đang tải…"}
+                {error ? <span style={{ color: "var(--danger)" }}>{error}</span> : "Loading…"}
             </div>
         );
     }
@@ -382,8 +382,8 @@ export default function PricingPage() {
             <div style={{ marginBottom: 20 }}>
                 <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Pricing</h1>
                 <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "6px 0 0" }}>
-                    Giá phẳng theo mốc — mỗi mốc một giá cố định, không phụ thuộc mốc khách đang có.
-                    Ngưỡng là thông số của Discord, không sửa được ở đây.
+                    Flat prices per tier — each tier has one fixed price, whatever tier the buyer is on now.
+                    Thresholds are Discord's numbers and cannot be changed here.
                 </p>
             </div>
 
@@ -418,7 +418,7 @@ export default function PricingPage() {
                 </div>
             )}
 
-            {/* ── Cài đặt chung ── */}
+            {/* ── General settings ── */}
             <Card style={{ marginBottom: 20 }}>
                 <div
                     style={{
@@ -433,12 +433,12 @@ export default function PricingPage() {
                     <div>
                         <div style={{ fontSize: 15, fontWeight: 600 }}>Auto Badge</div>
                         <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
-                            {sellable} mốc đang mở bán
+                            {sellable} tier(s) on sale
                         </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                            {settings.enabled ? "Đang bán" : "Đang tắt"}
+                            {settings.enabled ? "Selling" : "Off"}
                         </span>
                         <Toggle
                             checked={settings.enabled}
@@ -456,8 +456,8 @@ export default function PricingPage() {
                     }}
                 >
                     <Field
-                        label="Hệ số khách không Nitro"
-                        hint="Giá cuối = giá mốc × hệ số này. 1 = không phụ thu."
+                        label="Non-Nitro multiplier"
+                        hint="Final price = tier price × this multiplier. 1 = no surcharge."
                     >
                         <input
                             type="number"
@@ -470,7 +470,7 @@ export default function PricingPage() {
                             style={inputStyle}
                         />
                     </Field>
-                    <Field label="Hệ số overshoot" hint="Bù tỷ lệ credit ~94% của /science. 1.1 = gửi dư 10%.">
+                    <Field label="Overshoot multiplier" hint="Makes up for the ~94% credit rate of /science. 1.1 = send 10% extra.">
                         <input
                             type="number"
                             min="1"
@@ -480,7 +480,7 @@ export default function PricingPage() {
                             style={inputStyle}
                         />
                     </Field>
-                    <Field label="Khai sai mốc thì mất tiền" hint="Áp dụng cho khách không Nitro khi kiểm tra sau thanh toán.">
+                    <Field label="Forfeit on a wrong declared tier" hint="Applies to buyers without Nitro, checked after payment.">
                         <div style={{ paddingTop: 4 }}>
                             <Toggle
                                 checked={settings.forfeitOnWrongTier}
@@ -507,11 +507,11 @@ export default function PricingPage() {
                         cursor: saving === "settings" ? "not-allowed" : "pointer",
                     }}
                 >
-                    {saving === "settings" ? "Đang lưu…" : "Lưu cài đặt"}
+                    {saving === "settings" ? "Saving…" : "Save settings"}
                 </button>
             </Card>
 
-            {/* ── Bảng giá từng badge ── */}
+            {/* ── Price table per badge ── */}
             {Object.entries(pricing.autoBadge.badges).map(([badgeKey, badge]) => (
                 <BadgeTable
                     key={badgeKey}
@@ -524,13 +524,13 @@ export default function PricingPage() {
                 />
             ))}
 
-            {/* ── Các hệ thống auto khác ── */}
+            {/* ── Other auto systems ── */}
             <Card>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Hệ thống khác</div>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Other systems</div>
                 <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 14 }}>
-                    ArnTo-Auto đọc các giá này qua /api/external/pricing và cache 60 giây. Panel sập
-                    thì bot dùng giá cache, rồi mới đến giá trong .env — nên sửa ở đây không cần
-                    restart bot.
+                    ArnTo-Auto reads these prices from /api/external/pricing and caches them for 60 seconds. If the
+                    panel is down the bot uses the cached prices, then the ones in .env — so a change here needs no
+                    bot restart.
                 </div>
                 <div
                     style={{
@@ -540,7 +540,7 @@ export default function PricingPage() {
                         marginBottom: 14,
                     }}
                 >
-                    <Field label="Auto Quest — mỗi quest">
+                    <Field label="Auto Quest — per quest">
                         <input
                             type="number"
                             min="0"
@@ -552,7 +552,7 @@ export default function PricingPage() {
                             style={inputStyle}
                         />
                     </Field>
-                    <Field label="Auto Quest — gói tháng">
+                    <Field label="Auto Quest — monthly plan">
                         <input
                             type="number"
                             min="0"
@@ -581,7 +581,7 @@ export default function PricingPage() {
                         cursor: saving === "others" ? "not-allowed" : "pointer",
                     }}
                 >
-                    {saving === "others" ? "Đang lưu…" : "Lưu giá"}
+                    {saving === "others" ? "Saving…" : "Save prices"}
                 </button>
             </Card>
         </div>

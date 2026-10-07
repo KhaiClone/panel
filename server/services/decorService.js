@@ -229,24 +229,24 @@ const upsertPrice = async (body = {}) => {
     const { type } = body;
     const original = Number(body.original);
     const price = Number(body.price);
-    if (!PRICE_TYPES.includes(type)) throw httpError(400, `type phải là một trong: ${PRICE_TYPES.join(", ")}.`);
-    if (!Number.isFinite(original) || original < 0) throw httpError(400, "original phải là số không âm.");
-    if (!Number.isFinite(price) || price < 0) throw httpError(400, "price phải là số không âm.");
+    if (!PRICE_TYPES.includes(type)) throw httpError(400, `type must be one of: ${PRICE_TYPES.join(", ")}.`);
+    if (!Number.isFinite(original) || original < 0) throw httpError(400, "original must be a non-negative number.");
+    if (!Number.isFinite(price) || price < 0) throw httpError(400, "price must be a non-negative number.");
     const existing = read("prices", "findOne", { type, original });
     const row = existing
         ? write("prices", "findOneAndUpdate", { query: { type, original }, data: { price } })
         : write("prices", "create", { data: { type, original, price } });
-    return { message: existing ? "Đã cập nhật mốc giá" : "Đã thêm mốc giá", row };
+    return { message: existing ? "Price tier updated" : "Price tier added", row };
 };
 
 const deletePrice = async (type, rawOriginal) => {
     requirePanel();
     const original = Number(rawOriginal);
-    if (!PRICE_TYPES.includes(type)) throw httpError(400, "type không hợp lệ.");
-    if (!Number.isFinite(original)) throw httpError(400, "original không hợp lệ.");
+    if (!PRICE_TYPES.includes(type)) throw httpError(400, "Invalid type.");
+    if (!Number.isFinite(original)) throw httpError(400, "Invalid original.");
     const deleted = write("prices", "findOneAndDelete", { query: { type, original } });
-    if (!deleted) throw httpError(404, "Không tìm thấy mốc giá này.");
-    return { message: "Đã xóa mốc giá", row: deleted };
+    if (!deleted) throw httpError(404, "Price tier not found.");
+    return { message: "Price tier deleted", row: deleted };
 };
 
 /** The sale switches in a request body → { noLoginWithNitro, … } booleans; {} if none. */
@@ -264,44 +264,44 @@ const updateDecor = async (skuId, body = {}) => {
     requirePanel();
     const imported = read("importedDecors", "findOne", { sku_id: skuId });
     const name = imported ? "importedDecors" : "decors";
-    if (!imported && !read("decors", "findOne", { sku_id: skuId })) throw httpError(404, "Không tìm thấy decor với sku_id này.");
+    if (!imported && !read("decors", "findOne", { sku_id: skuId })) throw httpError(404, "No decor with this sku_id.");
     const patch = salePatch(body);
     if ("category_sku_id" in body) {
-        if (!imported) throw httpError(400, "Theme của decor shop lấy từ /decor-load — chỉ đổi được theme của decor đã import.");
+        if (!imported) throw httpError(400, "Shop decor take their theme from /decor-load — only imported decor can change theme.");
         const cat = body.category_sku_id;
         if (cat === null || cat === "") {
             patch.category_sku_id = null;
         } else {
-            if (!read("decorCategories", "findOne", { sku_id: String(cat) })) throw httpError(400, `Category "${cat}" không tồn tại.`);
+            if (!read("decorCategories", "findOne", { sku_id: String(cat) })) throw httpError(400, `Category "${cat}" does not exist.`);
             patch.category_sku_id = String(cat);
         }
     }
-    if (Object.keys(patch).length === 0) throw httpError(400, "Không có trường nào để cập nhật.");
+    if (Object.keys(patch).length === 0) throw httpError(400, "Nothing to update.");
     const updated = write(name, "findOneAndUpdate", { query: { sku_id: skuId }, data: patch });
-    return { message: "Đã cập nhật decor", decor: updated };
+    return { message: "Decor updated", decor: updated };
 };
 
 /** PATCH the sale switches of many decors at once (a theme, a filter). → { count } */
 const updateDecors = async (skuIds, body = {}) => {
     requirePanel();
     const ids = [...new Set((Array.isArray(skuIds) ? skuIds : []).map(String))];
-    if (!ids.length) throw httpError(400, "sku_ids phải là mảng sku_id.");
+    if (!ids.length) throw httpError(400, "sku_ids must be an array of sku_id.");
     const patch = salePatch(body);
-    if (Object.keys(patch).length === 0) throw httpError(400, "Không có trạng thái bán nào để cập nhật.");
+    if (Object.keys(patch).length === 0) throw httpError(400, "No sale status to update.");
     const importedIds = new Set(read("importedDecors").map((d) => d.sku_id));
     const inImported = ids.filter((id) => importedIds.has(id));
     const inLoaded = ids.filter((id) => !importedIds.has(id));
     let count = 0;
     if (inImported.length) count += write("importedDecors", "updateMany", { query: { sku_id: inImported }, data: patch }).count;
     if (inLoaded.length) count += write("decors", "updateMany", { query: { sku_id: inLoaded }, data: patch }).count;
-    return { message: `Đã cập nhật ${count} decor`, count, patch };
+    return { message: `Updated ${count} decor`, count, patch };
 };
 
 const deleteDecor = async (skuId) => {
     requirePanel();
-    if (!read("importedDecors", "findOne", { sku_id: skuId })) throw httpError(404, "Không tìm thấy decor đã import với sku_id này.");
+    if (!read("importedDecors", "findOne", { sku_id: skuId })) throw httpError(404, "No imported decor with this sku_id.");
     write("importedDecors", "findOneAndDelete", { query: { sku_id: skuId } });
-    return { message: `Đã xóa decor "${skuId}" khỏi importedDecors.` };
+    return { message: `Removed decor "${skuId}" from importedDecors.` };
 };
 
 // Resolving needs the assistant (its Discord shop session): ask it on the bus.

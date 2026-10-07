@@ -517,14 +517,14 @@ function kick() {
  * then only picks up whatever the manual pass left).
  */
 async function runNow({ accountId = null } = {}) {
-    if ((await questSettings.get()).paused) throw _conflict("Auto Quest đang tạm dừng — bấm Tiếp tục trước.");
+    if ((await questSettings.get()).paused) throw _conflict("Auto Quest is paused — press Resume first.");
     if (accountId) {
         const rec = await db.findOne(MODEL, { accountId });
-        if (!rec) throw _conflict("Không tìm thấy gói tháng của account này.", 404);
-        if (!_isActive(rec)) throw _conflict("Gói tháng của account này đã hết hạn.");
+        if (!rec) throw _conflict("This account has no monthly plan.", 404);
+        if (!_isActive(rec)) throw _conflict("This account's monthly plan has expired.");
     }
     const pending = _startRun("manual", accountId);
-    if (!pending) throw _conflict("Đang có một lượt chạy monthly — đợi xong hoặc bấm Dừng.");
+    if (!pending) throw _conflict("A monthly run is in progress — wait for it or press Stop.");
     console.log(`[Monthly] Manual run start${accountId ? ` (${accountId})` : ""}`);
     pending
         .then((res) => console.log(`[Monthly] Manual run ${res.aborted ? "stopped" : "done"}: ${res.processed}/${res.total} account(s), ${res.completed} quest(s).`))
@@ -534,9 +534,9 @@ async function runNow({ accountId = null } = {}) {
 
 /** Enroll scan right now. Like runNow, it does not replace the day's scheduled scan. */
 async function enrollNow() {
-    if ((await questSettings.get()).paused) throw _conflict("Auto Quest đang tạm dừng — bấm Tiếp tục trước.");
+    if ((await questSettings.get()).paused) throw _conflict("Auto Quest is paused — press Resume first.");
     const pending = _startEnroll("manual");
-    if (!pending) throw _conflict("Đang có một lượt nhận quest — đợi xong hoặc bấm Dừng.");
+    if (!pending) throw _conflict("A quest enroll is in progress — wait for it or press Stop.");
     console.log("[MonthlyEnroll] Manual enroll scan start");
     pending
         .then((res) => console.log(`[MonthlyEnroll] Manual scan ${res.aborted ? "stopped" : "done"}: ${res.processed}/${res.total} account(s).`))

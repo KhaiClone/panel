@@ -84,7 +84,7 @@ router.post("/", async (req, res, next) => {
 router.post("/bulk", async (req, res, next) => {
     try {
         const { text, defaults } = req.body || {};
-        if (!text) return res.status(400).json({ error: "Chưa có dòng proxy nào." });
+        if (!text) return res.status(400).json({ error: "No proxy lines given." });
         res.status(201).json(await proxyStore.bulkCreate(text, defaults || {}));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
@@ -133,7 +133,7 @@ router.post("/:id/rotate", async (req, res, next) => {
         if (proxyPool.isBusy(req.params.id))
             return res
                 .status(409)
-                .json({ error: "Proxy đang được một lượt chạy sử dụng — thử lại khi xong." });
+                .json({ error: "The proxy is in use by a run — try again when it finishes." });
         res.json(await proxyStore.rotate(req.params.id, { force: true, reason: "manual" }));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });

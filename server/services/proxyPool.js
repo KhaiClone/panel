@@ -72,7 +72,7 @@ async function featureSettings(feature = "quest") {
 /** Patch one feature's settings. Unknown keys are dropped. */
 async function updateSettings(feature, patch = {}) {
     if (!DEFAULTS[feature]) {
-        const e = new Error(`Tính năng không hợp lệ: ${feature}`);
+        const e = new Error(`Invalid feature: ${feature}`);
         e.status = 400;
         throw e;
     }
@@ -83,7 +83,7 @@ async function updateSettings(feature, patch = {}) {
     if (patch.priority !== undefined) {
         const p = String(patch.priority);
         if (!["custom", "nodes", "mixed"].includes(p)) {
-            const e = new Error("priority phải là custom | nodes | mixed");
+            const e = new Error("priority must be custom | nodes | mixed");
             e.status = 400;
             throw e;
         }

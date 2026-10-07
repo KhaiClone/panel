@@ -321,10 +321,10 @@ function _httpError(message, status) {
  */
 async function resumeAccount(accountId) {
     const rec = await _getRec(accountId);
-    if (!rec || _isExpired(rec)) throw _httpError("Không tìm thấy account.", 404);
-    if (running.has(accountId)) throw _httpError("Account đang chạy rồi.", 409);
+    if (!rec || _isExpired(rec)) throw _httpError("Account not found.", 404);
+    if (running.has(accountId)) throw _httpError("The account is already running.", 409);
     const token = _decrypt(rec);
-    if (!token) throw _httpError("Không giải mã được token (đổi secret?).", 409);
+    if (!token) throw _httpError("Could not decrypt the token (secret changed?).", 409);
     return startAccount({ token, mode: rec.mode, selectedQuestIds: rec.selectedQuestIds ?? [] });
 }
 

@@ -119,7 +119,7 @@ ok("PATCH one: an imported decor keeps its theme editing; a loaded one refuses i
     await decorService.updateDecor("5", { category_sku_id: "c1", noGift: false });
     assert.strictEqual(get("importedDecors", "5").category_sku_id, "c1");
     assert.strictEqual(get("importedDecors", "5").noGift, false);
-    await assert.rejects(decorService.updateDecor("1", { category_sku_id: "c1" }), /chỉ đổi được theme/);
+    await assert.rejects(decorService.updateDecor("1", { category_sku_id: "c1" }), /only imported decor can change theme/);
     await assert.rejects(decorService.updateDecor("404", { noGift: true }), (e) => e.status === 404);
     await assert.rejects(decorService.updateDecor("1", { name: "x" }), (e) => e.status === 400, "unknown fields are not written");
     assert.strictEqual(get("decors", "1").name, "d1");

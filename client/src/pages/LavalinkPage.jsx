@@ -61,10 +61,10 @@ const fmtMB = (bytes) => (bytes == null ? "—" : `${Math.round(bytes / 1024 ** 
 const fmtSince = (ts) => {
     if (!ts) return "—";
     const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
-    if (secs < 90) return `${secs} giây`;
-    if (secs < 5400) return `${Math.round(secs / 60)} phút`;
-    if (secs < 172800) return `${(secs / 3600).toFixed(1)} giờ`;
-    return `${Math.round(secs / 86400)} ngày`;
+    if (secs < 90) return `${secs}s`;
+    if (secs < 5400) return `${Math.round(secs / 60)} min`;
+    if (secs < 172800) return `${(secs / 3600).toFixed(1)} h`;
+    return `${Math.round(secs / 86400)} days`;
 };
 
 function Pill({ state }) {
@@ -162,7 +162,7 @@ function CopyCode({ text }) {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 6 }}>
             <code style={{ flex: 1, color: "var(--text)", wordBreak: "break-all", fontSize: 12 }}>{text}</code>
             <button type="button" className="btn-ghost" style={{ padding: "2px 10px", fontSize: 11 }} onClick={copy}>
-                {copied ? "Đã chép" : "Chép"}
+                {copied ? "Copied" : "Copy"}
             </button>
         </div>
     );
@@ -184,35 +184,35 @@ const CHROME_INSTALL = {
  * touched, whichever way the node's switch is set.
  */
 const tokenerView = (t, enabled, lavalinkRunning) => {
-    if (!t) return { short: "agent cũ", text: "agent cũ — cập nhật agent", color: "var(--warning)" };
+    if (!t) return { short: "old agent", text: "old agent — update the agent", color: "var(--warning)" };
     if (t.external) {
         return {
-            short: "có sẵn",
-            text: `đã có sẵn trên node (không do panel quản lý) · 127.0.0.1:${t.port} — panel bỏ qua`,
+            short: "pre-existing",
+            text: `already on the node (not managed by the panel) · 127.0.0.1:${t.port} — the panel leaves it alone`,
             color: "var(--text-muted)",
         };
     }
-    if (t.foreignPm2) return { short: "pm2 ngoài", text: `pm2 "${t.pm2Name}" không do panel tạo — panel bỏ qua`, color: "var(--warning)" };
-    if (!enabled) return { short: "tắt", text: "đã tắt trên node này", color: "var(--text-dim)" };
-    if (!t.chrome?.present) return { short: "thiếu Chrome", text: "chưa có Chrome", color: "var(--danger)" };
+    if (t.foreignPm2) return { short: "foreign pm2", text: `pm2 "${t.pm2Name}" was not created by the panel — the panel leaves it alone`, color: "var(--warning)" };
+    if (!enabled) return { short: "off", text: "turned off on this node", color: "var(--text-dim)" };
+    if (!t.chrome?.present) return { short: "no Chrome", text: "Chrome is not installed", color: "var(--danger)" };
     if (t.live?.status === "online") {
-        if (t.health?.lastError) return { short: "lỗi", text: `lỗi: ${t.health.lastError}`, color: "var(--danger)" };
-        const ago = t.health?.lastTokenAt ? ` · token ${fmtSince(t.health.lastTokenAt)} trước` : "";
-        return { short: "đang chạy", text: `đang chạy · 127.0.0.1:${t.port}${ago}`, color: "var(--success)" };
+        if (t.health?.lastError) return { short: "error", text: `error: ${t.health.lastError}`, color: "var(--danger)" };
+        const ago = t.health?.lastTokenAt ? ` · token ${fmtSince(t.health.lastTokenAt)} ago` : "";
+        return { short: "running", text: `running · 127.0.0.1:${t.port}${ago}`, color: "var(--success)" };
     }
-    if (lavalinkRunning) return { short: "chưa chạy", text: "chưa chạy — bấm Đồng bộ hoặc Restart", color: "var(--warning)" };
-    return { short: "dừng", text: "dừng cùng Lavalink", color: "var(--text-dim)" };
+    if (lavalinkRunning) return { short: "not running", text: "not running — press Sync or Restart", color: "var(--warning)" };
+    return { short: "stopped", text: "stopped along with Lavalink", color: "var(--text-dim)" };
 };
 
 /** One line on what an action did to the tokener, or "" when there is nothing to say. */
 const tokenerNote = (t) => {
     if (!t?.wanted) return "";
     if (t.external) {
-        const base = " Spotify tokener: node đã có sẵn một tokener không do panel quản lý — panel bỏ qua";
-        return t.health && !t.health.ok ? `${base}, nhưng nó không lấy được token: ${t.health.error}` : `${base}.`;
+        const base = " Spotify tokener: the node already has a tokener the panel does not manage — the panel leaves it alone";
+        return t.health && !t.health.ok ? `${base}, but it cannot get a token: ${t.health.error}` : `${base}.`;
     }
     if (t.error) return ` Spotify tokener: ${t.error}`;
-    if (t.health && !t.health.ok) return ` Spotify tokener không lấy được token: ${t.health.error}`;
+    if (t.health && !t.health.ok) return ` Spotify tokener cannot get a token: ${t.health.error}`;
     return "";
 };
 
@@ -243,8 +243,8 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
         <div style={{ padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {notInstalled ? (
-                    <button className="btn-primary" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("install", "Cài đặt")}>
-                        Cài đặt Lavalink
+                    <button className="btn-primary" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("install", "Install")}>
+                        Install Lavalink
                     </button>
                 ) : (
                     <>
@@ -257,28 +257,28 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
                             {running ? "Restart" : "Start"}
                         </button>
                         {running && (
-                            <button className="btn-ghost" style={btn} disabled={!!busy} onClick={() => onAction("stop", "Dừng")}>
-                                Dừng
+                            <button className="btn-ghost" style={btn} disabled={!!busy} onClick={() => onAction("stop", "Stop")}>
+                                Stop
                             </button>
                         )}
-                        <button className="btn-ghost" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("sync", "Đồng bộ config")}>
-                            Đồng bộ
+                        <button className="btn-ghost" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("sync", "Sync config")}>
+                            Sync
                         </button>
-                        <button className="btn-ghost" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("update", "Cập nhật")}>
-                            Cập nhật
+                        <button className="btn-ghost" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("update", "Update")}>
+                            Update
                         </button>
                     </>
                 )}
                 <span style={{ flex: 1 }} />
                 <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                    {n.java?.present ? `Java ${n.java.major ?? "?"}` : "chưa có Java"} · {fmtGB(n.freeBytes)} trống
-                    {n.hasRollback ? " · có bản jar cũ để rollback" : ""}
+                    {n.java?.present ? `Java ${n.java.major ?? "?"}` : "no Java"} · {fmtGB(n.freeBytes)} free
+                    {n.hasRollback ? " · previous jar kept for rollback" : ""}
                 </span>
             </div>
 
             {n.state === "config-drift" && (
                 <p style={{ margin: 0, fontSize: 12, color: "var(--warning)" }}>
-                    File trên node khác cấu hình của panel — bấm Đồng bộ để ghi đè và restart.
+                    The file on the node differs from the panel's config — press Sync to overwrite it and restart.
                 </p>
             )}
             {n.error && (
@@ -287,7 +287,7 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
 
             {/* The table hides these columns on a phone; the open row shows them instead. */}
             <div className="hide-desktop" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-                <Metric label="Phiên bản" value={n.version || "—"} dim={!n.version} />
+                <Metric label="Version" value={n.version || "—"} dim={!n.version} />
                 <Metric label="Uptime" value={running ? fmtSince(live.uptime) : "—"} dim={!running} />
                 <Metric label="RAM" value={running ? fmtMB(live.memory) : "—"} dim={!running} />
                 <Metric label="Restart" value={running ? String(live.restarts ?? 0) : "—"} dim={!live.restarts} />
@@ -309,11 +309,11 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
                     <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: tv.color, wordBreak: "break-word" }}>{tv.text}</span>
                     {n.tokener && (
                         <label
-                            title="Bật/tắt spotify-tokener do panel quản lý trên node này"
+                            title="Turn the panel-managed spotify-tokener on this node on or off"
                             style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}
                         >
                             <input type="checkbox" checked={enabled} disabled={!!busy} onChange={(e) => onTokener(e.target.checked)} />
-                            Bật
+                            On
                         </label>
                     )}
                 </div>
@@ -342,10 +342,10 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
             ) : (
                 <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>
                     {!n.online
-                        ? "Không kết nối được tới node này."
+                        ? "Cannot reach this node."
                         : n.state === "agent-outdated"
-                          ? "Agent của node này quá cũ — cập nhật agent để xem log."
-                          : "Lavalink chưa được cài trên node này."}
+                          ? "This node's agent is too old — update the agent to see the log."
+                          : "Lavalink is not installed on this node."}
                 </p>
             )}
         </div>
@@ -400,7 +400,7 @@ function NodeRows({ n, open, onToggle, cols, wantsTokener, ...detail }) {
                         <>
                             <span style={{ fontWeight: 600 }}>{n.stats.players ?? 0}</span>
                             {n.stats.playingPlayers > 0 && (
-                                <span style={{ fontSize: 11, color: "var(--success)" }}> · {n.stats.playingPlayers} phát</span>
+                                <span style={{ fontSize: 11, color: "var(--success)" }}> · {n.stats.playingPlayers} playing</span>
                             )}
                         </>
                     ) : (
@@ -555,7 +555,7 @@ export default function LavalinkPage() {
         });
 
     const save = (sync) =>
-        run(sync ? "Đang lưu và đồng bộ…" : "Đang lưu…", async () => {
+        run(sync ? "Saving and syncing…" : "Saving…", async () => {
             // File mode: send the document AND the field edits. The server
             // writes the document first, then splices each field over the exact
             // bytes it replaces — so both ways of editing land in one save.
@@ -580,14 +580,14 @@ export default function LavalinkPage() {
             applyServerState(data);
             if (data.edit?.reformatted) {
                 setMsg(
-                    `Lưu ý: ${data.edit.inserted.join(", ")} chưa có trong file nên phải thêm mới — file đã bị định dạng lại.`,
+                    `Note: ${data.edit.inserted.join(", ")} was not in the file and had to be added — the file was reformatted.`,
                 );
             }
-            if (!data.sync) return "Đã lưu cấu hình. Bấm “Lưu và đồng bộ tất cả” để đẩy xuống các node.";
+            if (!data.sync) return "Config saved. Press “Save and sync all” to push it to the nodes.";
             const failed = data.sync.results.filter((r) => !r.ok);
             return failed.length
-                ? `Đã lưu. Đồng bộ lỗi ở ${failed.length} node: ${failed.map((f) => f.nodeName).join(", ")}`
-                : `Đã lưu và đồng bộ ${data.sync.results.length} node.`;
+                ? `Saved. Sync failed on ${failed.length} node(s): ${failed.map((f) => f.nodeName).join(", ")}`
+                : `Saved and synced ${data.sync.results.length} node(s).`;
         });
 
     /**
@@ -601,10 +601,10 @@ export default function LavalinkPage() {
     const switchMode = async (target) => {
         if ((target === "file") === Boolean(eff.custom)) return;
         if (target === "file") {
-            return run("Đang chuyển sang chỉnh file…", async () => {
+            return run("Switching to file editing…", async () => {
                 const { data } = await api.post("/lavalink/mode/file", {}, LONG);
                 applyServerState(data);
-                return "Giờ bạn sửa trực tiếp application.yml. Chưa có gì thay đổi trên node.";
+                return "You now edit application.yml directly. Nothing has changed on the nodes yet.";
             });
         }
         setErr("");
@@ -618,13 +618,13 @@ export default function LavalinkPage() {
     };
 
     const confirmSwitchToForm = () =>
-        run("Đang chuyển về form…", async () => {
+        run("Switching back to the form…", async () => {
             const { data } = await api.post("/lavalink/mode/form", { confirm: true }, LONG);
             applyServerState(data);
             setSwitchPrompt(null);
             return data.dropped?.length
-                ? `Đã chuyển về form. Đã bỏ: ${data.dropped.join(", ")}. Bấm Đồng bộ để đẩy xuống node.`
-                : "Đã chuyển về form.";
+                ? `Switched back to the form. Dropped: ${data.dropped.join(", ")}. Press Sync to push it to the nodes.`
+                : "Switched back to the form.";
         });
 
     const previewYaml = async () => {
@@ -639,43 +639,43 @@ export default function LavalinkPage() {
     };
 
     const checkUpdate = () =>
-        run("Đang kiểm tra GitHub…", async () => {
+        run("Checking GitHub…", async () => {
             const { data } = await api.post("/lavalink/check-update", {}, LONG);
             await loadSettings();
             if (data.skipped) return data.skipped;
-            if (data.upToDate) return `Mọi node đều đã ở bản ${data.release.version}.`;
-            if (data.autoUpdate === false) return `Có bản ${data.release.version} — tự động cập nhật đang tắt.`;
+            if (data.upToDate) return `Every node is already on ${data.release.version}.`;
+            if (data.autoUpdate === false) return `${data.release.version} is out — auto-update is off.`;
             const ok = (data.results || []).filter((r) => r.ok).length;
-            return `${ok}/${(data.results || []).length} node đã lên ${data.release?.version}.`;
+            return `${ok}/${(data.results || []).length} node(s) now on ${data.release?.version}.`;
         });
 
     const syncAll = () =>
-        run("Đang đồng bộ…", async () => {
+        run("Syncing…", async () => {
             const { data } = await api.post("/lavalink/sync", { restart: true }, LONG);
             const failed = data.results.filter((r) => !r.ok);
             return failed.length
-                ? `Lỗi ở ${failed.length} node: ${failed.map((f) => f.nodeName).join(", ")}`
-                : `Đã đồng bộ ${data.results.length} node.`;
+                ? `Failed on ${failed.length} node(s): ${failed.map((f) => f.nodeName).join(", ")}`
+                : `Synced ${data.results.length} node(s).`;
         });
 
     const nodeAction = (node, action, label) =>
         run(`${label} — ${node.nodeName}…`, async () => {
             const { data } = await api.post(`/lavalink/nodes/${node.nodeId}/${action}`, {}, LONG);
-            if (data.ok === false) throw new Error(data.error || "Thất bại");
-            if (data.health && data.health.ok === false) return `${node.nodeName}: chưa trả lời /version (${data.health.error})`;
-            return `${node.nodeName}: ${label.toLowerCase()} xong.${tokenerNote(data.tokener)}`;
+            if (data.ok === false) throw new Error(data.error || "Failed");
+            if (data.health && data.health.ok === false) return `${node.nodeName}: not answering /version yet (${data.health.error})`;
+            return `${node.nodeName}: ${label} done.${tokenerNote(data.tokener)}`;
         });
 
     const toggleTokener = (node, enabled) =>
-        run(`${enabled ? "Bật" : "Tắt"} Spotify tokener — ${node.nodeName}…`, async () => {
+        run(`Turning Spotify tokener ${enabled ? "on" : "off"} — ${node.nodeName}…`, async () => {
             const { data } = await api.post(`/lavalink/nodes/${node.nodeId}/tokener`, { enabled }, LONG);
-            if (data.ok === false) throw new Error(data.error || "Thất bại");
+            if (data.ok === false) throw new Error(data.error || "Failed");
             const t = data.tokener;
-            if (!enabled) return `${node.nodeName}: đã tắt Spotify tokener.`;
+            if (!enabled) return `${node.nodeName}: Spotify tokener turned off.`;
             const note = tokenerNote(t);
-            if (note) return `${node.nodeName}: đã bật.${note}`;
-            if (t && !t.running) return `${node.nodeName}: đã bật — Lavalink đang dừng, tokener sẽ chạy cùng Lavalink.`;
-            return `${node.nodeName}: đã bật Spotify tokener${t?.health?.ok ? " — lấy được token" : ""}.`;
+            if (note) return `${node.nodeName}: turned on.${note}`;
+            if (t && !t.running) return `${node.nodeName}: turned on — Lavalink is stopped, the tokener will start along with it.`;
+            return `${node.nodeName}: Spotify tokener turned on${t?.health?.ok ? " — it got a token" : ""}.`;
         });
 
     if (loading) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
@@ -702,7 +702,7 @@ export default function LavalinkPage() {
     const playingPlayers = withStats.reduce((a, n) => a + (n.stats.playingPlayers ?? 0), 0);
     // The fleet version is only meaningful when every running node agrees.
     const versions = [...new Set(nodes.filter((n) => n.version).map((n) => n.version))];
-    const fleetVersion = versions.length === 1 ? versions[0] : versions.length ? "không đồng nhất" : null;
+    const fleetVersion = versions.length === 1 ? versions[0] : versions.length ? "mixed" : null;
     const newerRelease = release?.version && fleetVersion && release.version !== fleetVersion;
     const needsJava = nodes.filter((n) => n.state === "java-missing" || n.state === "java-too-old");
     // Only when the config actually sends LavaSrc to a tokener on the node.
@@ -727,18 +727,18 @@ export default function LavalinkPage() {
                 <div style={{ flex: 1, minWidth: 240 }}>
                     <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Lavalink</h1>
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-                        Mỗi node một Lavalink, dùng chung một cấu hình. Bot nối vào{" "}
-                        <code>127.0.0.1:{eff.port}</code> ngay trên node của nó.
+                        One Lavalink per node, all sharing one config. Bots connect to{" "}
+                        <code>127.0.0.1:{eff.port}</code> on their own node.
                     </p>
                 </div>
                 <span className="hide-mobile" style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                    cập nhật {fmtClock(statusAt)} · tự làm mới 30s
+                    updated {fmtClock(statusAt)} · refreshes every 30s
                 </span>
-                <button className="btn-ghost" disabled={!!busy} onClick={() => run("Đang làm mới…", async () => null)}>
-                    Làm mới
+                <button className="btn-ghost" disabled={!!busy} onClick={() => run("Refreshing…", async () => null)}>
+                    Refresh
                 </button>
                 <button className="btn-primary" disabled={!!busy} onClick={checkUpdate}>
-                    Kiểm tra bản mới
+                    Check for updates
                 </button>
             </div>
 
@@ -764,28 +764,28 @@ export default function LavalinkPage() {
                 </div>
             )}
 
-            {/* ── Tổng quan ───────────────────────────────────────────────── */}
+            {/* ── Overview ────────────────────────────────────────────────── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
                 <StatTile
-                    label="Node đang chạy"
+                    label="Nodes running"
                     value={`${runningCount}/${nodes.length}`}
                     tone={nodes.length && runningCount === nodes.length ? "ok" : runningCount ? "warn" : "bad"}
                 />
                 <StatTile
                     label="Player"
                     value={totalPlayers === null ? "—" : `${totalPlayers}`}
-                    sub={totalPlayers === null ? "không đọc được" : `${playingPlayers} đang phát`}
+                    sub={totalPlayers === null ? "unreadable" : `${playingPlayers} playing`}
                 />
                 <StatTile
-                    label="Phiên bản"
+                    label="Version"
                     value={fleetVersion || "—"}
-                    sub={newerRelease ? `có bản ${release.version}` : release?.version ? "mới nhất" : release?.error || ""}
+                    sub={newerRelease ? `${release.version} available` : release?.version ? "latest" : release?.error || ""}
                     tone={newerRelease ? "warn" : undefined}
                 />
                 <StatTile
-                    label="Quét GitHub"
+                    label="GitHub check"
                     value={fmtTime(settings?.lastCheckAt)}
-                    sub={settings?.autoUpdate ? `tự cập nhật 02:00 ${form.timezone}` : "tự cập nhật đang tắt"}
+                    sub={settings?.autoUpdate ? `auto-update 02:00 ${form.timezone}` : "auto-update is off"}
                 />
             </div>
             {settings?.lastError && (
@@ -797,7 +797,7 @@ export default function LavalinkPage() {
                     Node ({nodes.length})
                 </button>
                 <button className={`tab-item ${tab === "config" ? "active" : ""}`} onClick={() => setTab("config")}>
-                    Cấu hình
+                    Config
                 </button>
             </div>
 
@@ -808,25 +808,25 @@ export default function LavalinkPage() {
                         <Alert
                             action={
                                 <button className="btn-ghost" disabled={!!busy} onClick={syncAll}>
-                                    Đồng bộ ngay
+                                    Sync now
                                 </button>
                             }
                         >
-                            {driftCount} node đang chạy file khác với cấu hình của panel. Đồng bộ sẽ ghi lại file và
-                            restart node đó (đứt nhạc vài giây).
+                            {driftCount} node(s) are running a file that differs from the panel's config. Sync rewrites the
+                            file and restarts the node (music cuts out for a few seconds).
                         </Alert>
                     )}
                     {needsJava.length > 0 && (
                         <Alert>
-                            {needsJava.map((n) => n.nodeName).join(", ")} chưa có Java 17+. Panel không tự cài gói hệ
-                            thống — chạy tay trên node đó:
+                            {needsJava.map((n) => n.nodeName).join(", ")} has no Java 17+. The panel does not install system
+                            packages — run this on that node:
                             <CopyCode text="sudo apt-get install -y openjdk-21-jre-headless" />
                         </Alert>
                     )}
                     {needsChrome.length > 0 && (
                         <Alert>
-                            {needsChrome.map((n) => n.nodeName).join(", ")} chưa có Chrome, nên spotify-tokener không
-                            chạy được và link Spotify sẽ lỗi trên node đó. Chạy tay trên node rồi bấm Đồng bộ:
+                            {needsChrome.map((n) => n.nodeName).join(", ")} has no Chrome, so spotify-tokener cannot
+                            run and Spotify links fail on that node. Run this on the node, then press Sync:
                             {chromeArches.map((arch) => (
                                 <div key={arch}>
                                     {chromeArches.length > 1 && (
@@ -840,7 +840,7 @@ export default function LavalinkPage() {
 
                     {nodes.length === 0 ? (
                         <div className="card" style={{ padding: 30, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
-                            Chưa có node nào được bật.
+                            No node is enabled yet.
                         </div>
                     ) : (
                         <div className="card scroll-x" style={{ padding: 0 }}>
@@ -848,9 +848,9 @@ export default function LavalinkPage() {
                                 <thead>
                                     <tr>
                                         <th>Node</th>
-                                        <th>Trạng thái</th>
+                                        <th>Status</th>
                                         <th>Player</th>
-                                        <th className="hide-mobile">Phiên bản</th>
+                                        <th className="hide-mobile">Version</th>
                                         <th className="hide-mobile">RAM</th>
                                         <th className="hide-mobile">Uptime</th>
                                         <th className="hide-mobile">Restart</th>
@@ -876,37 +876,37 @@ export default function LavalinkPage() {
                         </div>
                     )}
                     <p style={{ margin: "8px 2px 0", fontSize: 11, color: "var(--text-dim)" }}>
-                        Bấm vào một node để mở nút điều khiển và log trực tiếp của nó.
+                        Click a node to open its controls and live log.
                     </p>
                 </div>
             )}
 
-            {/* ── Cấu hình ────────────────────────────────────────────────── */}
+            {/* ── Config ──────────────────────────────────────────────────── */}
             {tab === "config" && (
                 <div className="slide-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <div className="card" style={{ padding: "18px 20px" }}>
-                        <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>Vận hành</h2>
+                        <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>Operation</h2>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, alignItems: "end" }}>
-                            <Field label="Heap (-Xmx)" hint="Cờ JVM khi chạy Lavalink, không nằm trong yaml">
+                            <Field label="Heap (-Xmx)" hint="JVM flag for running Lavalink, not part of the yaml">
                                 <input className="input" value={form.heap ?? ""} onChange={set("heap")} />
                             </Field>
                             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, paddingBottom: 22 }}>
                                 <input type="checkbox" checked={!!form.autoUpdate} onChange={set("autoUpdate")} />
-                                Tự cập nhật lúc 02:00 ({form.timezone})
+                                Auto-update at 02:00 ({form.timezone})
                             </label>
                             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, paddingBottom: 22 }}>
                                 <input type="checkbox" checked={!!form.autoInstallOnNewNode} onChange={set("autoInstallOnNewNode")} />
-                                Tự cài khi thêm node
+                                Install on newly added nodes
                             </label>
                         </div>
                     </div>
 
                     <div className="card" style={{ padding: "18px 20px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-                            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, flex: 1 }}>Cấu hình dùng chung</h2>
+                            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, flex: 1 }}>Shared config</h2>
                             <div style={{ display: "flex", gap: 6 }}>
                                 <ModePill active={!eff.custom} disabled={!!busy} onClick={() => switchMode("form")}>
-                                    Form của panel
+                                    Panel form
                                 </ModePill>
                                 <ModePill active={eff.custom} disabled={!!busy} onClick={() => switchMode("file")}>
                                     File application.yml
@@ -927,36 +927,36 @@ export default function LavalinkPage() {
                         >
                             {eff.custom ? (
                                 <>
-                                    File bên dưới là cấu hình thật, panel đẩy nguyên văn xuống mọi node. Các ô nhập{" "}
-                                    <strong>sửa thẳng vào file</strong> — chỉ thay đúng giá trị đó, giữ nguyên comment,
-                                    thụt lề và mọi khối khác (plugin settings, proxy, key Spotify…).
+                                    The file below is the real config; the panel pushes it as-is to every node. The fields{" "}
+                                    <strong>edit the file directly</strong> — only that value changes; comments,
+                                    indentation and every other block (plugin settings, proxy, Spotify keys…) stay as they are.
                                 </>
                             ) : (
                                 <>
-                                    Panel tự sinh application.yml từ các ô bên dưới. Cần khai báo gì form không có thì
-                                    chuyển sang <strong>File application.yml</strong> để viết tay.
+                                    The panel generates application.yml from the fields below. For anything the form does not cover,
+                                    switch to <strong>File application.yml</strong> and write it by hand.
                                 </>
                             )}
                             {eff.parseError && (
                                 <span style={{ display: "block", marginTop: 6, color: "var(--danger)" }}>
-                                    File đang lỗi cú pháp: {eff.parseError} — sửa trong ô yaml rồi lưu lại.
+                                    The file has a syntax error: {eff.parseError} — fix it in the yaml box and save again.
                                 </span>
                             )}
                         </div>
 
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
-                            <Field label="Port" hint={eff.custom ? "ghi vào server.port" : undefined}>
+                            <Field label="Port" hint={eff.custom ? "writes server.port" : undefined}>
                                 <input className="input" value={form.port ?? ""} onChange={set("port")} />
                             </Field>
                             <Field
                                 label="Bind address"
-                                hint={eff.custom ? "ghi vào server.address" : "0.0.0.0 để node khác gọi được; 127.0.0.1 để đóng lại"}
+                                hint={eff.custom ? "writes server.address" : "0.0.0.0 so other nodes can reach it; 127.0.0.1 to close it"}
                             >
                                 <input className="input" value={form.address ?? ""} onChange={set("address")} />
                             </Field>
                             <Field
                                 label="Password"
-                                hint={eff.custom ? "ghi vào lavalink.server.password" : "Bot dùng đúng chuỗi này để xác thực"}
+                                hint={eff.custom ? "writes lavalink.server.password" : "Bots authenticate with exactly this string"}
                             >
                                 <div style={{ display: "flex", gap: 6 }}>
                                     <input
@@ -971,13 +971,13 @@ export default function LavalinkPage() {
                                         style={{ padding: "0 10px" }}
                                         onClick={() => setShowPassword((v) => !v)}
                                     >
-                                        {showPassword ? "Ẩn" : "Hiện"}
+                                        {showPassword ? "Hide" : "Show"}
                                     </button>
                                 </div>
                             </Field>
                         </div>
 
-                        <p style={{ margin: "18px 0 8px", fontSize: 12, color: "var(--text-muted)" }}>Nguồn nhạc</p>
+                        <p style={{ margin: "18px 0 8px", fontSize: 12, color: "var(--text-muted)" }}>Sources</p>
                         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
                             {sourceKeys.map((key) => (
                                 <label key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
@@ -988,13 +988,13 @@ export default function LavalinkPage() {
                         </div>
                         {!eff.custom && (
                             <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--text-dim)" }}>
-                                Khi có plugin youtube, nguồn youtube gốc tự động bị tắt — Lavalink không chạy được nếu
-                                bật cả hai.
+                                With the youtube plugin, the built-in youtube source is turned off automatically — Lavalink
+                                does not start with both on.
                             </p>
                         )}
 
                         <p style={{ margin: "18px 0 8px", fontSize: 12, color: "var(--text-muted)" }}>
-                            Plugin{eff.custom ? " — lavalink.plugins trong file" : ""}
+                            Plugins{eff.custom ? " — lavalink.plugins in the file" : ""}
                         </p>
                         {(form.plugins || []).map((p, i) => (
                             <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
@@ -1014,7 +1014,7 @@ export default function LavalinkPage() {
                                 />
                                 <label
                                     style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}
-                                    title="Bản snapshot — lấy từ repo snapshot thay vì release"
+                                    title="Snapshot build — from the snapshot repo instead of releases"
                                 >
                                     <input
                                         type="checkbox"
@@ -1036,7 +1036,7 @@ export default function LavalinkPage() {
                                     style={{ padding: "0 12px" }}
                                     onClick={() => setForm((f) => ({ ...f, plugins: f.plugins.filter((_, idx) => idx !== i) }))}
                                 >
-                                    Xoá
+                                    Remove
                                 </button>
                             </div>
                         ))}
@@ -1054,18 +1054,18 @@ export default function LavalinkPage() {
                                 }))
                             }
                         >
-                            + Thêm plugin
+                            + Add plugin
                         </button>
 
                         {eff.custom && (
                             <div style={{ marginTop: 18 }}>
                                 <p style={{ margin: "0 0 6px", fontSize: 12, color: "var(--text-muted)" }}>
-                                    application.yml — sửa trực tiếp
+                                    application.yml — edit directly
                                 </p>
                                 <p style={{ margin: "0 0 8px", fontSize: 11, color: "var(--text-dim)" }}>
-                                    Sửa cả file ở đây, hoặc dùng các ô phía trên cho những trường quen thuộc. Lưu một
-                                    lần là áp dụng cả hai: file được ghi trước, rồi các ô mới ghi đè đúng giá trị của
-                                    chúng.
+                                    Edit the whole file here, or use the fields above for the familiar settings. One save
+                                    applies both: the file is written first, then the fields overwrite just their own
+                                    values.
                                 </p>
                                 <textarea
                                     className="input"
@@ -1094,18 +1094,18 @@ export default function LavalinkPage() {
                         }}
                     >
                         <span style={{ flex: 1, minWidth: 180, fontSize: 12, color: "var(--text-dim)" }}>
-                            Lưu chỉ ghi vào panel. Node chỉ đổi khi đồng bộ.
+                            Save only writes to the panel. Nodes change only when synced.
                         </span>
                         {!eff.custom && (
                             <button className="btn-ghost" disabled={!!busy} onClick={previewYaml}>
-                                Xem application.yml
+                                View application.yml
                             </button>
                         )}
                         <button className="btn-ghost" disabled={!!busy} onClick={() => save(false)}>
-                            Lưu
+                            Save
                         </button>
                         <button className="btn-primary" disabled={!!busy} onClick={() => save(true)}>
-                            Lưu và đồng bộ tất cả
+                            Save and sync all
                         </button>
                     </div>
                 </div>
@@ -1113,13 +1113,13 @@ export default function LavalinkPage() {
 
             {/* ── Modals ──────────────────────────────────────────────────── */}
             {switchPrompt && (
-                <Modal title="Chuyển về form của panel?" onClose={() => setSwitchPrompt(null)}>
+                <Modal title="Switch back to the panel form?" onClose={() => setSwitchPrompt(null)}>
                     <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--text-muted)" }}>
-                        Form chỉ sinh ra những gì nó mô tả được. Những phần sau đang có trong file sẽ{" "}
-                        <strong style={{ color: "var(--danger)" }}>biến mất</strong> ở lần đồng bộ kế tiếp:
+                        The form only generates what it can describe. These parts of the file will{" "}
+                        <strong style={{ color: "var(--danger)" }}>disappear</strong> on the next sync:
                     </p>
                     {switchPrompt.dropped.length === 0 ? (
-                        <p style={{ fontSize: 13, color: "var(--success)" }}>Không mất gì cả.</p>
+                        <p style={{ fontSize: 13, color: "var(--success)" }}>Nothing is lost.</p>
                     ) : (
                         <ul style={{ margin: "0 0 14px", paddingLeft: 20, fontSize: 13 }}>
                             {switchPrompt.dropped.map((d) => (
@@ -1130,15 +1130,15 @@ export default function LavalinkPage() {
                         </ul>
                     )}
                     <p style={{ margin: "0 0 14px", fontSize: 12, color: "var(--text-dim)" }}>
-                        Port, password, nguồn và danh sách plugin được giữ lại. Node vẫn chạy file cũ cho đến khi
-                        bạn bấm Đồng bộ.
+                        Port, password, sources and the plugin list are kept. Nodes keep running the old file until
+                        you press Sync.
                     </p>
                     <div style={{ display: "flex", gap: 8 }}>
                         <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setSwitchPrompt(null)}>
-                            Giữ nguyên file
+                            Keep the file
                         </button>
                         <button className="btn-danger" style={{ flex: 1 }} disabled={!!busy} onClick={confirmSwitchToForm}>
-                            Vẫn chuyển
+                            Switch anyway
                         </button>
                     </div>
                 </Modal>
@@ -1198,7 +1198,7 @@ function Modal({ title, onClose, children }) {
                 <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
                     <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: 1 }}>{title}</h3>
                     <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={onClose}>
-                        Đóng
+                        Close
                     </button>
                 </div>
                 {children}

@@ -601,8 +601,8 @@ async function _processChoice(orderId, order, token) {
 /** Duyệt một đơn manual_review: "retry" chạy lại, "forfeit" tịch thu, "cancel" huỷ. */
 async function resolveManual(orderId, action) {
     const order = await _get(orderId);
-    if (!order) throw _err("Không tìm thấy đơn", 404);
-    if (order.status !== "manual_review") throw _err("Đơn không ở trạng thái chờ duyệt");
+    if (!order) throw _err("Order not found", 404);
+    if (order.status !== "manual_review") throw _err("The order is not waiting for review");
 
     if (action === "retry") {
         await _patch(orderId, { status: "paid", error: null });
@@ -618,7 +618,7 @@ async function resolveManual(orderId, action) {
         _dispatch(order, { type: "refund_due", status: "refund_due" });
         return _shape(await _get(orderId));
     }
-    throw _err(`Hành động không hợp lệ: ${action}`);
+    throw _err(`Invalid action: ${action}`);
 }
 
 // ── Liệt kê ──────────────────────────────────────────────────────────────────────

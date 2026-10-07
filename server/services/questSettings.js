@@ -67,13 +67,13 @@ const peek = () => cache ?? _merge(null);
 
 function _time(v, label) {
     const t = String(v ?? "").trim();
-    if (!TIME_RE.test(t)) throw _bad(`${label}: giờ phải có dạng HH:MM (00:00–23:59).`);
+    if (!TIME_RE.test(t)) throw _bad(`${label}: the time must look like HH:MM (00:00–23:59).`);
     return t;
 }
 
 function _int(v, min, max, label) {
     const n = Number(v);
-    if (!Number.isInteger(n) || n < min || n > max) throw _bad(`${label} phải là số nguyên ${min}–${max}.`);
+    if (!Number.isInteger(n) || n < min || n > max) throw _bad(`${label} must be a whole number ${min}–${max}.`);
     return n;
 }
 
@@ -85,23 +85,23 @@ async function update(patch = {}) {
     if (patch.run) {
         const r = patch.run;
         if (r.enabled !== undefined) next.run.enabled = !!r.enabled;
-        if (r.time !== undefined) next.run.time = _time(r.time, "Giờ chạy");
+        if (r.time !== undefined) next.run.time = _time(r.time, "Run time");
         if (r.days !== undefined) {
-            if (!Array.isArray(r.days)) throw _bad("Ngày chạy phải là danh sách.");
+            if (!Array.isArray(r.days)) throw _bad("Run days must be a list.");
             const days = [...new Set(r.days.map(Number))].sort((a, b) => a - b);
-            if (days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw _bad("Ngày chạy không hợp lệ.");
+            if (days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) throw _bad("Invalid run days.");
             next.run.days = days;
         }
-        if (next.run.enabled && !next.run.days.length) throw _bad("Chọn ít nhất một ngày chạy (hoặc tắt lịch chạy).");
+        if (next.run.enabled && !next.run.days.length) throw _bad("Pick at least one run day (or turn the schedule off).");
     }
     if (patch.enroll) {
         const e = patch.enroll;
         if (e.enabled !== undefined) next.enroll.enabled = !!e.enabled;
-        if (e.time !== undefined) next.enroll.time = _time(e.time, "Giờ nhận quest");
+        if (e.time !== undefined) next.enroll.time = _time(e.time, "Enroll time");
     }
-    if (patch.concurrency !== undefined) next.concurrency = _int(patch.concurrency, 1, 10, "Số account chạy song song");
+    if (patch.concurrency !== undefined) next.concurrency = _int(patch.concurrency, 1, 10, "Accounts running in parallel");
     if (patch.accountDelaySec !== undefined)
-        next.accountDelaySec = _int(patch.accountDelaySec, 0, 300, "Nghỉ giữa hai account (giây)");
+        next.accountDelaySec = _int(patch.accountDelaySec, 0, 300, "Pause between two accounts (seconds)");
 
     await db.set(KEY, next);
     cache = next;

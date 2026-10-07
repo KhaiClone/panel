@@ -153,7 +153,7 @@ const toProduct = (r) =>
 const productRow = (ref) => conn().prepare("SELECT * FROM stock_products WHERE id = ? OR code = ?").get(String(ref || ""), String(ref || "").toLowerCase());
 const requireProduct = (ref) => {
     const r = productRow(ref);
-    if (!r) throw httpError(404, "Không tìm thấy loại hàng");
+    if (!r) throw httpError(404, "Product not found");
     return r;
 };
 
@@ -161,10 +161,10 @@ const listProducts = () => conn().prepare("SELECT * FROM stock_products ORDER BY
 const getProduct = (ref) => toProduct(requireProduct(ref));
 
 const checkIdentity = ({ name, code }, exceptId = null) => {
-    if (!name) throw httpError(400, "Tên loại hàng là bắt buộc");
-    if (!CODE.test(code)) throw httpError(400, "Mã chỉ gồm a-z, 0-9, - và _ (tối đa 32 ký tự)");
+    if (!name) throw httpError(400, "The product name is required");
+    if (!CODE.test(code)) throw httpError(400, "The code may only use a-z, 0-9, - and _ (up to 32 characters)");
     const clash = conn().prepare("SELECT id FROM stock_products WHERE code = ? AND id != ?").get(code, exceptId || "");
-    if (clash) throw httpError(409, `Mã "${code}" đã có loại hàng khác dùng`);
+    if (clash) throw httpError(409, `Another product already uses the code "${code}"`);
 };
 
 const createProduct = (input = {}) => {
@@ -198,7 +198,7 @@ const deleteProduct = (ref) => {
     const row = requireProduct(ref);
     const c = conn();
     if (c.prepare("SELECT 1 FROM stock_deliveries WHERE product_id = ? AND status = 'pending'").get(row.id)) {
-        throw httpError(409, "Đang có đơn giao dở của loại hàng này - thử lại sau vài phút");
+        throw httpError(409, "A delivery of this product is in progress — try again in a few minutes");
     }
     c.transaction(() => {
         c.prepare("DELETE FROM stock_deliveries WHERE product_id = ?").run(row.id);
@@ -231,10 +231,10 @@ const splitItems = (text, multiline) => {
 const addItems = (ref, { text, allowDuplicates = false } = {}) => {
     const row = requireProduct(ref);
     const items = splitItems(text, JSON.parse(row.config).multiline);
-    if (!items.length) throw httpError(400, "Không có item nào để thêm");
-    if (items.length > MAX_PASTE) throw httpError(400, `Tối đa ${MAX_PASTE} item mỗi lần thêm`);
+    if (!items.length) throw httpError(400, "No items to add");
+    if (items.length > MAX_PASTE) throw httpError(400, `At most ${MAX_PASTE} items per paste`);
     const long = items.findIndex((i) => i.length > MAX_ITEM);
-    if (long !== -1) throw httpError(400, `Item thứ ${long + 1} dài quá ${MAX_ITEM} ký tự`);
+    if (long !== -1) throw httpError(400, `Item ${long + 1} is longer than ${MAX_ITEM} characters`);
 
     const c = conn();
     const seen = new Set(allowDuplicates ? [] : c.prepare("SELECT fp FROM stock_items WHERE product_id = ?").pluck().all(row.id));
@@ -269,7 +269,7 @@ const listItems = (ref) => {
 const deleteItem = (ref, itemId) => {
     const row = requireProduct(ref);
     const res = conn().prepare("DELETE FROM stock_items WHERE id = ? AND product_id = ? AND status = 'available'").run(Number(itemId), row.id);
-    if (!res.changes) throw httpError(404, "Item không còn trong kho (đã giao hoặc đang giao)");
+    if (!res.changes) throw httpError(404, "The item is no longer in stock (delivered or being delivered)");
     return { deleted: 1, counts: countsOf(row.id) };
 };
 
@@ -338,13 +338,13 @@ const finish = (deliveryId, result) => {
  */
 const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "panel" } = {}) => {
     buyerId = String(buyerId || "").trim();
-    if (!SNOWFLAKE.test(buyerId)) throw httpError(400, "Discord ID của khách không hợp lệ");
+    if (!SNOWFLAKE.test(buyerId)) throw httpError(400, "Invalid buyer Discord ID");
     const p = toProduct(requireProduct(product));
-    if (!p.enabled) throw httpError(409, `"${p.name}" đang tắt`);
+    if (!p.enabled) throw httpError(409, `"${p.name}" is turned off`);
 
     const target = discordBus.handlerOf(CMD);
-    if (!target) throw httpError(503, `ArnTo-assistant chưa nhận lệnh "${CMD}" - cập nhật và khởi động lại bot`);
-    if (!discordBus.status().ready) throw httpError(503, "Discord bus của panel chưa sẵn sàng");
+    if (!target) throw httpError(503, `ArnTo-assistant has not announced "${CMD}" — update and restart the bot`);
+    if (!discordBus.status().ready) throw httpError(503, "The panel's Discord bus is not ready");
 
     // From the panel the buyer is only an id: the panel's bot looks them up
     // (an unknown id fails here, before anything is reserved).
@@ -352,7 +352,7 @@ const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "p
         try {
             buyerTag = (await discordBus.userTag(buyerId)) || null;
         } catch (err) {
-            if (err.code === 10013) throw httpError(404, "Không tìm thấy người dùng Discord này");
+            if (err.code === 10013) throw httpError(404, "No Discord user with this ID");
         }
     }
 
@@ -383,7 +383,7 @@ const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "p
         );
         return it;
     })();
-    if (!item) throw httpError(409, `"${p.name}" đã hết hàng`);
+    if (!item) throw httpError(409, `"${p.name}" is out of stock`);
 
     const remaining = () => countsOf(p.id).available;
     inFlight.add(id);
@@ -408,7 +408,7 @@ const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "p
         );
     } catch (err) {
         // Unanswered: it may still be DM'd before the deadline — settle() decides from the outbox.
-        if (err.status === 504) throw httpError(504, "ArnTo-assistant chưa trả lời - nếu không giao được trước hạn, item sẽ tự về kho");
+        if (err.status === 504) throw httpError(504, "ArnTo-assistant has not answered — if it cannot deliver before the deadline, the item goes back to stock");
         release(id); // the assistant failed it: nothing was sent
         throw err;
     } finally {
@@ -475,8 +475,8 @@ const listDeliveries = ({ productId, limit = 1000 } = {}) => {
 
 const deliveryRow = (id) => {
     const r = conn().prepare("SELECT * FROM stock_deliveries WHERE id = ?").get(String(id));
-    if (!r) throw httpError(404, "Không tìm thấy đơn giao");
-    if (r.status !== "delivered") throw httpError(409, "Đơn này đang giao dở");
+    if (!r) throw httpError(404, "Delivery not found");
+    if (r.status !== "delivered") throw httpError(409, "This delivery is still in progress");
     return r;
 };
 const getDelivery = (id) => toDelivery(conn().prepare(`${DELIVERY_SELECT} WHERE d.id = ?`).get(String(id)));
@@ -485,7 +485,7 @@ const getDelivery = (id) => toDelivery(conn().prepare(`${DELIVERY_SELECT} WHERE 
 const extendDelivery = (id, days) => {
     const r = deliveryRow(id);
     const n = Math.round(Number(days));
-    if (!(n >= 1 && n <= 3650)) throw httpError(400, "Số ngày gia hạn không hợp lệ");
+    if (!(n >= 1 && n <= 3650)) throw httpError(400, "Invalid number of days");
     const now = Date.now();
     const expiresAt = Math.max(r.expires_at || now, now) + n * DAY;
     conn()

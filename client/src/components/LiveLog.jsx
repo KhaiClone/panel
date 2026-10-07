@@ -25,13 +25,13 @@ const lineColor = (text) => {
 };
 
 const STATE_LABEL = {
-    connecting: { text: "Đang kết nối…", color: "var(--text-muted)" },
+    connecting: { text: "Connecting…", color: "var(--text-muted)" },
     live: { text: "LIVE", color: "var(--success)" },
-    retrying: { text: "Mất kết nối — đang thử lại…", color: "var(--warning)" },
-    error: { text: "Lỗi", color: "var(--danger)" },
+    retrying: { text: "Disconnected — retrying…", color: "var(--warning)" },
+    error: { text: "Error", color: "var(--danger)" },
 };
 
-export default function LiveLog({ src, height = 360, toolbarStart = null, emptyText = "Chưa có dòng log nào." }) {
+export default function LiveLog({ src, height = 360, toolbarStart = null, emptyText = "No log lines yet." }) {
     const [lines, setLines] = useState([]); // [{ id, text }]
     const [state, setState] = useState("connecting");
     const [error, setError] = useState("");
@@ -96,7 +96,7 @@ export default function LiveLog({ src, height = 360, toolbarStart = null, emptyT
                 stopped = true;
                 es.close();
                 setState("error");
-                setError(e.data || "Không đọc được log");
+                setError(e.data || "Could not read the log");
             });
             es.onerror = () => {
                 if (stopped) return;
@@ -146,7 +146,7 @@ export default function LiveLog({ src, height = 360, toolbarStart = null, emptyT
 
     const needle = filter.trim().toLowerCase();
     const shown = needle ? lines.filter((l) => l.text.toLowerCase().includes(needle)) : lines;
-    const badge = paused ? { text: "Tạm dừng", color: "var(--warning)" } : STATE_LABEL[state];
+    const badge = paused ? { text: "Paused", color: "var(--warning)" } : STATE_LABEL[state];
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -174,7 +174,7 @@ export default function LiveLog({ src, height = 360, toolbarStart = null, emptyT
                     className="input"
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
-                    placeholder="Lọc…"
+                    placeholder="Filter…"
                     style={{ width: 160, padding: "5px 10px", fontSize: 12 }}
                 />
                 <button
@@ -184,16 +184,16 @@ export default function LiveLog({ src, height = 360, toolbarStart = null, emptyT
                     disabled={state === "error"}
                     onClick={() => setPaused((p) => !p)}
                 >
-                    {paused ? `Tiếp tục${pending ? ` (+${pending})` : ""}` : "Tạm dừng"}
+                    {paused ? `Resume${pending ? ` (+${pending})` : ""}` : "Pause"}
                 </button>
                 <button
                     type="button"
                     className="btn-ghost"
                     style={{ padding: "5px 11px", fontSize: 12 }}
                     onClick={() => setLines([])}
-                    title="Chỉ xoá trên màn hình — file log trên node giữ nguyên"
+                    title="Clears the screen only — the log file on the node is kept"
                 >
-                    Xoá màn hình
+                    Clear screen
                 </button>
             </div>
 
@@ -217,7 +217,7 @@ export default function LiveLog({ src, height = 360, toolbarStart = null, emptyT
                         <p style={{ margin: 0, color: "var(--danger)" }}>{error}</p>
                     ) : shown.length === 0 ? (
                         <p style={{ margin: 0, color: "var(--text-dim)", fontStyle: "italic" }}>
-                            {state === "connecting" ? "Đang tải log…" : needle ? "Không có dòng nào khớp." : emptyText}
+                            {state === "connecting" ? "Loading log…" : needle ? "No matching lines." : emptyText}
                         </p>
                     ) : (
                         shown.map((l) => (
@@ -234,7 +234,7 @@ export default function LiveLog({ src, height = 360, toolbarStart = null, emptyT
                         onClick={toBottom}
                         style={{ position: "absolute", right: 14, bottom: 12, padding: "5px 12px", fontSize: 12 }}
                     >
-                        ↓ Mới nhất
+                        ↓ Latest
                     </button>
                 )}
             </div>

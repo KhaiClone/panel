@@ -90,7 +90,7 @@ const PAGE_TITLES = {
     "/terminal":     "Terminal",
     "/systems":      "Systems",
     "/orders":       "Orders",
-    "/stock":        "Kho hàng",
+    "/stock":        "Stock",
     "/decors":       "Decors",
     "/quests":       "Auto Quest",
     "/lavalink":     "Lavalink",

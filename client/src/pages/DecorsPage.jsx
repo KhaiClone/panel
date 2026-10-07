@@ -25,21 +25,21 @@ const TYPE_INFO = {
     3: { label: "Frame", color: "frame" },
     1000: { label: "Bundle", color: "bundle" },
 };
-const TYPE_FILTERS = [["all", "Tất cả"], ...Object.entries(TYPE_INFO).map(([k, t]) => [k, t.label])];
+const TYPE_FILTERS = [["all", "All"], ...Object.entries(TYPE_INFO).map(([k, t]) => [k, t.label])];
 
 const WAYS = [
-    { key: "loginWithNitro", flag: "noLoginWithNitro", label: "Login (Có Nitro)", short: "Nitro", icon: "🔵" },
-    { key: "loginWithoutNitro", flag: "noLoginWithoutNitro", label: "Login (Không Nitro)", short: "Không Nitro", icon: "⚪" },
+    { key: "loginWithNitro", flag: "noLoginWithNitro", label: "Login (with Nitro)", short: "Nitro", icon: "🔵" },
+    { key: "loginWithoutNitro", flag: "noLoginWithoutNitro", label: "Login (no Nitro)", short: "No Nitro", icon: "⚪" },
     { key: "gift", flag: "noGift", label: "Gift", short: "Gift", icon: "🎁" },
 ];
 
 const SALE_FILTERS = [
-    ["all", "Mọi trạng thái bán"],
-    ["full", "Đang bán đủ 3 loại"],
-    ["partial", "Tắt một phần"],
-    ["off", "Ngừng bán hẳn"],
-    ...WAYS.map((w) => [w.flag, `Đang tắt ${w.label}`]),
-    ["missing", "Đang bán nhưng thiếu mốc giá"],
+    ["all", "Any sale status"],
+    ["full", "On sale in all 3 ways"],
+    ["partial", "Partly off"],
+    ["off", "Not for sale"],
+    ...WAYS.map((w) => [w.flag, `${w.label} off`]),
+    ["missing", "On sale but missing a price tier"],
 ];
 
 const SECTIONS_PER_PAGE = 8;
@@ -108,9 +108,9 @@ function TypeBadge({ type, small }) {
 
 function CardPrice({ decor }) {
     const { on, from } = saleState(decor);
-    if (!on) return <div className="dc-card-price"><span className="dc-off">Ngừng bán</span></div>;
-    if (!from) return <div className="dc-card-price"><span className="dc-missing">Chưa có mốc giá</span></div>;
-    return <div className="dc-card-price">Từ <b>{money(from)}</b></div>;
+    if (!on) return <div className="dc-card-price"><span className="dc-off">Not for sale</span></div>;
+    if (!from) return <div className="dc-card-price"><span className="dc-missing">No price tier</span></div>;
+    return <div className="dc-card-price">From <b>{money(from)}</b></div>;
 }
 
 /** The three ways as chips on a card: green = sold, struck = off, red = sold without a price. */
@@ -126,7 +126,7 @@ function WayChips({ decor, saving, onToggle }) {
                         type="button"
                         className={`dc-way${on ? "" : " off"}${nopr ? " nopr" : ""}`}
                         disabled={saving}
-                        title={`${wayLabel(decor, w)}: ${on ? (nopr ? "đang bán nhưng chưa có mốc giá" : `đang bán ${money(tierPrice(decor, w))}`) : "đang tắt"} — bấm để ${on ? "tắt" : "bật"}`}
+                        title={`${wayLabel(decor, w)}: ${on ? (nopr ? "on sale but no price tier" : `on sale at ${money(tierPrice(decor, w))}`) : "off"} — click to turn ${on ? "off" : "on"}`}
                         onClick={(e) => {
                             e.stopPropagation();
                             onToggle(decor, w);
@@ -149,7 +149,7 @@ function DecorCard({ decor, saving, onOpen, onToggle }) {
             </div>
             <div className="dc-card-tags">
                 <TypeBadge type={decor.type} />
-                {decor.decorFrom === "importedDecors" && <span className="dc-badge dc-badge-limited">⚡ Giới hạn</span>}
+                {decor.decorFrom === "importedDecors" && <span className="dc-badge dc-badge-limited">⚡ Limited</span>}
             </div>
             <div className="dc-card-info">
                 <h3 className="dc-card-name">{decor.name}</h3>
@@ -160,7 +160,7 @@ function DecorCard({ decor, saving, onOpen, onToggle }) {
     );
 }
 
-/** "Hàng loạt…" — switch one way (or all three) for every decor in `items`. */
+/** "Bulk…" — switch one way (or all three) for every decor in `items`. */
 function BulkSelect({ items, label, onRun }) {
     return (
         <select
@@ -169,16 +169,16 @@ function BulkSelect({ items, label, onRun }) {
             disabled={!items.length}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => e.target.value && onRun(e.target.value, items)}
-            title={`Áp dụng cho ${items.length} decor`}
+            title={`Applies to ${items.length} decor(s)`}
         >
             <option value="">{label}</option>
-            <optgroup label="Tắt">
-                {WAYS.map((w) => <option key={w.flag} value={`off:${w.flag}`}>Tắt {w.label}</option>)}
-                <option value="off:all">Tắt cả 3 (ngừng bán)</option>
+            <optgroup label="Turn off">
+                {WAYS.map((w) => <option key={w.flag} value={`off:${w.flag}`}>Turn off {w.label}</option>)}
+                <option value="off:all">Turn off all 3 (stop selling)</option>
             </optgroup>
-            <optgroup label="Bật">
-                {WAYS.map((w) => <option key={w.flag} value={`on:${w.flag}`}>Bật {w.label}</option>)}
-                <option value="on:all">Bật cả 3</option>
+            <optgroup label="Turn on">
+                {WAYS.map((w) => <option key={w.flag} value={`on:${w.flag}`}>Turn on {w.label}</option>)}
+                <option value="on:all">Turn on all 3</option>
             </optgroup>
         </select>
     );
@@ -225,16 +225,16 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
     return createPortal(
         <div className="modal-overlay" onClick={onClose}>
             <div className="card dc-modal decor-page fade-in" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dc-modal-close" onClick={onClose} aria-label="Đóng">✕</button>
+                <button type="button" className="dc-modal-close" onClick={onClose} aria-label="Close">✕</button>
                 <div className="dc-modal-layout">
                     <div className="dc-modal-media">
                         <div className="dc-modal-frame">
                             <DecorPreview decor={decor} replay={replay} />
                         </div>
                         {decor.type === 1 && decor.effects?.length > 0 && (
-                            <button type="button" className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setReplay((n) => n + 1)}>▶ Phát lại hiệu ứng</button>
+                            <button type="button" className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setReplay((n) => n + 1)}>▶ Replay animation</button>
                         )}
-                        {imported && <span className="dc-badge dc-badge-limited" style={{ padding: "4px 10px" }}>⚡ Decor Giới Hạn</span>}
+                        {imported && <span className="dc-badge dc-badge-limited" style={{ padding: "4px 10px" }}>⚡ Limited Decor</span>}
                     </div>
 
                     <div style={{ minWidth: 0 }}>
@@ -244,10 +244,10 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                         {decor.summary && <p className="dc-modal-summary">{decor.summary}</p>}
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 11 }}>
                             <span className="mono" style={{ color: "var(--text-dim)" }}>{decor.sku_id}</span>
-                            <button type="button" className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => copy("sku", decor.sku_id)}>{copied === "sku" ? "Đã chép ✓" : "Chép sku"}</button>
+                            <button type="button" className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => copy("sku", decor.sku_id)}>{copied === "sku" ? "Copied ✓" : "Copy sku"}</button>
                         </div>
 
-                        <div className="dc-section-label">Giá &amp; trạng thái bán</div>
+                        <div className="dc-section-label">Prices &amp; sale status</div>
                         <div className="dc-price-rows">
                             {WAYS.map((w) => {
                                 const on = sells(decor, w);
@@ -261,17 +261,17 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                                             disabled={saving}
                                             onClick={() => onToggle(decor, w)}
                                             aria-pressed={on}
-                                            title={on ? "Đang bán — bấm để tắt" : "Đang tắt — bấm để bật"}
+                                            title={on ? "On sale — click to turn off" : "Off — click to turn on"}
                                         />
                                         <span className="dc-price-row-label">{w.icon} {wayLabel(decor, w)}</span>
                                         <div className="dc-price-row-vals">
                                             {orig != null && <><span className="dc-price-orig">{money(orig)}</span><span style={{ color: "var(--text-dim)" }}>→</span></>}
                                             {!on ? (
-                                                <span className="dc-price-note">Không bán{price ? ` (${money(price)})` : ""}</span>
+                                                <span className="dc-price-note">Not sold{price ? ` (${money(price)})` : ""}</span>
                                             ) : price ? (
                                                 <span className="dc-price-sell">{money(price)}</span>
                                             ) : (
-                                                <span className="dc-price-missing">Chưa có mốc giá</span>
+                                                <span className="dc-price-missing">No price tier</span>
                                             )}
                                         </div>
                                     </div>
@@ -279,12 +279,12 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                             })}
                         </div>
                         <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "6px 0 0" }}>
-                            Loại đang tắt hiện “Không bán” trên site decor và trong /decor-find của bot.
+                            A way that is off shows “Không bán” on the decor site and in the bot's /decor-find.
                         </p>
 
                         {decor.type === 1000 && decor.items?.length > 0 && (
                             <>
-                                <div className="dc-section-label">Bao gồm</div>
+                                <div className="dc-section-label">Includes</div>
                                 <div className="dc-members">
                                     {decor.items.map((m) => (
                                         <button key={m.sku_id} type="button" className="dc-member" onClick={() => onOpen(m.sku_id)}>
@@ -299,27 +299,27 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
 
                         {imported && (
                             <>
-                                <div className="dc-section-label">Decor đã import</div>
+                                <div className="dc-section-label">Imported decor</div>
                                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                                     <select
                                         className="input"
                                         style={{ flex: "1 1 200px", minWidth: 0, padding: "6px 10px", fontSize: 12 }}
-                                        title="Theme (mục hiển thị trên site)"
+                                        title="Theme (the section it shows under on the site)"
                                         value={decor.category_sku_id ?? ""}
                                         disabled={saving}
                                         onChange={(e) => onTheme(decor, e.target.value || null)}
                                     >
-                                        <option value="">— Khác —</option>
+                                        <option value="">— Other —</option>
                                         {categories.map((c) => <option key={c.sku_id} value={c.sku_id}>{c.name}</option>)}
                                     </select>
-                                    <button type="button" className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => onDelete(decor)}>Xóa</button>
+                                    <button type="button" className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => onDelete(decor)}>Delete</button>
                                 </div>
                             </>
                         )}
 
                         <div style={{ marginTop: 20 }}>
                             <button type="button" className="btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }} onClick={() => copy("shop", `https://discord.com/shop#itemSkuId=${decor.sku_id}`)}>
-                                {copied === "shop" ? "Đã sao chép ✓" : "Sao chép link Discord Shop"}
+                                {copied === "shop" ? "Copied ✓" : "Copy Discord Shop link"}
                             </button>
                         </div>
                     </div>
@@ -354,9 +354,9 @@ function ImportForm({ onImported }) {
         setBusy(true); setMsg(null);
         try {
             const { data } = await api.post("/decors/import", { deco: deco.trim() }, { timeout: 75_000 });
-            const parts = [`Đã import "${data.decor?.name}" (${data.decor?.sku_id})`];
-            if (data.importedMembers?.length) parts.push(`+${data.importedMembers.length} decor trong bundle`);
-            if (data.failedMembers?.length) parts.push(`⚠ ${data.failedMembers.length} decor trong bundle không lấy được`);
+            const parts = [`Imported "${data.decor?.name}" (${data.decor?.sku_id})`];
+            if (data.importedMembers?.length) parts.push(`+${data.importedMembers.length} decor(s) in the bundle`);
+            if (data.failedMembers?.length) parts.push(`⚠ ${data.failedMembers.length} decor(s) in the bundle could not be fetched`);
             setMsg({ ok: true, text: parts.join(" · ") });
             setDeco(""); setPreview(null);
             onImported();
@@ -368,14 +368,14 @@ function ImportForm({ onImported }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-                Dán SKU ID hoặc link shop — bot tự lấy đủ dữ liệu theo loại decor, giống <code>/decor-load</code>.
+                Paste a SKU ID or a shop link — the bot fetches everything for that decor type, like <code>/decor-load</code>.
             </p>
             <input
                 className="input mono"
                 value={deco}
                 onChange={(e) => setDeco(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && doPreview()}
-                placeholder="1491907428344795276 hoặc https://discord.com/shop#itemSkuId=…"
+                placeholder="1491907428344795276 or https://discord.com/shop#itemSkuId=…"
                 autoFocus
             />
             {msg && (
@@ -395,7 +395,7 @@ function ImportForm({ onImported }) {
                             {money(preview.prices?.withNitro)} (Nitro) · {money(preview.prices?.withoutNitro)}
                         </p>
                         <details style={{ marginTop: 6 }}>
-                            <summary style={{ fontSize: 11, color: "var(--text-dim)", cursor: "pointer" }}>Dữ liệu thô</summary>
+                            <summary style={{ fontSize: 11, color: "var(--text-dim)", cursor: "pointer" }}>Raw data</summary>
                             <pre className="mono" style={{ margin: "6px 0 0", padding: 10, background: "var(--bg-input)", borderRadius: 8, fontSize: 11, maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                                 {JSON.stringify(preview, null, 2)}
                             </pre>
@@ -404,8 +404,8 @@ function ImportForm({ onImported }) {
                 </div>
             )}
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button type="button" className="btn-ghost" disabled={busy || !deco.trim()} onClick={doPreview}>Xem trước</button>
-                <button type="button" className="btn-primary" disabled={busy || !deco.trim()} onClick={doImport}>{busy ? "Đang xử lý…" : "Import"}</button>
+                <button type="button" className="btn-ghost" disabled={busy || !deco.trim()} onClick={doPreview}>Preview</button>
+                <button type="button" className="btn-primary" disabled={busy || !deco.trim()} onClick={doImport}>{busy ? "Working…" : "Import"}</button>
             </div>
         </div>
     );
@@ -420,7 +420,7 @@ function ImportModal({ onClose, onImported }) {
     return createPortal(
         <div className="modal-overlay" onClick={onClose}>
             <div className="card fade-in modal-card-mobile" style={{ width: "100%", maxWidth: 560, position: "relative" }} onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dc-modal-close decor-page" onClick={onClose} aria-label="Đóng">✕</button>
+                <button type="button" className="dc-modal-close decor-page" onClick={onClose} aria-label="Close">✕</button>
                 <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 12px" }}>Import decor</h3>
                 <ImportForm onImported={onImported} />
             </div>
@@ -464,7 +464,7 @@ export default function DecorsPage() {
             setDecors(list);
             setError("");
         } catch (err) {
-            setError(errText(err, "Không tải được dữ liệu decor"));
+            setError(errText(err, "Could not load the decor data"));
         } finally {
             setLoading(false);
         }
@@ -509,7 +509,7 @@ export default function DecorsPage() {
             groups.delete(cat.sku_id);
         }
         const rest = [...groups.values()].flat();
-        if (rest.length) out.push({ key: "__other", cat: { name: "Khác" }, items: rest });
+        if (rest.length) out.push({ key: "__other", cat: { name: "Other" }, items: rest });
         return out;
     }, [filtered, sectionCats]);
 
@@ -551,7 +551,7 @@ export default function DecorsPage() {
             await api.patch(`/decors/${decor.sku_id}`, patch);
         } catch (err) {
             setFlags([decor.sku_id], undo);
-            notify(false, errText(err, "Không lưu được"));
+            notify(false, errText(err, "Could not save"));
         } finally {
             markSaving(decor.sku_id, false);
         }
@@ -561,13 +561,13 @@ export default function DecorsPage() {
         const [mode, which] = action.split(":");
         const flags = which === "all" ? WAYS.map((w) => w.flag) : [which];
         const patch = Object.fromEntries(flags.map((f) => [f, mode === "off"]));
-        const what = which === "all" ? "cả 3 loại" : WAYS.find((w) => w.flag === which).label;
+        const what = which === "all" ? "all 3 ways" : WAYS.find((w) => w.flag === which).label;
         const changing = items.filter((d) => flags.some((f) => !!d[f] !== (mode === "off")));
-        if (!changing.length) return notify(true, `Cả ${items.length} decor đều đã ${mode === "off" ? "tắt" : "bật"} ${what}.`);
+        if (!changing.length) return notify(true, `All ${items.length} decor(s) already have ${what} ${mode === "off" ? "off" : "on"}.`);
         setConfirm({
-            title: `${mode === "off" ? "Tắt" : "Bật"} ${what} cho ${changing.length} decor?`,
-            message: `${changing.length} trên ${items.length} decor đang chọn sẽ ${mode === "off" ? "ngừng bán" : "được bán"} ${what} — trên site decor và trong /decor-find.`,
-            confirmText: mode === "off" ? "Tắt" : "Bật",
+            title: `Turn ${mode === "off" ? "off" : "on"} ${what} for ${changing.length} decor(s)?`,
+            message: `${changing.length} of the ${items.length} selected decor(s) will ${mode === "off" ? "stop being sold" : "be sold"} as ${what} — on the decor site and in /decor-find.`,
+            confirmText: mode === "off" ? "Turn off" : "Turn on",
             danger: mode === "off",
             onConfirm: async () => {
                 setConfirm(null);
@@ -575,9 +575,9 @@ export default function DecorsPage() {
                 try {
                     const { data } = await api.patch("/decors", { sku_ids: skus, ...patch });
                     setFlags(skus, patch);
-                    notify(true, data.message || `Đã cập nhật ${skus.length} decor`);
+                    notify(true, data.message || `Updated ${skus.length} decor(s)`);
                 } catch (err) {
-                    notify(false, errText(err, "Không lưu được"));
+                    notify(false, errText(err, "Could not save"));
                 }
             },
         });
@@ -589,7 +589,7 @@ export default function DecorsPage() {
             await api.patch(`/decors/${decor.sku_id}`, { category_sku_id: category });
             setFlags([decor.sku_id], { category_sku_id: category });
         } catch (err) {
-            notify(false, errText(err, "Không đổi được theme"));
+            notify(false, errText(err, "Could not change the theme"));
         } finally {
             markSaving(decor.sku_id, false);
         }
@@ -597,19 +597,19 @@ export default function DecorsPage() {
 
     const askDelete = (decor) =>
         setConfirm({
-            title: `Xóa decor "${decor.name}"?`,
-            message: "Chỉ xóa khỏi importedDecors (decor import tay). Decor load từ shop không bị ảnh hưởng.",
-            confirmText: "Xóa",
+            title: `Delete decor "${decor.name}"?`,
+            message: "Only removes it from importedDecors (hand-imported decor). Decor loaded from the shop are not affected.",
+            confirmText: "Delete",
             danger: true,
             onConfirm: async () => {
                 setConfirm(null);
                 try {
                     await api.delete(`/decors/import/${decor.sku_id}`);
                     setOpenSku(null);
-                    notify(true, `Đã xóa "${decor.name}"`);
+                    notify(true, `Deleted "${decor.name}"`);
                     fetchDecors();
                 } catch (err) {
-                    notify(false, errText(err, "Xóa thất bại"));
+                    notify(false, errText(err, "Delete failed"));
                 }
             },
         });
@@ -627,7 +627,7 @@ export default function DecorsPage() {
                 <div>
                     <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Decor</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
-                        Như site decor, kèm công tắc bán từng loại: Login có Nitro, Login không Nitro, Gift.
+                        Like the decor site, with a sale switch per way: Login with Nitro, Login without Nitro, Gift.
                     </p>
                 </div>
                 <button type="button" className="btn-primary" onClick={() => setImporting(true)}>＋ Import decor</button>
@@ -635,7 +635,7 @@ export default function DecorsPage() {
 
             <div className="dc-tabs">
                 <button type="button" className={`dc-tab${tab === "decors" ? " active" : ""}`} onClick={() => setTab("decors")}>Decor ({decors.length})</button>
-                <button type="button" className={`dc-tab${tab === "prices" ? " active" : ""}`} onClick={() => setTab("prices")}>Bảng giá</button>
+                <button type="button" className={`dc-tab${tab === "prices" ? " active" : ""}`} onClick={() => setTab("prices")}>Price tiers</button>
             </div>
 
             {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13 }}>{error}</div>}
@@ -646,11 +646,11 @@ export default function DecorsPage() {
                 <>
                     <div className="dc-toolbar">
                         <div className="dc-toolbar-row">
-                            <input className="input" style={{ flex: "1 1 220px", minWidth: 0, padding: "7px 12px", fontSize: 13 }} placeholder="Tìm tên hoặc sku_id…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                            <input className="input" style={{ flex: "1 1 220px", minWidth: 0, padding: "7px 12px", fontSize: 13 }} placeholder="Search name or sku_id…" value={search} onChange={(e) => setSearch(e.target.value)} />
                             <select className="input" style={{ width: "auto", padding: "7px 10px", fontSize: 12 }} value={source} onChange={(e) => setSource(e.target.value)}>
-                                <option value="all">Mọi nguồn</option>
+                                <option value="all">All sources</option>
                                 <option value="decors">Shop (/decor-load)</option>
-                                <option value="importedDecors">Giới hạn (import tay)</option>
+                                <option value="importedDecors">Limited (hand-imported)</option>
                             </select>
                             <select className="input" style={{ width: "auto", padding: "7px 10px", fontSize: 12 }} value={sale} onChange={(e) => setSale(e.target.value)}>
                                 {SALE_FILTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -666,22 +666,22 @@ export default function DecorsPage() {
                         </div>
                         <div className="dc-toolbar-row">
                             <div className="dc-stats">
-                                <span>{filtered.length} / {decors.length} decor · {stats.imported} giới hạn</span>
-                                {stats.missing > 0 && <button type="button" className="dc-stat dc-stat--danger" onClick={() => setSale("missing")}>Thiếu mốc giá: {stats.missing}</button>}
-                                {stats.partial > 0 && <button type="button" className="dc-stat dc-stat--warn" onClick={() => setSale("partial")}>Tắt một phần: {stats.partial}</button>}
-                                {stats.off > 0 && <button type="button" className="dc-stat" onClick={() => setSale("off")}>Ngừng bán: {stats.off}</button>}
+                                <span>{filtered.length} / {decors.length} decor · {stats.imported} limited</span>
+                                {stats.missing > 0 && <button type="button" className="dc-stat dc-stat--danger" onClick={() => setSale("missing")}>Missing a price tier: {stats.missing}</button>}
+                                {stats.partial > 0 && <button type="button" className="dc-stat dc-stat--warn" onClick={() => setSale("partial")}>Partly off: {stats.partial}</button>}
+                                {stats.off > 0 && <button type="button" className="dc-stat" onClick={() => setSale("off")}>Not for sale: {stats.off}</button>}
                                 {(search || type !== "all" || source !== "all" || sale !== "all") && (
-                                    <button type="button" className="dc-stat" onClick={() => { setSearch(""); setType("all"); setSource("all"); setSale("all"); }}>✕ Bỏ lọc</button>
+                                    <button type="button" className="dc-stat" onClick={() => { setSearch(""); setType("all"); setSource("all"); setSale("all"); }}>✕ Clear filters</button>
                                 )}
                             </div>
-                            <BulkSelect items={filtered} label={`Hàng loạt cho ${filtered.length} decor đang lọc…`} onRun={runBulk} />
+                            <BulkSelect items={filtered} label={`Bulk for the ${filtered.length} filtered decor…`} onRun={runBulk} />
                         </div>
                     </div>
 
                     {loading ? (
-                        <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Đang tải decor…</div>
+                        <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading decor…</div>
                     ) : filtered.length === 0 ? (
-                        <div style={{ padding: 40, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>{decors.length ? "Không có decor nào khớp bộ lọc." : "Chưa có decor."}</div>
+                        <div style={{ padding: 40, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>{decors.length ? "No decor matches the filters." : "No decor yet."}</div>
                     ) : shownSections ? (
                         <div className="dc-sections">
                             {shownSections.map(({ key, cat, items }) => (
@@ -703,7 +703,7 @@ export default function DecorsPage() {
                                             const n = items.filter((d) => sells(d, w)).length;
                                             return <span key={w.key} style={{ color: n === items.length ? "var(--text-dim)" : "var(--warning)" }}>· {w.short} {n}/{items.length}</span>;
                                         })}
-                                        <BulkSelect items={items} label="Hàng loạt cho mục này…" onRun={runBulk} />
+                                        <BulkSelect items={items} label="Bulk for this section…" onRun={runBulk} />
                                     </div>
                                     <div className="dc-grid">{items.map(card)}</div>
                                 </section>

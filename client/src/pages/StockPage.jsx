@@ -4,17 +4,17 @@ import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Kho hàng — hàng có sẵn (tài khoản, key…) để ArnTo-assistant giao qua DM.
+//  Stock — goods kept ready (accounts, keys…) for ArnTo-assistant to DM.
 //
-//  Staff gõ /giao trên assistant (hoặc bấm "Giao" ở đây): panel bốc ngẫu nhiên
-//  1 item, assistant DM cho khách. Giao xong item rời kho và nằm trong lịch sử;
-//  khách chặn DM thì item về kho. Loại hàng bật "nhắc hết hạn" thì khách được
-//  nhắc ở mốc 72/47/24 giờ và lúc hết hạn, như nhắc gia hạn bot.
-//  Logic nằm ở server/services/stockService.js.
+//  Staff run /giao on the assistant (or press "Deliver" here): the panel picks a
+//  random item and the assistant DMs it to the buyer. Delivered items leave the
+//  stock and stay in the history; a closed DM puts the item back. Product types
+//  with reminders on remind the buyer at 72/47/24 h and at expiry, like a bot's
+//  renewal. The logic lives in server/services/stockService.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
-const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—");
+const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—");
 
 const slugify = (s) =>
     String(s || "")
@@ -26,7 +26,7 @@ const slugify = (s) =>
         .replace(/^-+|-+$/g, "")
         .slice(0, 32);
 
-// Bản sao của stockService.formatItem — chỉ để xem trước tin DM.
+// A copy of stockService.formatItem — only for the DM preview.
 const formatItem = (content, fields, separator) => {
     if (!fields.length) return { text: content };
     const byLine = content.includes("\n");
@@ -46,10 +46,10 @@ const parseFields = (s) =>
 const timeLeft = (ts) => {
     if (!ts) return null;
     const ms = ts - Date.now();
-    if (ms <= 0) return { text: "Đã hết hạn", color: "var(--danger)" };
+    if (ms <= 0) return { text: "Expired", color: "var(--danger)" };
     const days = Math.floor(ms / 86_400_000);
-    if (days >= 1) return { text: `Còn ${days} ngày`, color: days <= 3 ? "var(--warning)" : "var(--success)" };
-    return { text: `Còn ${Math.ceil(ms / 3_600_000)} giờ`, color: "var(--danger)" };
+    if (days >= 1) return { text: `${days} day${days === 1 ? "" : "s"} left`, color: days <= 3 ? "var(--warning)" : "var(--success)" };
+    return { text: `${Math.ceil(ms / 3_600_000)} h left`, color: "var(--danger)" };
 };
 
 // ── Building blocks ──────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ function Secret({ text, shown, onToggle }) {
         <span
             className="mono"
             onClick={onToggle}
-            title={shown ? "Bấm để ẩn" : "Bấm để hiện"}
+            title={shown ? "Click to hide" : "Click to show"}
             style={{ cursor: "pointer", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 12, color: shown ? "var(--text)" : "var(--text-dim)" }}
         >
             {shown ? text : "••••••••••••"}
@@ -164,16 +164,16 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
             style={{ display: "flex", flexDirection: "column", gap: 14 }}
         >
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-                <Field label="Tên loại hàng">
+                <Field label="Product name">
                     <input
                         className="input"
                         value={d.name}
                         maxLength={100}
-                        placeholder="Nitro Boost 1 tháng"
+                        placeholder="Nitro Boost 1 month"
                         onChange={(e) => set({ name: e.target.value, ...(codeTouched ? {} : { code: slugify(e.target.value) }) })}
                     />
                 </Field>
-                <Field label="Mã (dùng trong /giao)" hint="a-z, 0-9, - và _">
+                <Field label="Code (used in /giao)" hint="a-z, 0-9, - and _">
                     <input
                         className="input mono"
                         value={d.code}
@@ -187,18 +187,18 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
                 </Field>
             </div>
 
-            <Field label="Tiêu đề tin DM" hint="Để trống = tên loại hàng">
-                <input className="input" value={d.title} maxLength={256} placeholder={d.name || "Tên loại hàng"} onChange={(e) => set({ title: e.target.value })} />
+            <Field label="DM title" hint="Empty = the product name">
+                <input className="input" value={d.title} maxLength={256} placeholder={d.name || "Product name"} onChange={(e) => set({ title: e.target.value })} />
             </Field>
-            <Field label="Lời nhắn trong DM" hint="Để trống = lời cảm ơn mặc định. Hỗ trợ markdown của Discord, <#kênh>, <@người>.">
+            <Field label="DM message" hint="Empty = the default thank-you note. Discord markdown, <#channel> and <@user> work.">
                 <textarea className="input" rows={3} value={d.message} maxLength={2000} placeholder={defaultMessage} onChange={(e) => set({ message: e.target.value })} style={{ resize: "vertical", fontSize: 13, lineHeight: 1.5 }} />
             </Field>
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(90px, 1fr)", gap: 12 }}>
-                <Field label="Nhãn trường (tuỳ chọn)" hint="Ngăn cách bằng |. Có nhãn thì mỗi item được tách thành từng ô; không có thì gửi nguyên văn.">
+                <Field label="Field labels (optional)" hint="Separated by |. With labels each item is split into fields; without, it is sent as-is.">
                     <input className="input" value={d.fields} placeholder="Gmail | Password | Hash" onChange={(e) => set({ fields: e.target.value })} />
                 </Field>
-                <Field label="Dấu ngăn" hint="Item 1 dòng">
+                <Field label="Separator" hint="Single-line items">
                     <input className="input mono" value={d.separator} maxLength={5} onChange={(e) => set({ separator: e.target.value })} />
                 </Field>
             </div>
@@ -206,16 +206,16 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
             <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, cursor: "pointer" }}>
                 <Toggle checked={d.multiline} onChange={(v) => set({ multiline: v })} />
                 <span>
-                    Item nhiều dòng
+                    Multi-line items
                     <span style={{ display: "block", fontSize: 11, color: "var(--text-dim)" }}>
-                        Khi thêm hàng, các item cách nhau bằng 1 dòng trống. Có nhãn trường thì mỗi dòng là 1 ô.
+                        When adding stock, items are separated by a blank line. With field labels, each line is one field.
                     </span>
                 </span>
             </label>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
                 <Toggle checked={d.reminders.enabled} onChange={(v) => set({ reminders: { ...d.reminders, enabled: v } })} />
-                <span>Nhắc hết hạn sau</span>
+                <span>Remind of expiry after</span>
                 <input
                     className="input"
                     type="number"
@@ -226,18 +226,18 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
                     onChange={(e) => set({ reminders: { ...d.reminders, days: e.target.value } })}
                     style={{ width: 90 }}
                 />
-                <span>ngày kể từ lúc giao</span>
+                <span>days from delivery</span>
                 <span style={{ flexBasis: "100%", fontSize: 11, color: "var(--text-dim)" }}>
-                    Nhắc khách ở mốc 72, 47, 24 giờ trước hạn và lúc hết hạn - qua DM (ArnTo-Auto) và ping ở kênh cảnh báo, như nhắc gia hạn bot.
+                    The buyer is reminded 72, 47 and 24 hours before expiry and at expiry — by DM (ArnTo-Auto) and a ping in the alert channel, like a bot's renewal reminder.
                 </span>
             </div>
 
-            <Field label="Xem trước với 1 item mẫu">
+            <Field label="Preview with a sample item">
                 <textarea className="input mono" rows={d.multiline ? 3 : 1} value={sample} placeholder={d.multiline ? "user\npass" : "mail@gmail.com:matkhau:hash"} onChange={(e) => setSample(e.target.value)} style={{ resize: "vertical", fontSize: 12 }} />
             </Field>
             {preview && (
                 <div style={{ borderLeft: "4px solid var(--accent)", background: "var(--bg-input)", borderRadius: 6, padding: "10px 14px", fontSize: 13 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 6 }}>{d.title || d.name || "Tên loại hàng"}</div>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>{d.title || d.name || "Product name"}</div>
                     <div style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", marginBottom: 8, fontSize: 12 }}>{d.message || defaultMessage}</div>
                     {preview.fields ? (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 24px" }}>
@@ -256,7 +256,7 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                 <button type="submit" className="btn-primary" disabled={saving || !d.name.trim() || !d.code.trim()} style={{ padding: "8px 18px" }}>
-                    {saving ? "Đang lưu…" : isNew ? "Tạo loại hàng" : "Lưu"}
+                    {saving ? "Saving…" : isNew ? "Create product" : "Save"}
                 </button>
             </div>
         </form>
@@ -283,7 +283,7 @@ function StockTab({ product, onChanged }) {
             const { data } = await api.get(`/stock/products/${product.id}/items`);
             setItems(data.items || []);
         } catch (err) {
-            setMsg({ tone: "danger", text: errMsg(err, "Không tải được kho") });
+            setMsg({ tone: "danger", text: errMsg(err, "Could not load the stock") });
         } finally {
             setLoading(false);
         }
@@ -295,7 +295,7 @@ function StockTab({ product, onChanged }) {
         setLimit(100);
     }, [product.id]);
 
-    // Tải lại cả khi số lượng đổi - một item vừa được giao bằng /giao.
+    // Reload when the counts change too — an item was just delivered with /giao.
     useEffect(() => {
         load();
     }, [load, product.counts.available, product.counts.reserved]);
@@ -305,12 +305,12 @@ function StockTab({ product, onChanged }) {
         setMsg(null);
         try {
             const { data } = await api.post(`/stock/products/${product.id}/items`, { text, allowDuplicates: allowDup });
-            setMsg({ tone: "success", text: `Đã thêm ${data.added} item${data.duplicates ? `, bỏ qua ${data.duplicates} item trùng` : ""}.` });
+            setMsg({ tone: "success", text: `Added ${data.added} item(s)${data.duplicates ? `, skipped ${data.duplicates} duplicate(s)` : ""}.` });
             setText("");
             await load();
             onChanged();
         } catch (err) {
-            setMsg({ tone: "danger", text: errMsg(err, "Không thêm được") });
+            setMsg({ tone: "danger", text: errMsg(err, "Could not add the items") });
         } finally {
             setAdding(false);
         }
@@ -325,7 +325,7 @@ function StockTab({ product, onChanged }) {
             await load();
             onChanged();
         } catch (err) {
-            setMsg({ tone: "danger", text: errMsg(err, "Không xoá được") });
+            setMsg({ tone: "danger", text: errMsg(err, "Could not delete") });
         }
     };
 
@@ -345,8 +345,8 @@ function StockTab({ product, onChanged }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Field
-                    label="Thêm hàng"
-                    hint={product.multiline ? "Mỗi item có thể nhiều dòng - các item cách nhau bằng 1 dòng trống." : "Mỗi dòng là 1 item."}
+                    label="Add stock"
+                    hint={product.multiline ? "An item may span several lines — separate items with a blank line." : "One item per line."}
                 >
                     <textarea
                         className="input mono"
@@ -361,33 +361,33 @@ function StockTab({ product, onChanged }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
                         <input type="checkbox" checked={allowDup} onChange={(e) => setAllowDup(e.target.checked)} />
-                        Cho phép trùng (mặc định bỏ qua item đã có trong kho hoặc đã giao)
+                        Allow duplicates (by default an item already in stock or delivered is skipped)
                     </label>
                     <button className="btn-primary" style={{ marginLeft: "auto", padding: "7px 16px" }} disabled={adding || !pending} onClick={add}>
-                        {adding ? "Đang thêm…" : `Thêm ${pending || ""} item`}
+                        {adding ? "Adding…" : `Add ${pending || ""} item${pending === 1 ? "" : "s"}`}
                     </button>
                 </div>
                 {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <input className="input" style={{ flex: "1 1 200px", maxWidth: 300 }} placeholder="Tìm trong kho…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input className="input" style={{ flex: "1 1 200px", maxWidth: 300 }} placeholder="Search the stock…" value={search} onChange={(e) => setSearch(e.target.value)} />
                 <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
-                    <Toggle checked={showAll} onChange={setShowAll} /> Hiện nội dung
+                    <Toggle checked={showAll} onChange={setShowAll} /> Show contents
                 </label>
                 <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-dim)" }}>
-                    {visible.length} / {items.length} item
+                    {visible.length} / {items.length} items
                 </span>
                 <button className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12, color: "var(--danger)" }} disabled={!product.counts.available} onClick={() => setConfirm({ kind: "all" })}>
-                    Xoá hết
+                    Delete all
                 </button>
             </div>
 
             {loading ? (
-                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Đang tải…</p>
+                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !items.length ? (
                 <div className="card" style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13, borderStyle: "dashed" }}>
-                    Kho trống - dán hàng vào ô bên trên.
+                    The stock is empty — paste items in the box above.
                 </div>
             ) : (
                 <div style={{ overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 8 }}>
@@ -395,9 +395,9 @@ function StockTab({ product, onChanged }) {
                         <thead>
                             <tr style={{ background: "var(--bg-input)" }}>
                                 <th style={th}>#</th>
-                                <th style={th}>Nội dung</th>
-                                <th style={th}>Thêm lúc</th>
-                                <th style={th}>Trạng thái</th>
+                                <th style={th}>Content</th>
+                                <th style={th}>Added</th>
+                                <th style={th}>Status</th>
                                 <th style={th} />
                             </tr>
                         </thead>
@@ -410,12 +410,12 @@ function StockTab({ product, onChanged }) {
                                     </td>
                                     <td style={{ ...td, whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 12 }}>{fmtDate(i.addedAt)}</td>
                                     <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>
-                                        {i.status === "reserved" ? <span style={{ color: "var(--warning)" }}>Đang giao</span> : <span style={{ color: "var(--success)" }}>Sẵn sàng</span>}
+                                        {i.status === "reserved" ? <span style={{ color: "var(--warning)" }}>Delivering</span> : <span style={{ color: "var(--success)" }}>Available</span>}
                                     </td>
                                     <td style={{ ...td, textAlign: "right" }}>
                                         {i.status === "available" && (
                                             <button className="btn-ghost" style={{ padding: "3px 9px", fontSize: 12, color: "var(--danger)" }} onClick={() => setConfirm({ kind: "one", item: i })}>
-                                                Xoá
+                                                Delete
                                             </button>
                                         )}
                                     </td>
@@ -426,7 +426,7 @@ function StockTab({ product, onChanged }) {
                     {visible.length > limit && (
                         <div style={{ padding: 10, textAlign: "center", borderTop: "1px solid var(--border-light)" }}>
                             <button className="btn-ghost" style={{ padding: "5px 14px", fontSize: 12 }} onClick={() => setLimit((n) => n + 200)}>
-                                Xem thêm ({visible.length - limit})
+                                Show more ({visible.length - limit})
                             </button>
                         </div>
                     )}
@@ -435,13 +435,13 @@ function StockTab({ product, onChanged }) {
 
             {confirm && (
                 <ConfirmModal
-                    title={confirm.kind === "all" ? `Xoá hết hàng trong kho "${product.name}"?` : "Xoá item này?"}
+                    title={confirm.kind === "all" ? `Delete all stock of "${product.name}"?` : "Delete this item?"}
                     message={
                         confirm.kind === "all"
-                            ? `${product.counts.available} item chưa giao sẽ bị xoá. Lịch sử giao vẫn giữ nguyên.`
-                            : "Item sẽ bị xoá khỏi kho, không khôi phục được."
+                            ? `${product.counts.available} undelivered item(s) will be deleted. The delivery history stays.`
+                            : "The item will be removed from the stock. This cannot be undone."
                     }
-                    confirmText="Xoá"
+                    confirmText="Delete"
                     onConfirm={doDelete}
                     onCancel={() => setConfirm(null)}
                 />
@@ -468,7 +468,7 @@ function HistoryTab({ product, refreshKey }) {
             setRows(data.deliveries || []);
             setError("");
         } catch (err) {
-            setError(errMsg(err, "Không tải được lịch sử"));
+            setError(errMsg(err, "Could not load the history"));
         } finally {
             setLoading(false);
         }
@@ -485,7 +485,7 @@ function HistoryTab({ product, refreshKey }) {
             const { data } = await fn();
             setRows((cur) => cur.map((r) => (r.id === id ? { ...r, ...data } : r)));
         } catch (err) {
-            alert(errMsg(err, "Không thực hiện được"));
+            alert(errMsg(err, "Action failed"));
         } finally {
             setBusy(null);
         }
@@ -505,24 +505,24 @@ function HistoryTab({ product, refreshKey }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <input className="input" style={{ flex: "1 1 200px", maxWidth: 320 }} placeholder="Tìm mã giao, khách, người giao…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input className="input" style={{ flex: "1 1 200px", maxWidth: 320 }} placeholder="Search delivery ID, buyer, staff…" value={search} onChange={(e) => setSearch(e.target.value)} />
                 <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-dim)" }}>
-                    {visible.length} / {rows.length} đơn
+                    {visible.length} / {rows.length} deliveries
                 </span>
             </div>
             {error && <Notice tone="danger">{error}</Notice>}
             {loading ? (
-                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Đang tải…</p>
+                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !rows.length ? (
                 <div className="card" style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13, borderStyle: "dashed" }}>
-                    Chưa giao đơn nào.
+                    Nothing delivered yet.
                 </div>
             ) : (
                 <div style={{ overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 8 }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 820 }}>
                         <thead>
                             <tr style={{ background: "var(--bg-input)" }}>
-                                {["Mã", "Khách", "Người giao", "Giao lúc", "Hết hạn", "Nội dung", "Nhắc", ""].map((h) => (
+                                {["ID", "Buyer", "Delivered by", "Delivered", "Expires", "Content", "Remind", ""].map((h) => (
                                     <th key={h} style={th}>{h}</th>
                                 ))}
                             </tr>
@@ -542,7 +542,7 @@ function HistoryTab({ product, refreshKey }) {
                                             <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{r.via === "discord" ? "/giao" : "Panel"}</div>
                                         </td>
                                         <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: "var(--text-dim)" }}>
-                                            {r.status === "pending" ? <span style={{ color: "var(--warning)" }}>Đang giao…</span> : fmtDate(r.deliveredAt)}
+                                            {r.status === "pending" ? <span style={{ color: "var(--warning)" }}>Delivering…</span> : fmtDate(r.deliveredAt)}
                                         </td>
                                         <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>
                                             {r.expiresAt ? (
@@ -551,7 +551,7 @@ function HistoryTab({ product, refreshKey }) {
                                                     <div style={{ fontSize: 11, color: left.color }}>{left.text}</div>
                                                 </>
                                             ) : (
-                                                <span style={{ color: "var(--text-dim)" }}>Không</span>
+                                                <span style={{ color: "var(--text-dim)" }}>None</span>
                                             )}
                                         </td>
                                         <td style={{ ...td, maxWidth: 280 }}>
@@ -575,7 +575,7 @@ function HistoryTab({ product, refreshKey }) {
                                                 <Toggle
                                                     checked={r.reminders}
                                                     disabled={busy === r.id || !product.reminders.enabled}
-                                                    title={product.reminders.enabled ? "Nhắc hết hạn cho đơn này" : "Loại hàng này đang tắt nhắc hết hạn"}
+                                                    title={product.reminders.enabled ? "Expiry reminders for this delivery" : "Expiry reminders are off for this product"}
                                                     onChange={(v) => act(r.id, () => api.post(`/stock/deliveries/${r.id}/reminders`, { enabled: v }))}
                                                 />
                                             )}
@@ -591,7 +591,7 @@ function HistoryTab({ product, refreshKey }) {
                                                         setExtend(r);
                                                     }}
                                                 >
-                                                    Gia hạn
+                                                    Extend
                                                 </button>
                                             )}
                                         </td>
@@ -604,16 +604,16 @@ function HistoryTab({ product, refreshKey }) {
             )}
 
             {extend && (
-                <Modal title={`Gia hạn đơn ${extend.id}`} onClose={() => setExtend(null)} width={400}>
+                <Modal title={`Extend delivery ${extend.id}`} onClose={() => setExtend(null)} width={400}>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 14px", lineHeight: 1.6 }}>
-                        Cộng thêm ngày vào hạn hiện tại (hoặc tính từ bây giờ nếu đã hết hạn). Các mốc nhắc được tính lại.
+                        Adds days to the current expiry (or counts from now if it has passed). The reminder milestones start over.
                     </p>
-                    <Field label="Số ngày">
+                    <Field label="Days">
                         <input className="input" type="number" min={1} max={3650} value={days} onChange={(e) => setDays(e.target.value)} autoFocus />
                     </Field>
                     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-                        <button className="btn-ghost" onClick={() => setExtend(null)}>Huỷ</button>
-                        <button className="btn-primary" disabled={!(Number(days) >= 1)} onClick={doExtend}>Gia hạn</button>
+                        <button className="btn-ghost" onClick={() => setExtend(null)}>Cancel</button>
+                        <button className="btn-primary" disabled={!(Number(days) >= 1)} onClick={doExtend}>Extend</button>
                     </div>
                 </Modal>
             )}
@@ -624,9 +624,9 @@ function HistoryTab({ product, refreshKey }) {
 // ── Deliver from the panel ───────────────────────────────────────────────────
 
 const REASONS = {
-    dm_blocked: "Khách đang chặn DM - item đã về kho. Nhờ khách mở DM rồi giao lại.",
-    unknown_user: "ArnTo-assistant không tìm thấy người dùng này - item đã về kho.",
-    stale: "ArnTo-assistant nhận lệnh quá muộn nên không giao - item đã về kho.",
+    dm_blocked: "The buyer has DMs closed — the item went back to stock. Ask them to open DMs, then deliver again.",
+    unknown_user: "ArnTo-assistant could not find this user — the item went back to stock.",
+    stale: "ArnTo-assistant got the command too late and did not deliver — the item went back to stock.",
 };
 
 function DeliverModal({ products, initialId, onClose, onDone }) {
@@ -644,38 +644,38 @@ function DeliverModal({ products, initialId, onClose, onDone }) {
             const { data } = await api.post("/stock/deliver", { productId, buyerId: buyerId.trim() }, { timeout: 70_000 });
             setResult(
                 data.delivered
-                    ? { tone: "success", text: `Đã giao "${data.product}" - mã ${data.deliveryId}. Còn ${data.remaining} item trong kho.` }
-                    : { tone: "warning", text: REASONS[data.reason] || `Không giao được (${data.reason}) - item đã về kho.` },
+                    ? { tone: "success", text: `Delivered "${data.product}" — ID ${data.deliveryId}. ${data.remaining} item(s) left in stock.` }
+                    : { tone: "warning", text: REASONS[data.reason] || `Not delivered (${data.reason}) — the item went back to stock.` },
             );
             onDone();
         } catch (err) {
-            setResult({ tone: "danger", text: errMsg(err, "Không giao được") });
+            setResult({ tone: "danger", text: errMsg(err, "Could not deliver") });
         } finally {
             setBusy(false);
         }
     };
 
     return (
-        <Modal title="Giao hàng" onClose={onClose} width={440}>
+        <Modal title="Deliver" onClose={onClose} width={440}>
             <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <Field label="Loại hàng">
+                <Field label="Product">
                     <select className="input" value={productId} onChange={(e) => setProductId(e.target.value)}>
                         {products.map((p) => (
                             <option key={p.id} value={p.id} disabled={!p.enabled}>
-                                {p.name} - còn {p.counts.available}
-                                {p.enabled ? "" : " (đang tắt)"}
+                                {p.name} — {p.counts.available} left
+                                {p.enabled ? "" : " (off)"}
                             </option>
                         ))}
                     </select>
                 </Field>
-                <Field label="Discord ID của khách" hint="ArnTo-assistant sẽ DM 1 item ngẫu nhiên cho người này.">
+                <Field label="Buyer's Discord ID" hint="ArnTo-assistant DMs one random item to this user.">
                     <input className="input mono" value={buyerId} onChange={(e) => setBuyerId(e.target.value)} placeholder="871329074046435338" autoFocus />
                 </Field>
                 {result && <Notice tone={result.tone}>{result.text}</Notice>}
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <button type="button" className="btn-ghost" onClick={onClose}>Đóng</button>
+                    <button type="button" className="btn-ghost" onClick={onClose}>Close</button>
                     <button type="submit" className="btn-primary" disabled={busy || !product?.enabled || !product?.counts.available || !/^\d{17,20}$/.test(buyerId.trim())}>
-                        {busy ? "Đang giao…" : "Giao"}
+                        {busy ? "Delivering…" : "Deliver"}
                     </button>
                 </div>
             </form>
@@ -708,7 +708,7 @@ export default function StockPage() {
             setStatus(s.data);
             setError("");
         } catch (err) {
-            setError(errMsg(err, "Không tải được kho hàng"));
+            setError(errMsg(err, "Could not load the stock"));
         } finally {
             setLoading(false);
         }
@@ -737,7 +737,7 @@ export default function StockPage() {
             setSelectedId(data.id);
             setTab("stock");
         } catch (err) {
-            alert(errMsg(err, "Không tạo được loại hàng"));
+            alert(errMsg(err, "Could not create the product"));
         } finally {
             setSaving(false);
         }
@@ -749,9 +749,9 @@ export default function StockPage() {
         try {
             await api.put(`/stock/products/${selected.id}`, body);
             await load();
-            setSaveMsg({ tone: "success", text: "Đã lưu." });
+            setSaveMsg({ tone: "success", text: "Saved." });
         } catch (err) {
-            setSaveMsg({ tone: "danger", text: errMsg(err, "Không lưu được") });
+            setSaveMsg({ tone: "danger", text: errMsg(err, "Could not save") });
         } finally {
             setSaving(false);
         }
@@ -762,7 +762,7 @@ export default function StockPage() {
             await api.put(`/stock/products/${p.id}`, { enabled });
             await load();
         } catch (err) {
-            alert(errMsg(err, "Không đổi được"));
+            alert(errMsg(err, "Could not change it"));
         }
     };
 
@@ -772,7 +772,7 @@ export default function StockPage() {
             await api.delete(`/stock/products/${selected.id}`);
             await load();
         } catch (err) {
-            alert(errMsg(err, "Không xoá được"));
+            alert(errMsg(err, "Could not delete"));
         }
     };
 
@@ -782,17 +782,17 @@ export default function StockPage() {
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 18 }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
-                    <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Kho hàng</h1>
+                    <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Stock</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
-                        Hàng có sẵn để giao tự động - gõ <code className="mono">/giao</code> trên ArnTo-assistant, bot DM 1 item ngẫu nhiên cho khách.
+                        Goods ready for automatic delivery — run <code className="mono">/giao</code> on ArnTo-assistant and it DMs one random item to the buyer.
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                     <button className="btn-ghost" style={{ padding: "8px 14px" }} disabled={!products.length} onClick={() => setDeliverFor(selectedId || "")}>
-                        Giao hàng
+                        Deliver
                     </button>
                     <button className="btn-primary" style={{ padding: "8px 14px" }} onClick={() => setCreating(true)}>
-                        + Loại hàng
+                        + Product
                     </button>
                 </div>
             </div>
@@ -800,20 +800,20 @@ export default function StockPage() {
             {error && <Notice tone="danger">{error}</Notice>}
             {status && !status.deliverer && (
                 <Notice>
-                    ArnTo-assistant chưa nhận lệnh <code className="mono">stock.deliver</code> - cập nhật bot (Pull &amp; Update) rồi khởi động lại thì mới giao được.
+                    ArnTo-assistant has not announced <code className="mono">stock.deliver</code> yet — update the bot (Pull &amp; Update) and restart it before delivering.
                 </Notice>
             )}
-            {status && status.deliverer && !status.busReady && <Notice>Discord bus của panel chưa sẵn sàng - tạm thời chưa giao được.</Notice>}
+            {status && status.deliverer && !status.busReady && <Notice>The panel's Discord bus is not ready — deliveries are not possible right now.</Notice>}
             {status && needsDm && !status.dmSender && (
-                <Notice>Chưa có bot nào nhận lệnh gửi DM (ArnTo-Auto) - nhắc hết hạn sẽ chỉ ping ở kênh cảnh báo.</Notice>
+                <Notice>No bot handles DMs (ArnTo-Auto) — expiry reminders will only ping in the alert channel.</Notice>
             )}
-            {status && needsDm && !status.alertWebhook && <Notice>DISCORD_ALERT_WEBHOOK chưa đặt - nhắc hết hạn sẽ chỉ gửi qua DM.</Notice>}
+            {status && needsDm && !status.alertWebhook && <Notice>DISCORD_ALERT_WEBHOOK is not set — expiry reminders will only go by DM.</Notice>}
 
             {loading ? (
-                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Đang tải…</p>
+                <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !products.length ? (
                 <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-dim)", fontSize: 14, borderStyle: "dashed" }}>
-                    Chưa có loại hàng nào. Bấm <b>+ Loại hàng</b> để bắt đầu.
+                    No products yet. Press <b>+ Product</b> to start.
                 </div>
             ) : (
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "minmax(240px, 300px) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
@@ -840,16 +840,16 @@ export default function StockPage() {
                                             <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                                             <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{p.code}</div>
                                         </div>
-                                        <Toggle checked={p.enabled} title={p.enabled ? "Đang bật - tắt để ẩn khỏi /giao" : "Đang tắt"} onChange={(v) => toggleEnabled(p, v)} />
+                                        <Toggle checked={p.enabled} title={p.enabled ? "On — turn off to hide it from /giao" : "Off"} onChange={(v) => toggleEnabled(p, v)} />
                                     </div>
                                     <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 12 }}>
                                         <span style={{ color: p.counts.available ? "var(--success)" : "var(--danger)" }}>
-                                            <b>{p.counts.available}</b> trong kho
+                                            <b>{p.counts.available}</b> in stock
                                         </span>
                                         <span style={{ color: "var(--text-dim)" }}>
-                                            <b>{p.counts.delivered}</b> đã giao
+                                            <b>{p.counts.delivered}</b> delivered
                                         </span>
-                                        {p.reminders?.enabled && <span style={{ color: "var(--text-dim)" }}>⏰ {p.reminders.days} ngày</span>}
+                                        {p.reminders?.enabled && <span style={{ color: "var(--text-dim)" }}>⏰ {p.reminders.days} days</span>}
                                     </div>
                                 </div>
                             );
@@ -862,9 +862,9 @@ export default function StockPage() {
                                 <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{selected.name}</h2>
                                 <div className="tab-bar" style={{ marginLeft: "auto" }}>
                                     {[
-                                        ["stock", `Kho (${selected.counts.available})`],
-                                        ["history", `Lịch sử (${selected.counts.delivered})`],
-                                        ["settings", "Cài đặt"],
+                                        ["stock", `Stock (${selected.counts.available})`],
+                                        ["history", `History (${selected.counts.delivered})`],
+                                        ["settings", "Settings"],
                                     ].map(([id, label]) => (
                                         <button key={id} className={`tab-item ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
                                             {label}
@@ -872,7 +872,7 @@ export default function StockPage() {
                                     ))}
                                 </div>
                                 <button className="btn-primary" style={{ padding: "7px 14px" }} disabled={!selected.enabled || !selected.counts.available} onClick={() => setDeliverFor(selected.id)}>
-                                    Giao
+                                    Deliver
                                 </button>
                             </div>
 
@@ -884,10 +884,10 @@ export default function StockPage() {
                                     {saveMsg && <Notice tone={saveMsg.tone}>{saveMsg.text}</Notice>}
                                     <div style={{ borderTop: "1px solid var(--border-light)", paddingTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                                         <span style={{ fontSize: 12, color: "var(--text-dim)", flex: 1 }}>
-                                            Xoá loại hàng sẽ xoá luôn kho và lịch sử giao của nó, các đơn đã giao không được nhắc hết hạn nữa.
+                                            Deleting a product also deletes its stock and delivery history; its deliveries get no more expiry reminders.
                                         </span>
                                         <button className="btn-danger" style={{ padding: "7px 14px" }} onClick={() => setConfirmDelete(true)}>
-                                            Xoá loại hàng
+                                            Delete product
                                         </button>
                                     </div>
                                 </>
@@ -898,7 +898,7 @@ export default function StockPage() {
             )}
 
             {creating && (
-                <Modal title="Loại hàng mới" onClose={() => setCreating(false)}>
+                <Modal title="New product" onClose={() => setCreating(false)}>
                     <ProductForm initial={emptyDraft} defaultMessage={defaultMessage} isNew onSave={create} saving={saving} />
                 </Modal>
             )}
@@ -917,9 +917,9 @@ export default function StockPage() {
 
             {confirmDelete && selected && (
                 <ConfirmModal
-                    title={`Xoá loại hàng "${selected.name}"?`}
-                    message={`${selected.counts.available} item trong kho và ${selected.counts.delivered} đơn đã giao sẽ bị xoá. Không khôi phục được.`}
-                    confirmText="Xoá"
+                    title={`Delete product "${selected.name}"?`}
+                    message={`${selected.counts.available} item(s) in stock and ${selected.counts.delivered} delivery record(s) will be deleted. This cannot be undone.`}
+                    confirmText="Delete"
                     onConfirm={remove}
                     onCancel={() => setConfirmDelete(false)}
                 />

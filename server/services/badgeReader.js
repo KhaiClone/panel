@@ -450,14 +450,14 @@ async function replaceReaderToken(id, token) {
 /** Hỏi lại Discord xem một reader còn dùng được không, rồi cập nhật trạng thái. */
 async function verifyReader(id) {
     const token = await readerStore.getToken(id);
-    if (!token) throw _err("Không tìm thấy reader", 404);
+    if (!token) throw _err("Reader not found", 404);
     try {
         const me = await checkNitro(token);
         return readerStore.markChecked(id, {
             ok: me.hasNitro,
             premiumType: me.premiumType,
             username: me.username,
-            error: me.hasNitro ? null : "Tài khoản không còn Nitro",
+            error: me.hasNitro ? null : "The account no longer has Nitro",
         });
     } catch (err) {
         return readerStore.markChecked(id, {
@@ -491,7 +491,7 @@ async function importEnvReader() {
     const existing = await readerStore.list();
     if (existing.length) return null;
     try {
-        return await addReader(token, "Nhập từ .env");
+        return await addReader(token, "Imported from .env");
     } catch {
         return null;
     }

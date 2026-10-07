@@ -83,25 +83,25 @@ function _err(message, status = 400) {
 function _normalize(input = {}, existing = null) {
     const protocol = String(input.protocol ?? existing?.protocol ?? "http").toLowerCase();
     if (!PROTOCOLS.includes(protocol))
-        throw _err(`Giao thức không hợp lệ (chọn: ${PROTOCOLS.join(", ")}).`);
+        throw _err(`Invalid protocol (choose: ${PROTOCOLS.join(", ")}).`);
 
     const host = String(input.host ?? existing?.host ?? "").trim();
-    if (!host) throw _err("Thiếu host của proxy.");
+    if (!host) throw _err("The proxy host is missing.");
 
     const port = _num(input.port ?? existing?.port, 0);
-    if (port < 1 || port > 65535) throw _err("Port proxy không hợp lệ.");
+    if (port < 1 || port > 65535) throw _err("Invalid proxy port.");
 
     const type = String(input.type ?? existing?.type ?? "static").toLowerCase();
     if (type !== "static" && type !== "rotating")
-        throw _err("Loại proxy phải là static hoặc rotating.");
+        throw _err("The proxy type must be static or rotating.");
 
     // A rotating proxy without its rotate link is just a static proxy that lies
     // about itself, so refuse it rather than silently never rotating.
     const rotateUrl = String(input.rotateUrl ?? existing?.rotateUrl ?? "").trim();
     if (type === "rotating") {
-        if (!rotateUrl) throw _err("Proxy xoay cần link đổi IP.");
+        if (!rotateUrl) throw _err("A rotating proxy needs an IP-change link.");
         if (!/^https?:\/\//i.test(rotateUrl))
-            throw _err("Link đổi IP phải bắt đầu bằng http:// hoặc https://");
+            throw _err("The IP-change link must start with http:// or https://");
     }
 
     const uses = Array.isArray(input.uses)
@@ -221,14 +221,14 @@ async function create(input) {
 
 async function update(id, patch) {
     const existing = await get(id);
-    if (!existing) throw _err("Không tìm thấy proxy.", 404);
+    if (!existing) throw _err("Proxy not found.", 404);
     const body = _normalize(patch, existing);
     return publicView(await db.findOneAndUpdate(MODEL, { _id: id }, body));
 }
 
 async function remove(id) {
     const gone = await db.findOneAndDelete(MODEL, { _id: id });
-    if (!gone) throw _err("Không tìm thấy proxy.", 404);
+    if (!gone) throw _err("Proxy not found.", 404);
     return true;
 }
 
@@ -275,7 +275,7 @@ const ATTEMPT_TIMEOUT_MS = 12_000;
  */
 async function test(id) {
     const rec = await get(id);
-    if (!rec) throw _err("Không tìm thấy proxy.", 404);
+    if (!rec) throw _err("Proxy not found.", 404);
     const started = Date.now();
 
     let ip = null;
@@ -345,7 +345,7 @@ async function test(id) {
         reachMs,
         latencyMs: Date.now() - started,
         // Say so out loud rather than showing a blank IP and letting it read as broken.
-        note: ip ? null : "Không đọc được exit IP, nhưng proxy vẫn tới được Discord.",
+        note: ip ? null : "Could not read the exit IP, but the proxy does reach Discord.",
     };
 }
 
@@ -357,17 +357,17 @@ async function test(id) {
 function _explain(err) {
     const status = err.response?.status;
     if (status === 407)
-        return "407 — proxy từ chối user/pass. Kiểm tra lại credential, và xem nhà cung cấp có yêu cầu whitelist IP của panel không.";
-    if (status === 403) return "403 — proxy từ chối kết nối (IP của panel chưa được cấp quyền?).";
-    if (status) return `HTTP ${status} từ proxy.`;
+        return "407 — the proxy rejected the user/pass. Check the credentials, and whether the provider requires whitelisting the panel's IP.";
+    if (status === 403) return "403 — the proxy refused the connection (the panel's IP is not allowed yet?).";
+    if (status) return `HTTP ${status} from the proxy.`;
     const code = err.code || "";
-    if (code === "ECONNREFUSED") return "Proxy từ chối kết nối — sai host/port, hoặc proxy đã tắt.";
+    if (code === "ECONNREFUSED") return "The proxy refused the connection — wrong host/port, or the proxy is down.";
     // Proxy xác thực bằng IP whitelist thường cắt kết nối thẳng thay vì trả 407.
     if (code === "ECONNRESET")
-        return "Proxy cắt kết nối (ECONNRESET) — thường do IP của panel chưa nằm trong whitelist của nhà cung cấp.";
-    if (code === "ETIMEDOUT" || code === "ECONNABORTED") return "Hết thời gian chờ — proxy không phản hồi.";
-    if (code === "ENOTFOUND") return "Không phân giải được host của proxy.";
-    return err.message || "Không kết nối được qua proxy.";
+        return "The proxy dropped the connection (ECONNRESET) — usually the panel's IP is not on the provider's whitelist.";
+    if (code === "ETIMEDOUT" || code === "ECONNABORTED") return "Timed out — the proxy does not answer.";
+    if (code === "ENOTFOUND") return "Could not resolve the proxy host.";
+    return err.message || "Could not connect through the proxy.";
 }
 
 // ── Rotation ─────────────────────────────────────────────────────────────────────
@@ -385,7 +385,7 @@ function _explain(err) {
  */
 async function rotate(id, { force = false, reason = "manual" } = {}) {
     const rec = await get(id);
-    if (!rec) throw _err("Không tìm thấy proxy.", 404);
+    if (!rec) throw _err("Proxy not found.", 404);
     if (rec.type !== "rotating" || !rec.rotateUrl) return { ok: false, skipped: "not_rotating" };
 
     const minMs = (rec.rotateMinIntervalSec ?? 60) * 1000;
@@ -399,7 +399,7 @@ async function rotate(id, { force = false, reason = "manual" } = {}) {
         console.log(`[Proxy] rotated "${rec.label}" (${reason})`);
         return { ok: true, rotatedAt: Date.now() };
     } catch (err) {
-        const message = err.message || "Gọi link đổi IP thất bại.";
+        const message = err.message || "Calling the IP-change link failed.";
         await _touch(id, { lastRotatedAt: Date.now(), lastRotateError: message });
         return { ok: false, error: message };
     }
@@ -477,7 +477,7 @@ function parseBulk(text, defaults = {}) {
             }
             const parts = line.split(":");
             if (parts.length !== 2 && parts.length !== 4) {
-                errors.push({ line, error: "Sai định dạng." });
+                errors.push({ line, error: "Wrong format." });
                 continue;
             }
             drafts.push({

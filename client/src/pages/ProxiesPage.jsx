@@ -437,7 +437,7 @@ function ProxyModal({ proxy, features, onClose, onSaved }) {
                     )}
 
                     <div>
-                        <label className="label">Dùng cho tính năng</label>
+                        <label className="label">Used for</label>
                         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 4 }}>
                             {features.map((f) => (
                                 <label
@@ -468,7 +468,7 @@ function ProxyModal({ proxy, features, onClose, onSaved }) {
                         </div>
                         {form.uses.length === 0 && (
                             <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--warning)" }}>
-                                Không chọn tính năng nào thì proxy này sẽ không bao giờ được dùng.
+                                With no feature selected, this proxy is never used.
                             </p>
                         )}
                     </div>
@@ -889,7 +889,7 @@ export default function ProxiesPage() {
                     </button>
                 ))}
                 <span style={{ fontSize: 11, color: "var(--text-dim)", alignSelf: "center" }}>
-                    cài đặt bên dưới áp cho tính năng đang chọn
+                    the settings below apply to the selected feature
                 </span>
             </div>
 

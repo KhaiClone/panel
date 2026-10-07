@@ -10,21 +10,21 @@ import api from "../api/client";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS = {
-    paid:          { label: "Đã thanh toán", color: "var(--text-muted)" },
-    verifying:     { label: "Đang kiểm tra", color: "var(--accent)" },
-    sending:       { label: "Đang gửi",      color: "var(--accent)" },
-    sent:          { label: "Hoàn tất",      color: "var(--success)" },
-    manual_review: { label: "Chờ duyệt",     color: "var(--warning)" },
-    forfeited:     { label: "Tịch thu",      color: "var(--danger)" },
-    refund_due:    { label: "Cần hoàn tiền", color: "var(--danger)" },
-    token_dead:    { label: "Token chết",    color: "var(--danger)" },
-    error:         { label: "Lỗi",           color: "var(--danger)" },
+    paid:          { label: "Paid",          color: "var(--text-muted)" },
+    verifying:     { label: "Verifying",     color: "var(--accent)" },
+    sending:       { label: "Sending",       color: "var(--accent)" },
+    sent:          { label: "Done",          color: "var(--success)" },
+    manual_review: { label: "Needs review",  color: "var(--warning)" },
+    forfeited:     { label: "Forfeited",     color: "var(--danger)" },
+    refund_due:    { label: "Refund due",    color: "var(--danger)" },
+    token_dead:    { label: "Token dead",    color: "var(--danger)" },
+    error:         { label: "Error",         color: "var(--danger)" },
 };
 
 const fmtTime = (ts) => {
     if (!ts) return "—";
     try {
-        return new Date(ts).toLocaleString("vi-VN", {
+        return new Date(ts).toLocaleString("en-GB", {
             day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
         });
     } catch {
@@ -33,7 +33,7 @@ const fmtTime = (ts) => {
 };
 
 const fmtNum = (n) => (Number.isFinite(n) ? Number(n).toLocaleString("vi-VN") : "—");
-const unitVi = (u) => (u === "hours" ? "giờ" : u === "house" ? "nhà" : "game");
+const unitVi = (u) => (u === "hours" ? "hours" : u === "house" ? "house" : "games");
 const badgeVi = (k) =>
     ({ game_time: "Game Time", game_variety: "Game Variety", hypesquad: "HypeSquad", streaming: "Streaming" })[k] ??
     k;
@@ -103,7 +103,7 @@ function OrderRow({ order, onAction, busy }) {
                                     background: "var(--warning-bg)", color: "var(--warning)",
                                 }}
                             >
-                                không Nitro
+                                no Nitro
                             </span>
                         )}
                     </div>
@@ -116,12 +116,12 @@ function OrderRow({ order, onAction, busy }) {
                         · {fmtNum(order.price)}đ
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
-                        {order.kind === "choice" ? "nhà hiện tại" : "khai"}{" "}
-                        {order.kind === "choice" ? "" : fmtNum(order.declaredValue)} · đọc được{" "}
+                        {order.kind === "choice" ? "current house" : "declared"}{" "}
+                        {order.kind === "choice" ? "" : fmtNum(order.declaredValue)} · measured{" "}
                         <strong style={{ color: order.measuredValue === null ? "var(--text-dim)" : "var(--text-muted)" }}>
                             {fmtNum(order.measuredValue)}
                         </strong>
-                        {order.measuredSource ? ` (${order.measuredSource})` : ""} · tạo {fmtTime(order.createdAt)}
+                        {order.measuredSource ? ` (${order.measuredSource})` : ""} · created {fmtTime(order.createdAt)}
                     </div>
                     {order.error && (
                         <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{order.error}</div>
@@ -138,7 +138,7 @@ function OrderRow({ order, onAction, busy }) {
                     {order.status === "sent" && (
                         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
                             {order.sent}/{order.total}
-                            {order.kind === "choice" ? "" : " · badge lên sau ~1 ngày"}
+                            {order.kind === "choice" ? "" : " · badge shows up in ~1 day"}
                         </div>
                     )}
                 </div>
@@ -147,13 +147,13 @@ function OrderRow({ order, onAction, busy }) {
                     {order.status === "manual_review" && (
                         <>
                             <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
-                                Chạy lại
+                                Retry
                             </Btn>
                             <Btn tone="danger" disabled={busy} onClick={() => onAction(order.orderId, "forfeit")}>
-                                Tịch thu
+                                Forfeit
                             </Btn>
                             <Btn disabled={busy} onClick={() => onAction(order.orderId, "cancel")}>
-                                Hoàn tiền
+                                Refund
                             </Btn>
                         </>
                     )}
@@ -166,10 +166,10 @@ function OrderRow({ order, onAction, busy }) {
 // ── Pool reader ──────────────────────────────────────────────────────────────────
 
 const READER_STATUS = {
-    ok:        { label: "Hoạt động",     color: "var(--success)" },
-    no_nitro:  { label: "Hết Nitro",     color: "var(--warning)" },
-    dead:      { label: "Token chết",    color: "var(--danger)" },
-    unknown:   { label: "Chưa kiểm tra", color: "var(--text-dim)" },
+    ok:        { label: "Working",       color: "var(--success)" },
+    no_nitro:  { label: "Nitro lapsed",  color: "var(--warning)" },
+    dead:      { label: "Token dead",    color: "var(--danger)" },
+    unknown:   { label: "Not checked",   color: "var(--text-dim)" },
 };
 
 function ReaderPool({ pool, onAdd, onAction, busy }) {
@@ -204,25 +204,25 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                     <span style={{ fontSize: 14, fontWeight: 600 }}>Reader pool</span>
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                         {pool
-                            ? `${pool.healthy}/${pool.total} dùng được`
-                            : "đang tải…"}
+                            ? `${pool.healthy}/${pool.total} usable`
+                            : "loading…"}
                         {pool && !pool.ok ? ` — ${pool.reason}` : ""}
                     </span>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
                     <Btn disabled={busy || !readers.length} onClick={() => onAction(null, "verify-all")}>
-                        Kiểm tra tất cả
+                        Check all
                     </Btn>
                     <Btn tone="primary" onClick={() => setOpen((v) => !v)}>
-                        {open ? "Đóng" : "Thêm reader"}
+                        {open ? "Close" : "Add reader"}
                     </Btn>
                 </div>
             </div>
 
             {!pool?.ok && (
                 <div style={{ fontSize: 11, color: "var(--warning)", marginBottom: 12 }}>
-                    Không còn reader khoẻ — mọi đơn của khách <strong>không Nitro</strong> sẽ treo ở
-                    "Chờ duyệt". Đơn của khách có Nitro vẫn chạy bình thường (đọc bằng token của họ).
+                    No healthy reader left — every order from a buyer <strong>without Nitro</strong> will wait in
+                    "Needs review". Orders from buyers with Nitro still run normally (read with their own token).
                 </div>
             )}
 
@@ -235,13 +235,13 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                 >
                     <div style={{ flex: "2 1 280px" }}>
                         <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
-                            Token (tài khoản phải có Nitro)
+                            Token (the account must have Nitro)
                         </div>
                         <input
                             type="password"
                             value={token}
                             onChange={(e) => setToken(e.target.value)}
-                            placeholder="Dán token Discord"
+                            placeholder="Paste a Discord token"
                             style={{
                                 background: "var(--bg-input)", border: "1px solid var(--border)",
                                 borderRadius: 8, padding: "8px 10px", color: "var(--text)",
@@ -251,12 +251,12 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                     </div>
                     <div style={{ flex: "1 1 140px" }}>
                         <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
-                            Tên gợi nhớ (tuỳ chọn)
+                            Label (optional)
                         </div>
                         <input
                             value={label}
                             onChange={(e) => setLabel(e.target.value)}
-                            placeholder="vd: acc chính"
+                            placeholder="e.g. main account"
                             style={{
                                 background: "var(--bg-input)", border: "1px solid var(--border)",
                                 borderRadius: 8, padding: "8px 10px", color: "var(--text)",
@@ -265,7 +265,7 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                         />
                     </div>
                     <Btn tone="primary" disabled={busy || !token.trim()} onClick={submit}>
-                        Thêm
+                        Add
                     </Btn>
                 </div>
             )}
@@ -293,8 +293,8 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                                 </span>
                             </div>
                             <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
-                                {r.uses ?? 0} lượt đọc · {r.failures ?? 0} lỗi
-                                {r.lastUsedAt ? ` · dùng lần cuối ${fmtTime(r.lastUsedAt)}` : ""}
+                                {r.uses ?? 0} reads · {r.failures ?? 0} failures
+                                {r.lastUsedAt ? ` · last used ${fmtTime(r.lastUsedAt)}` : ""}
                             </div>
                             {r.lastError && (
                                 <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 2 }}>
@@ -306,25 +306,25 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                             <div style={{ color: st.color, fontSize: 12 }}>{st.label}</div>
                             {r.onCooldown && (
                                 <div style={{ fontSize: 11, color: "var(--warning)" }}>
-                                    đang nghỉ tới {fmtTime(r.cooldownUntil)}
+                                    cooling down until {fmtTime(r.cooldownUntil)}
                                 </div>
                             )}
                             {!r.enabled && (
-                                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>đã tắt</div>
+                                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>disabled</div>
                             )}
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
                             <Btn disabled={busy} onClick={() => onAction(r.id, "verify")}>
-                                Kiểm tra
+                                Check
                             </Btn>
                             <Btn
                                 disabled={busy}
                                 onClick={() => onAction(r.id, r.enabled ? "disable" : "enable")}
                             >
-                                {r.enabled ? "Tắt" : "Bật"}
+                                {r.enabled ? "Disable" : "Enable"}
                             </Btn>
                             <Btn tone="danger" disabled={busy} onClick={() => onAction(r.id, "remove")}>
-                                Xoá
+                                Remove
                             </Btn>
                         </div>
                     </div>
@@ -333,8 +333,8 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
 
             {!readers.length && !open && (
                 <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    Chưa có reader nào. Thêm ít nhất một tài khoản có Nitro để đọc được tiến độ badge
-                    của khách không Nitro.
+                    No reader yet. Add at least one account with Nitro to read the badge progress of
+                    buyers without Nitro.
                 </div>
             )}
         </Card>
@@ -418,8 +418,8 @@ export default function BadgesPage() {
             <div style={{ marginBottom: 18 }}>
                 <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Auto Badge</h1>
                 <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "6px 0 0" }}>
-                    Đơn hàng badge. Thanh toán nằm ở ArnTo-Auto; panel đọc tiến độ thật rồi
-                    gửi — gửi xong là đơn xong. Bấm "Xác minh ngay" nếu cần đối chứng.
+                    Badge orders. Payment happens on ArnTo-Auto; the panel reads the real progress, then
+                    sends — once sent, the order is done. Press "Verify now" if you need to cross-check.
                 </p>
             </div>
 
@@ -435,7 +435,7 @@ export default function BadgesPage() {
                 </div>
             )}
 
-            {/* Pool reader — hết reader khoẻ là mù với khách không Nitro, để ngay đầu trang */}
+            {/* Reader pool — with no healthy reader the panel is blind to buyers without Nitro, so it sits at the top */}
             <ReaderPool pool={pool} onAdd={onReaderAdd} onAction={onReaderAction} busy={busy} />
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
@@ -451,7 +451,7 @@ export default function BadgesPage() {
                             fontSize: 12, cursor: "pointer",
                         }}
                     >
-                        {s === "" ? "Tất cả" : (STATUS[s]?.label ?? s)}
+                        {s === "" ? "All" : (STATUS[s]?.label ?? s)}
                         {s === "manual_review" && pending > 0 ? ` (${pending})` : ""}
                     </button>
                 ))}
@@ -460,7 +460,7 @@ export default function BadgesPage() {
             <Card>
                 {orders.length === 0 ? (
                     <div style={{ color: "var(--text-dim)", fontSize: 13, padding: "8px 0" }}>
-                        Chưa có đơn nào.
+                        No orders yet.
                     </div>
                 ) : (
                     orders.map((o) => (

@@ -213,7 +213,7 @@ export default function OrdersPage() {
                                             <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{o.sellerName}</td>
                                             <td className="mono" style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{money(o.price)}</td>
                                             <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 12 }}>
-                                                {o.orderDate ? new Date(o.orderDate).toLocaleDateString("vi-VN") : "—"}
+                                                {o.orderDate ? new Date(o.orderDate).toLocaleDateString("en-GB") : "—"}
                                             </td>
                                             <td style={{ padding: "10px 14px" }}>
                                                 <span className="status-pill" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }}>

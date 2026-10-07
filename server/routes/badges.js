@@ -23,7 +23,7 @@ router.get("/readers", async (req, res, next) => {
 router.post("/readers", async (req, res, next) => {
     try {
         const { token, label } = req.body || {};
-        if (!token) return res.status(400).json({ error: "token là bắt buộc" });
+        if (!token) return res.status(400).json({ error: "token is required" });
         res.status(201).json(await badgeReader.addReader(String(token).trim(), label));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
@@ -103,7 +103,7 @@ router.get("/", async (req, res, next) => {
 router.get("/:orderId", async (req, res, next) => {
     try {
         const order = await badgeService.getOrder(req.params.orderId);
-        if (!order) return res.status(404).json({ error: "Không tìm thấy đơn" });
+        if (!order) return res.status(404).json({ error: "Order not found" });
         res.json(order);
     } catch (err) {
         next(err);

@@ -138,7 +138,7 @@ router.post("/control/stop", async (req, res, next) => {
 router.post("/preview", async (req, res, next) => {
     try {
         const { token } = req.body || {};
-        if (!token) return res.status(400).json({ error: "Thiếu token." });
+        if (!token) return res.status(400).json({ error: "Missing token." });
         res.json(await questService.previewToken(token));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
@@ -156,7 +156,7 @@ router.post("/preview", async (req, res, next) => {
 router.post("/start", async (req, res, next) => {
     try {
         const { token, mode, selectedQuestIds, ref, months } = req.body || {};
-        if (!token) return res.status(400).json({ error: "Thiếu token." });
+        if (!token) return res.status(400).json({ error: "Missing token." });
         const ownerRef = ref ? String(ref).trim() : null;
         // No URL: the callback is addressed to a project, delivered on the bus.
         const webhookBotId = discordBus.handlerOf("quest.event");
@@ -260,7 +260,7 @@ router.get("/stream", async (req, res, next) => {
 router.get("/:accountId", async (req, res, next) => {
     try {
         const acc = await questService.getAccount(req.params.accountId);
-        if (!acc) return res.status(404).json({ error: "Không tìm thấy account." });
+        if (!acc) return res.status(404).json({ error: "Account not found." });
         res.json(acc);
     } catch (err) {
         next(err);

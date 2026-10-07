@@ -101,7 +101,7 @@ async function getToken(id) {
 async function add({ token, label, accountId, username, premiumType }) {
     const existing = (await db.find(MODEL, {})) ?? [];
     if (existing.some((r) => r.accountId === accountId)) {
-        throw _err(`Tài khoản ${username} (${accountId}) đã có trong danh sách`, 409);
+        throw _err(`Account ${username} (${accountId}) is already on the list`, 409);
     }
     const rec = {
         id: crypto.randomUUID().slice(0, 8),
@@ -112,7 +112,7 @@ async function add({ token, label, accountId, username, premiumType }) {
         premiumType,
         enabled: true,
         status: premiumType ? "ok" : "no_nitro",
-        lastError: premiumType ? null : "Tài khoản không có Nitro",
+        lastError: premiumType ? null : "The account has no Nitro",
         lastCheckedAt: Date.now(),
         lastUsedAt: null,
         cooldownUntil: null,
@@ -128,16 +128,16 @@ async function add({ token, label, accountId, username, premiumType }) {
 /** Cập nhật token của một reader đã có (khi token cũ hết hạn, khỏi phải xoá thêm lại). */
 async function replaceToken(id, { token, accountId, username, premiumType }) {
     const rec = await get(id);
-    if (!rec) throw _err("Không tìm thấy reader", 404);
+    if (!rec) throw _err("Reader not found", 404);
     if (rec.accountId !== accountId) {
-        throw _err(`Token này thuộc tài khoản khác (${username})`, 409);
+        throw _err(`This token belongs to another account (${username})`, 409);
     }
     await db.findOneAndUpdate(MODEL, { id }, {
         ...(_encrypt(token)),
         premiumType,
         username,
         status: premiumType ? "ok" : "no_nitro",
-        lastError: premiumType ? null : "Tài khoản không có Nitro",
+        lastError: premiumType ? null : "The account has no Nitro",
         lastCheckedAt: Date.now(),
         cooldownUntil: null,
         failures: 0,
@@ -148,7 +148,7 @@ async function replaceToken(id, { token, accountId, username, premiumType }) {
 
 async function update(id, patch = {}) {
     const rec = await get(id);
-    if (!rec) throw _err("Không tìm thấy reader", 404);
+    if (!rec) throw _err("Reader not found", 404);
     const data = { updatedAt: Date.now() };
     if ("label" in patch) data.label = String(patch.label).slice(0, 60);
     if ("enabled" in patch) {
@@ -162,7 +162,7 @@ async function update(id, patch = {}) {
 
 async function remove(id) {
     const rec = await get(id);
-    if (!rec) throw _err("Không tìm thấy reader", 404);
+    if (!rec) throw _err("Reader not found", 404);
     await db.findOneAndDelete(MODEL, { id });
     return true;
 }
@@ -198,7 +198,7 @@ async function pick({ exclude = [] } = {}) {
         // Giải mã hỏng (đổi QUEST_ENC_SECRET chẳng hạn) — loại ra rồi thử tiếp.
         await db.findOneAndUpdate(MODEL, { id: chosen.id }, {
             status: "dead",
-            lastError: "Không giải mã được token",
+            lastError: "Could not decrypt the token",
             updatedAt: Date.now(),
         });
         return pick({ exclude: [...exclude, chosen.id] });
@@ -253,8 +253,8 @@ async function summary() {
         reason: rows.length
             ? healthy.length
                 ? null
-                : "Không còn reader nào dùng được"
-            : "Chưa thêm reader nào",
+                : "No usable reader left"
+            : "No reader added yet",
     };
 }
 
