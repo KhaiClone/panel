@@ -730,6 +730,31 @@ Pending and claimed uses count towards the limits. Stored in `data/shared.sqlite
 | `POST` | `/api/external/vouchers/redemptions/:id/claim` | `{ staffId, staffTag, isAdmin, roleIds }` → `view`; 403 not allowed, 409 already settled (with the current `view`) |
 | `POST` | `/api/external/vouchers/redemptions/:id/reject` | the same plus `reason` |
 
+**Ticket Menus.** What a customer picks in a new ArnTo-Shop ticket, managed on the Ticket
+Menus page and with `/menu` on ArnTo-Shop (`server/services/ticketMenuService.js`):
+
+1. A **service** (first menu): name, emoji, description, the category the ticket moves to
+   (empty = the seller's own), and the seller ping with `{seller}` `{staff}` `{owner}`
+   `{product}` `{service}` `{ticket}`.
+2. A **product** of that service, or **"Khác"**: one product can sit in several services; it
+   names the seller to ping and the channel suffix (`ticket-123-<suffix>`). Discord menus
+   take 25 options, so a service shows at most 24 products (one stays for "Khác").
+3. **Sellers** carry a name and their ticket category.
+
+The shop reads the menus from the panel (60 s cache; its last copy, also kept in its
+`json.sqlite`, when the panel cannot be reached) and the page tells it to re-read after a
+change (`ticketmenu.refresh`). On its first start with this version the shop copies its old
+menus here (`POST /import`, once): the three built-in services, its local `products` (one
+row per product and service, merged back into one product), "Khác" and the sellers from its
+`configs/ids.js`. That project becomes the owner — no other key can read or change the
+menus. Stored as one document in `data/shared.sqlite` (kv `__ticketMenu`).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/external/ticket-menus` | `{ imported, owner, services, products, other, sellers, updatedAt, limit }` |
+| `POST` | `/api/external/ticket-menus/import` | `{ services, legacyProducts, other, sellers }` → `{ imported, services, products }` (counts added; once) |
+| | `…/services[/:key[/move]]`, `…/products[/:id[/move]]`, `…/settings` | Same as the page's `/api/ticket-menus` routes — see `server/routes/ticketMenus.js` |
+
 ---
 
 ## 💾 Backup & Rollback

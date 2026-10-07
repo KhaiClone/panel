@@ -136,6 +136,8 @@ app.use("/api/external/decor-gift", apiKeyMiddleware, require("./routes/decorGif
 app.use("/api/external/stock", apiKeyMiddleware, require("./routes/stockExternal"));
 // ArnTo-assistant's /voucher and its Claim / Reject buttons (services/voucherService.js).
 app.use("/api/external/vouchers", apiKeyMiddleware, require("./routes/vouchersExternal"));
+// ArnTo-Shop's ticket menus and /menu (services/ticketMenuService.js).
+app.use("/api/external/ticket-menus", apiKeyMiddleware, require("./routes/ticketMenus").external);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -152,6 +154,7 @@ app.use("/api/badges", authMiddleware, badgeRoutes);
 app.use("/api/lavalink", authMiddleware, lavalinkRoutes);
 app.use("/api/stock", authMiddleware, require("./routes/stock"));
 app.use("/api/vouchers", authMiddleware, require("./routes/vouchers"));
+app.use("/api/ticket-menus", authMiddleware, require("./routes/ticketMenus").panel);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
