@@ -121,6 +121,7 @@ const rejects = async (fn, status) => {
         const r = await stock.deliver({ product: "nitro-1m", buyerId: BUYER, staffId: "427399742906040333", staffTag: "arnto", via: "discord" });
         assert.strictEqual(r.delivered, true);
         assert.strictEqual(r.remaining, before - 1);
+        assert.ok(r.item.includes("@x.com"), "the item that was sent, for the staff who delivered it");
         const call = bus.calls.at(-1);
         assert.strictEqual(call.target, "assistant");
         assert.strictEqual(call.cmd, "stock.deliver");
@@ -250,6 +251,84 @@ const rejects = async (fn, status) => {
         stock.updateProduct(nitro.id, { reminders: { enabled: false } });
         await stock.checkExpiry();
         assert.strictEqual(sent.length, 0, "switched off for the product type");
+    });
+
+    await test("history: by buyer, one delivery by its ID in any case", async () => {
+        const other = "427399742906040333";
+        stock.addItems(nitro.id, { text: "other@x.com:p:h" });
+        bus.answer = () => ({ delivered: true });
+        const r = await stock.deliver({ product: nitro.id, buyerId: other });
+        const mine = stock.listDeliveries({ buyerId: other });
+        assert.deepStrictEqual(mine.map((d) => d.id), [r.deliveryId]);
+        assert.ok(stock.listDeliveries({ productId: "nitro-1m", buyerId: BUYER }).every((d) => d.buyerId === BUYER), "a code works as the product too");
+        const one = stock.getDelivery(r.deliveryId.toLowerCase());
+        assert.strictEqual(one.content, r.item);
+        assert.strictEqual(one.productName, "Nitro 1 tháng");
+        await rejects(() => stock.getDelivery("NOPE1234"), 404);
+        stock.extendDelivery(r.deliveryId.toLowerCase(), 1);
+    });
+
+    await test("external API: /manage only for the project that delivers", async () => {
+        const express = require("express");
+        const app = express();
+        app.use(express.json());
+        app.use((req, res, next) => {
+            req.apiCaller = { botId: req.headers["x-bot"] };
+            next();
+        });
+        app.use("/s", require("../server/routes/stockExternal"));
+        const server = app.listen(0);
+        const base = `http://127.0.0.1:${server.address().port}/s`;
+        // node:http without keep-alive: fetch's pooled sockets abort the process at exit on Windows.
+        const call = (bot, method, url, body) =>
+            new Promise((resolve, reject) => {
+                const req = require("http").request(base + url, { method, agent: false, headers: { "x-bot": bot, "content-type": "application/json" } }, (res) => {
+                    let data = "";
+                    res.on("data", (c) => (data += c));
+                    res.on("end", () => {
+                        let json = null;
+                        try {
+                            json = JSON.parse(data);
+                        } catch {
+                            /* Express's own 404 page */
+                        }
+                        resolve({ status: res.statusCode, json });
+                    });
+                });
+                req.on("error", reject);
+                req.end(body && JSON.stringify(body));
+            });
+        discordBus.canHandle = (botId, cmd) => botId === "assistant" && cmd === "stock.deliver";
+        try {
+            assert.strictEqual((await call("shop", "GET", "/manage/products")).status, 403);
+            assert.strictEqual((await call("shop", "POST", "/manage/products/nitro-1m/items", { text: "x" })).status, 403);
+
+            const list = await call("assistant", "GET", "/manage/products");
+            assert.strictEqual(list.status, 200);
+            assert.ok(list.json.products.some((p) => p.code === "nitro-1m"));
+            const add = await call("assistant", "POST", "/manage/products/nitro-1m/items", { text: "api1@x.com:p:h\napi2@x.com:p:h" });
+            assert.strictEqual(add.json.added, 2);
+            assert.strictEqual((await call("assistant", "PUT", "/manage/products/nitro-1m", { enabled: false })).json.enabled, false);
+            assert.strictEqual((await call("assistant", "PUT", "/manage/products/nitro-1m", { enabled: true })).json.enabled, true);
+            assert.strictEqual((await call("assistant", "POST", "/manage/products", { name: "x", code: "x" })).status, 404, "no creating from Discord");
+
+            // /deliver hands the item back to the deliverer only.
+            bus.answer = () => ({ delivered: true });
+            const mine = await call("assistant", "POST", "/deliver", { product: "nitro-1m", buyerId: BUYER });
+            assert.ok(mine.json.item.includes("@x.com"));
+            const theirs = await call("shop", "POST", "/deliver", { product: "nitro-1m", buyerId: BUYER });
+            assert.strictEqual(theirs.json.delivered, true);
+            assert.strictEqual(theirs.json.item, undefined);
+
+            const hist = await call("assistant", "GET", `/manage/deliveries?product=nitro-1m&buyerId=${BUYER}&limit=1`);
+            assert.strictEqual(hist.json.deliveries.length, 1);
+            assert.strictEqual(hist.json.deliveries[0].id, theirs.json.deliveryId);
+            assert.strictEqual((await call("assistant", "GET", `/manage/deliveries/${mine.json.deliveryId}`)).json.content, mine.json.item);
+            assert.strictEqual((await call("assistant", "GET", "/manage/products/nope")).status, 404);
+        } finally {
+            server.closeAllConnections();
+            await new Promise((r) => server.close(r));
+        }
     });
 
     await test("a short product does not warn right after delivery", async () => {

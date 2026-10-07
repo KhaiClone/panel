@@ -20,6 +20,9 @@ const lifecycle = require("./lifecycle");
 //              the buyer is reminded at 72/47/24 h and once at expiry, like a
 //              bot's renewal (expiryService): ping on DISCORD_ALERT_WEBHOOK + a
 //              DM from whoever announced "dm.send" (ArnTo-Auto).
+//    manage    all but creating a product type also works from Discord: /kho on
+//              ArnTo-assistant (routes/stockExternal.js, /manage) adds and removes
+//              items, edits a type, shows which item each delivery sent.
 //
 //  A delivery carries a deadline the assistant enforces: one it reads late (it
 //  was down, the bus re-reads 3 days back) is refused, so an item is never
@@ -333,7 +336,7 @@ const finish = (deliveryId, result) => {
 
 /**
  * Give `buyerId` one random item of `product` (id or code), DM'd by the assistant.
- * → { delivered: true, deliveryId, product, expiresAt, remaining }
+ * → { delivered: true, deliveryId, product, item, expiresAt, remaining }   item: the text that was sent
  *   { delivered: false, reason: "dm_blocked" | "unknown_user" | "stale", product, remaining }
  */
 const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "panel" } = {}) => {
@@ -416,7 +419,7 @@ const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "p
     }
 
     if (!finish(id, sent)) return { delivered: false, reason: sent?.reason || "not_delivered", product: p.name, remaining: remaining() };
-    return { delivered: true, deliveryId: id, product: p.name, expiresAt, remaining: remaining() };
+    return { delivered: true, deliveryId: id, product: p.name, item: decrypt(item.content), expiresAt, remaining: remaining() };
 };
 
 /**
@@ -464,22 +467,39 @@ const DELIVERY_SELECT = `
     LEFT JOIN stock_products p ON p.id = d.product_id
     LEFT JOIN stock_items i ON i.id = d.item_id`;
 
-/** Newest first; `productId` narrows to one product type. */
-const listDeliveries = ({ productId, limit = 1000 } = {}) => {
+/** Newest first; `productId` (id or code) narrows to one product type, `buyerId` to one buyer. */
+const listDeliveries = ({ productId, buyerId, limit = 1000 } = {}) => {
     const n = Math.min(Math.max(Number(limit) || 1000, 1), 5000);
-    const rows = productId
-        ? conn().prepare(`${DELIVERY_SELECT} WHERE d.product_id = ? ORDER BY d.created_at DESC LIMIT ?`).all(requireProduct(productId).id, n)
-        : conn().prepare(`${DELIVERY_SELECT} ORDER BY d.created_at DESC LIMIT ?`).all(n);
-    return rows.map(toDelivery);
+    const where = [];
+    const args = [];
+    if (productId) {
+        where.push("d.product_id = ?");
+        args.push(requireProduct(productId).id);
+    }
+    if (buyerId) {
+        where.push("d.buyer_id = ?");
+        args.push(String(buyerId));
+    }
+    const sql = `${DELIVERY_SELECT} ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY d.created_at DESC LIMIT ?`;
+    return conn()
+        .prepare(sql)
+        .all(...args, n)
+        .map(toDelivery);
 };
 
 const deliveryRow = (id) => {
-    const r = conn().prepare("SELECT * FROM stock_deliveries WHERE id = ?").get(String(id));
+    const r = conn().prepare("SELECT * FROM stock_deliveries WHERE id = ?").get(String(id || "").trim().toUpperCase());
     if (!r) throw httpError(404, "Delivery not found");
     if (r.status !== "delivered") throw httpError(409, "This delivery is still in progress");
     return r;
 };
-const getDelivery = (id) => toDelivery(conn().prepare(`${DELIVERY_SELECT} WHERE d.id = ?`).get(String(id)));
+
+/** One delivery with the item it sent. Delivery IDs are upper-case (the DM's footer shows them). */
+const getDelivery = (id) => {
+    const r = conn().prepare(`${DELIVERY_SELECT} WHERE d.id = ?`).get(String(id || "").trim().toUpperCase());
+    if (!r) throw httpError(404, "Delivery not found");
+    return toDelivery(r);
+};
 
 /** Renewed: +days from the expiry (or from now, once it has passed); reminders start over. */
 const extendDelivery = (id, days) => {
@@ -592,6 +612,7 @@ module.exports = {
     deliver,
     settle,
     listDeliveries,
+    getDelivery,
     extendDelivery,
     setDeliveryReminders,
     checkExpiry,

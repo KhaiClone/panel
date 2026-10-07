@@ -10,7 +10,8 @@ import ConfirmModal from "../components/ConfirmModal";
 //  random item and the assistant DMs it to the buyer. Delivered items leave the
 //  stock and stay in the history; a closed DM puts the item back. Product types
 //  with reminders on remind the buyer at 72/47/24 h and at expiry, like a bot's
-//  renewal. The logic lives in server/services/stockService.js.
+//  renewal. Staff can do all but create a product type with /kho on the
+//  assistant too. The logic lives in server/services/stockService.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
@@ -644,7 +645,7 @@ function DeliverModal({ products, initialId, onClose, onDone }) {
             const { data } = await api.post("/stock/deliver", { productId, buyerId: buyerId.trim() }, { timeout: 70_000 });
             setResult(
                 data.delivered
-                    ? { tone: "success", text: `Delivered "${data.product}" — ID ${data.deliveryId}. ${data.remaining} item(s) left in stock.` }
+                    ? { tone: "success", text: `Delivered "${data.product}" — ID ${data.deliveryId}. ${data.remaining} item(s) left in stock.`, item: data.item }
                     : { tone: "warning", text: REASONS[data.reason] || `Not delivered (${data.reason}) — the item went back to stock.` },
             );
             onDone();
@@ -671,7 +672,19 @@ function DeliverModal({ products, initialId, onClose, onDone }) {
                 <Field label="Buyer's Discord ID" hint="ArnTo-assistant DMs one random item to this user.">
                     <input className="input mono" value={buyerId} onChange={(e) => setBuyerId(e.target.value)} placeholder="871329074046435338" autoFocus />
                 </Field>
-                {result && <Notice tone={result.tone}>{result.text}</Notice>}
+                {result && (
+                    <Notice tone={result.tone}>
+                        {result.text}
+                        {result.item != null && (
+                            <>
+                                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>Item sent:</div>
+                                <pre className="mono" style={{ margin: "4px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 12, color: "var(--text)" }}>
+                                    {result.item}
+                                </pre>
+                            </>
+                        )}
+                    </Notice>
+                )}
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                     <button type="button" className="btn-ghost" onClick={onClose}>Close</button>
                     <button type="submit" className="btn-primary" disabled={busy || !product?.enabled || !product?.counts.available || !/^\d{17,20}$/.test(buyerId.trim())}>
@@ -785,6 +798,7 @@ export default function StockPage() {
                     <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Stock</h1>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
                         Goods ready for automatic delivery — run <code className="mono">/giao</code> on ArnTo-assistant and it DMs one random item to the buyer.
+                        Everything but creating a product type also works there with <code className="mono">/kho</code>.
                     </p>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>

@@ -681,18 +681,26 @@ orders: it only makes handing goods over faster.
    or press **Giao** on the Stock page with the buyer's Discord ID.
 2. The panel reserves one random item and the assistant DMs it (`stock.deliver`, sealed,
    with a 3-minute deadline it enforces). Delivered → the item leaves the stock and the
-   delivery stays in the history. A closed DM → `{ delivered: false, reason: "dm_blocked" }`,
-   the item goes back to stock, and `/giao` posts the "open your DMs" notice without the item.
+   delivery stays in the history; the staff who delivered see the item that was sent (only
+   to them). A closed DM → `{ delivered: false, reason: "dm_blocked" }`, the item goes back
+   to stock, and `/giao` posts the "open your DMs" notice without the item.
 3. A product type with reminders on gives each delivery an expiry (N days). The buyer is
    reminded at 72/47/24 h and once at expiry, like a bot's renewal: ping on
    `DISCORD_ALERT_WEBHOOK` + a DM from the bot that announced `dm.send` (ArnTo-Auto).
+
+Everything except **creating** a product type also works on Discord with `/kho` on
+ArnTo-assistant (Administrator, every answer ephemeral): `danhsach`, `xem` (with the stock
+as a .txt), `them` (paste into a form, or attach a .txt), `xoa` / `xoahet`, `sua` (on/off,
+name, code, the DM's look, reminders), `xoaloai`, `lichsu` (which item each delivery sent —
+by product, buyer, or the delivery ID in the buyer's DM), `giahan`, `nhacnho`.
 
 Items are AES-GCM-encrypted with `JWT_SECRET` in `data/shared.sqlite`.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/external/stock/products` | Enabled product types: `{ products: [{ code, name, available }] }` |
-| `POST` | `/api/external/stock/deliver` | `{ product, buyerId, buyerTag?, staffId?, staffTag? }` → `{ delivered, deliveryId?, product, expiresAt?, remaining, reason? }` |
+| `POST` | `/api/external/stock/deliver` | `{ product, buyerId, buyerTag?, staffId?, staffTag? }` → `{ delivered, deliveryId?, product, item?, expiresAt?, remaining, reason? }` — `item` only for the project that delivers stock |
+| | `/api/external/stock/manage/*` | `/kho`: the Stock page's routes minus creating a product type, for the project that announced `stock.deliver` only (403 otherwise) — see `server/routes/stockExternal.js` |
 
 ---
 
