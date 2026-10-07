@@ -134,6 +134,8 @@ app.use("/api/external/badges", apiKeyMiddleware, badgeExternalRoutes);
 app.use("/api/external/decor-gift", apiKeyMiddleware, require("./routes/decorGiftExternal"));
 // ArnTo-assistant's /giao: the stock's product list, and delivering one item (services/stockService.js).
 app.use("/api/external/stock", apiKeyMiddleware, require("./routes/stockExternal"));
+// ArnTo-assistant's /voucher and its Claim / Reject buttons (services/voucherService.js).
+app.use("/api/external/vouchers", apiKeyMiddleware, require("./routes/vouchersExternal"));
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -149,6 +151,7 @@ app.use("/api/pricing", authMiddleware, pricingRoutes);
 app.use("/api/badges", authMiddleware, badgeRoutes);
 app.use("/api/lavalink", authMiddleware, lavalinkRoutes);
 app.use("/api/stock", authMiddleware, require("./routes/stock"));
+app.use("/api/vouchers", authMiddleware, require("./routes/vouchers"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -199,6 +202,8 @@ const startBackgroundServices = () => {
     require("./services/decorSitePublisher").start();
     // Stock: closes deliveries whose answer was lost, and the hourly expiry reminders.
     require("./services/stockService").start();
+    // Vouchers: closes DM batches whose answer was lost.
+    require("./services/voucherService").start();
 };
 
 /**

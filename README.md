@@ -702,6 +702,34 @@ Items are AES-GCM-encrypted with `JWT_SECRET` in `data/shared.sqlite`.
 | `POST` | `/api/external/stock/deliver` | `{ product, buyerId, buyerTag?, staffId?, staffTag? }` → `{ delivered, deliveryId?, product, item?, expiresAt?, remaining, reason? }` — `item` only for the project that delivers stock |
 | | `/api/external/stock/manage/*` | `/kho`: the Stock page's routes minus creating a product type, for the project that announced `stock.deliver` only (403 otherwise) — see `server/routes/stockExternal.js` |
 
+**Vouchers.** Rewards the admin hands out and claims by hand, managed on the Vouchers page
+(`server/services/voucherService.js`). A voucher has a code, a reward text, who may use it
+(only the members it was given to, or anyone with the code), uses per member (0 = no limit;
+a member can get their own limit), uses overall and an optional expiry.
+
+1. **Give** — Members tab: paste Discord IDs. ArnTo-assistant DMs each of them the code
+   (`voucher.granted`, sealed, one command per batch; the page shows each DM's state and
+   can DM again).
+2. **Use** — the member runs `/voucher dung ma:<code> [ghichu]` on ArnTo-assistant. The panel
+   checks the voucher and the member's uses left and records a **pending** use; the assistant
+   posts a card with **Claim** / **Từ chối** in the claim channel (Claim settings; empty = the
+   channel the command was typed in), pinging the optional role. `/voucher cua-toi` lists the
+   member's vouchers.
+3. **Claim** — an Administrator, or a staff role from Claim settings, presses Claim on the
+   card, or an admin presses it on the page ("Waiting for a claim"). Claimed = the admin
+   hands the reward over. Rejecting (with an optional reason) gives the use back. Either way
+   the member gets a DM; a claim made on the page reaches the card through `voucher.resolved`.
+
+Pending and claimed uses count towards the limits. Stored in `data/shared.sqlite`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/external/vouchers/mine?userId=` | The member's vouchers (given to them, on, not expired) with `used`, `limit`, `remaining`, `pending` |
+| `POST` | `/api/external/vouchers/redeem` | `{ code, userId, userTag?, note? }` → `{ ok: true, view, card: { channelId, pingRoleId } }` or `{ ok: false, reason }` (`not_found`, `disabled`, `expired`, `not_granted`, `limit_user`, `limit_total`) |
+| `POST` | `/api/external/vouchers/redemptions/:id/card` | `{ channelId, messageId }` — where the card was posted |
+| `POST` | `/api/external/vouchers/redemptions/:id/claim` | `{ staffId, staffTag, isAdmin, roleIds }` → `view`; 403 not allowed, 409 already settled (with the current `view`) |
+| `POST` | `/api/external/vouchers/redemptions/:id/reject` | the same plus `reason` |
+
 ---
 
 ## 💾 Backup & Rollback

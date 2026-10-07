@@ -177,7 +177,7 @@ const enqueue = async (botId, cmd, payload = null, { sealed = false } = {}) => {
 };
 
 /** Fire and forget (the reply is still recorded). */
-const notify = (botId, cmd, payload) => enqueue(botId, cmd, payload);
+const notify = (botId, cmd, payload, { sealed = false } = {}) => enqueue(botId, cmd, payload, { sealed });
 
 /**
  * Send and wait for the bot's reply → its result; throws its error or on timeout.
