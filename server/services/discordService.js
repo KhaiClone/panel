@@ -164,6 +164,50 @@ const sendExpirySuspended = async (bot) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Stock (Kho hàng) Expiry — same channels as a bot's: ping on the alert
+//  webhook + a DM. Never the item itself: the webhook channel is not private.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RENEW_HINT = `<#1480431381808152586> hoặc tạo ticket tại <#1246028759597846650> để được hỗ trợ.`;
+
+const stockFields = (product, delivery) => [
+    { name: "📦 Sản Phẩm", value: product.name, inline: true },
+    { name: "🧾 Mã Giao Hàng", value: `\`${delivery.id}\``, inline: true },
+    { name: "📅 Hết Hạn Lúc", value: `<t:${Math.floor(delivery.expiresAt / 1000)}:F>`, inline: true },
+];
+
+/**
+ * @param {{ product: Object, delivery: Object, hoursLeft: number }} args - from stockService
+ */
+const sendStockExpiryWarning = async ({ product, delivery, hoursLeft }) => {
+    const embed = {
+        title: "⚠️ Sản Phẩm Sắp Hết Hạn",
+        color: hoursLeft <= 24 ? 0xff4444 : hoursLeft <= 72 ? 0xff8c00 : 0xffd700,
+        description: `**${product.name}** của bạn sẽ hết hạn sau **${hoursLeft}** giờ nữa.`,
+        fields: [...stockFields(product, delivery), { name: "🔗 Gia Hạn", value: RENEW_HINT, inline: false }],
+        timestamp: new Date().toISOString(),
+    };
+    await Promise.all([
+        sendWebhook(process.env.DISCORD_ALERT_WEBHOOK, { content: `<@${delivery.buyerId}>`, embeds: [embed] }),
+        sendDM(delivery.buyerId, { embeds: [embed] }),
+    ]);
+};
+
+const sendStockExpired = async ({ product, delivery }) => {
+    const embed = {
+        title: "🛑 Sản Phẩm Đã Hết Hạn",
+        color: 0xff0000,
+        description: `**${product.name}** của bạn đã hết hạn. Gia hạn để tiếp tục sử dụng nhé!`,
+        fields: [...stockFields(product, delivery), { name: "🔗 Gia Hạn", value: RENEW_HINT, inline: false }],
+        timestamp: new Date().toISOString(),
+    };
+    await Promise.all([
+        sendWebhook(process.env.DISCORD_ALERT_WEBHOOK, { content: `<@${delivery.buyerId}>`, embeds: [embed] }),
+        sendDM(delivery.buyerId, { embeds: [embed] }),
+    ]);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Lavalink
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -228,5 +272,7 @@ module.exports = {
     sendExpiryWarning,
     sendExpiryRemoval,
     sendExpirySuspended,
+    sendStockExpiryWarning,
+    sendStockExpired,
     sendLavalinkReport,
 };

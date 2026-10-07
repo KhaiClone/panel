@@ -179,9 +179,14 @@ const enqueue = async (botId, cmd, payload = null, { sealed = false } = {}) => {
 /** Fire and forget (the reply is still recorded). */
 const notify = (botId, cmd, payload) => enqueue(botId, cmd, payload);
 
-/** Send and wait for the bot's reply → its result; throws its error or on timeout. */
-const request = async (botId, cmd, payload, { timeoutMs = 30_000, sealed = false } = {}) => {
+/**
+ * Send and wait for the bot's reply → its result; throws its error or on timeout.
+ * `onQueued(id)`: the outbox id, before waiting — for a caller that must find
+ * the answer again after a restart (get()).
+ */
+const request = async (botId, cmd, payload, { timeoutMs = 30_000, sealed = false, onQueued } = {}) => {
     const row = await enqueue(botId, cmd, payload, { sealed });
+    onQueued?.(row.id);
     return new Promise((resolve, reject) => {
         const onDone = (r) => {
             if (r.id !== row.id) return;
@@ -418,6 +423,9 @@ const userTag = async (id) => {
 const recent = (limit = 30) =>
     configured() ? table().prepare("SELECT * FROM bus ORDER BY created_at DESC LIMIT ?").all(limit).map(rowToPublic) : [];
 
+/** One outbox row (status, result) by id, or null. */
+const get = (id) => (configured() && id ? rowToPublic(table().prepare("SELECT * FROM bus WHERE id = ?").get(id)) || null : null);
+
 module.exports = {
     configured,
     start,
@@ -426,6 +434,7 @@ module.exports = {
     request,
     status,
     recent,
+    get,
     panelBotId,
     channelId,
     recordHello,

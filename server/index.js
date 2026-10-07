@@ -132,6 +132,8 @@ app.use("/api/external/pricing", apiKeyMiddleware, pricingExternalRoutes);
 app.use("/api/external/badges", apiKeyMiddleware, badgeExternalRoutes);
 // ArnTo-Auto's Deco Gift panel: catalog, and shop orders over the bus (services/decorGiftService.js).
 app.use("/api/external/decor-gift", apiKeyMiddleware, require("./routes/decorGiftExternal"));
+// ArnTo-assistant's /giao: the stock's product list, and delivering one item (services/stockService.js).
+app.use("/api/external/stock", apiKeyMiddleware, require("./routes/stockExternal"));
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -146,6 +148,7 @@ app.use("/api/quests", authMiddleware, questRoutes);
 app.use("/api/pricing", authMiddleware, pricingRoutes);
 app.use("/api/badges", authMiddleware, badgeRoutes);
 app.use("/api/lavalink", authMiddleware, lavalinkRoutes);
+app.use("/api/stock", authMiddleware, require("./routes/stock"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -194,6 +197,8 @@ const startBackgroundServices = () => {
     require("./services/discordBus").start().catch((e) => console.error("[Bus] start failed:", e.message));
     // The public decor site's data snapshot follows the shared decor data.
     require("./services/decorSitePublisher").start();
+    // Stock: closes deliveries whose answer was lost, and the hourly expiry reminders.
+    require("./services/stockService").start();
 };
 
 /**

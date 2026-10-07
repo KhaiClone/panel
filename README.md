@@ -673,6 +673,27 @@ pay by QR there; the panel connects the three bots (`server/services/decorGiftSe
 | `POST` | `/api/external/decor-gift/orders/:orderId/complete` | Shop completes (retry after a delivery whose completion failed) |
 | `POST` | `/api/external/decor-gift/orders/:orderId/cancel` | Shop cancels |
 
+**Stock (Kho hàng).** Goods kept ready on the panel — accounts, keys… — one product type
+per kind, managed on the Stock page (`server/services/stockService.js`). Not tied to shop
+orders: it only makes handing goods over faster.
+
+1. Staff run `/giao loai:<type> khach:@user` on ArnTo-assistant (Administrator by default),
+   or press **Giao** on the Stock page with the buyer's Discord ID.
+2. The panel reserves one random item and the assistant DMs it (`stock.deliver`, sealed,
+   with a 3-minute deadline it enforces). Delivered → the item leaves the stock and the
+   delivery stays in the history. A closed DM → `{ delivered: false, reason: "dm_blocked" }`,
+   the item goes back to stock, and `/giao` posts the "open your DMs" notice without the item.
+3. A product type with reminders on gives each delivery an expiry (N days). The buyer is
+   reminded at 72/47/24 h and once at expiry, like a bot's renewal: ping on
+   `DISCORD_ALERT_WEBHOOK` + a DM from the bot that announced `dm.send` (ArnTo-Auto).
+
+Items are AES-GCM-encrypted with `JWT_SECRET` in `data/shared.sqlite`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/external/stock/products` | Enabled product types: `{ products: [{ code, name, available }] }` |
+| `POST` | `/api/external/stock/deliver` | `{ product, buyerId, buyerTag?, staffId?, staffTag? }` → `{ delivered, deliveryId?, product, expiresAt?, remaining, reason? }` |
+
 ---
 
 ## 💾 Backup & Rollback

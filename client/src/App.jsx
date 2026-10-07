@@ -16,6 +16,7 @@ import ProxiesPage from "./pages/ProxiesPage";
 import TagsPage from "./pages/TagsPage";
 import NodeDetailPage from "./pages/NodeDetailPage";
 import OrdersPage from "./pages/OrdersPage";
+import StockPage from "./pages/StockPage";
 import DecorsPage from "./pages/DecorsPage";
 import QuestsPage from "./pages/QuestsPage";
 import PricingPage from "./pages/PricingPage";
@@ -74,6 +75,7 @@ export default function App() {
                             <Route path="nodes"         element={<Navigate to="/systems" replace />} />
                             <Route path="nodes/:id"     element={<NodeDetailPage />} />
                             <Route path="orders"        element={<OrdersPage />} />
+                            <Route path="stock"         element={<StockPage />} />
                             <Route path="decors"        element={<DecorsPage />} />
                             <Route path="quests"        element={<QuestsPage />} />
                             <Route path="pricing"       element={<PricingPage />} />

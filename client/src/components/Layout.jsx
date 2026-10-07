@@ -16,6 +16,7 @@ const I = {
     proxyPool:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/><path d="M16 8l4-4"/><path d="M20 8V4h-4"/></svg>,
     panel:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>,
     orders:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>,
+    stock:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><line x1="12" y1="13" x2="12" y2="21"/></svg>,
     decors:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M12 2 15 8.5 22 9.3l-5 4.6 1.4 7L12 17.8 5.6 20.9 7 13.9l-5-4.6 7-.8Z"/></svg>,
     quests:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
     pricing:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
@@ -66,6 +67,7 @@ const NAV_SECTIONS = [
         items: [
             { to: "/terminal",     label: "Terminal", icon: I.terminal },
             { to: "/orders",       label: "Orders",   icon: I.orders },
+            { to: "/stock",        label: "Stock",    icon: I.stock },
             { to: "/decors",       label: "Decors",   icon: I.decors },
             { to: "/quests",       label: "Quests",   icon: I.quests },
             { to: "/pricing",      label: "Pricing",  icon: I.pricing },
@@ -88,6 +90,7 @@ const PAGE_TITLES = {
     "/terminal":     "Terminal",
     "/systems":      "Systems",
     "/orders":       "Orders",
+    "/stock":        "Kho hàng",
     "/decors":       "Decors",
     "/quests":       "Auto Quest",
     "/lavalink":     "Lavalink",
