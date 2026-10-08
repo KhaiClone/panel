@@ -10,8 +10,10 @@ import ConfirmModal from "../components/ConfirmModal";
 //  random item and the assistant DMs it to the buyer. Delivered items leave the
 //  stock and stay in the history; a closed DM puts the item back. Product types
 //  with reminders on remind the buyer at 72/47/24 h and at expiry, like a bot's
-//  renewal. Staff can do all but create a product type with /kho on the
-//  assistant too. The logic lives in server/services/stockService.js.
+//  renewal; a delivery can also get its own length (Days here, /giao songay),
+//  reminded even if its product has none. Staff can do all but create a
+//  product type with /kho on the assistant too. The logic lives in
+//  server/services/stockService.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
@@ -575,8 +577,8 @@ function HistoryTab({ product, refreshKey }) {
                                             {r.expiresAt && r.status === "delivered" && (
                                                 <Toggle
                                                     checked={r.reminders}
-                                                    disabled={busy === r.id || !product.reminders.enabled}
-                                                    title={product.reminders.enabled ? "Expiry reminders for this delivery" : "Expiry reminders are off for this product"}
+                                                    disabled={busy === r.id || !(r.ownExpiry || product.reminders.enabled)}
+                                                    title={r.ownExpiry || product.reminders.enabled ? "Expiry reminders for this delivery" : "Expiry reminders are off for this product"}
                                                     onChange={(v) => act(r.id, () => api.post(`/stock/deliveries/${r.id}/reminders`, { enabled: v }))}
                                                 />
                                             )}
@@ -633,19 +635,23 @@ const REASONS = {
 function DeliverModal({ products, initialId, onClose, onDone }) {
     const [productId, setProductId] = useState(initialId || products[0]?.id || "");
     const [buyerId, setBuyerId] = useState("");
+    const [days, setDays] = useState(""); // "" = as the product says
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState(null);
     const product = products.find((p) => p.id === productId);
+    const daysOk = days === "" || (Number.isInteger(Number(days)) && Number(days) >= 1 && Number(days) <= 3650);
 
     const submit = async (e) => {
         e.preventDefault();
         setBusy(true);
         setResult(null);
         try {
-            const { data } = await api.post("/stock/deliver", { productId, buyerId: buyerId.trim() }, { timeout: 70_000 });
+            const body = { productId, buyerId: buyerId.trim(), ...(days !== "" && { days: Number(days) }) };
+            const { data } = await api.post("/stock/deliver", body, { timeout: 70_000 });
+            const until = data.expiresAt ? ` Expires ${fmtDate(data.expiresAt)}.` : "";
             setResult(
                 data.delivered
-                    ? { tone: "success", text: `Delivered "${data.product}" — ID ${data.deliveryId}. ${data.remaining} item(s) left in stock.`, item: data.item }
+                    ? { tone: "success", text: `Delivered "${data.product}" — ID ${data.deliveryId}. ${data.remaining} item(s) left in stock.${until}`, item: data.item }
                     : { tone: "warning", text: REASONS[data.reason] || `Not delivered (${data.reason}) — the item went back to stock.` },
             );
             onDone();
@@ -672,6 +678,24 @@ function DeliverModal({ products, initialId, onClose, onDone }) {
                 <Field label="Buyer's Discord ID" hint="ArnTo-assistant DMs one random item to this user.">
                     <input className="input mono" value={buyerId} onChange={(e) => setBuyerId(e.target.value)} placeholder="871329074046435338" autoFocus />
                 </Field>
+                <Field
+                    label="Days of use"
+                    hint={
+                        product?.reminders?.enabled
+                            ? `Empty: the product's ${product.reminders.days} days. A number gives this delivery its own length, with reminders.`
+                            : "Empty: no expiry (this product has no reminders). A number gives this delivery an expiry, with reminders."
+                    }
+                >
+                    <input
+                        className="input"
+                        type="number"
+                        min={1}
+                        max={3650}
+                        value={days}
+                        onChange={(e) => setDays(e.target.value)}
+                        placeholder={product?.reminders?.enabled ? String(product.reminders.days) : "No expiry"}
+                    />
+                </Field>
                 {result && (
                     <Notice tone={result.tone}>
                         {result.text}
@@ -687,7 +711,7 @@ function DeliverModal({ products, initialId, onClose, onDone }) {
                 )}
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                     <button type="button" className="btn-ghost" onClick={onClose}>Close</button>
-                    <button type="submit" className="btn-primary" disabled={busy || !product?.enabled || !product?.counts.available || !/^\d{17,20}$/.test(buyerId.trim())}>
+                    <button type="submit" className="btn-primary" disabled={busy || !product?.enabled || !product?.counts.available || !daysOk || !/^\d{17,20}$/.test(buyerId.trim())}>
                         {busy ? "Delivering…" : "Deliver"}
                     </button>
                 </div>

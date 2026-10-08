@@ -19,7 +19,10 @@ const lifecycle = require("./lifecycle");
 //    remind    a product type with reminders on gives each delivery an expiry;
 //              the buyer is reminded at 72/47/24 h and once at expiry, like a
 //              bot's renewal (expiryService): ping on DISCORD_ALERT_WEBHOOK + a
-//              DM from whoever announced "dm.send" (ArnTo-Auto).
+//              DM from whoever announced "dm.send" (ArnTo-Auto). Staff may give
+//              one delivery its own length instead (/giao songay — the same
+//              goods sold for different prices last different times); such a
+//              delivery is reminded even when its product's reminders are off.
 //    manage    all but creating a product type also works from Discord: /kho on
 //              ArnTo-assistant (routes/stockExternal.js, /manage) adds and removes
 //              items, edits a type, shows which item each delivery sent.
@@ -50,6 +53,13 @@ const DEFAULT_MESSAGE = "### Cảm ơn quý khách đã ủng hộ ArnTo Shop. V
 
 const newId = customAlphabet("0123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 8);
 const httpError = (status, message) => Object.assign(new Error(message), { status });
+
+/** A number of days staff typed (a delivery's length, an extension). */
+const toDays = (v) => {
+    const n = Math.round(Number(v));
+    if (!(n >= 1 && n <= 3650)) throw httpError(400, "Invalid number of days");
+    return n;
+};
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 
@@ -94,11 +104,16 @@ const conn = () => {
             expires_at INTEGER,
             warned TEXT,                       -- JSON: reminder milestones (hours) already sent
             expired_sent INTEGER NOT NULL DEFAULT 0,
-            reminders INTEGER NOT NULL DEFAULT 1
+            reminders INTEGER NOT NULL DEFAULT 1,
+            own_expiry INTEGER NOT NULL DEFAULT 0  -- staff set this expiry, not the product: reminded regardless of the product's switch
         );
         CREATE INDEX IF NOT EXISTS stock_deliveries_by_product ON stock_deliveries(product_id, created_at);
         CREATE INDEX IF NOT EXISTS stock_deliveries_by_status ON stock_deliveries(status);
     `);
+    // Tables made before own_expiry existed.
+    if (!c.pragma("table_info(stock_deliveries)").some((col) => col.name === "own_expiry")) {
+        c.exec("ALTER TABLE stock_deliveries ADD COLUMN own_expiry INTEGER NOT NULL DEFAULT 0");
+    }
     made = c;
     return c;
 };
@@ -336,12 +351,15 @@ const finish = (deliveryId, result) => {
 
 /**
  * Give `buyerId` one random item of `product` (id or code), DM'd by the assistant.
+ * `days`: this delivery's own length, in place of the product's reminder days
+ * (or of no expiry at all) — empty: as the product says.
  * → { delivered: true, deliveryId, product, item, expiresAt, remaining }   item: the text that was sent
  *   { delivered: false, reason: "dm_blocked" | "unknown_user" | "stale", product, remaining }
  */
-const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "panel" } = {}) => {
+const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "panel", days } = {}) => {
     buyerId = String(buyerId || "").trim();
     if (!SNOWFLAKE.test(buyerId)) throw httpError(400, "Invalid buyer Discord ID");
+    const ownDays = days == null || days === "" ? null : toDays(days);
     const p = toProduct(requireProduct(product));
     if (!p.enabled) throw httpError(409, `"${p.name}" is turned off`);
 
@@ -362,14 +380,14 @@ const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "p
     const c = conn();
     const id = newId();
     const now = Date.now();
-    const expiresAt = p.reminders.enabled ? now + p.reminders.days * DAY : null;
+    const expiresAt = ownDays ? now + ownDays * DAY : p.reminders.enabled ? now + p.reminders.days * DAY : null;
     const item = c.transaction(() => {
         const it = c.prepare("SELECT id, content FROM stock_items WHERE product_id = ? AND status = 'available' ORDER BY RANDOM() LIMIT 1").get(p.id);
         if (!it) return null;
         c.prepare("UPDATE stock_items SET status = 'reserved' WHERE id = ?").run(it.id);
         c.prepare(
-            `INSERT INTO stock_deliveries (id, product_id, item_id, buyer_id, buyer_tag, staff_id, staff_tag, via, status, deadline, created_at, expires_at, warned)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+            `INSERT INTO stock_deliveries (id, product_id, item_id, buyer_id, buyer_tag, staff_id, staff_tag, via, status, deadline, created_at, expires_at, warned, own_expiry)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
         ).run(
             id,
             p.id,
@@ -383,6 +401,7 @@ const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "p
             now,
             expiresAt,
             JSON.stringify(expiresAt ? passedMilestones(expiresAt - now) : []),
+            ownDays ? 1 : 0,
         );
         return it;
     })();
@@ -457,6 +476,7 @@ const toDelivery = (r) => ({
     createdAt: r.created_at,
     deliveredAt: r.delivered_at,
     expiresAt: r.expires_at,
+    ownExpiry: !!r.own_expiry,
     reminders: !!r.reminders,
     expiredSent: !!r.expired_sent,
 });
@@ -501,16 +521,18 @@ const getDelivery = (id) => {
     return toDelivery(r);
 };
 
-/** Renewed: +days from the expiry (or from now, once it has passed); reminders start over. */
+/**
+ * Renewed: +days from the expiry (or from now, once it has passed); reminders start over.
+ * One delivered without an expiry gets its own, reminded like one given at /giao.
+ */
 const extendDelivery = (id, days) => {
     const r = deliveryRow(id);
-    const n = Math.round(Number(days));
-    if (!(n >= 1 && n <= 3650)) throw httpError(400, "Invalid number of days");
+    const n = toDays(days);
     const now = Date.now();
     const expiresAt = Math.max(r.expires_at || now, now) + n * DAY;
     conn()
-        .prepare("UPDATE stock_deliveries SET expires_at = ?, warned = ?, expired_sent = 0 WHERE id = ?")
-        .run(expiresAt, JSON.stringify(passedMilestones(expiresAt - now)), r.id);
+        .prepare("UPDATE stock_deliveries SET expires_at = ?, warned = ?, expired_sent = 0, own_expiry = ? WHERE id = ?")
+        .run(expiresAt, JSON.stringify(passedMilestones(expiresAt - now)), r.expires_at ? r.own_expiry : 1, r.id);
     return getDelivery(r.id);
 };
 
@@ -525,7 +547,8 @@ const setDeliveryReminders = (id, enabled) => {
 /**
  * Hourly: each milestone once, the most urgent reached one announced (as
  * expiryService does for bots), then one "expired" notice. Only for products
- * whose reminders are on now, and deliveries not switched off one by one.
+ * whose reminders are on now — or deliveries staff gave their own expiry —
+ * and deliveries not switched off one by one.
  */
 const checkExpiry = async () => {
     const { sendStockExpiryWarning, sendStockExpired } = require("./discordService");
@@ -537,7 +560,7 @@ const checkExpiry = async () => {
         .all();
     for (const d of due) {
         const p = products.get(d.product_id);
-        if (!p?.reminders.enabled) continue;
+        if (!p || !(d.own_expiry || p.reminders.enabled)) continue;
         const delivery = toDelivery({ ...d, content: null });
         try {
             const msLeft = d.expires_at - now;
@@ -560,11 +583,13 @@ const checkExpiry = async () => {
 
 // ── What the assistant offers in /giao ───────────────────────────────────────
 
+/** days: the product's reminder length, null when it has none (/giao songay gives one). */
 const catalog = () =>
     conn()
         .prepare("SELECT * FROM stock_products WHERE enabled = 1 ORDER BY name COLLATE NOCASE")
         .all()
-        .map((r) => ({ code: r.code, name: r.name, available: countsOf(r.id).available }));
+        .map(toProduct)
+        .map((p) => ({ code: p.code, name: p.name, available: p.counts.available, days: p.reminders.enabled ? p.reminders.days : null }));
 
 /** Who would deliver and remind — for the Stock page's warnings. */
 const status = () => {

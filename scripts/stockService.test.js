@@ -69,6 +69,13 @@ const rejects = async (fn, status) => {
     let nitro;
     let acc;
 
+    // A live database from before own_expiry: the column is added on first use.
+    raw().exec(`CREATE TABLE stock_deliveries (
+        id TEXT PRIMARY KEY, product_id TEXT NOT NULL, item_id INTEGER NOT NULL, buyer_id TEXT NOT NULL, buyer_tag TEXT,
+        staff_id TEXT, staff_tag TEXT, via TEXT NOT NULL, status TEXT NOT NULL, bus_id TEXT, deadline INTEGER, message_id TEXT,
+        created_at INTEGER NOT NULL, delivered_at INTEGER, expires_at INTEGER, warned TEXT,
+        expired_sent INTEGER NOT NULL DEFAULT 0, reminders INTEGER NOT NULL DEFAULT 1)`);
+
     await test("product types: create, unique code, validation", async () => {
         nitro = stock.createProduct({ name: "Nitro 1 tháng", code: "Nitro-1m", fields: "Gmail | Password | Hash", reminders: { enabled: true, days: 30 } });
         assert.strictEqual(nitro.code, "nitro-1m");
@@ -314,8 +321,9 @@ const rejects = async (fn, status) => {
 
             // /deliver hands the item back to the deliverer only.
             bus.answer = () => ({ delivered: true });
-            const mine = await call("assistant", "POST", "/deliver", { product: "nitro-1m", buyerId: BUYER });
+            const mine = await call("assistant", "POST", "/deliver", { product: "nitro-1m", buyerId: BUYER, days: 3 });
             assert.ok(mine.json.item.includes("@x.com"));
+            assert.ok(Math.abs(mine.json.expiresAt - (Date.now() + 3 * 86_400_000)) < 5000, "/giao songay reaches the panel");
             const theirs = await call("shop", "POST", "/deliver", { product: "nitro-1m", buyerId: BUYER });
             assert.strictEqual(theirs.json.delivered, true);
             assert.strictEqual(theirs.json.item, undefined);
@@ -339,6 +347,45 @@ const rejects = async (fn, status) => {
         sent.length = 0;
         await stock.checkExpiry();
         assert.strictEqual(sent.length, 0);
+    });
+
+    await test("deliver with its own days: an expiry the product lacks, reminded anyway", async () => {
+        bus.answer = () => ({ delivered: true });
+        stock.addItems(acc.id, { text: "own1\npass\n\nown2\npass\n\nown3\npass" });
+        const before = stock.getProduct(acc.id).counts;
+        await rejects(() => stock.deliver({ product: acc.id, buyerId: BUYER, days: 0 }), 400);
+        await rejects(() => stock.deliver({ product: acc.id, buyerId: BUYER, days: "abc" }), 400);
+        assert.deepStrictEqual(stock.getProduct(acc.id).counts, before, "a bad length reserves nothing");
+
+        const plain = await stock.deliver({ product: acc.id, buyerId: BUYER, days: "" });
+        assert.strictEqual(plain.expiresAt, null, "empty: as the product says — no expiry");
+
+        const r = await stock.deliver({ product: acc.id, buyerId: BUYER, days: 10 });
+        assert.ok(Math.abs(r.expiresAt - (Date.now() + 10 * 86_400_000)) < 5000);
+        assert.strictEqual(bus.calls.at(-1).payload.expiresAt, r.expiresAt, "the DM shows it");
+        const d = stock.getDelivery(r.deliveryId);
+        assert.deepStrictEqual([d.ownExpiry, d.reminders], [true, true]);
+
+        raw().prepare("UPDATE stock_deliveries SET expires_at = ?, warned = '[]' WHERE id = ?").run(Date.now() + 30 * 3_600_000, r.deliveryId);
+        sent.length = 0;
+        await stock.checkExpiry();
+        assert.deepStrictEqual(
+            sent.map((s) => [s.kind, s.delivery.id]),
+            [["warn", r.deliveryId]],
+            "reminded though the product's reminders are off — and only this one",
+        );
+
+        // Overrides a product's own length too.
+        const month = stock.createProduct({ name: "Gói tháng", code: "month", reminders: { enabled: true, days: 30 } });
+        stock.addItems(month.id, { text: "m1" });
+        const long = await stock.deliver({ product: "month", buyerId: BUYER, days: "90" });
+        assert.ok(Math.abs(long.expiresAt - (Date.now() + 90 * 86_400_000)) < 5000);
+
+        // No expiry until staff extend it: then it is reminded like one given at /giao.
+        const ext = stock.extendDelivery(plain.deliveryId, 5);
+        assert.deepStrictEqual([ext.ownExpiry, ext.expiresAt > Date.now() + 4 * 86_400_000], [true, true]);
+        assert.strictEqual(stock.extendDelivery(long.deliveryId, 1).ownExpiry, true, "stays its own");
+        assert.ok(stock.catalog().find((p) => p.code === "month").days === 30 && stock.catalog().find((p) => p.code === "acc").days === null);
     });
 
     await test("items: delete one, empty the stock; delivered stay as history", async () => {

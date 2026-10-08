@@ -687,6 +687,11 @@ orders: it only makes handing goods over faster.
 3. A product type with reminders on gives each delivery an expiry (N days). The buyer is
    reminded at 72/47/24 h and once at expiry, like a bot's renewal: ping on
    `DISCORD_ALERT_WEBHOOK` + a DM from the bot that announced `dm.send` (ArnTo-Auto).
+   One delivery can get its own length instead — `/giao … songay:<days>` or **Days of use**
+   on the Stock page — for goods whose length depends on what the buyer paid. It replaces
+   the product's N days, or gives an expiry to a product without one, and is reminded even
+   when the product's reminders are off. So is a delivery without an expiry that staff
+   extend (`/kho giahan`, **Extend**).
 
 Everything except **creating** a product type also works on Discord with `/kho` on
 ArnTo-assistant (Administrator, every answer ephemeral): `danhsach`, `xem` (with the stock
@@ -698,8 +703,8 @@ Items are AES-GCM-encrypted with `JWT_SECRET` in `data/shared.sqlite`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/external/stock/products` | Enabled product types: `{ products: [{ code, name, available }] }` |
-| `POST` | `/api/external/stock/deliver` | `{ product, buyerId, buyerTag?, staffId?, staffTag? }` → `{ delivered, deliveryId?, product, item?, expiresAt?, remaining, reason? }` — `item` only for the project that delivers stock |
+| `GET` | `/api/external/stock/products` | Enabled product types: `{ products: [{ code, name, available, days }] }` — `days`: reminder length, `null` = none |
+| `POST` | `/api/external/stock/deliver` | `{ product, buyerId, buyerTag?, staffId?, staffTag?, days? }` → `{ delivered, deliveryId?, product, item?, expiresAt?, remaining, reason? }` — `item` only for the project that delivers stock |
 | | `/api/external/stock/manage/*` | `/kho`: the Stock page's routes minus creating a product type, for the project that announced `stock.deliver` only (403 otherwise) — see `server/routes/stockExternal.js` |
 
 **Vouchers.** Rewards the admin hands out and claims by hand, managed on the Vouchers page

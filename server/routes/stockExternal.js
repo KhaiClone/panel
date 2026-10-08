@@ -5,9 +5,10 @@ const discordBus = require("../services/discordBus");
 // Mounted at /api/external/stock behind apiKeyMiddleware — ArnTo-assistant's
 // /giao and /kho (services/stockService.js). A project key only, like Deco Gift.
 //
-//   GET  /products     enabled product types: [{ code, name, available }]
-//   POST /deliver      { product, buyerId, buyerTag, staffId, staffTag } → the panel
-//                      picks an item and has the assistant DM it (bus "stock.deliver")
+//   GET  /products     enabled product types: [{ code, name, available, days }]
+//   POST /deliver      { product, buyerId, buyerTag, staffId, staffTag, days? } → the panel
+//                      picks an item and has the assistant DM it (bus "stock.deliver");
+//                      days: this delivery's own length (/giao songay)
 //
 // /manage is /kho: everything the Stock page does except creating a product
 // type. It reads the stock in clear, so only the project that delivers it (the
@@ -48,8 +49,8 @@ router.get("/products", handle(() => ({ products: stock.catalog() })));
 router.post(
     "/deliver",
     handle(async (req) => {
-        const { product, buyerId, buyerTag, staffId, staffTag } = req.body || {};
-        const res = await stock.deliver({ product, buyerId, buyerTag, staffId, staffTag, via: "discord" });
+        const { product, buyerId, buyerTag, staffId, staffTag, days } = req.body || {};
+        const res = await stock.deliver({ product, buyerId, buyerTag, staffId, staffTag, days, via: "discord" });
         if (!isDeliverer(req)) delete res.item;
         return res;
     }),

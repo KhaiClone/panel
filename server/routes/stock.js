@@ -12,7 +12,7 @@ const stock = require("../services/stockService");
 //   POST   /products/:id/items                  { text, allowDuplicates } paste items
 //   DELETE /products/:id/items                  empty the stock
 //   DELETE /products/:id/items/:itemId          one item
-//   POST   /deliver                             { productId, buyerId } → the assistant DMs one
+//   POST   /deliver                             { productId, buyerId, days? } → the assistant DMs one
 //   GET    /deliveries?productId=               history
 //   POST   /deliveries/:id/extend               { days }
 //   POST   /deliveries/:id/reminders            { enabled }
@@ -41,7 +41,7 @@ router.delete("/products/:id/items/:itemId", handle((req) => stock.deleteItem(re
 
 router.post(
     "/deliver",
-    handle((req) => stock.deliver({ product: req.body?.productId, buyerId: req.body?.buyerId, staffTag: "Panel", via: "panel" })),
+    handle((req) => stock.deliver({ product: req.body?.productId, buyerId: req.body?.buyerId, days: req.body?.days, staffTag: "Panel", via: "panel" })),
 );
 
 router.get("/deliveries", handle((req) => ({ deliveries: stock.listDeliveries({ productId: req.query.productId || null }) })));
