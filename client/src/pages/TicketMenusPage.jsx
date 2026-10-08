@@ -149,7 +149,7 @@ function ServiceForm({ initial, isNew, pingVars, onSave, saving }) {
             <Field label="Description (under the name in the menu)">
                 <input className="input" value={f.description} onChange={set("description")} maxLength={100} />
             </Field>
-            <Field label="Seller ping" hint={<>Sent once the customer picks a product. Variables: {pingVars.map((v) => <code key={v} className="mono" style={{ marginRight: 6 }}>{v}</code>)}— {"{staff}"} is the staff role.</>}>
+            <Field label="Seller ping" hint={<>Sent once the customer picks a product. Variables: {pingVars.map((v) => <code key={v} className="mono" style={{ marginRight: 6 }}>{v}</code>)}— {"{staff}"} pings the Staff and Supporter roles.</>}>
                 <textarea className="input" rows={3} value={f.ping} onChange={set("ping")} maxLength={1500} placeholder="Empty: a default ping" />
             </Field>
             <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
