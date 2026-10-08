@@ -755,6 +755,40 @@ menus. Stored as one document in `data/shared.sqlite` (kv `__ticketMenu`).
 | `POST` | `/api/external/ticket-menus/import` | `{ services, legacyProducts, other, sellers }` → `{ imported, services, products }` (counts added; once) |
 | | `…/services[/:key[/move]]`, `…/products[/:id[/move]]`, `…/settings` | Same as the page's `/api/ticket-menus` routes — see `server/routes/ticketMenus.js` |
 
+**Supporters.** ArnTo-Shop's paid helpers (hỗ trợ viên) and their salary, managed on the
+Supporters page and with `/staff-*` on ArnTo-Shop (`server/services/supporterService.js`).
+Two roles, deliberately separate: **Supporter** is the bot's — given when someone is added,
+taken back when they are removed; **Staff** is the owner's, handed out by hand for extra
+command rights, and nothing here touches it.
+
+1. **Add** — Discord ID + bank (VietQR list) + account number. The shop gives the Supporter
+   role and DMs the welcome text (DM texts button; `{user}` `{id}` `{tag}`).
+2. **Salary** — `/done` on the shop books the order's pay to the supporter, owed by the
+   order's seller; the order is not completed when the panel cannot record it. The page (or
+   `/staff-add`, `/staff-deduct`) adds or deducts with a reason; the balance never goes below 0.
+3. **Pay** — the page shows a VietQR for the whole balance (or `/staff-pay`, Administrators
+   only on its button); confirming sets the balance to 0. "Owed by" restarts at each payout.
+4. **Remove** — only with a balance of 0. The role is taken back and the farewell DMed; the
+   history stays and they can be added again.
+
+Every change is a ledger row (History). The shop does the Discord side from one sealed bus
+command, `supporter.event` (role, DM, a line in its salary log channel): a change made on
+the page is sent to it, and a change the shop made comes back as `event` in the answer for it
+to apply itself. **Check roles** gives the role to every supporter who lacks it and lists who
+holds it without being one. On its first start with this version the shop copies its old
+local `supporters` (balances split by `balanceReceivedFromArnTo` / `…FromKhaiDev`) here
+(`POST /import`, once) and becomes the owner. Stored in `data/shared.sqlite`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/external/supporters` | `{ imported, supporters }` — the active ones |
+| `POST` | `/api/external/supporters/import` | `{ supporters }` → `{ imported, supporters, balance }` (once) |
+| `GET` | `/api/external/supporters/:userId` | One supporter (`active: false` once they left), with `owed`, `earned`, `paid` |
+| `POST` | `/api/external/supporters` | `{ userId, userTag, bankCode, bankBin, accountNumber, byId, byTag }` → `{ supporter, entry, event }` |
+| `DELETE` | `/api/external/supporters/:userId` | `{ byId, byTag }` → `{ supporter, entry, event }`; 409 while owed |
+| `POST` | `/api/external/supporters/:userId/credit` | `{ kind: salary\|add\|deduct, amount, sellerId?, orderId?, note?, byId, byTag }` → `{ supporter, entry, event }` |
+| `POST` | `/api/external/supporters/:userId/payout` | `{ note?, byId, byTag }` → `{ supporter, entry, event }`; 409 when the balance is 0 |
+
 ---
 
 ## 💾 Backup & Rollback
