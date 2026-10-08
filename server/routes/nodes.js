@@ -169,21 +169,64 @@ router.put("/:id", async (req, res, next) => {
 });
 
 /**
+ * What removing a node would leave behind — the Remove dialog shows it first.
+ *   bots        projects whose record names this node (they block the delete)
+ *   staleCopies projects force-moved off it while it was down, still in its
+ *               PM2 list; once the node is gone nothing can stop them
+ *   egressBots  projects whose outbound traffic goes through this node
+ */
+const removalImpact = async (node) => {
+    const bots = await db.find("bots");
+    const on = (nodeId) => {
+        try { return nodeService.resolveNodeId(nodeId) === node._id; } catch { return false; }
+    };
+    const brief = (b) => ({ _id: b._id, name: b.name, projectType: b.projectType || "discord", pm2Name: b.pm2Name });
+    return {
+        isPanelNode: node._id === process.env.PANEL_NODE_ID,
+        bots: bots.filter((b) => on(b.nodeId)).map((b) => ({ ...brief(b), canRebuild: !!b.repoUrl })),
+        staleCopies: (await require("../services/staleCopies").forNode(node._id))
+            .map((s) => ({ name: s.name, pm2Name: s.pm2Name, createdAt: s.createdAt })),
+        egressBots: bots.filter((b) => b.egressNodeId && on(b.egressNodeId) && !on(b.nodeId)).map(brief),
+    };
+};
+
+/** GET /api/nodes/:id/impact — see removalImpact. */
+router.get("/:id/impact", async (req, res, next) => {
+    try {
+        const node = await db.findOne("nodes", { _id: req.params.id });
+        if (!node) return res.status(404).json({ error: "Node not found" });
+        res.json(await removalImpact(node));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * DELETE /api/nodes/:id
- * Refused while any bot still lives on the node.
+ * Refused for the panel's own node and while any project still lives on it.
+ * Egress pins on it are cleared (they could only fail now), and its stale
+ * copies are forgotten — the response says what they are.
  */
 router.delete("/:id", async (req, res, next) => {
     try {
         const node = await db.findOne("nodes", { _id: req.params.id });
         if (!node) return res.status(404).json({ error: "Node not found" });
 
-        const botsOnNode = await db.find("bots", { nodeId: req.params.id });
-        if (botsOnNode.length > 0) {
+        const impact = await removalImpact(node);
+        if (impact.isPanelNode) {
+            return res.status(400).json({ error: `"${node.name}" is the node this panel runs on (PANEL_NODE_ID) — it cannot be removed.` });
+        }
+        if (impact.bots.length > 0) {
             return res.status(400).json({
-                error: `Cannot delete node "${node.name}" — ${botsOnNode.length} bot(s) still run on it. Remove or migrate them first.`,
+                error: `Cannot delete node "${node.name}" — ${impact.bots.length} project(s) still live on it. Move or delete them first.`,
+                bots: impact.bots,
             });
         }
 
+        if (impact.egressBots.length > 0) {
+            await db.updateMany("bots", { _id: impact.egressBots.map((b) => b._id) }, { egressNodeId: "" });
+        }
+        await require("../services/staleCopies").forgetNode(node._id);
         await db.findOneAndDelete("nodes", { _id: req.params.id });
 
         // Drop this node's Lavalink state so a recycled _id never inherits it.
@@ -196,7 +239,7 @@ router.delete("/:id", async (req, res, next) => {
             .syncMesh()
             .catch((err) => console.error(`[Nodes] WG mesh sync after deleting "${node.name}" failed:`, err.message));
 
-        res.json({ message: `Node "${node.name}" deleted` });
+        res.json({ message: `Node "${node.name}" deleted`, staleCopies: impact.staleCopies, egressBots: impact.egressBots });
     } catch (err) {
         next(err);
     }

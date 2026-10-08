@@ -9,6 +9,7 @@ const history = require("../services/historyService");
 const schedulerService = require("../services/schedulerService");
 const nodeService = require("../services/nodeService");
 const nodeReleases = require("../services/nodeReleases");
+const staleCopies = require("../services/staleCopies");
 const { createNotification } = require("./notifications");
 
 // ─── Restart rate limiter ───────────────────────────────────────────────────
@@ -736,16 +737,106 @@ router.delete("/:id", async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * POST /api/bots/:id/migrate   body: { targetNodeId }
+ * Bring a project up on the node its record names — the last step of a move.
+ * A fullstack site needs both halves: nginx in front AND its PM2 app.
+ * `start: false` sets up only what the Start button does not (nginx, UFW), so
+ * pressing Start later finishes the job.
+ */
+const bringUp = async (bot, { start = true } = {}) => {
+    const wc = bot.projectType === "website" ? bot.websiteConfig : null;
+    if (wc?.mode === "static") {
+        if (start) await applyWebsiteInfra(bot); // http-server or nginx — that IS the start
+        return;
+    }
+    if (wc) await applyWebsiteInfra(bot);
+    if (bot.projectType === "service" && bot.serviceConfig?.port) await executor.ufwOpenPort(bot, bot.serviceConfig.port);
+    if (start) await executor.startBot(bot, await getProxyConf(bot));
+};
+
+/**
+ * Forced move off a node that does not answer. Its files are out of reach, so
+ * the project is rebuilt on the target from its git repo instead. Everything
+ * git does not track stays behind — the .env (unless `env` is given), databases,
+ * uploads. The old copy is still in that node's PM2 list: staleCopies stops it
+ * the moment the node answers again, so it never runs alongside this one.
+ */
+const rebuildFromGit = async (bot, targetNode, { env, start }) => {
+    if (!bot.repoUrl) {
+        const err = new Error(
+            `"${bot.name}" has no git repository to rebuild from — its files exist only on the offline node. ` +
+                "Bring that node back to move it, or delete the project and create it again.",
+        );
+        err.status = 400;
+        throw err;
+    }
+
+    const fromNodeId = nodeService.resolveNodeId(bot.nodeId);
+    // A rebuild is a fresh clone at the standard {root}/{buyerID}/{botID}: a
+    // local import's absolute path belonged to the old machine.
+    const changes = { nodeId: targetNode._id };
+    if (bot.source === "local") Object.assign(changes, { source: "git", localPath: null });
+    // Egress "through the node it runs on" meant its native IP; pointing at the
+    // dead node now would cut the project off the internet.
+    if (bot.egressNodeId && nodeService.resolveNodeId(bot.egressNodeId) === fromNodeId) changes.egressNodeId = "";
+    const moved = { ...bot, ...changes };
+    const isStatic = bot.projectType === "website" && bot.websiteConfig?.mode === "static";
+    const envGiven = typeof env === "string" && env.trim() !== "";
+
+    console.log(`[Bots] Rebuilding "${bot.name}" from git on "${targetNode.name}" — its node does not answer`);
+    // A leftover folder of this same project (an earlier move) makes the clone refuse.
+    await executor.removeBotFiles(moved);
+    await executor.cloneRepo(moved, bot.repoUrl, bot.branch || "main");
+    try {
+        if (envGiven) await executor.fsWrite(moved, ".env", env);
+        if (!isStatic) await executor.installDeps(moved, bot.installCommand);
+        if (bot.projectType === "website" && !isStatic) await runBuildCommand(moved, bot.websiteConfig.buildCommand);
+    } catch (err) {
+        await executor.removeBotFiles(moved).catch(() => {});
+        throw err;
+    }
+
+    const updated = await db.findOneAndUpdate("bots", { _id: bot._id }, changes);
+    // A node record that is already gone can never be swept — nothing to remember.
+    if (await db.findOne("nodes", { _id: fromNodeId })) await staleCopies.add(bot, fromNodeId);
+    await staleCopies.forget(bot._id, targetNode._id);
+
+    // The move itself is done and recorded; a failed start is reported, not rolled back.
+    let startError = null;
+    try {
+        await bringUp(updated, { start });
+    } catch (err) {
+        startError = err.message;
+    }
+
+    await createNotification(`"${bot.name}" was rebuilt from git on "${targetNode.name}" — its old node did not answer.`, "info");
+    console.log(`[Bots] Rebuilt "${bot.name}" on "${targetNode.name}"${startError ? ` (start failed: ${startError})` : ""}`);
+
+    const notes = [
+        envGiven ? ".env written." : "No .env was given — set it in the Environment tab.",
+        changes.egressNodeId === "" ? "Its egress proxy pointed at the old node and was reset to the new node's own IP." : null,
+        "The old copy is stopped automatically if that node comes back.",
+    ].filter(Boolean);
+    const head = startError
+        ? `Rebuilt on "${targetNode.name}", but starting it failed: ${startError}`
+        : `Rebuilt on "${targetNode.name}"${start ? " and started" : " — left stopped"}.`;
+    return { message: `${head} ${notes.join(" ")}`, bot: updated, rebuilt: true, startError };
+};
+
+/**
+ * POST /api/bots/:id/migrate   body: { targetNodeId, force?, env?, start? }
  * Move a project (with all its data, keeping .git) to another node:
  *   stop source → archive → extract on target → reinstall → start → clean source.
  * The DB record only flips its nodeId on success; on failure the source is
  * left intact and restarted.
+ *
+ * The copy needs the source node to answer. When it does not, the move is
+ * refused with code SOURCE_OFFLINE — or, with `force`, rebuilt from git on the
+ * target (rebuildFromGit; `env` is written as its .env, `start: false` leaves
+ * it stopped).
  */
 router.post("/:id/migrate", async (req, res, next) => {
     const os = require("os");
     const path2 = require("path");
-    const fsp = require("fs");
     let tmpPath = null;
     let sourceStopped = false;
     let bot = null;
@@ -754,7 +845,7 @@ router.post("/:id/migrate", async (req, res, next) => {
         bot = await db.findOne("bots", { _id: req.params.id });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
 
-        const { targetNodeId } = req.body;
+        const { targetNodeId, force = false } = req.body;
         if (!targetNodeId) return res.status(400).json({ error: "targetNodeId is required" });
 
         const currentNodeId = nodeService.resolveNodeId(bot.nodeId);
@@ -767,6 +858,18 @@ router.post("/:id/migrate", async (req, res, next) => {
         if (target.enabled === false) return res.status(400).json({ error: `Node "${target.name}" is disabled` });
         const healthy = await nodeService.checkNodeHealth(target);
         if (!healthy) return res.status(400).json({ error: `Node "${target.name}" is offline — cannot migrate there` });
+
+        // The source must answer too, or there is nothing to copy from.
+        const source = await db.findOne("nodes", { _id: currentNodeId });
+        if (!source || !(await nodeService.checkNodeHealth(source))) {
+            if (force) return res.json(await rebuildFromGit(bot, target, { env: req.body.env, start: req.body.start !== false }));
+            return res.status(409).json({
+                error: `Node "${source?.name || currentNodeId}" is offline — its files cannot be copied.` +
+                    (bot.repoUrl ? " It can be rebuilt from git on the target instead." : " It has no git repository to rebuild from."),
+                code: "SOURCE_OFFLINE",
+                canRebuild: !!bot.repoUrl,
+            });
+        }
 
         const sourceRef = { ...bot }; // nodeId = current
         const targetRef = { ...bot, nodeId: targetNodeId };
@@ -809,20 +912,13 @@ router.post("/:id/migrate", async (req, res, next) => {
             await runBuildCommand(targetRef, bot.websiteConfig.buildCommand);
         }
 
-        // 5. Flip the DB record to the new node
+        // 5. Flip the DB record to the new node. The extract above replaced any
+        //    copy a forced move once left on it, so that is no longer stale.
         const updated = await db.findOneAndUpdate("bots", { _id: bot._id }, { nodeId: targetNodeId });
+        await staleCopies.forget(bot._id, nodeService.resolveNodeId(targetNodeId));
 
         // 6. Start on the target
-        if (bot.projectType === "website") {
-            await applyWebsiteInfra(updated);
-        } else if (bot.projectType === "service") {
-            const proxyConf = await getProxyConf(updated);
-            await executor.startBot(updated, proxyConf);
-            if (updated.serviceConfig?.port) await executor.ufwOpenPort(updated, updated.serviceConfig.port);
-        } else {
-            const proxyConf = await getProxyConf(updated);
-            await executor.startBot(updated, proxyConf);
-        }
+        await bringUp(updated);
 
         // 7. Clean up the source node's files (target is confirmed running).
         //    Local-imported folders live at a user-managed path — never delete
@@ -841,8 +937,7 @@ router.post("/:id/migrate", async (req, res, next) => {
             try {
                 const still = await db.findOne("bots", { _id: bot._id });
                 if (still && nodeService.resolveNodeId(still.nodeId) === nodeService.resolveNodeId(bot.nodeId)) {
-                    if (bot.projectType === "website") await applyWebsiteInfra(bot).catch(() => {});
-                    else await executor.startBot(bot, await getProxyConf(bot)).catch(() => {});
+                    await bringUp(bot).catch(() => {});
                 }
             } catch { /* best-effort restore */ }
         }

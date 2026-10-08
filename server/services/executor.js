@@ -28,6 +28,12 @@ const target = (bot) =>
         ? { absPath: bot.localPath }
         : { root: rootOf(bot), dir: relDir(bot) };
 
+/** Where the project's folder is on its node, for messages shown to a person. */
+const describeLocation = (bot) => {
+    const t = target(bot);
+    return t.absPath || `${t.dir} under the node's ${t.root} folder`;
+};
+
 const agentCall = async (bot, method, urlPath, opts = {}) => {
     const node = await nodeService.getNode(bot.nodeId);
     return nodeService.agentRequest(node, method, urlPath, opts);
@@ -515,6 +521,7 @@ module.exports = {
     relDir,
     rootOf,
     target,
+    describeLocation,
     buildEgressProxyConf,
     startBot,
     stopBot,

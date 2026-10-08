@@ -258,6 +258,15 @@ const pollAllNodes = async () => {
         const prev = nodeStatus.get(node._id);
         nodeStatus.set(node._id, ok ? "online" : "offline");
 
+        // Projects force-moved off this node while it was down are still in its
+        // PM2 list — stop them before they run twice. On every healthy poll, not
+        // just the offline → online edge: a panel restart forgets the edge.
+        if (ok) {
+            require("./staleCopies")
+                .sweepNode(node)
+                .catch((err) => console.error(`[Nodes] Stale-copy sweep on "${node.name}" failed:`, err.message));
+        }
+
         // Notify only on the online → offline transition (not on every poll)
         if (prev === "online" && !ok) {
             try {

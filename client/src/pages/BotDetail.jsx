@@ -436,6 +436,10 @@ export default function BotDetail() {
     const [nodes, setNodes] = useState([]);       // migration target options
     const [migrateTo, setMigrateTo] = useState(""); // selected target node id
     const [migrating, setMigrating] = useState(false);
+    // Rebuild-from-git move, for when the project's node does not answer
+    const [sourceOffline, setSourceOffline] = useState(false); // the server said so (SOURCE_OFFLINE)
+    const [rebuildEnv, setRebuildEnv] = useState("");
+    const [rebuildStart, setRebuildStart] = useState(true);
 
     const [editName,           setEditName]           = useState('');
     const [editExpiry,         setEditExpiry]         = useState('');
@@ -491,17 +495,26 @@ export default function BotDetail() {
         api.get("/nodes").then((r) => setNodes(r.data)).catch(() => {});
     }, []);
 
-    const handleMigrate = async () => {
+    const handleMigrate = async ({ force = false } = {}) => {
         if (!migrateTo) return;
         setConfirm(null);
         setMigrating(true);
-        setActionMsg({ type: "info", text: "Migrating… this can take a minute — do not close the page." });
+        setActionMsg({ type: "info", text: force
+            ? "Rebuilding from git on the new node… cloning and installing can take a few minutes — do not close the page."
+            : "Migrating… this can take a minute — do not close the page." });
         try {
-            const { data } = await api.post(`/bots/${id}/migrate`, { targetNodeId: migrateTo }, { timeout: 600_000 });
-            setActionMsg({ type: "success", text: data.message || "Migration complete" });
+            const body = force
+                ? { targetNodeId: migrateTo, force: true, env: rebuildEnv, start: rebuildStart }
+                : { targetNodeId: migrateTo };
+            const { data } = await api.post(`/bots/${id}/migrate`, body, { timeout: 900_000 });
+            setActionMsg({ type: data.startError ? "error" : "success", text: data.message || "Migration complete" });
             setMigrateTo("");
+            setSourceOffline(false);
+            setRebuildEnv("");
             fetchBot();
         } catch (err) {
+            // The node went down after this page last looked — switch the card to the rebuild.
+            if (err.response?.data?.code === "SOURCE_OFFLINE") setSourceOffline(true);
             setActionMsg({ type: "error", text: err.response?.data?.error || "Migration failed" });
         } finally { setMigrating(false); }
     };
@@ -850,13 +863,46 @@ export default function BotDetail() {
                             const targets = nodes.filter((n) => n._id !== currentNodeId && n.status === "online" && n.enabled !== false);
                             if (nodes.length < 2) return null;
                             const hasDomain = bot.projectType === "website" && bot.websiteConfig?.domain;
+                            // The copy needs the current node to answer; without it the
+                            // only way off is a fresh clone of the repo on the target.
+                            const rebuild = sourceOffline || bot.live?.status === "node-offline";
+                            const domainNote = hasDomain && <><br /><span style={{ color: "var(--warning)" }}>⚠ This site has a domain — after moving, repoint its DNS A record to the new node's IP.</span></>;
                             return (
-                                <div style={{ padding: 20, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                                <div style={{ padding: 20, borderRadius: 10, background: "var(--bg-input)", border: `1px solid ${rebuild ? "var(--danger-border)" : "var(--border)"}` }}>
                                     <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 6px" }}>Move to another node</h3>
-                                    <p style={{ fontSize: 12.5, color: "var(--text-dim)", margin: "0 0 14px", lineHeight: 1.5 }}>
-                                        Transfers all files (data, <span className="mono">.env</span>, git history) to the target node and restarts there. The project is briefly offline during the move.
-                                        {hasDomain && <><br /><span style={{ color: "var(--warning)" }}>⚠ This site has a domain — after moving, repoint its DNS A record to the new node's IP.</span></>}
-                                    </p>
+                                    {!rebuild ? (
+                                        <p style={{ fontSize: 12.5, color: "var(--text-dim)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                                            Transfers all files (data, <span className="mono">.env</span>, git history) to the target node and restarts there. The project is briefly offline during the move.
+                                            {domainNote}
+                                        </p>
+                                    ) : !bot.repoUrl ? (
+                                        <p style={{ fontSize: 12.5, color: "var(--text-dim)", margin: 0, lineHeight: 1.5 }}>
+                                            <span style={{ color: "var(--danger)" }}>Node "{bot.nodeName}" is offline</span>, so this project's files cannot be copied — and it has no git repository to rebuild it from. Its files exist only on that machine: bring the node back to move it.
+                                        </p>
+                                    ) : (
+                                        <>
+                                            <p style={{ fontSize: 12.5, color: "var(--text-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+                                                <span style={{ color: "var(--danger)" }}>Node "{bot.nodeName}" is offline</span>, so its files cannot be copied. The project can be <b>rebuilt from git</b> on another node instead: a fresh clone of <span className="mono">{bot.repoUrl}</span> (<span className="mono">{bot.branch || "main"}</span>), then install and start.
+                                                <br />Only what is in git comes along. The <span className="mono">.env</span>, databases, uploads and anything else the project wrote to disk stay on the offline node.
+                                                {domainNote}
+                                            </p>
+                                            <label style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--text-muted)", margin: "0 0 6px" }}>.env for the new copy (optional, can also be set later in the Environment tab)</label>
+                                            <textarea
+                                                className="input mono"
+                                                style={{ height: 110, resize: "vertical", fontSize: 12, marginBottom: 10 }}
+                                                placeholder={"TOKEN=...\nMONGO_URI=..."}
+                                                value={rebuildEnv}
+                                                onChange={(e) => setRebuildEnv(e.target.value)}
+                                                disabled={migrating}
+                                                spellCheck={false}
+                                            />
+                                            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text-muted)", margin: "0 0 14px", cursor: "pointer" }}>
+                                                <input type="checkbox" checked={rebuildStart} onChange={(e) => setRebuildStart(e.target.checked)} disabled={migrating} />
+                                                Start it on the new node right away
+                                            </label>
+                                        </>
+                                    )}
+                                    {(!rebuild || bot.repoUrl) && (
                                     <div className="mobile-stack" style={{ display: "flex", gap: 10, alignItems: "center" }}>
                                         <select className="input" style={{ maxWidth: 260 }} value={migrateTo} onChange={(e) => setMigrateTo(e.target.value)} disabled={migrating}>
                                             <option value="">Select target node…</option>
@@ -865,15 +911,16 @@ export default function BotDetail() {
                                             ))}
                                         </select>
                                         <button
-                                            className="btn-primary"
+                                            className={rebuild ? "btn-danger" : "btn-primary"}
                                             style={{ padding: "9px 18px", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}
                                             disabled={!migrateTo || migrating}
-                                            onClick={() => setConfirm({ action: "migrate" })}
+                                            onClick={() => setConfirm({ action: rebuild ? "rebuild" : "migrate" })}
                                         >
-                                            {migrating ? <><BtnSpinner /> Migrating…</> : "Migrate"}
+                                            {migrating ? <><BtnSpinner /> {rebuild ? "Rebuilding…" : "Migrating…"}</> : rebuild ? "Rebuild there" : "Migrate"}
                                         </button>
                                     </div>
-                                    {targets.length === 0 && (
+                                    )}
+                                    {(!rebuild || bot.repoUrl) && targets.length === 0 && (
                                         <p style={{ fontSize: 11.5, color: "var(--text-dim)", margin: "10px 0 0" }}>No other online node available to move to.</p>
                                     )}
                                 </div>
@@ -1026,7 +1073,20 @@ export default function BotDetail() {
                     title={`Move "${bot.name}" to ${nodes.find(n => n._id === migrateTo)?.name || "another node"}?`}
                     message={"The project will be stopped on its current node, transferred with all its data, and started on the target. It will be briefly offline.\n\nThe source copy is removed once the target is confirmed running."}
                     confirmText="Migrate now" danger={false}
-                    onConfirm={handleMigrate}
+                    onConfirm={() => handleMigrate()}
+                    onCancel={() => setConfirm(null)}
+                />
+            )}
+            {confirm?.action === 'rebuild' && (
+                <ConfirmModal
+                    title={`Rebuild "${bot.name}" on ${nodes.find(n => n._id === migrateTo)?.name || "another node"}?`}
+                    message={
+                        `Its git repo is cloned fresh there${rebuildEnv.trim() ? " with the .env you pasted" : " with NO .env"}, then installed${rebuildStart ? " and started" : ""}. Files that are not in git stay on "${bot.nodeName}".\n\n` +
+                        `If that machine is in fact still running (only its agent is down), the old copy keeps running too until the node answers again — the panel then stops it automatically and keeps its files.\n\n` +
+                        `If you remove the node before it answers, stop the old copy on that machine yourself: pm2 delete ${bot.pm2Name} && pm2 save`
+                    }
+                    confirmText="Rebuild now"
+                    onConfirm={() => handleMigrate({ force: true })}
                     onCancel={() => setConfirm(null)}
                 />
             )}
