@@ -168,6 +168,18 @@ const remove = async (domain) => {
 };
 
 /**
+ * Drop every domain of a node that is leaving the panel → the domains dropped.
+ * Never the panel's own node, so the panel's address stays what it was. Its
+ * vhost and certificates are the node's uninstall's business.
+ */
+const forgetNode = async (nodeId) => {
+    const rows = await list();
+    const gone = rows.filter((d) => d.nodeId === nodeId);
+    if (gone.length) await db.set(KEY, rows.filter((d) => d.nodeId !== nodeId));
+    return gone.map((d) => d.domain);
+};
+
+/**
  * HTTPS for one domain, issued on ITS node (DNS must point there): certbot
  * certonly, then the vhost is rewritten with the 443 block. If this domain's
  * node is where the panel runs, the other nodes' redirects switch to https.
@@ -183,4 +195,4 @@ const issueCert = async (domain, email = null) => {
     return (await list()).find((d) => d.domain === domain);
 };
 
-module.exports = { KEY, list, normalize, ofNode, publicUrl, currentUrl, planSites, sync, add, remove, issueCert };
+module.exports = { KEY, list, normalize, ofNode, publicUrl, currentUrl, planSites, sync, add, remove, forgetNode, issueCert };

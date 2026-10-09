@@ -24,13 +24,16 @@ const closePort = async (port) => {
 /** Interface names ufw accepts after "in on" (Linux caps them at 15 chars). */
 const IFACE_RE = /^[a-zA-Z0-9_.-]{1,15}$/;
 
+/** Marks every rule allowFrom adds, so they can be found and removed again. */
+const PANEL_ACCESS = "bot-panel: panel access";
+
 /**
  * The ufw rule text for allowFrom. `iface` narrows it to traffic arriving on
  * that interface — "wg0" for a peer's WireGuard address. Callers validate ip,
  * port and iface first: the text goes into a shell command.
  */
 const allowFromRule = (ip, port, iface = null) =>
-    `allow ${iface ? `in on ${iface} ` : ""}from ${ip} to any port ${port} proto tcp comment 'bot-panel: panel access'`;
+    `allow ${iface ? `in on ${iface} ` : ""}from ${ip} to any port ${port} proto tcp comment '${PANEL_ACCESS}'`;
 
 /**
  * Let one IP reach one TCP port — how a node that is about to host the panel is
@@ -74,4 +77,50 @@ const status = async () => {
     return stdout;
 };
 
-module.exports = { openPort, closePort, allowFrom, allowFromRule, IFACE_RE, isPortFree, findFreePort, status };
+/**
+ * Numbers of the allowFrom rules whose source is one of `ips`, highest first
+ * (deleting in that order leaves the other numbers as they are). Pure: reads
+ * `ufw status numbered` lines like
+ *   [ 3] 1975/tcp on wg0            ALLOW IN    10.88.0.5                  # bot-panel: panel access
+ */
+const panelAccessRuleNumbers = (statusText, ips) => {
+    const want = new Set(ips);
+    const nums = [];
+    for (const line of String(statusText).split("\n")) {
+        const m = /^\[\s*(\d+)\]\s+(.*?)\s+#\s*(.*?)\s*$/.exec(line);
+        if (!m || m[3] !== PANEL_ACCESS) continue;
+        const from = m[2].split(/\s{2,}/).pop();
+        if (want.has(from)) nums.push(Number(m[1]));
+    }
+    return nums.sort((a, b) => b - a);
+};
+
+// One removal at a time: rule numbers shift with every delete.
+let removing = Promise.resolve();
+
+/**
+ * Delete the allowFrom rules for these source IPs — when the node behind them
+ * leaves the panel. Returns how many went.
+ */
+const removePanelAccessFrom = (ips) => {
+    const run = removing.then(async () => {
+        const nums = panelAccessRuleNumbers(await status(), ips);
+        for (const n of nums) await execAsync(`${SUDO}ufw --force delete ${n}`);
+        return nums.length;
+    });
+    removing = run.catch(() => {});
+    return run;
+};
+
+module.exports = {
+    openPort,
+    closePort,
+    allowFrom,
+    allowFromRule,
+    panelAccessRuleNumbers,
+    removePanelAccessFrom,
+    IFACE_RE,
+    isPortFree,
+    findFreePort,
+    status,
+};

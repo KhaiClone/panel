@@ -138,6 +138,26 @@ router.post("/update", async (req, res, next) => {
     }
 });
 
+/**
+ * POST /self/uninstall   body: { parts?: ["ssh", "firewall", "packages"], reportUrl?, certs?: [domain] }
+ * Remove this agent — and with it the node — from the machine (services/uninstall.js).
+ * Answers once the detached run has started; what it does from there goes
+ * to reportUrl, as this agent is among the first things it removes.
+ */
+router.post("/uninstall", async (req, res, next) => {
+    try {
+        if (panelDir()) {
+            return res.status(409).json({ error: "This node runs the panel — move the panel to another node first" });
+        }
+        const { parts = [], reportUrl = null, certs = [] } = req.body || {};
+        const r = await require("../services/uninstall").start({ parts, reportUrl, certs });
+        console.log(`[Agent] Uninstall started: ${r.detail}`);
+        res.json({ message: "Uninstall started", detail: r.detail });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Panel self-management
 //

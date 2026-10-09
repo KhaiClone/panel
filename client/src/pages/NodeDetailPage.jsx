@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import NodeMetrics from "../components/NodeMetrics";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import NodeModal from "../components/NodeModal";
+import RemoveNodeModal from "../components/RemoveNodeModal";
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -54,94 +54,6 @@ function InfoRow({ label, value, mono = true }) {
 
 const PROC_STATUS_COLOR = { online: "var(--success)", stopped: "var(--danger)", errored: "#F97316", launching: "var(--warning)" };
 
-const projectPath = (b) => `/${b.projectType === "website" ? "sites" : "bots"}/${b._id}`;
-
-/**
- * Remove-node dialog. Loads /nodes/:id/impact first so the user sees what the
- * removal touches: projects still on the node block it; copies left there by a
- * forced move and egress pins through it are spelled out before confirming.
- */
-function RemoveNodeModal({ node, onConfirm, onCancel, onOpenProject }) {
-    const [impact, setImpact] = useState(null);
-    const [loadError, setLoadError] = useState("");
-
-    useEffect(() => {
-        api.get(`/nodes/${node._id}/impact`)
-            .then((r) => setImpact(r.data))
-            .catch((e) => setLoadError(e.response?.data?.error || "Could not check what is on this node"));
-    }, [node._id]);
-
-    const blocked = !impact || impact.isPanelNode || impact.bots.length > 0;
-    const listStyle = { margin: "6px 0 0", paddingLeft: 18, fontSize: 13, lineHeight: 1.7 };
-    const section = { fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 14px" };
-
-    return createPortal(
-        <div className="modal-overlay" onClick={onCancel}>
-            <div className="card slide-up modal-card-mobile" style={{ maxWidth: 480, width: "100%", padding: 28, position: "relative", zIndex: 1001, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-                <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: "0 0 14px" }}>Remove node "{node.name}"?</h3>
-
-                {!impact && !loadError && <p style={section}>Checking what is on this node…</p>}
-                {loadError && <p style={{ ...section, color: "var(--danger)" }}>{loadError}</p>}
-
-                {impact?.isPanelNode && (
-                    <p style={{ ...section, color: "var(--danger)" }}>This is the node the panel itself runs on — it cannot be removed.</p>
-                )}
-
-                {impact && !impact.isPanelNode && impact.bots.length > 0 && (
-                    <div style={section}>
-                        <span style={{ color: "var(--danger)", fontWeight: 600 }}>{impact.bots.length} project(s) still live on this node</span>, so it cannot be removed yet — the panel would lose track of them.
-                        Open each one → Manage → <b>Move to another node</b>.{node.status !== "online" && " While the node is offline that rebuilds it from git on the new node."}
-                        <ul style={listStyle}>
-                            {impact.bots.map((b) => (
-                                <li key={b._id}>
-                                    <a href={projectPath(b)} onClick={(e) => { e.preventDefault(); onOpenProject(b); }} style={{ color: "var(--accent-hover)" }}>{b.name}</a>
-                                    {!b.canRebuild && node.status !== "online" && <span style={{ color: "var(--danger)" }}> — no git repo, cannot be rebuilt while the node is offline</span>}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-
-                {impact && !blocked && (
-                    <>
-                        <p style={section}>The panel forgets this node. Nothing on the machine is touched — its agent keeps running, but the panel can no longer see or control it.</p>
-                        {impact.staleCopies.length > 0 && (
-                            <div style={{ ...section, color: "var(--warning)" }}>
-                                ⚠ {impact.staleCopies.length} project(s) were moved off this node while it was down and are still in its PM2 list. The panel would stop them when the node answers again; once it is removed it cannot. If that machine boots again they run <b>alongside their new copies</b> — stop them there:
-                                <ul style={listStyle}>
-                                    {impact.staleCopies.map((s) => (
-                                        <li key={s.pm2Name}>{s.name} — <span className="mono">pm2 delete {s.pm2Name} && pm2 save</span></li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                        {impact.egressBots.length > 0 && (
-                            <div style={section}>
-                                {impact.egressBots.length} project(s) send their traffic through this node (Egress Proxy). Their pin is cleared; restart them to use their own node's IP:
-                                <ul style={listStyle}>
-                                    {impact.egressBots.map((b) => (
-                                        <li key={b._id}>
-                                            <a href={projectPath(b)} onClick={(e) => { e.preventDefault(); onOpenProject(b); }} style={{ color: "var(--accent-hover)" }}>{b.name}</a>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </>
-                )}
-
-                <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                    <button className="btn-ghost" style={{ flex: 1, padding: 10 }} onClick={onCancel}>{blocked ? "Close" : "Cancel"}</button>
-                    {!blocked && (
-                        <button className="btn-danger" style={{ flex: 1, padding: 10 }} onClick={onConfirm}>Remove node</button>
-                    )}
-                </div>
-            </div>
-        </div>,
-        document.body,
-    );
-}
-
 export default function NodeDetailPage() {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -162,6 +74,9 @@ export default function NodeDetailPage() {
     const [error, setError] = useState("");
     const [tab, setTab] = useState("Metrics");
     const [editOpen, setEditOpen] = useState(false);
+    // The node as it was when Remove was pressed: the modal outlives it — once
+    // removed it is gone from /api/nodes while the modal follows the clean-up.
+    const [removing, setRemoving] = useState(null);
     const [testMsg, setTestMsg] = useState("");
 
     const nodeBots = bots;
@@ -210,16 +125,6 @@ export default function NodeDetailPage() {
         }
     };
 
-    const doDelete = async () => {
-        setConfirmAction(null);
-        try {
-            await api.delete(`/nodes/${id}`);
-            navigate("/systems");
-        } catch (err) {
-            setError(err.response?.data?.error || "Could not remove this node");
-        }
-    };
-
     const doRestart = async () => {
         setConfirmAction(null);
         setBusy("restart");
@@ -250,10 +155,20 @@ export default function NodeDetailPage() {
         }
     };
 
+    const removeModal = removing && (
+        <RemoveNodeModal
+            node={removing}
+            onClose={() => setRemoving(null)}
+            onRemoved={() => navigate("/systems")}
+            onOpenProject={navigate}
+        />
+    );
+
     if (node === null) {
         return (
             <div className="page fade-in" style={{ maxWidth: 1100 }}>
-                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading node…</p>
+                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>{removing ? "Node removed." : "Loading node…"}</p>
+                {removeModal}
             </div>
         );
     }
@@ -298,7 +213,7 @@ export default function NodeDetailPage() {
                     <button className="btn-ghost" onClick={() => setEditOpen(true)} style={{ padding: "8px 14px", fontSize: 13 }}>
                         Edit
                     </button>
-                    <button className="btn-ghost" onClick={() => setConfirmAction("delete")} style={{ padding: "8px 14px", fontSize: 13, color: "var(--danger)" }}>
+                    <button className="btn-ghost" onClick={() => setRemoving(node)} style={{ padding: "8px 14px", fontSize: 13, color: "var(--danger)" }}>
                         Remove
                     </button>
                     <button className="btn-primary" disabled={!online || busy} onClick={() => setConfirmAction("update")} style={{ padding: "8px 16px", fontSize: 13 }}>
@@ -414,14 +329,7 @@ export default function NodeDetailPage() {
                 <NodeModal node={node} onClose={() => setEditOpen(false)} onSaved={fetchAll} />
             )}
 
-            {confirmAction === "delete" && (
-                <RemoveNodeModal
-                    node={node}
-                    onConfirm={doDelete}
-                    onCancel={() => setConfirmAction(null)}
-                    onOpenProject={(b) => navigate(projectPath(b))}
-                />
-            )}
+            {removeModal}
 
             {confirmAction === "restart" && (
                 <ConfirmModal

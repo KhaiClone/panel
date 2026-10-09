@@ -447,31 +447,59 @@ steps run in the background.
 
 ### Removing a node
 
-Remove it on the panel first (the node's page → **Remove**; refused while
-projects still live on it). The other nodes then drop it from the WireGuard
-mesh. Then, on the machine:
+The node's page → **Remove**. The dialog first shows what the removal touches
+(`GET /api/nodes/:id/impact`): it is refused for the node that runs the panel,
+and while projects still live on the node — each one links to its page, to
+delete it or move it (from a node that is offline, a move rebuilds it from git).
+Copies a forced move left in the node's PM2 list come with the `pm2 delete`
+to run there, and projects whose Egress Proxy goes through the node are listed.
+Pick one:
+
+- **Remove everything** — the VPS goes back to how it was before the setup.
+- **Remove some parts** — the agent always goes; tick which of *SSH keys and git
+  config*, *firewall back to how it was* and *packages the setup installed* go too.
+- **Only from the panel** — nothing on the VPS is touched.
+
+For the first two the panel asks the agent to run `agent/uninstall-agent.sh`
+on its own machine. The script checks it may run, then carries on in a systemd
+unit of its own (`--detach`) — it removes the agent first, and stopping the
+user's PM2 would take a child of the agent down with it. It sends its output
+back to the panel after every part (`--report`, a single-use token URL), so
+the modal, and **Systems → Removed nodes** for a day, show how it went. If the
+agent cannot do it (offline, too old — update it first, or the script
+refuses), the node stays and the error shows the command to run by hand.
+
+Either way the panel then forgets the node: the Egress Proxy pins through it
+(restart those projects to use their own node's IP), its stale copies, its
+Lavalink state, its panel domains, the "panel access" firewall rules the other nodes hold for its
+addresses, and its WireGuard peer on every other node.
+
+By hand — after **Only from the panel** — on the machine, as the account the agent ran as:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<your-repo>/main/agent/uninstall-agent.sh -o uninstall-agent.sh
-sudo bash uninstall-agent.sh <USER>   # the account the agent ran as, e.g. root
+sudo bash ~/panel/agent/uninstall-agent.sh "$USER" [--keep-packages] [--keep-ssh-keys] [--keep-firewall]
 ```
 
 It undoes the setup, keeping only what was there before it:
 
-- **PM2**: panel-agent, lavalink and the agent's own spotify-tokener leave that user's PM2, and pm2-logrotate
+- **PM2** (always): panel-agent, lavalink and the agent's own spotify-tokener leave that user's PM2, and pm2-logrotate
   does too when the agent installed it. That user's PM2 and its boot service go
   too when nothing else is left in it.
-- **Network**: a bot-panel `wg0` and the UFW rules for the agent port and
-  51820/udp are removed, and so are the 80/443 rules when the setup added them.
-  UFW is turned off again if the setup is what turned it on.
-- **Files**: the SSH keys the panel copied, `~/panel` and `~/lavalink` are
-  removed, and so are `~/bots` / `~/sites` when they are empty.
-- **Packages**: exactly the packages apt's `history.log` shows the setup *newly*
+- **Network** (always): a bot-panel `wg0`, the UFW rules for the agent port and
+  51820/udp, and every "bot-panel: panel access" rule are removed.
+- **nginx** (always): the panel's site (`panel-self.conf`), and the certificates
+  of the node's panel domains when the panel runs it (`--cert`).
+- **Files** (always): `~/panel` and `~/lavalink` are removed, and so are
+  `~/bots` / `~/sites` when they are empty.
+- **SSH keys** (`--keep-ssh-keys` keeps them): the keys the panel copied, their
+  `~/.ssh/config` entries, and the panel's git identity.
+- **Firewall** (`--keep-firewall` keeps it): the 80/443 rules when the setup
+  added them, and UFW is turned off again if the setup is what turned it on.
+- **Packages** (`--keep-packages` keeps them): exactly the packages apt's `history.log` shows the setup *newly*
   installed are purged (nginx, certbot, WireGuard, Java, Chrome, build tools, Node.js and their
   dependencies). So are the global PM2 and the NodeSource and Google Chrome apt sources. Packages
   that were already there and every upgrade stay. apt is asked first, and
-  nothing is purged if it would take anything else with it. `--keep-packages`
-  skips this part.
+  nothing is purged if it would take anything else with it.
 
 It refuses to run on the node that hosts the panel. The setup keeps what it
 found (UFW on or off, Node/PM2 present or not) in
@@ -485,7 +513,12 @@ existed, the script works it out from apt's history and file dates.
 | `GET` | `/api/nodes` | All nodes with live status/stats/bot counts |
 | `POST` | `/api/nodes` | Register node (connection-tested first) |
 | `PUT` | `/api/nodes/:id` | Update node (enable/disable, key rotation) |
-| `DELETE` | `/api/nodes/:id` | Remove node (blocked while bots live on it) |
+| `GET` | `/api/nodes/:id/impact` | `{ isPanelNode, bots, staleCopies, egressBots }` — what removing the node touches |
+| `POST` | `/api/nodes/:id/remove` | `{ mode: "panel" \| "vps", parts?: ["ssh", "firewall", "packages"], origin? }` → the removal (blocked while bots live on it) |
+| `DELETE` | `/api/nodes/:id` | Remove node from the panel only |
+| `GET` | `/api/nodes/removals` | Removals of the last 24 h |
+| `GET` | `/api/nodes/removals/:id` | The panel's clean-up steps and the VPS's output |
+| `POST` | `/api/node-removal/:token` | Public: uninstall-agent.sh reporting back (text/plain, `?status=running\|done\|failed`) |
 | `POST` | `/api/nodes/:id/test` | Live connection + stats check |
 | `GET` | `/api/nodes/invites` | Join invites of the last 24 h |
 | `POST` | `/api/nodes/invites` | `{ name, ip, port?, origin? }` → `{ invite, token, command, secure }` (token shown once) |

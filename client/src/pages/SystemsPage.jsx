@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import Sparkline from "../components/Sparkline";
 import NodeModal from "../components/NodeModal";
+import { RemovalStatus, removalActive } from "../components/RemoveNodeModal";
 import { fmtBytes, fmtPercent } from "../components/MetricChart";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +35,51 @@ const fmtUptime = (s) => {
     const m = Math.floor((s % 3600) / 60);
     return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 };
+
+const REMOVAL_LABEL = {
+    running: ["Cleaning up the VPS…", "var(--warning)"],
+    done: ["VPS cleaned up", "var(--success)"],
+    failed: ["VPS clean-up stopped", "var(--danger)"],
+    lost: ["No word from the VPS", "var(--danger)"],
+};
+
+/** Nodes removed in the last day — the VPS clean-up keeps going after its modal is closed. */
+function RecentRemovals({ removals }) {
+    const [open, setOpen] = useState(null);
+    if (!removals.length) return null;
+    return (
+        <div className="card" style={{ padding: 0, marginTop: 20, overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontSize: 11, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                Removed nodes (last 24 h)
+            </div>
+            {removals.map((r) => {
+                const [label, color] = r.vps ? REMOVAL_LABEL[r.vps.status] || [r.vps.status, "var(--text-muted)"] : ["Panel only", "var(--text-muted)"];
+                return (
+                    <div key={r.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <div
+                            onClick={() => setOpen(open === r.id ? null : r.id)}
+                            style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", cursor: "pointer", fontSize: 13 }}
+                        >
+                            <span style={{ fontWeight: 600 }}>{r.name}</span>
+                            <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.host}</span>
+                            <span style={{ flex: 1 }} />
+                            <span style={{ fontSize: 12, color }}>{label}</span>
+                            <span style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
+                                {new Date(r.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            <span style={{ color: "var(--text-dim)" }}>{open === r.id ? "▾" : "▸"}</span>
+                        </div>
+                        {open === r.id && (
+                            <div style={{ padding: "0 16px 14px" }}>
+                                <RemovalStatus removal={r} />
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
 
 /** A percentage cell: number, bar, and the trend behind it. */
 function MetricCell({ percent, points, width = 96 }) {
@@ -75,6 +121,7 @@ export default function SystemsPage() {
     const [error, setError] = useState("");
     const [addOpen, setAddOpen] = useState(false);
     const [wg, setWg] = useState({ busy: false, msg: null });
+    const [removals, setRemovals] = useState([]);
 
     const loadNodes = useCallback(async () => {
         try {
@@ -100,6 +147,15 @@ export default function SystemsPage() {
         const t = setInterval(loadNodes, LIVE_POLL_MS);
         return () => clearInterval(t);
     }, [loadNodes]);
+
+    // Faster while a removal is still going, slow otherwise.
+    const removing = removals.some(removalActive);
+    useEffect(() => {
+        const load = () => api.get("/nodes/removals").then((r) => setRemovals(r.data)).catch(() => {});
+        load();
+        const t = setInterval(load, removing ? 3000 : 30_000);
+        return () => clearInterval(t);
+    }, [removing]);
 
     // Recompute the WireGuard mesh and push it to every node. A whole-fleet
     // action, so it belongs on the fleet view rather than on one node's page.
@@ -285,6 +341,8 @@ export default function SystemsPage() {
                     </tbody>
                 </table>
             </div>
+
+            <RecentRemovals removals={removals} />
 
             {addOpen && (
                 <NodeModal node={null} onClose={() => setAddOpen(false)} onSaved={loadNodes} />

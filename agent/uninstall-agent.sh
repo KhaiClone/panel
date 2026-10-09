@@ -2,42 +2,84 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  bot-panel agent — undo what setup-agent.sh did on this machine
 #
-#  Usage:  sudo bash uninstall-agent.sh <USER> [--keep-packages]
+#  Usage:  sudo bash uninstall-agent.sh <USER> [--keep-packages] [--keep-ssh-keys] [--keep-firewall]
 #          <USER> is the account the agent ran as: "root", or e.g. "khaidev"
 #
-#  Remove the node on the panel first (its page → Remove), so the other nodes
-#  drop it from the WireGuard mesh.
+#  The panel runs this itself when a node is removed with the VPS cleaned up
+#  (the node's page → Remove). By hand: remove the node on the panel first
+#  ("Only from the panel"), so the other nodes drop it from the WireGuard mesh.
 #
-#  What it removes — only what the setup (or the agent) put there:
+#  Always removed — what is there only for the panel:
 #    - panel-agent, lavalink and (when the agent started it) spotify-tokener
 #      from that user's PM2, and pm2-logrotate when
 #      the agent installed it; that user's PM2 itself and its boot service
 #      when nothing else is left in it
 #    - wg0, if /etc/wireguard/wg0.conf was written by bot-panel
-#    - the UFW rules for the agent port and WireGuard (51820/udp), and for
-#      80/443 when the setup added those; UFW is turned off again if the
-#      setup is what turned it on
-#    - SSH keys the panel copied over (those with a "# GitHub key:" entry in
-#      ~/.ssh/config) and their config entries
+#    - the UFW rules for the agent port and WireGuard (51820/udp), and every
+#      rule the panel added for another node ("bot-panel: panel access")
+#    - the panel's nginx site (panel-self.conf), and the certificates named
+#      with --cert
 #    - ~/panel, ~/lavalink, ~/.panel-node, and ~/bots / ~/sites when empty
 #    - /etc/sudoers.d/bot-panel-agent-<user>
-#    - packages: exactly those apt's history.log shows the setup NEWLY
-#      installed (nginx, certbot, WireGuard, Java, Chrome, Node.js and their
-#      dependencies…), the global PM2 it installed, and the NodeSource and
-#      Google Chrome apt sources. Packages that were already there are kept, and so is every
-#      upgrade. apt is asked first, and nothing is removed if it would take
-#      anything else with it. --keep-packages skips this part.
+#
+#  Removed unless kept:
+#    --keep-ssh-keys  SSH keys the panel copied over (those with a "# GitHub
+#                     key:" entry in ~/.ssh/config), their config entries, and
+#                     the panel's git identity
+#    --keep-firewall  the 80/443 rules when the setup added those, and UFW is
+#                     turned off again if the setup is what turned it on
+#    --keep-packages  packages: exactly those apt's history.log shows the setup
+#                     NEWLY installed (nginx, certbot, WireGuard, Java, Chrome,
+#                     Node.js and their dependencies…), the global PM2 it
+#                     installed, and the NodeSource and Google Chrome apt
+#                     sources. Packages that were already there are kept, and
+#                     so is every upgrade. apt is asked first, and nothing is
+#                     removed if it would take anything else with it.
+#
+#  What the panel adds when it runs this:
+#    --cert DOMAIN    also delete this certificate (one of the node's panel domains)
+#    --report URL     POST the output so far to URL after every part
+#                     (text/plain, ?status=running|done|failed)
+#    --detach         check, then go on in a systemd unit of its own and return at
+#                     once: started by the agent, the run would otherwise die with
+#                     it — stopping the user's PM2 service kills all it started
 #
 #  It never installed nvm, so it does not touch nvm.
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
-TARGET_USER="${1:?Usage: sudo bash uninstall-agent.sh <USER> [--keep-packages]   (the user the agent ran as)}"
+USAGE="Usage: sudo bash uninstall-agent.sh <USER> [--keep-packages] [--keep-ssh-keys] [--keep-firewall]   (the user the agent ran as)"
+TARGET_USER="${1:-}"
+case "$TARGET_USER" in ""|-*) echo "$USAGE" >&2; exit 1 ;; esac
+shift
 KEEP_PACKAGES=no
-[ "${2:-}" = "--keep-packages" ] && KEEP_PACKAGES=yes
+KEEP_SSH=no
+KEEP_FIREWALL=no
+DETACH=no
+REPORT_URL=""
+CERTS=()
+ARGS=("$TARGET_USER") # what a detached run starts with: everything but --detach
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --keep-packages) KEEP_PACKAGES=yes ;;
+        --keep-ssh-keys) KEEP_SSH=yes ;;
+        --keep-firewall) KEEP_FIREWALL=yes ;;
+        --detach) DETACH=yes; shift; continue ;;
+        --cert)
+            # Becomes a path under /etc/letsencrypt/live — a domain name and nothing else.
+            if [ $# -lt 2 ] || ! [[ "$2" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then echo "--cert needs a domain name" >&2; exit 1; fi
+            CERTS+=("$2"); ARGS+=("$1" "$2"); shift 2; continue ;;
+        --report)
+            if [ $# -lt 2 ] || ! [[ "$2" =~ ^https?://[^[:space:]]+$ ]]; then echo "--report needs an http(s) URL" >&2; exit 1; fi
+            REPORT_URL="$2"; ARGS+=("$1" "$2"); shift 2; continue ;;
+        *) echo "Unknown option: $1" >&2; echo "$USAGE" >&2; exit 1 ;;
+    esac
+    ARGS+=("$1")
+    shift
+done
 if [ "$(id -u)" != "0" ]; then
-    echo "Run it as root: sudo bash $0 $*" >&2
+    echo "Run it as root: sudo bash $0 ${ARGS[*]}" >&2
     exit 1
 fi
 H=$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)
@@ -64,6 +106,79 @@ fi
 
 AGENT_PORT=$(grep -s '^AGENT_PORT=' "$DIR/agent/.env" | cut -d= -f2)
 AGENT_PORT="${AGENT_PORT:-4200}"
+
+# ── --detach: the checks passed — go on in a unit of our own ─────────────────
+# From a copy in /tmp: the run deletes the checkout this file lives in.
+if [ "$DETACH" = "yes" ]; then
+    if [ ! -f "$0" ]; then
+        echo "--detach needs the script as a file: sudo bash uninstall-agent.sh …" >&2
+        exit 1
+    fi
+    COPY=$(mktemp /tmp/bot-panel-uninstall.XXXXXX)
+    cp "$0" "$COPY"
+    # The pause lets the agent answer the panel before its PM2 process goes.
+    RUN=(/bin/bash -c 'sleep 3; exec /bin/bash "$0" "$@"' "$COPY" "${ARGS[@]}")
+    UNIT="bot-panel-uninstall-$(date +%s)"
+    if command -v systemd-run >/dev/null 2>&1 &&
+        systemd-run --unit="$UNIT" --collect --quiet --description="bot-panel agent uninstall ($TARGET_USER)" "${RUN[@]}"; then
+        echo "Detached: $UNIT (its output: journalctl -u $UNIT)"
+    else
+        # No systemd: out of the agent's process tree at least.
+        setsid nohup "${RUN[@]}" >"$COPY.log" 2>&1 </dev/null &
+        echo "Detached: pid $! (its output: $COPY.log)"
+    fi
+    exit 0
+fi
+
+# ── --report: the output so far, to the panel ────────────────────────────────
+# Through curl, or python3 when the package step has just removed curl. A panel
+# that cannot be reached three times in a row is not tried again: every try can
+# cost half a minute.
+LOG=""
+FINISHED=no
+REPORT_MISSES=0
+if [ -n "$REPORT_URL" ]; then
+    LOG=$(mktemp /tmp/bot-panel-uninstall-log.XXXXXX)
+    exec > >(tee -a "$LOG") 2>&1
+fi
+report() {
+    [ -n "$REPORT_URL" ] || return 0
+    sleep 1 # tee's last lines
+    local body sent=no
+    body=$(mktemp)
+    tail -c 60000 "$LOG" >"$body"
+    if command -v curl >/dev/null 2>&1 &&
+        curl -fsS -m 15 -o /dev/null -X POST -H "content-type: text/plain; charset=utf-8" \
+            --data-binary "@$body" "$REPORT_URL?status=$1" 2>/dev/null; then
+        sent=yes
+    elif python3 - "$REPORT_URL?status=$1" "$body" 2>/dev/null <<'PY'
+import sys, urllib.request
+with open(sys.argv[2], "rb") as fh:
+    data = fh.read()
+req = urllib.request.Request(sys.argv[1], data=data, method="POST", headers={"content-type": "text/plain; charset=utf-8"})
+urllib.request.urlopen(req, timeout=15).read()
+PY
+    then
+        sent=yes
+    fi
+    rm -f "$body"
+    if [ "$sent" = "yes" ]; then
+        REPORT_MISSES=0
+    elif [ $((++REPORT_MISSES)) -ge 3 ]; then
+        echo "[uninstall] the panel cannot be reached at ${REPORT_URL%/*}/… — not reporting any more"
+        REPORT_URL=""
+    fi
+}
+on_exit() {
+    if [ "$FINISHED" != "yes" ]; then
+        echo "[uninstall] stopped before the end"
+        report failed
+    fi
+    [ -n "$LOG" ] && rm -f "$LOG"
+    # The copy --detach made.
+    case "$0" in /tmp/bot-panel-uninstall.*) rm -f "$0" ;; esac
+}
+trap on_exit EXIT
 
 # ── When the setup ran, and which packages it newly installed ────────────────
 # From apt's own history: every run of the setup's install command (and the
@@ -137,6 +252,10 @@ PY
         PKGS="${PKGS:+$PKGS }$p"
     done
 fi
+# A firewall that is to stay keeps its program, even one the setup installed.
+if [ "$KEEP_FIREWALL" = "yes" ]; then
+    PKGS=$(printf '%s\n' $PKGS | grep -vx 'ufw' | xargs)
+fi
 NODE_FROM_SETUP=no
 case " $PKGS " in *" nodejs "*) NODE_FROM_SETUP=yes ;; esac
 [ "$(state NODESOURCE_ADDED)" = "yes" ] && NODE_FROM_SETUP=yes
@@ -147,7 +266,13 @@ since_setup() { [ "$SETUP_STARTED" -gt 0 ] && [ -e "$1" ] && [ "$(stat -c %Y "$1
 echo "──────────────────────────────────────────────"
 echo " bot-panel agent uninstall for $TARGET_USER ($H), agent port $AGENT_PORT"
 [ "$SETUP_STARTED" -gt 0 ] && echo " setup ran at $(date -d "@$SETUP_STARTED" '+%Y-%m-%d %H:%M')"
+KEPT=""
+[ "$KEEP_SSH" = "yes" ] && KEPT="$KEPT, SSH keys"
+[ "$KEEP_FIREWALL" = "yes" ] && KEPT="$KEPT, firewall"
+[ "$KEEP_PACKAGES" = "yes" ] && KEPT="$KEPT, packages"
+echo " kept: ${KEPT:+${KEPT#, }}${KEPT:-nothing — everything the setup did is undone}"
 echo "──────────────────────────────────────────────"
+report running
 
 # 1. PM2 ──────────────────────────────────────────────────────────────────────
 if command -v pm2 >/dev/null 2>&1; then
@@ -179,6 +304,7 @@ if command -v pm2 >/dev/null 2>&1; then
         say "PM2: $TARGET_USER still runs other processes — PM2 and its boot service kept"
     fi
 fi
+report running
 
 # 2. WireGuard ────────────────────────────────────────────────────────────────
 if head -1 /etc/wireguard/wg0.conf 2>/dev/null | grep -q "Generated by bot-panel"; then
@@ -189,48 +315,78 @@ if head -1 /etc/wireguard/wg0.conf 2>/dev/null | grep -q "Generated by bot-panel
 fi
 
 # 3. Firewall ─────────────────────────────────────────────────────────────────
-# By number, highest first, so the numbers of the rest do not shift.
+# By number, highest first, so the numbers of the rest do not shift. The agent
+# port, WireGuard and the rules the panel added for other nodes ("bot-panel:
+# panel access") are of no use once this machine has left the panel.
 if command -v ufw >/dev/null 2>&1; then
-    NUMS=$(ufw status numbered 2>/dev/null | grep -E "(^|[^0-9])($AGENT_PORT/tcp|51820/udp)([^0-9]|$)" | sed -n 's/^\[ *\([0-9]\+\)\].*/\1/p' | sort -rn)
+    NUMS=$(ufw status numbered 2>/dev/null | grep -E "(^|[^0-9])($AGENT_PORT/tcp|51820/udp)([^0-9]|$)|# bot-panel: panel access" | sed -n 's/^\[ *\([0-9]\+\)\].*/\1/p' | sort -rn)
     for n in $NUMS; do ufw --force delete "$n" >/dev/null; done
-    [ -n "$NUMS" ] && say "UFW: removed the rules for $AGENT_PORT/tcp and 51820/udp"
-    # HTTP(S): only when the setup's own run added the rule (recorded then).
-    for p in 80 443; do
-        if [ "$(state "UFW_ADDED_$p")" = "yes" ]; then
-            ufw --force delete allow "$p/tcp" >/dev/null 2>&1 && say "UFW: removed the $p/tcp rule the setup added"
-        fi
-    done
-    # Off again if the setup turned it on: recorded by the setup, or — for a
-    # setup from before that record — ufw.conf, which `ufw enable` rewrites
-    # only when UFW actually goes from off to on.
-    if ufw status 2>/dev/null | grep -q "Status: active"; then
-        WAS="$(state UFW_WAS_ACTIVE)"
-        if [ "$WAS" = "no" ] || { [ -z "$WAS" ] && since_setup /etc/ufw/ufw.conf; }; then
-            ufw --force disable >/dev/null && say "UFW: turned off again (the setup turned it on)"
+    [ -n "$NUMS" ] && say "UFW: removed the rules for $AGENT_PORT/tcp, 51820/udp and the panel's access rules"
+    if [ "$KEEP_FIREWALL" = "yes" ]; then
+        say "UFW: the 80/443 rules and UFW on/off kept (--keep-firewall)"
+    else
+        # HTTP(S): only when the setup's own run added the rule (recorded then).
+        for p in 80 443; do
+            if [ "$(state "UFW_ADDED_$p")" = "yes" ]; then
+                ufw --force delete allow "$p/tcp" >/dev/null 2>&1 && say "UFW: removed the $p/tcp rule the setup added"
+            fi
+        done
+        # Off again if the setup turned it on: recorded by the setup, or — for a
+        # setup from before that record — ufw.conf, which `ufw enable` rewrites
+        # only when UFW actually goes from off to on.
+        if ufw status 2>/dev/null | grep -q "Status: active"; then
+            WAS="$(state UFW_WAS_ACTIVE)"
+            if [ "$WAS" = "no" ] || { [ -z "$WAS" ] && since_setup /etc/ufw/ufw.conf; }; then
+                ufw --force disable >/dev/null && say "UFW: turned off again (the setup turned it on)"
+            fi
         fi
     fi
 fi
+report running
 
 # 4. SSH keys the panel copied ────────────────────────────────────────────────
 CFG="$H/.ssh/config"
-if [ -f "$CFG" ]; then
-    for name in $(sed -n 's/^# GitHub key: \([A-Za-z0-9_.-]\+\)$/\1/p' "$CFG"); do
-        rm -f "$H/.ssh/$name" "$H/.ssh/$name.pub"
-        # The entry the agent wrote: the marker, "Host github.com-<name>" and its
-        # indented lines. As the user, so the rewritten file stays theirs.
-        as_user sed -i "/^# GitHub key: ${name//./\\.}\$/,/^    IdentitiesOnly yes\$/d" "$CFG"
-        say "SSH: removed key $name"
-    done
-    # Nothing but blank lines left: the agent created it.
-    if ! grep -q '[^[:space:]]' "$CFG"; then rm -f "$CFG" && say "SSH: removed the now empty $CFG"; fi
-fi
-rmdir "$H/.ssh" 2>/dev/null && say "SSH: removed the now empty $H/.ssh"
-# The panel's git identity, when that is all ~/.gitconfig holds and it dates from the setup.
-if since_setup "$H/.gitconfig" && ! grep -vqE '^\[user\]$|^[[:space:]]*(name|email) = |^[[:space:]]*$' "$H/.gitconfig"; then
-    rm -f "$H/.gitconfig" && say "git: removed $H/.gitconfig (only the panel's user.name/email)"
+if [ "$KEEP_SSH" = "yes" ]; then
+    say "SSH: the panel's keys and git identity kept (--keep-ssh-keys)"
+else
+    if [ -f "$CFG" ]; then
+        for name in $(sed -n 's/^# GitHub key: \([A-Za-z0-9_.-]\+\)$/\1/p' "$CFG"); do
+            rm -f "$H/.ssh/$name" "$H/.ssh/$name.pub"
+            # The entry the agent wrote: the marker, "Host github.com-<name>" and its
+            # indented lines. As the user, so the rewritten file stays theirs.
+            as_user sed -i "/^# GitHub key: ${name//./\\.}\$/,/^    IdentitiesOnly yes\$/d" "$CFG"
+            say "SSH: removed key $name"
+        done
+        # Nothing but blank lines left: the agent created it.
+        if ! grep -q '[^[:space:]]' "$CFG"; then rm -f "$CFG" && say "SSH: removed the now empty $CFG"; fi
+    fi
+    rmdir "$H/.ssh" 2>/dev/null && say "SSH: removed the now empty $H/.ssh"
+    # The panel's git identity, when that is all ~/.gitconfig holds and it dates from the setup.
+    if since_setup "$H/.gitconfig" && ! grep -vqE '^\[user\]$|^[[:space:]]*(name|email) = |^[[:space:]]*$' "$H/.gitconfig"; then
+        rm -f "$H/.gitconfig" && say "git: removed $H/.gitconfig (only the panel's user.name/email)"
+    fi
 fi
 
-# 5. Files ────────────────────────────────────────────────────────────────────
+# 5. The panel's nginx site and certificates ──────────────────────────────────
+# panel-self.conf serves this node's panel domains (agent services/nginx.js);
+# the panel forgets those domains with the node.
+if [ -f /etc/nginx/sites-enabled/panel-self.conf ]; then
+    rm -f /etc/nginx/sites-enabled/panel-self.conf
+    say "nginx: removed the panel's site (panel-self.conf)"
+    if nginx -t >/dev/null 2>&1; then systemctl reload nginx >/dev/null 2>&1; fi
+fi
+for d in "${CERTS[@]}"; do
+    if [ -d "/etc/letsencrypt/live/$d" ] && command -v certbot >/dev/null 2>&1; then
+        if certbot delete --cert-name "$d" --non-interactive >/dev/null 2>&1; then
+            say "certbot: deleted the certificate for $d"
+        else
+            say "certbot: could not delete the certificate for $d — see: certbot certificates"
+        fi
+    fi
+done
+report running
+
+# 6. Files ────────────────────────────────────────────────────────────────────
 if [ -f "$DIR/agent/index.js" ]; then
     rm -rf "$DIR" && say "Removed $DIR"
 elif [ -e "$DIR" ]; then
@@ -257,15 +413,16 @@ if [ -d "$H/.cache/node-gyp" ]; then
     done
     rmdir "$H/.cache/node-gyp" "$H/.cache" 2>/dev/null
 fi
+report running
 
-# 6. Packages ─────────────────────────────────────────────────────────────────
+# 7. Packages ─────────────────────────────────────────────────────────────────
 PURGED=no
 OTHERS=$(ls -d /root/panel/agent /home/*/panel/agent 2>/dev/null | grep -v "^$DIR/agent$" || true)
 if [ "$KEEP_PACKAGES" = "yes" ]; then
     say "Packages: kept (--keep-packages)"
 elif [ -n "$OTHERS" ]; then
     say "Packages: kept — another agent is still installed here: $OTHERS"
-    say "          remove it too (sudo bash $0 <its user>), then run this again"
+    say "          remove it too (sudo bash uninstall-agent.sh <its user>), then run this again"
 else
     # Global PM2 first, while npm is still here: set down by the setup when it
     # says so, or when Node.js came with the setup (nothing else had npm then),
@@ -342,5 +499,7 @@ fi
 echo "──────────────────────────────────────────────"
 echo " Done. UFW is $(ufw status 2>/dev/null | head -1 | sed 's/Status: //' || echo 'not installed')."
 echo " Kept on purpose: packages that were there before the setup, every upgrade,"
-echo " the SSH rule in UFW, apt's package lists."
+echo " the SSH rule in UFW, apt's package lists${KEPT:+ — and, as asked: ${KEPT#, }}."
 echo "──────────────────────────────────────────────"
+FINISHED=yes
+report done

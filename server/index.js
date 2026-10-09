@@ -146,6 +146,8 @@ app.use("/api/notifications", authMiddleware, notificationRoutes);
 app.use("/api/nodes", authMiddleware, nodeRoutes);
 // Public: a new VPS joining with the one-command setup (token-guarded, see routes/join.js).
 app.use("/api/join", require("./routes/join"));
+// Public: a removed node's uninstall reporting back (token-guarded, see routes/nodeRemoval.js).
+app.use("/api/node-removal", require("./routes/nodeRemoval"));
 app.use("/api/shop", authMiddleware, shopOrderRoutes);
 app.use("/api/decors", authMiddleware, decorRoutes);
 // Public, read-only: the decor site's live data (routes/decorsPublic.js).

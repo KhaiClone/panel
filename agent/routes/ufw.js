@@ -56,6 +56,24 @@ router.post("/allow-from", async (req, res, next) => {
 });
 
 /**
+ * POST /ufw/remove-from   body: { ips: [ip] }
+ * Delete the rules allow-from added for these source addresses — a node that
+ * has left the panel (its public and WireGuard IPs).
+ */
+router.post("/remove-from", async (req, res, next) => {
+    try {
+        const ips = Array.isArray(req.body.ips) ? req.body.ips.map(String) : [];
+        if (!ips.length || ips.some((ip) => !require("net").isIP(ip))) {
+            return res.status(400).json({ error: "ips must be a list of IP addresses" });
+        }
+        const removed = await ufw.removePanelAccessFrom(ips);
+        res.json({ removed, message: removed ? `${removed} rule(s) removed` : "No rules for these addresses" });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * GET /ufw/free-port?start=3000&end=9000
  */
 router.get("/free-port", async (req, res, next) => {

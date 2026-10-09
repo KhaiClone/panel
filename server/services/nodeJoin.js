@@ -296,4 +296,4 @@ const status = async (token) => {
     return { status: st, steps, error, nodeId };
 };
 
-module.exports = { list, get, create, revoke, script, errorScript, join, status, TTL_MS, _internal: { toPublicRepoUrl, shq, commandFor } };
+module.exports = { list, get, create, revoke, script, errorScript, join, status, baseUrlFor, TTL_MS, _internal: { toPublicRepoUrl, shq, commandFor } };
