@@ -1,6 +1,8 @@
 // Discord-style quest card. Renders the quest banner (image/video), logotype,
 // publisher + end date, game tile, reward, and optional select checkbox / progress.
 
+import { Icon } from "./ui";
+
 const fmtDate = (iso) => {
     try {
         return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
@@ -98,10 +100,10 @@ export default function QuestCard({ q, selectable, selected, onToggle, progress 
                         />
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 10.5, color: "var(--text-dim)", letterSpacing: 0.5 }}>
-                            QUEST {(m.gameTitle || q.name || "").toUpperCase()}
+                        <div style={{ fontSize: 10.5, color: "var(--text-dim)" }}>
+                            Quest {m.gameTitle || q.name || ""}
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 15 }}>
+                        <div style={{ fontWeight: 600, fontSize: 15 }}>
                             {orbs ? `◈ Earn ${orbs} Orbs` : q.name}
                         </div>
                         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -126,16 +128,16 @@ export default function QuestCard({ q, selectable, selected, onToggle, progress 
                                 style={{
                                     height: "100%",
                                     width: `${progress.percent || 0}%`,
-                                    background: progress.state === "done" ? "#22c55e" : accent,
+                                    background: progress.state === "done" ? "var(--success)" : accent,
                                     transition: "width .3s",
                                 }}
                             />
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4 }}>
                             {progress.state === "done"
-                                ? "✅ Completed"
+                                ? <><Icon name="checkCircle" size={14} style={{ color: "var(--success)" }} /> Completed</>
                                 : progress.state === "pending"
-                                  ? "⏳ Waiting to start"
+                                  ? <><Icon name="hourglass" size={14} style={{ color: "var(--text-dim)" }} /> Waiting to start</>
                                   : `${progress.percent || 0}%`}
                         </div>
                     </div>

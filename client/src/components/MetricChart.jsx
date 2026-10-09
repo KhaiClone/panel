@@ -16,7 +16,7 @@ import "uplot/dist/uPlot.min.css";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Resolve a CSS custom property to the literal color uPlot needs. */
-const cssVar = (name, fallback) => {
+export const cssVar = (name, fallback) => {
     if (typeof window === "undefined") return fallback;
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
