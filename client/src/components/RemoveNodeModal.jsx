@@ -132,7 +132,7 @@ export function RemovalStatus({ removal: r }) {
                         <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ color: "var(--text)" }}>{s.label}</div>
                             {s.detail && (
-                                <pre className="mono" style={{ margin: "2px 0 0", fontSize: 11, color: s.status === "error" ? "#f87171" : "var(--text-dim)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{s.detail}</pre>
+                                <pre className="mono" style={{ margin: "2px 0 0", fontSize: 11, color: s.status === "error" ? "var(--danger)" : "var(--text-dim)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{s.detail}</pre>
                             )}
                         </div>
                     </div>
@@ -148,7 +148,7 @@ export function RemovalStatus({ removal: r }) {
                             ? "Everything the setup did is undone."
                             : `The agent goes${r.parts.length ? `, with ${r.parts.map((p) => PARTS.find((x) => x.key === p)?.short || p).join(" and ")}` : ""}; ${PARTS.filter((p) => !r.parts.includes(p.key)).map((p) => p.short).join(" and ")} stay.`}
                     </span>
-                    <pre ref={logRef} className="mono" style={{ margin: 0, padding: "10px 12px", fontSize: 11, lineHeight: 1.55, borderRadius: 6, background: "rgba(0,0,0,0.25)", color: "var(--text-muted)", maxHeight: 260, overflowY: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                    <pre ref={logRef} className="mono" style={{ margin: 0, padding: "10px 12px", fontSize: 11, lineHeight: 1.55, borderRadius: 6, background: "var(--bg-base)", color: "var(--text-muted)", maxHeight: 260, overflowY: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                         {log || (v.status === "running" ? "Waiting for the VPS's first report…" : "(the VPS sent no output)")}
                     </pre>
                 </div>

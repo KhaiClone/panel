@@ -185,7 +185,7 @@ export default function FileEditor({ botId }) {
             {/* File Browser (Left) */}
             <div className="w-full-mobile" style={{ width: "30%", display: "flex", flexDirection: "column", background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
                 {/* Actions Toolbar */}
-                <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.15)" }}>
+                <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-base)" }}>
                     <div style={{ display: "flex", gap: 12 }}>
                         <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }} onClick={() => handleCreate('file')} title="New File">📄</button>
                         <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16 }} onClick={() => handleCreate('dir')} title="New Folder">📁</button>
@@ -196,7 +196,7 @@ export default function FileEditor({ botId }) {
                 </div>
 
                 {/* Breadcrumbs */}
-                <div className="mono no-scrollbar" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.1)", display: "flex", alignItems: "center", gap: 6, fontSize: 12, overflowX: "auto", whiteSpace: "nowrap" }}>
+                <div className="mono no-scrollbar" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", background: "var(--bg-base)", display: "flex", alignItems: "center", gap: 6, fontSize: 12, overflowX: "auto", whiteSpace: "nowrap" }}>
                     <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent-hover)", padding: 0 }} onClick={() => loadDirectory("")}>~</button>
                     {parts.map((p, i) => (
                         <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -236,7 +236,7 @@ export default function FileEditor({ botId }) {
                                         style={{
                                             width: "100%", padding: "6px 10px", fontSize: 13, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer",
                                             background: isSelected ? "var(--accent)" : "transparent",
-                                            color: isSelected ? "#fff" : "var(--text)",
+                                            color: isSelected ? "var(--text-on-accent)" : "var(--text)",
                                         }}
                                         onMouseOver={e => { if (!isSelected) e.currentTarget.style.background = "var(--bg-input)"; }}
                                         onMouseOut={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}

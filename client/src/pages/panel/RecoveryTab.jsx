@@ -25,7 +25,7 @@ function BackupDiff({ rows }) {
                 <span style={{ color: "var(--text-dim)", textAlign: "right" }}>now</span>
                 <span style={{ color: "var(--text-dim)", textAlign: "right" }}>backup</span>
                 {rows.map((r) => [
-                    <span key={`${r.key}:k`} className="mono" style={{ color: r.changed ? "#f59e0b" : "var(--text-muted)", overflowWrap: "anywhere" }}>{r.key}</span>,
+                    <span key={`${r.key}:k`} className="mono" style={{ color: r.changed ? "var(--warning)" : "var(--text-muted)", overflowWrap: "anywhere" }}>{r.key}</span>,
                     <span key={`${r.key}:n`} style={{ textAlign: "right", color: "var(--text-muted)" }}>{cell(r, r.now)}</span>,
                     <span key={`${r.key}:b`} style={{ textAlign: "right", color: r.changed ? "var(--text)" : "var(--text-muted)" }}>{cell(r, r.backup)}</span>,
                 ])}
@@ -121,8 +121,8 @@ function BackupSection({ onRestart, onRestarting }) {
                 plus <span className="mono">.env</span>. To roll back, paste that message's link below — or put its files in <span className="mono">restore/</span> on
                 the server and restart the panel.
             </p>
-            {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171", overflowWrap: "anywhere" }}>{error}</p>}
-            {note && <p style={{ margin: 0, fontSize: 12, color: "#4ade80" }}>{note}</p>}
+            {error && <p style={{ margin: 0, fontSize: 12, color: "var(--danger)", overflowWrap: "anywhere" }}>{error}</p>}
+            {note && <p style={{ margin: 0, fontSize: 12, color: "var(--success)" }}>{note}</p>}
 
             <div style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
                 <strong style={{ color: "var(--text)" }}>Webhook</strong>
@@ -131,7 +131,7 @@ function BackupSection({ onRestart, onRestarting }) {
                         {last ? `last backup ${last.ok ? "✅" : "❌"} ${new Date(last.at).toLocaleString()} — ${last.message}` : "no backup sent since the panel started"}
                     </span>
                 ) : (
-                    <span style={{ color: "#f59e0b" }}>⚠️ off — set DISCORD_BACKUP_WEBHOOK in .env</span>
+                    <span style={{ color: "var(--warning)" }}>⚠️ off — set DISCORD_BACKUP_WEBHOOK in .env</span>
                 )}
                 {data.configured && (
                     <button className="btn-ghost" disabled={!!busy || data.running} onClick={runNow} style={{ padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}>
@@ -141,8 +141,8 @@ function BackupSection({ onRestart, onRestarting }) {
             </div>
 
             {pending.length > 0 && (
-                <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6, border: "1px solid rgba(245,158,11,0.3)", background: "rgba(245,158,11,0.05)" }}>
-                    <p style={{ margin: 0, fontSize: 12, color: "#f59e0b", fontWeight: 600 }}>
+                <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6, border: "1px solid var(--warning-border)", background: "var(--warning-bg)" }}>
+                    <p style={{ margin: 0, fontSize: 12, color: "var(--warning)", fontWeight: 600 }}>
                         restore/ holds {pending.length} backup file(s) — they replace the current data at the next restart.
                     </p>
                     <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)", overflowWrap: "anywhere" }}>{pending.join("  ")}</div>
@@ -155,7 +155,7 @@ function BackupSection({ onRestart, onRestarting }) {
 
             {lastRestore && (
                 <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-                    <span style={{ color: lastRestore.ok ? "#4ade80" : "#f87171" }}>
+                    <span style={{ color: lastRestore.ok ? "var(--success)" : "var(--danger)" }}>
                         {lastRestore.ok
                             ? `✅ Restored backup ${lastRestore.backup} at ${new Date(lastRestore.at).toLocaleString()}: ${lastRestore.restored.join(", ")}`
                             : `❌ Restore skipped at ${new Date(lastRestore.at).toLocaleString()}: ${lastRestore.error}`}
@@ -182,10 +182,10 @@ function BackupSection({ onRestart, onRestarting }) {
             </div>
 
             {preview && (
-                <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.04)" }}>
+                <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, border: "1px solid var(--danger-border)", background: "var(--danger-bg)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                         <strong style={{ fontSize: 13, color: "var(--text)" }}>Backup {preview.takenAt}</strong>
-                        <span style={{ fontSize: 11, color: "#4ade80" }}>✅ every piece present, checksums match</span>
+                        <span style={{ fontSize: 11, color: "var(--success)" }}>✅ every piece present, checksums match</span>
                     </div>
                     {preview.notes.map((n, i) => <span key={i} style={{ fontSize: 12, color: "var(--text-muted)" }}>ℹ️ {n}</span>)}
 
@@ -261,7 +261,7 @@ function MoveResult({ result }) {
     const href = url || `http://${target.host}:${port}`;
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
-            <p style={{ margin: 0, color: "#4ade80", fontWeight: 700 }}>The panel now runs on {target.name}. This copy is being stopped.</p>
+            <p style={{ margin: 0, color: "var(--success)", fontWeight: 700 }}>The panel now runs on {target.name}. This copy is being stopped.</p>
             <p style={{ margin: 0 }}>
                 It answers at <span className="mono">{href}</span>. This node's domains will redirect there once the new panel has flipped them.
             </p>
@@ -272,7 +272,7 @@ function MoveResult({ result }) {
 
 function MoveJob({ job, lost }) {
     const title = job.kind === "move" ? `Moving the panel to ${job.targetName}` : `Preparing ${job.targetName}`;
-    const statusColor = job.status === "done" ? "#4ade80" : job.status === "failed" ? "#f87171" : "var(--accent)";
+    const statusColor = job.status === "done" ? "var(--success)" : job.status === "failed" ? "var(--danger)" : "var(--accent)";
     return (
         <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -285,12 +285,12 @@ function MoveJob({ job, lost }) {
                     <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ color: "var(--text)" }}>{s.label}</div>
                         {s.detail && (
-                            <pre className="mono" style={{ margin: "2px 0 0", fontSize: 11, color: s.status === "error" ? "#f87171" : "var(--text-dim)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 220, overflowY: "auto" }}>{s.detail}</pre>
+                            <pre className="mono" style={{ margin: "2px 0 0", fontSize: 11, color: s.status === "error" ? "var(--danger)" : "var(--text-dim)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 220, overflowY: "auto" }}>{s.detail}</pre>
                         )}
                     </div>
                 </div>
             ))}
-            {job.error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{job.error}</p>}
+            {job.error && <p style={{ margin: 0, fontSize: 12, color: "var(--danger)" }}>{job.error}</p>}
             {job.kind === "move" && job.status === "done" && <MoveResult result={job.result} />}
             {lost && job.kind === "move" && job.status !== "failed" && (
                 <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>This copy of the panel has stopped answering — the new one retired it, as expected.</p>
@@ -375,7 +375,7 @@ function PanelMoveSection() {
             </p>
 
             {state === "fenced" && (
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#f87171" }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--danger)" }}>
                     This panel has been replaced{ov.lifecycle.info?.to ? ` — it now runs on ${ov.lifecycle.info.to}` : ""}. Nothing here runs any more.
                     {ov.lifecycle.info?.url && <> Open <a href={ov.lifecycle.info.url} className="mono">{ov.lifecycle.info.url}</a>.</>}
                 </p>
@@ -396,21 +396,21 @@ function PanelMoveSection() {
                 </button>
             </div>
 
-            {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
+            {error && <p style={{ margin: 0, fontSize: 12, color: "var(--danger)" }}>{error}</p>}
 
             {pf && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {pf.checks.map((c, i) => (
                         <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "flex-start" }}>
                             <span>{CHECK_ICON[c.level] || "•"}</span>
-                            <span style={{ color: c.level === "error" ? "#f87171" : c.level === "warn" ? "#f59e0b" : "var(--text-muted)", overflowWrap: "anywhere" }}>{c.message}</span>
+                            <span style={{ color: c.level === "error" ? "var(--danger)" : c.level === "warn" ? "var(--warning)" : "var(--text-muted)", overflowWrap: "anywhere" }}>{c.message}</span>
                         </div>
                     ))}
                 </div>
             )}
 
             {pf?.canMove && (idle || starting === "start") && pf.target?._id === targetId && (
-                <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.04)" }}>
+                <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, border: "1px solid var(--danger-border)", background: "var(--danger-bg)" }}>
                     <p style={{ margin: 0, fontSize: 13 }}>Every check passed. Type <strong className="mono">{pf.target.name}</strong> to move the panel there.</p>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <input className="input" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={pf.target.name} style={{ flex: "1 1 200px", minWidth: 0 }} />

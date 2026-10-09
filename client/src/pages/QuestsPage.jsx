@@ -3,16 +3,17 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestControl from "../components/QuestControl";
+import { StatCard, StatusBadge } from "../components/ui";
 
 // ── Shared status metadata (English) ─────────────────────────────────────────
 const STATUS = {
     running: { label: "Running", color: "var(--accent)" },
-    paused: { label: "Paused", color: "#38bdf8" },
+    paused: { label: "Paused", color: "var(--info)" },
     done: { label: "Completed", color: "var(--success)" },
     stopped: { label: "Stopped", color: "var(--text-dim)" },
     token_dead: { label: "Token error", color: "var(--warning)" },
     error: { label: "Error", color: "var(--danger)" },
-    monthly: { label: "Monthly", color: "#a78bfa" },
+    monthly: { label: "Monthly", color: "var(--violet)" },
     expired: { label: "Expired", color: "var(--text-dim)" },
 };
 
@@ -47,32 +48,7 @@ const modeLabel = (a) =>
 // ── Sub-components ────────────────────────────────────────────────────────────
 function StatusPill({ status }) {
     const st = STATUS[status] || { label: status, color: "var(--text-dim)" };
-    return (
-        <span
-            className="status-pill"
-            style={{ background: st.color + "22", color: st.color, border: `1px solid ${st.color}33` }}
-        >
-            <span className="status-dot" style={{ background: st.color }} />
-            {st.label}
-        </span>
-    );
-}
-
-function StatCard({ icon, label, value, sub, color = "var(--accent)" }) {
-    return (
-        <div
-            className="card"
-            style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10, position: "relative", overflow: "hidden" }}
-        >
-            <div style={{ position: "absolute", top: -20, right: -10, width: 80, height: 80, background: color, opacity: 0.07, filter: "blur(20px)", borderRadius: "50%", pointerEvents: "none" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</span>
-                <span style={{ fontSize: 18, color }}>{icon}</span>
-            </div>
-            <p style={{ fontSize: 28, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1 }}>{value}</p>
-            {sub && <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>{sub}</p>}
-        </div>
-    );
+    return <StatusBadge color={st.color}>{st.label}</StatusBadge>;
 }
 
 /**
@@ -338,11 +314,11 @@ export default function QuestsPage() {
             <EgressMenu />
 
             {/* ── Stat row ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>
-                <StatCard icon="📦" label="Accounts" value={accounts.length} color="var(--accent)" sub="total tracked" />
-                <StatCard icon="▶️" label="Running" value={runningCount} color="var(--success)" sub="active now" />
-                <StatCard icon="♾️" label="Monthly" value={monthlyCount} color="#a78bfa" sub="subscriptions" />
-                <StatCard icon="✅" label="Completed" value={doneCount} color="#22c55e" sub="finished runs" />
+            <div className="stat-grid" style={{ marginBottom: 24 }}>
+                <StatCard label="Accounts" value={accounts.length} hint="total tracked" />
+                <StatCard label="Running" value={runningCount} tone="accent" hint="active now" />
+                <StatCard label="Monthly" value={monthlyCount} tone="var(--violet)" hint="subscriptions" />
+                <StatCard label="Completed" value={doneCount} tone="success" hint="finished runs" />
             </div>
 
             {/* ── Account list ── */}

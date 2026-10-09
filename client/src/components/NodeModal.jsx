@@ -118,7 +118,7 @@ function InviteStatus({ invite }) {
         expired: "This command has expired — create a new one.",
         revoked: "This command was revoked.",
     }[status] || status;
-    const color = status === "done" ? "#4ade80" : status === "expired" || status === "revoked" ? "var(--danger)" : "var(--text)";
+    const color = status === "done" ? "var(--success)" : status === "expired" || status === "revoked" ? "var(--danger)" : "var(--text)";
     return (
         <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             <strong style={{ fontSize: 13, color }}>{headline}</strong>
@@ -133,7 +133,7 @@ function InviteStatus({ invite }) {
                     <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ color: "var(--text)" }}>{s.label}</div>
                         {s.detail && (
-                            <pre className="mono" style={{ margin: "2px 0 0", fontSize: 11, color: s.status === "error" ? "#f87171" : "var(--text-dim)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{s.detail}</pre>
+                            <pre className="mono" style={{ margin: "2px 0 0", fontSize: 11, color: s.status === "error" ? "var(--danger)" : "var(--text-dim)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{s.detail}</pre>
                         )}
                     </div>
                 </div>

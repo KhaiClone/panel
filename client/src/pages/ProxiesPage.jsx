@@ -87,7 +87,7 @@ function Badge({ children, color = "var(--text-dim)" }) {
     return (
         <span
             className="badge"
-            style={{ background: color + "22", color, border: `1px solid ${color}33` }}
+            style={{ background: `color-mix(in srgb, ${color} 13%, transparent)`, color, border: `1px solid color-mix(in srgb, ${color} 22%, transparent)` }}
         >
             {children}
         </span>
@@ -641,7 +641,7 @@ function ProxyRow({ p, state, onTest, onRotate, onToggle, onEdit, onDelete }) {
                         >
                             {p.label}
                         </p>
-                        <Badge color={rotating ? "#a78bfa" : "var(--text-dim)"}>
+                        <Badge color={rotating ? "var(--violet)" : "var(--text-dim)"}>
                             {rotating ? "Rotating" : "Static"}
                         </Badge>
                         {!p.enabled && <Badge color="var(--warning)">Disabled</Badge>}

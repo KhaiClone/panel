@@ -9,15 +9,16 @@ import FileEditor from '../components/FileEditor';
 import ShellTerminal from '../components/ShellTerminal';
 import NodeVersionCard from '../components/NodeVersionCard';
 import { useData } from '../context/DataContext';
+import { Icon } from '../components/ui';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const STATUS_STYLES = {
     online:    { color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)", label: "Online" },
     stopped:   { color: "var(--danger)", bg: "var(--danger-bg)", border: "var(--danger-border)", label: "Stopped" },
-    errored:   { color: "#F97316", bg: "rgba(249,115,22,0.15)", border: "rgba(249,115,22,0.3)", label: "Errored" },
+    errored:   { color: "var(--orange)", bg: "var(--orange-bg)", border: "var(--orange-border)", label: "Errored" },
     launching: { color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)", label: "Starting" },
 };
-const getStyle = (s) => STATUS_STYLES[s] ?? { color: "var(--text-muted)", bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.1)", label: s ?? "Unknown" };
+const getStyle = (s) => STATUS_STYLES[s] ?? { color: "var(--text-muted)", bg: "var(--bg-hover)", border: "var(--border)", label: s ?? "Unknown" };
 
 const fmt = (bytes) => {
     if (!bytes) return '—';
@@ -239,9 +240,9 @@ function WebsitePanel({ bot, onRefresh }) {
     ) : null;
 
     return (
-        <div className="card" style={{ border: "1px solid rgba(34,197,94,0.2)", background: "rgba(34,197,94,0.03)" }}>
+        <div className="card" style={{ border: "1px solid var(--success-border)", background: "var(--success-bg)" }}>
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid rgba(34,197,94,0.15)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--success-border)" }}>
                 <span style={{ fontSize: 18 }}>🌐</span>
                 <div>
                     <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: 0 }}>Website</h3>
@@ -251,7 +252,7 @@ function WebsitePanel({ bot, onRefresh }) {
                 </div>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
                     {wc.sslEnabled && (
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "rgba(34,197,94,0.15)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)" }}>
                             🔒 SSL Active
                         </span>
                     )}
@@ -363,7 +364,7 @@ function WebsitePanel({ bot, onRefresh }) {
 
             {/* Custom nginx config — only shown when domain is set (nginx mode) */}
             {wc.domain && (
-                <div style={{ marginTop: 20, borderTop: "1px solid rgba(34,197,94,0.15)", paddingTop: 16 }}>
+                <div style={{ marginTop: 20, borderTop: "1px solid var(--success-border)", paddingTop: 16 }}>
                     <button
                         type="button"
                         onClick={() => { setNginxExpanded(v => !v); setNginxMsg(null); }}
@@ -377,7 +378,7 @@ function WebsitePanel({ bot, onRefresh }) {
                             Custom Nginx Config
                         </h4>
                         {wc.extraNginxConfig && (
-                            <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(96,165,250,0.15)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.25)" }}>
+                            <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "var(--info-bg)", color: "var(--info)", border: "1px solid var(--info-border)" }}>
                                 Active
                             </span>
                         )}
@@ -577,7 +578,6 @@ export default function BotDetail() {
                     background: actionMsg.type === 'success' ? "var(--success-bg)" : actionMsg.type === 'info' ? "var(--accent-dim)" : "var(--danger-bg)",
                     border: `1px solid ${actionMsg.type === 'success' ? "var(--success-border)" : actionMsg.type === 'info' ? "var(--accent)" : "var(--danger-border)"}`,
                     color: actionMsg.type === 'success' ? "var(--success)" : actionMsg.type === 'info' ? "var(--accent-hover)" : "var(--danger)",
-                    boxShadow: actionMsg.type === 'success' ? "0 4px 12px rgba(16,185,129,0.2)" : "none"
                 }}>
                     {actionMsg.type === 'success' ? (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>
@@ -609,8 +609,8 @@ export default function BotDetail() {
                                 </span>
                             )}
                             {bot.nodeName && (
-                                <span className="badge" title={`Running on node "${bot.nodeName}"`} style={{ background: "rgba(6,182,212,0.12)", border: "1px solid rgba(6,182,212,0.3)", color: "#22d3ee" }}>
-                                    ⬡ {bot.nodeName}
+                                <span className="badge" title={`Running on node "${bot.nodeName}"`} style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                                    <Icon name="node" size={12} /> {bot.nodeName}
                                 </span>
                             )}
                             {currentGroup && (
@@ -641,7 +641,7 @@ export default function BotDetail() {
             <div className="grid-2-mobile gap-sm-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 32 }}>
                 {[
                     { label: "CPU Usage",  value: `${bot.live?.cpu ?? 0}%`,                        color: "var(--accent-hover)", Icon: IconCpu },
-                    { label: "Memory",     value: fmt(bot.live?.memory),                            color: "#60A5FA",             Icon: IconMemory },
+                    { label: "Memory",     value: fmt(bot.live?.memory),                            color: "var(--info)",             Icon: IconMemory },
                     { label: "Uptime",     value: isOnline ? formatUptime(bot.live?.uptime) : "—", color: "var(--success)",      Icon: IconClock },
                     { label: "Restarts",   value: bot.live?.restarts ?? 0,                          color: "var(--danger)",       Icon: IconRefresh },
                     { label: "Time Left",  value: msLeft !== null ? formatTimeLeft(msLeft) : "∞",  color: msLeft !== null && msLeft < 3 * 86_400_000 ? "var(--danger)" : "var(--warning)", Icon: IconHourglass },
@@ -927,11 +927,11 @@ export default function BotDetail() {
                         })()}
 
                         {/* Danger Zone */}
-                        <div style={{ padding: 20, borderRadius: 10, background: 'rgba(239,68,68,0.03)', border: '1px solid var(--danger-border)' }}>
+                        <div style={{ padding: 20, borderRadius: 10, background: 'var(--danger-bg)', border: '1px solid var(--danger-border)' }}>
                             <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>Danger Zone</h3>
                             <button
                                 className="btn-ghost"
-                                style={{ padding: "10px 20px", color: "var(--danger)", border: "1px solid var(--danger-border)", background: "rgba(239,68,68,0.05)", display: "flex", alignItems: "center", gap: 8 }}
+                                style={{ padding: "10px 20px", color: "var(--danger)", border: "1px solid var(--danger-border)", background: "var(--danger-bg)", display: "flex", alignItems: "center", gap: 8 }}
                                 disabled={!!busy}
                                 onClick={() => setConfirm({ action: 'delete' })}
                             >
@@ -975,11 +975,11 @@ export default function BotDetail() {
                                             <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconCpu /></span>
                                             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>CPU Utilization</span>
                                         </div>
-                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: cpuPct > 80 ? "#ef4444" : cpuPct > 50 ? "#f59e0b" : "#10b981" }}>
+                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)" }}>
                                             {cpuPct}%
                                         </span>
                                     </div>
-                                    <ProgressBar percent={cpuPct} color={cpuPct > 80 ? "#ef4444" : cpuPct > 50 ? "#f59e0b" : "#10b981"} animated={isOnline} />
+                                    <ProgressBar percent={cpuPct} color={cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)"} animated={isOnline} />
                                 </div>
                                 {/* Memory */}
                                 <div>
@@ -992,7 +992,7 @@ export default function BotDetail() {
                                             <span className="mono" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
                                                 ({memPercent}%)
                                             </span>
-                                            <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: memPercent > 80 ? "#ef4444" : "#6366f1" }}>
+                                            <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: memPercent > 80 ? "var(--danger)" : "var(--accent)" }}>
                                                 {fmt(bot.live?.memory)}{memLimitBytes ? ` / ${fmt(memLimitBytes)}` : " / 1.00 GB"}
                                             </span>
                                         </div>
@@ -1017,7 +1017,7 @@ export default function BotDetail() {
 
                 {/* Logs Tab */}
                 {tab === 'Logs' && (
-                    <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg-base)", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
+                    <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg-base)", boxShadow: "var(--shadow-popover)" }}>
                         <LogViewer botId={id} />
                     </div>
                 )}

@@ -741,7 +741,7 @@ export default function DecorsPage() {
                 />
             )}
             {toast && (
-                <div className="dc-toast" style={{ background: "#111827", color: toast.ok ? "var(--success)" : "var(--danger)", border: `1px solid ${toast.ok ? "var(--success-border)" : "var(--danger-border)"}` }}>
+                <div className="dc-toast" style={{ background: "var(--bg-card)", color: toast.ok ? "var(--success)" : "var(--danger)", border: `1px solid ${toast.ok ? "var(--success-border)" : "var(--danger-border)"}` }}>
                     {toast.text}
                 </div>
             )}

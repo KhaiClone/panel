@@ -100,7 +100,7 @@ const DETAIL_PAGES = [
 
 const NOTIF_TYPE_COLOR = {
     start: "var(--success)", stop: "var(--warning)", restart: "var(--accent)",
-    expired: "var(--danger)", reinstall: "#a78bfa", info: "var(--accent)",
+    expired: "var(--danger)", reinstall: "var(--violet)", info: "var(--accent)",
 };
 
 /** { section, parent?: { to, title }, title } for the header. */
@@ -180,7 +180,7 @@ export default function Layout() {
     const cpuPct = stats?.cpu?.usagePercent != null ? Math.round(stats.cpu.usagePercent) : null;
     const ramPct = stats?.memory?.usedPercent != null ? Math.round(stats.memory.usedPercent) : null;
     const cpuColor = cpuPct == null ? "var(--text-dim)" : cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)";
-    const ramColor = ramPct == null ? "var(--text-dim)" : ramPct > 85 ? "var(--danger)" : ramPct > 60 ? "var(--warning)" : "#60A5FA";
+    const ramColor = ramPct == null ? "var(--text-dim)" : ramPct > 85 ? "var(--danger)" : ramPct > 60 ? "var(--warning)" : "var(--info)";
 
     const heading = useMemo(() => getPageHeading(location.pathname), [location.pathname]);
 
@@ -207,7 +207,7 @@ export default function Layout() {
             {/* Mobile overlay */}
             {isMobile && expanded && (
                 <div className="fade-in" onClick={() => setExpanded(false)}
-                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 40 }} />
+                    style={{ position: "fixed", inset: 0, background: "var(--overlay)", zIndex: 40 }} />
             )}
 
             {/* ── Sidebar ────────────────────────────────────────────── */}
@@ -432,7 +432,7 @@ function PanelStateBanner() {
         return (
             <div style={{
                 padding: "8px 16px", fontSize: 13, fontWeight: 600,
-                background: "rgba(239,68,68,0.12)", color: "#f87171",
+                background: "var(--danger-bg)", color: "var(--danger)",
                 borderBottom: "1px solid var(--border)",
             }}>
                 The panel now answers at {originOf(url)} — this tab ({here.host}) can no longer save anything.{" "}
@@ -446,8 +446,8 @@ function PanelStateBanner() {
     return (
         <div style={{
             padding: "8px 16px", fontSize: 13, fontWeight: 600,
-            background: bad ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)",
-            color: bad ? "#f87171" : "#f59e0b",
+            background: bad ? "var(--danger-bg)" : "var(--warning-bg)",
+            color: bad ? "var(--danger)" : "var(--warning)",
             borderBottom: "1px solid var(--border)",
         }}>
             {PANEL_STATE_TEXT[state] || `Panel state: ${state}`}

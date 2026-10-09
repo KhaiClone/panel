@@ -72,7 +72,7 @@ function ApiKeysSection() {
                 who registered each callback: a <span className="mono">localhost</span> callback follows that project to whatever node it runs on,
                 and is signed with the project's key. Moving the panel or the project needs no .env change.
             </p>
-            {error && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{error}</p>}
+            {error && <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>{error}</p>}
 
             <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -101,7 +101,7 @@ function ApiKeysSection() {
             </div>
 
             {created?.wroteEnv && (
-                <div className="card" style={{ padding: 12, borderColor: "#4ade80", fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                <div className="card" style={{ padding: 12, borderColor: "var(--success)", fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                     <span>
                         ✅ Written to <strong>{created.record.botName}</strong>'s .env as <span className="mono">{created.wroteEnv}</span>
                         {created.gateway && <>, with <span className="mono">{created.gateway.key}={created.gateway.url}</span></>}. It takes effect when the project restarts.
@@ -109,11 +109,11 @@ function ApiKeysSection() {
                     <button className="btn-ghost" disabled={restart === "running" || restart === "done"} onClick={() => restartProject(created.record.botId)} style={{ padding: "4px 10px", fontSize: 12, marginLeft: "auto" }}>
                         {restart === "running" ? "Restarting…" : restart === "done" ? "Restarted ✓" : `Restart ${created.record.botName} now`}
                     </button>
-                    {restart && restart !== "running" && restart !== "done" && <span style={{ color: "#f87171", width: "100%" }}>{restart}</span>}
+                    {restart && restart !== "running" && restart !== "done" && <span style={{ color: "var(--danger)", width: "100%" }}>{restart}</span>}
                 </div>
             )}
             {created?.key && (
-                <div className="card" style={{ padding: 12, borderColor: "#facc15", fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div className="card" style={{ padding: 12, borderColor: "var(--warning)", fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
                     <span>Key for <strong>{created.record.botName}</strong> — shown once, copy it now:</span>
                     <div style={{ display: "flex", gap: 8 }}>
                         <input className="input mono" readOnly value={created.key} onFocus={(e) => e.target.select()} style={{ flex: 1, minWidth: 0 }} />
@@ -130,7 +130,7 @@ function ApiKeysSection() {
                             {k.label !== k.botName && <span style={{ color: "var(--text-muted)" }}>{k.label}</span>}
                             <span className="mono" style={{ color: "var(--text-dim)" }}>{k.prefix}…</span>
                             <span style={{ color: "var(--text-dim)", marginLeft: "auto" }}>created {fmtWhen(k.createdAt)} · last used {fmtWhen(k.lastUsedAt)}</span>
-                            <button className="btn-ghost" onClick={() => setRevokeConfirm(k)} style={{ padding: "2px 8px", fontSize: 11, color: "#f87171" }}>Revoke</button>
+                            <button className="btn-ghost" onClick={() => setRevokeConfirm(k)} style={{ padding: "2px 8px", fontSize: 11, color: "var(--danger)" }}>Revoke</button>
                         </div>
                     ))}
                 </div>
@@ -152,8 +152,8 @@ function ApiKeysSection() {
                             <span className="mono" style={{ color: "var(--text-dim)", overflowWrap: "anywhere" }}>{c.url}</span>
                             <span style={{ color: "var(--text-muted)" }}>{c.sources.join(", ")}</span>
                             {c.ownerBotId
-                                ? <span style={{ color: "#4ade80" }}>→ follows {c.ownerName}</span>
-                                : <span style={{ color: "#facc15" }}>→ no known project: pinned to this node when the panel moves</span>}
+                                ? <span style={{ color: "var(--success)" }}>→ follows {c.ownerName}</span>
+                                : <span style={{ color: "var(--warning)" }}>→ no known project: pinned to this node when the panel moves</span>}
                         </div>
                     ))}
                 </div>
@@ -180,7 +180,7 @@ function PanelGatewaySection() {
                 forwards to the panel holding its node — so neither moving the panel nor migrating a project needs a .env change.
                 Set it with <strong>API Keys</strong> above (PANEL_API_URL).
             </p>
-            {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
+            {error && <p style={{ margin: 0, fontSize: 12, color: "var(--danger)" }}>{error}</p>}
             {!rows ? (
                 !error && <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>Loading…</p>
             ) : (
@@ -201,7 +201,7 @@ function PanelGatewaySection() {
                                 <span>{ok ? "✅" : "⚠️"}</span>
                                 <strong style={{ color: "var(--text)" }}>{g.name}</strong>
                                 {g.localUrl && <span className="mono" style={{ color: "var(--text-dim)" }}>{g.localUrl}</span>}
-                                <span className="mono" style={{ color: ok ? "var(--text-muted)" : "#f59e0b", overflowWrap: "anywhere" }}>{why}</span>
+                                <span className="mono" style={{ color: ok ? "var(--text-muted)" : "var(--warning)", overflowWrap: "anywhere" }}>{why}</span>
                             </div>
                         );
                     })}
@@ -216,7 +216,7 @@ function PanelGatewaySection() {
 // Data the bots and the panel both use lives on the panel (bots call it through
 // their gateway); commands to the bots go through a private Discord channel.
 
-const BUS_STATUS_COLOR = { done: "#4ade80", failed: "#f87171", sent: "var(--accent)", queued: "var(--text-muted)" };
+const BUS_STATUS_COLOR = { done: "var(--success)", failed: "var(--danger)", sent: "var(--accent)", queued: "var(--text-muted)" };
 
 function SharedDataSection() {
     const { bots } = useData();
@@ -259,17 +259,17 @@ function SharedDataSection() {
                 them through its gateway — the panel never calls a bot. When the panel needs a bot to act (complete an order, send a DM…), it posts
                 a signed command in a private Discord channel and the bot replies there.
             </p>
-            {error && <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>{error}</p>}
-            {note && <p style={{ margin: 0, fontSize: 12, color: "#4ade80" }}>{note}</p>}
+            {error && <p style={{ margin: 0, fontSize: 12, color: "var(--danger)" }}>{error}</p>}
+            {note && <p style={{ margin: 0, fontSize: 12, color: "var(--success)" }}>{note}</p>}
 
             <div style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
                 <strong style={{ color: "var(--text)" }}>Discord bus</strong>
                 {!bus.configured ? (
                     <span style={{ color: "var(--text-muted)" }}>off — set PANEL_DISCORD_TOKEN and PANEL_BUS_CHANNEL_ID in .env</span>
                 ) : bus.ready ? (
-                    <span style={{ color: "#4ade80" }}>✅ {bus.botTag} on channel <span className="mono">{bus.channelId}</span></span>
+                    <span style={{ color: "var(--success)" }}>✅ {bus.botTag} on channel <span className="mono">{bus.channelId}</span></span>
                 ) : (
-                    <span style={{ color: "#f59e0b" }}>⚠️ not connected{bus.error ? ` — ${bus.error}` : ""}</span>
+                    <span style={{ color: "var(--warning)" }}>⚠️ not connected{bus.error ? ` — ${bus.error}` : ""}</span>
                 )}
                 {Object.entries(bus.counts || {}).map(([k, n]) => <span key={k} style={{ color: "var(--text-dim)" }}>{k}: {n}</span>)}
             </div>
@@ -297,7 +297,7 @@ function SharedDataSection() {
                         <strong className="mono" style={{ color: "var(--text)" }}>{n.name}</strong>
                         <span style={{ color: "var(--text-dim)" }}>{n.kind}</span>
                         <span style={{ color: "var(--text-muted)" }}>{n.ownerName || n.owner}</span>
-                        <span style={{ marginLeft: "auto", color: n.state === "active" ? "#4ade80" : "#f59e0b" }}>
+                        <span style={{ marginLeft: "auto", color: n.state === "active" ? "var(--success)" : "var(--warning)" }}>
                             {n.state === "active" ? `${n.kind === "collection" ? `${n.count} records` : n.count ? "set" : "empty"}` : "waiting for the project to move it here"}
                         </span>
                     </div>
@@ -344,7 +344,7 @@ function SharedDataSection() {
                                 <span style={{ color: "var(--text-muted)" }}>{r.targetName || r.target}</span>
                                 <span className="mono">{r.cmd}</span>
                                 <span style={{ color: BUS_STATUS_COLOR[r.status] || "var(--text-muted)" }}>{r.status}</span>
-                                {r.error && <span style={{ color: "#f87171", overflowWrap: "anywhere" }}>{r.error}</span>}
+                                {r.error && <span style={{ color: "var(--danger)", overflowWrap: "anywhere" }}>{r.error}</span>}
                             </div>
                         ))}
                     </div>

@@ -13,9 +13,9 @@ import api from "../api/client";
 
 const RARITY_COLOR = {
     common: "var(--text-muted)",
-    rare: "#3b82f6",
-    epic: "#a855f7",
-    mythic: "#f59e0b",
+    rare: "var(--info)",
+    epic: "var(--violet)",
+    mythic: "var(--warning)",
 };
 
 const UNIT_VI = (u) => (u === "hours" ? "hours" : u === "house" ? "house" : "games");

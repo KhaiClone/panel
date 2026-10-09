@@ -26,7 +26,7 @@ function StatCard({ icon, label, value, sub, accent = "var(--text)" }) {
 // { level, text }. Nothing here changes anything.
 
 const LEVEL_ICON = { ok: "✅", warn: "⚠️", error: "❌", off: "⏸️", loading: "⏳" };
-const LEVEL_COLOR = { ok: "var(--text-muted)", warn: "#f59e0b", error: "#f87171", off: "var(--text-dim)", loading: "var(--text-dim)" };
+const LEVEL_COLOR = { ok: "var(--text-muted)", warn: "var(--warning)", error: "var(--danger)", off: "var(--text-dim)", loading: "var(--text-dim)" };
 
 /** "5m", "2h 10m" — time since `at`, without the seconds. */
 const ago = (at) => fmtUptime(at).replace(/m \d+s$/, "m");

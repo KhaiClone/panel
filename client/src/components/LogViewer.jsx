@@ -112,7 +112,7 @@ export default function LogViewer({ botId }) {
                         className="btn-ghost"
                         onClick={clearLogs}
                         disabled={clearing || live}
-                        style={{ padding: "6px 12px", color: "var(--danger)", border: "1px solid var(--danger-border)", background: "rgba(239,68,68,0.05)" }}
+                        style={{ padding: "6px 12px", color: "var(--danger)", border: "1px solid var(--danger-border)", background: "var(--danger-bg)" }}
                     >
                         {clearing ? "Clearing…" : "🗑 Clear Logs"}
                     </button>
@@ -126,7 +126,6 @@ export default function LogViewer({ botId }) {
             <div className="mono no-scrollbar" style={{ 
                 flex: 1, background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 10,
                 padding: "16px 20px", overflowY: "auto", fontSize: 13, lineHeight: 1.6,
-                boxShadow: "inset 0 4px 20px rgba(0,0,0,0.5)"
             }}>
                 {loading && !lines.length ? (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>

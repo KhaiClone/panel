@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client";
+import { StatusBadge } from "./ui";
 import ConfirmModal from "./ConfirmModal";
 
 /**
@@ -189,7 +190,7 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
         });
 
     const pill = paused
-        ? { text: `Paused since ${fmtClock(s.pausedAt)}`, color: "#38bdf8" }
+        ? { text: `Paused since ${fmtClock(s.pausedAt)}`, color: "var(--info)" }
         : { text: "Active", color: "var(--success)" };
 
     const confirms = {
@@ -230,13 +231,7 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
                 <div style={{ flex: "1 1 280px", minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>⏱ Scheduler</span>
-                        <span
-                            className="status-pill"
-                            style={{ background: pill.color + "22", color: pill.color, border: `1px solid ${pill.color}33` }}
-                        >
-                            <span className="status-dot" style={{ background: pill.color }} />
-                            {pill.text}
-                        </span>
+                        <StatusBadge color={pill.color}>{pill.text}</StatusBadge>
                     </div>
                     <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
                         Monthly pass:{" "}

@@ -1,17 +1,18 @@
 import { useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import api from "../api/client";
+import { StatusBadge } from "../components/ui";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestCard from "../components/QuestCard";
 
 const STATUS = {
     running: { label: "Running", color: "var(--accent)" },
-    paused: { label: "Paused", color: "#38bdf8" },
+    paused: { label: "Paused", color: "var(--info)" },
     done: { label: "Completed", color: "var(--success)" },
     stopped: { label: "Stopped", color: "var(--text-dim)" },
     token_dead: { label: "Token error", color: "var(--warning)" },
     error: { label: "Error", color: "var(--danger)" },
-    monthly: { label: "Monthly", color: "#a78bfa" },
+    monthly: { label: "Monthly", color: "var(--violet)" },
     expired: { label: "Expired", color: "var(--text-dim)" },
 };
 
@@ -107,13 +108,9 @@ export default function QuestAccountDetail() {
                                 <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", margin: 0, letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {a.username}
                                 </h1>
-                                <span
-                                    className="status-pill"
-                                    style={{ marginTop: 6, background: st.color + "22", color: st.color, border: `1px solid ${st.color}33` }}
-                                >
-                                    <span className="status-dot" style={{ background: st.color }} />
-                                    {st.label}
-                                </span>
+                                <div style={{ marginTop: 6 }}>
+                                    <StatusBadge color={st.color}>{st.label}</StatusBadge>
+                                </div>
                             </div>
                             <div className="mobile-wrap" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                 {/* A monthly account runs inside the shared pass — stop that from /quests. */}

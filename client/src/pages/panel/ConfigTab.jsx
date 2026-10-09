@@ -110,7 +110,7 @@ function PanelDomainsSection() {
             </form>
 
             {error && (
-                <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)", fontSize: 13 }}>
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 13 }}>
                     {error}
                 </div>
             )}
@@ -140,7 +140,7 @@ function PanelDomainsSection() {
                                 </div>
                             </div>
                             {d.sslEnabled ? (
-                                <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 SSL</span>
+                                <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 SSL</span>
                             ) : (
                                 <button
                                     onClick={() => handleSSL(d.domain)}
@@ -233,7 +233,7 @@ function EnvEditor({ onRestart }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Restart-required banner */}
             {saved && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b", fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontSize: 13 }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16, flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                     .env saved — restart the panel for new values to take effect.
                     <button onClick={onRestart} className="btn-warning" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 12, flexShrink: 0 }}>Restart Now</button>

@@ -40,8 +40,8 @@ function ReconnectOverlay({ onReconnected }) {
     }, [onReconnected]);
 
     return createPortal(
-        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
-            <div style={{ width: 60, height: 60, borderRadius: "50%", border: "4px solid rgba(91,115,232,0.3)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }}/>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "var(--overlay)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", border: "4px solid var(--accent-border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }}/>
             <div style={{ textAlign: "center" }}>
                 <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: "0 0 8px 0" }}>Panel Restarting{dots}</h2>
                 <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 4px 0" }}>Waiting for the panel to come back online</p>
@@ -62,9 +62,9 @@ function Pill({ color, children }) {
 
 function BuildResult({ buildOutput, onDismiss }) {
     return (
-        <div className="card" style={{ padding: 16, border: `1px solid ${buildOutput.success ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, background: buildOutput.success ? 'rgba(34,197,94,0.05)' : 'rgba(239,68,68,0.05)' }}>
+        <div className="card" style={{ padding: 16, border: `1px solid ${buildOutput.success ? 'var(--success-border)' : 'var(--danger-border)'}`, background: buildOutput.success ? 'var(--success-bg)' : 'var(--danger-bg)' }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: buildOutput.output || buildOutput.agents?.length ? 12 : 0 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: buildOutput.success ? "#4ade80" : "#f87171", margin: 0 }}>{buildOutput.success ? "✅ Build Successful" : "❌ Build Failed"}</h3>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: buildOutput.success ? "var(--success)" : "var(--danger)", margin: 0 }}>{buildOutput.success ? "✅ Build Successful" : "❌ Build Failed"}</h3>
                 <button onClick={onDismiss} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }}>Dismiss</button>
             </div>
             {buildOutput.message && <p style={{ fontSize: 13, margin: "0 0 8px 0" }}>{buildOutput.message}</p>}
@@ -74,12 +74,12 @@ function BuildResult({ buildOutput, onDismiss }) {
                         <div key={a.nodeId} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12 }}>
                             <span>{a.ok ? "✅" : "❌"}</span>
                             <strong style={{ color: "var(--text)", whiteSpace: "nowrap" }}>Agent · {a.name}{a.isPanelNode ? " (panel)" : ""}</strong>
-                            <span style={{ color: a.ok ? "var(--text-muted)" : "#f87171", minWidth: 0, overflowWrap: "anywhere" }}>{a.message}</span>
+                            <span style={{ color: a.ok ? "var(--text-muted)" : "var(--danger)", minWidth: 0, overflowWrap: "anywhere" }}>{a.message}</span>
                         </div>
                     ))}
                 </div>
             )}
-            {buildOutput.output && <pre className="mono" style={{ fontSize: 11, color: "var(--text-dim)", background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, margin: 0, maxHeight: 300, overflowY: "auto", whiteSpace: "pre-wrap" }}>{buildOutput.output}</pre>}
+            {buildOutput.output && <pre className="mono" style={{ fontSize: 11, color: "var(--text-dim)", background: "var(--bg-base)", padding: 12, borderRadius: 8, margin: 0, maxHeight: 300, overflowY: "auto", whiteSpace: "pre-wrap" }}>{buildOutput.output}</pre>}
         </div>
     );
 }
@@ -170,8 +170,8 @@ export default function PanelManage() {
 
             {/* Status + the two actions every tab may need */}
             <div className="card" style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <Pill color={isOnline ? "#22c55e" : "#ef4444"}>{pm2?.status || "Unknown"}</Pill>
-                {env?.isDev && <Pill color="#f59e0b">Dev Mode</Pill>}
+                <Pill color={isOnline ? "var(--success)" : "var(--danger)"}>{pm2?.status || "Unknown"}</Pill>
+                {env?.isDev && <Pill color="var(--warning)">Dev Mode</Pill>}
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                     v{env?.version || "?"}
                     {git?.commitHash && <span className="mono" style={{ color: "var(--text-dim)" }}> · {git.commitHash.substring(0, 7)}</span>}

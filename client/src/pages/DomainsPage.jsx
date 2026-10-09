@@ -52,7 +52,7 @@ export default function DomainsPage() {
                                 cursor: "pointer", transition: "background 0.15s",
                                 minWidth: 640,
                             }}
-                            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
+                            onMouseEnter={e => e.currentTarget.style.background = "var(--bg-hover)"}
                             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                         >
                             <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -64,15 +64,15 @@ export default function DomainsPage() {
                             <span style={{ fontSize: 13, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
                             <span className="mono" style={{ fontSize: 13, color: "var(--text-dim)" }}>{d.port}</span>
                             <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 99, width: "fit-content",
-                                background: d.mode === "static" ? "rgba(99,102,241,0.12)" : "rgba(245,158,11,0.1)",
-                                color: d.mode === "static" ? "var(--accent-hover)" : "#fbbf24",
-                                border: `1px solid ${d.mode === "static" ? "rgba(99,102,241,0.3)" : "rgba(245,158,11,0.25)"}`,
+                                background: d.mode === "static" ? "var(--accent-dim)" : "var(--warning-bg)",
+                                color: d.mode === "static" ? "var(--accent-hover)" : "var(--warning)",
+                                border: `1px solid ${d.mode === "static" ? "var(--accent-border)" : "var(--warning-border)"}`,
                                 fontWeight: 600 }}>
                                 {d.mode === "static" ? "Static" : "Full-Stack"}
                             </span>
                             {d.sslEnabled
-                                ? <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 99, background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)", fontWeight: 700, whiteSpace: "nowrap" }}>🔒 Active</span>
-                                : <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 99, background: "rgba(239,68,68,0.1)", color: "var(--danger)", border: "1px solid rgba(239,68,68,0.2)", fontWeight: 700, whiteSpace: "nowrap" }}>⚠ None</span>
+                                ? <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 99, background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)", fontWeight: 700, whiteSpace: "nowrap" }}>🔒 Active</span>
+                                : <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 99, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontWeight: 700, whiteSpace: "nowrap" }}>⚠ None</span>
                             }
                         </div>
                     ))}

@@ -6,15 +6,16 @@ import GroupManager from "../components/GroupManager";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import NodeFilter, { matchNode } from "../components/NodeFilter";
+import { StatCard } from "../components/ui";
 
 // ── Status styles ─────────────────────────────────────────────────────────────
 const STATUS_STYLES = {
     online:  { color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)", label: "Online" },
     stopped: { color: "var(--danger)",  bg: "var(--danger-bg)",  border: "var(--danger-border)",  label: "Stopped" },
-    errored: { color: "#F97316", bg: "rgba(249,115,22,0.15)", border: "rgba(249,115,22,0.3)",     label: "Errored" },
+    errored: { color: "var(--orange)", bg: "var(--orange-bg)", border: "var(--orange-border)",     label: "Errored" },
 };
 const getStyle = (s) => STATUS_STYLES[s] ?? {
-    color: "var(--text-muted)", bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.1)", label: s ?? "Unknown",
+    color: "var(--text-muted)", bg: "var(--bg-hover)", border: "var(--border)", label: s ?? "Unknown",
 };
 
 // ── SiteCard ─────────────────────────────────────────────────────────────────
@@ -64,7 +65,7 @@ function SiteCard({ site, onRefresh }) {
                 <div style={{ padding: "16px 18px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
                     {/* Header row */}
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                        <div style={{ width: 38, height: 38, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "#4ade80", flexShrink: 0 }}>
+                        <div style={{ width: 38, height: 38, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--success)", flexShrink: 0 }}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}>
                                 <circle cx="12" cy="12" r="10"/>
                                 <line x1="2" y1="12" x2="22" y2="12"/>
@@ -77,9 +78,9 @@ function SiteCard({ site, onRefresh }) {
                                     {site.name}
                                 </h3>
                                 <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "2px 6px", borderRadius: 4,
-                                    background: wc.mode === "fullstack" ? "rgba(245,158,11,0.1)" : "rgba(34,197,94,0.12)",
-                                    color: wc.mode === "fullstack" ? "#fbbf24" : "#4ade80",
-                                    border: `1px solid ${wc.mode === "fullstack" ? "rgba(245,158,11,0.25)" : "rgba(34,197,94,0.25)"}`,
+                                    background: wc.mode === "fullstack" ? "var(--warning-bg)" : "var(--success-bg)",
+                                    color: wc.mode === "fullstack" ? "var(--warning)" : "var(--success)",
+                                    border: `1px solid ${wc.mode === "fullstack" ? "var(--warning-border)" : "var(--success-border)"}`,
                                     flexShrink: 0 }}>
                                     {wc.mode === "fullstack" ? "Full-Stack" : "Static"}
                                 </span>
@@ -104,14 +105,14 @@ function SiteCard({ site, onRefresh }) {
                             <span style={{ fontSize: 12, color: "var(--text-dim)", fontStyle: "italic" }}>No domain — port {wc.port}</span>
                         )}
                         {wc.sslEnabled
-                            ? <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)", flexShrink: 0 }}>🔒 SSL</span>
-                            : wc.domain && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "rgba(239,68,68,0.1)", color: "var(--danger)", border: "1px solid rgba(239,68,68,0.2)", flexShrink: 0 }}>⚠ No SSL</span>
+                            ? <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)", flexShrink: 0 }}>🔒 SSL</span>
+                            : wc.domain && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", flexShrink: 0 }}>⚠ No SSL</span>
                         }
                     </div>
                 </div>
 
                 {/* Footer actions */}
-                <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border-light)", display: "flex", gap: 6, background: "rgba(0,0,0,0.15)" }}>
+                <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border-light)", display: "flex", gap: 6, background: "var(--bg-base)" }}>
                     {isStopped ? (
                         <button className="btn-success" style={{ padding: "5px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }} onClick={() => action("start")} disabled={busy} title="Start">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -147,22 +148,6 @@ function SiteCard({ site, onRefresh }) {
                 />
             )}
         </>
-    );
-}
-
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({ label, value, icon, color, gradient }) {
-    return (
-        <div className="card" style={{ padding: "20px 24px", position: "relative", overflow: "hidden", borderBottom: `2px solid ${color}` }}>
-            <div style={{ position: "absolute", top: -30, right: -20, width: 120, height: 120, background: gradient, opacity: 0.08, filter: "blur(30px)", borderRadius: "50%", pointerEvents: "none" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>{label}</p>
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", color }}>
-                    {icon}
-                </div>
-            </div>
-            <p style={{ fontSize: 36, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1 }}>{value}</p>
-        </div>
     );
 }
 
@@ -228,19 +213,11 @@ export default function SitesPage() {
             </div>
 
             {/* Stats */}
-            <div className="grid-2-mobile gap-sm-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
-                <StatCard label="Total Sites" value={sites.length} color="var(--accent)" gradient="var(--accent)"
-                    icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>}
-                />
-                <StatCard label="Online" value={online} color="var(--success)" gradient="var(--success)"
-                    icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}
-                />
-                <StatCard label="SSL Active" value={ssl} color="#4ade80" gradient="#4ade80"
-                    icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>}
-                />
-                <StatCard label="With Domain" value={domains} color="#60A5FA" gradient="#60A5FA"
-                    icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>}
-                />
+            <div className="stat-grid" style={{ marginBottom: 28 }}>
+                <StatCard label="Total sites" value={sites.length} />
+                <StatCard label="Online" value={online} tone="success" />
+                <StatCard label="SSL active" value={ssl} tone="success" />
+                <StatCard label="With domain" value={domains} tone="info" />
             </div>
 
             {/* Filter bar */}

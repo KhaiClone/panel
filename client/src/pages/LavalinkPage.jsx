@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client";
+import { StatusBadge } from "../components/ui";
 import LiveLog from "../components/LiveLog";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,14 +70,7 @@ const fmtSince = (ts) => {
 
 function Pill({ state }) {
     const meta = STATE_META[state] || { label: state || "unknown", color: "var(--text-dim)" };
-    return (
-        <span
-            className="badge"
-            style={{ background: `${meta.color}22`, color: meta.color, border: `1px solid ${meta.color}33`, whiteSpace: "nowrap" }}
-        >
-            {meta.label}
-        </span>
-    );
+    return <StatusBadge color={meta.color}>{meta.label}</StatusBadge>;
 }
 
 function Field({ label, hint, children }) {
@@ -1090,7 +1084,7 @@ export default function LavalinkPage() {
                             gap: 8,
                             flexWrap: "wrap",
                             alignItems: "center",
-                            boxShadow: "0 8px 30px rgba(0,0,0,0.45)",
+                            boxShadow: "var(--shadow-popover)",
                         }}
                     >
                         <span style={{ flex: 1, minWidth: 180, fontSize: 12, color: "var(--text-dim)" }}>
@@ -1182,7 +1176,7 @@ function Modal({ title, onClose, children }) {
             style={{
                 position: "fixed",
                 inset: 0,
-                background: "rgba(0,0,0,0.6)",
+                background: "var(--overlay)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

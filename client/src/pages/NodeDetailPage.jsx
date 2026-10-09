@@ -27,10 +27,10 @@ function Ring({ percent, color, label, sub }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             <div style={{ position: "relative", width: size, height: size }}>
-                <svg width={size} height={size} style={{ transform: "rotate(-90deg)", filter: `drop-shadow(0 0 10px ${color}40)` }}>
-                    <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bg-input)" strokeWidth="10" />
-                    <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
-                        style={{ strokeDasharray: circ, strokeDashoffset: circ - (pct / 100) * circ, transition: "stroke-dashoffset 0.8s ease" }} />
+                <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+                    <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="10" style={{ stroke: "var(--bg-input)" }} />
+                    <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="10" strokeLinecap="round"
+                        style={{ stroke: color, strokeDasharray: circ, strokeDashoffset: circ - (pct / 100) * circ, transition: "stroke-dashoffset 0.8s ease" }} />
                 </svg>
                 <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <span style={{ fontSize: 26, fontWeight: 800, color: "var(--text)" }}>{pct}<span style={{ fontSize: 13 }}>%</span></span>
@@ -53,7 +53,7 @@ function InfoRow({ label, value, mono = true }) {
     );
 }
 
-const PROC_STATUS_COLOR = { online: "var(--success)", stopped: "var(--danger)", errored: "#F97316", launching: "var(--warning)" };
+const PROC_STATUS_COLOR = { online: "var(--success)", stopped: "var(--danger)", errored: "var(--orange)", launching: "var(--warning)" };
 
 export default function NodeDetailPage() {
     const { id } = useParams();
@@ -177,9 +177,9 @@ export default function NodeDetailPage() {
     const cpu = stats?.cpu?.usagePercent;
     const ram = stats?.memory?.usedPercent;
     const disk = stats?.disk?.usedPercent;
-    const cpuColor = cpu > 80 ? "#ef4444" : cpu > 50 ? "#f59e0b" : "#10b981";
-    const ramColor = ram > 80 ? "#ef4444" : ram > 50 ? "#f59e0b" : "#6366f1";
-    const diskColor = disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9";
+    const cpuColor = cpu > 80 ? "var(--danger)" : cpu > 50 ? "var(--warning)" : "var(--success)";
+    const ramColor = ram > 80 ? "var(--danger)" : ram > 50 ? "var(--warning)" : "var(--accent)";
+    const diskColor = disk > 85 ? "var(--danger)" : disk > 65 ? "var(--warning)" : "var(--info)";
     const online = node.status === "online";
 
     return (
@@ -290,7 +290,7 @@ export default function NodeDetailPage() {
                                 <div key={p.pm_id}
                                     onClick={managed ? () => navigate(`/${managed.projectType === "website" ? "sites" : "bots"}/${managed._id}`) : undefined}
                                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 20px", borderBottom: "1px solid var(--border-light)", cursor: managed ? "pointer" : "default" }}
-                                    onMouseEnter={(e) => managed && (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+                                    onMouseEnter={(e) => managed && (e.currentTarget.style.background = "var(--bg-hover)")}
                                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                                 >
                                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: PROC_STATUS_COLOR[st] || "var(--text-dim)", flexShrink: 0 }} />
@@ -328,7 +328,7 @@ export default function NodeDetailPage() {
                     </select>
                     <button className="btn-ghost" style={{ padding: "6px 14px", fontSize: 12 }} onClick={fetchLogs}>Refresh</button>
                 </div>
-                <pre className="mono" style={{ margin: 0, padding: "14px 20px", fontSize: 11.5, lineHeight: 1.6, color: "var(--text-muted)", background: "rgba(0,0,0,0.25)", maxHeight: 380, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                <pre className="mono" style={{ margin: 0, padding: "14px 20px", fontSize: 11.5, lineHeight: 1.6, color: "var(--text-muted)", background: "var(--bg-base)", maxHeight: 380, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                     {logs || "(empty)"}
                 </pre>
             </div>

@@ -140,7 +140,7 @@ export default function Login() {
                             >
                                 {loading ? (
                                     <>
-                                        <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "spin 0.8s linear infinite" }} />
+                                        <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "var(--text-on-accent)", animation: "spin 0.8s linear infinite" }} />
                                         Signing in…
                                     </>
                                 ) : (
