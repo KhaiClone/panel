@@ -635,8 +635,7 @@ export default function BotDetail() {
                 </div>
             </div>
 
-            {/* Decorative status accent bar */}
-            <div style={{ height: 2, background: `linear-gradient(90deg, ${s.color}, transparent)`, marginBottom: 28, borderRadius: 1 }} />
+            <div style={{ height: 1, background: "var(--border)", marginBottom: 24 }} />
 
             {/* Summary stats */}
             <div className="grid-2-mobile gap-sm-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 32 }}>

@@ -96,13 +96,6 @@ export default function BotCard({ bot, onRefresh }) {
                     transition: "opacity 0.2s",
                 }}
             >
-                {/* Colored status strip at top */}
-                <div style={{
-                    height: 3,
-                    background: `linear-gradient(90deg, ${s.color}, transparent)`,
-                    flexShrink: 0,
-                }} />
-
                 {/* Card body */}
                 <div style={{ padding: "16px 18px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
 

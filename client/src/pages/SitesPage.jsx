@@ -61,9 +61,6 @@ function SiteCard({ site, onRefresh }) {
     return (
         <>
             <div className="card card-hover" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", opacity: busy ? 0.7 : 1, transition: "opacity 0.2s" }}>
-                {/* Status strip */}
-                <div style={{ height: 3, background: `linear-gradient(90deg, ${s.color}, transparent)`, flexShrink: 0 }} />
-
                 <div style={{ padding: "16px 18px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
                     {/* Header row */}
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>

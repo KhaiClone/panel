@@ -10,7 +10,7 @@ function GroupCard({ group, bots, onEdit, onDelete }) {
     const [open, setOpen] = useState(false);
     const onlineCount = bots.filter(b => b.live?.status === 'online').length;
     return (
-        <div className="card card-hover" style={{ padding: 20, marginBottom: 12, border: `1px solid ${group.color}40`, background: `linear-gradient(135deg, var(--bg-card) 0%, ${group.color}05 100%)` }}>
+        <div className="card card-hover" style={{ padding: 20, marginBottom: 12, border: `1px solid ${group.color}40`, background: "var(--bg-card)" }}>
             <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <span style={{ width: 14, height: 14, borderRadius: "50%", background: group.color || '#64748b', flexShrink: 0, boxShadow: `0 0 10px ${group.color}80` }}/>
                 <span style={{ fontWeight: 700, fontSize: 16, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</span>

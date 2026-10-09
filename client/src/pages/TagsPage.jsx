@@ -214,7 +214,7 @@ export default function TagsPage() {
                                     <div key={tag._id} className="card card-hover" style={{ padding: 0, overflow: "hidden" }}>
                                         {/* Colored left accent strip */}
                                         <div style={{ display: "flex" }}>
-                                            <div style={{ width: 3, flexShrink: 0, background: `linear-gradient(180deg, ${tag.color}, ${tag.color}60)` }} />
+                                            <div style={{ width: 3, flexShrink: 0, background: tag.color }} />
                                             <div style={{ flex: 1, padding: isEditing ? 20 : "16px 20px" }}>
                                                 {isEditing ? (
                                                     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

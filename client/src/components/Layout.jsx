@@ -5,32 +5,32 @@ import { useData } from "../context/DataContext";
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 const I = {
-    bots:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
-    sites:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
-    domains:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
-    groups:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-    tags:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
-    bulk:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
-    proxy:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
-    settings:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
-    servers:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>,
-    key:        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>,
-    proxyPool:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/><path d="M16 8l4-4"/><path d="M20 8V4h-4"/></svg>,
-    orders:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>,
-    stock:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><line x1="12" y1="13" x2="12" y2="21"/></svg>,
-    voucher:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4Z"/><line x1="14" y1="5" x2="14" y2="7"/><line x1="14" y1="11" x2="14" y2="13"/><line x1="14" y1="17" x2="14" y2="19"/></svg>,
-    supporters: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M3 18v-1a6 6 0 0 1 12 0v1"/><circle cx="9" cy="7" r="4"/><path d="M16 11h6"/><path d="M19 8v6"/></svg>,
-    menus:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="3" y="4" width="18" height="6" rx="1.5"/><path d="m15 6.5 1.5 1.5L18 6.5"/><line x1="6" y1="14" x2="18" y2="14"/><line x1="6" y1="18" x2="14" y2="18"/></svg>,
-    decors:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M12 2 15 8.5 22 9.3l-5 4.6 1.4 7L12 17.8 5.6 20.9 7 13.9l-5-4.6 7-.8Z"/></svg>,
-    quests:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
-    pricing:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
-    badges:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="12" cy="8" r="6"/><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"/></svg>,
-    lavalink:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>,
-    bell:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:18,height:18}}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
-    terminal:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>,
-    logout:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:15,height:15}}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
-    chevronL:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:18,height:18}}><polyline points="15 18 9 12 15 6"/></svg>,
-    menu:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:22,height:22}}><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
+    bots:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
+    sites:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
+    domains:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+    groups:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+    tags:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
+    bulk:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+    proxy:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
+    settings:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+    servers:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>,
+    key:        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>,
+    proxyPool:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/><path d="M16 8l4-4"/><path d="M20 8V4h-4"/></svg>,
+    orders:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>,
+    stock:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><line x1="12" y1="13" x2="12" y2="21"/></svg>,
+    voucher:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4Z"/><line x1="14" y1="5" x2="14" y2="7"/><line x1="14" y1="11" x2="14" y2="13"/><line x1="14" y1="17" x2="14" y2="19"/></svg>,
+    supporters: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M3 18v-1a6 6 0 0 1 12 0v1"/><circle cx="9" cy="7" r="4"/><path d="M16 11h6"/><path d="M19 8v6"/></svg>,
+    menus:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><rect x="3" y="4" width="18" height="6" rx="1.5"/><path d="m15 6.5 1.5 1.5L18 6.5"/><line x1="6" y1="14" x2="18" y2="14"/><line x1="6" y1="18" x2="14" y2="18"/></svg>,
+    decors:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M12 2 15 8.5 22 9.3l-5 4.6 1.4 7L12 17.8 5.6 20.9 7 13.9l-5-4.6 7-.8Z"/></svg>,
+    quests:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
+    pricing:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+    badges:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><circle cx="12" cy="8" r="6"/><path d="M15.5 13.5 17 22l-5-3-5 3 1.5-8.5"/></svg>,
+    lavalink:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>,
+    bell:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" style={{width:16,height:16}}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
+    terminal:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:16,height:16}}><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>,
+    logout:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" style={{width:15,height:15}}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+    chevronL:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" style={{width:16,height:16}}><polyline points="15 18 9 12 15 6"/></svg>,
+    menu:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" style={{width:22,height:22}}><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
     close:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{width:14,height:14}}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
 };
 
@@ -128,35 +128,16 @@ function getPageHeading(pathname) {
     return base ? NAV_PAGES[base] : { section: null, title: "NexusPanel" };
 }
 
+// Styled by .nav-item in index.css, so hover works without inline state.
 function NavItem({ to, icon, label, expanded }) {
     return (
         <NavLink
             to={to}
             title={!expanded ? label : undefined}
-            style={({ isActive }) => ({
-                display: "flex", alignItems: "center", gap: 12,
-                padding: expanded ? "9px 12px" : "9px",
-                borderRadius: 9, textDecoration: "none",
-                fontSize: 13.5, fontWeight: 500,
-                color: isActive ? "var(--text)" : "var(--text-muted)",
-                background: isActive ? "rgba(99,102,241,0.12)" : "transparent",
-                border: `1px solid ${isActive ? "rgba(99,102,241,0.25)" : "transparent"}`,
-                justifyContent: expanded ? "flex-start" : "center",
-                whiteSpace: "nowrap", transition: "all 0.15s ease",
-            })}
+            className={({ isActive }) => `nav-item${isActive ? " active" : ""}${expanded ? "" : " collapsed"}`}
         >
-            {({ isActive }) => (
-                <>
-                    <span style={{
-                        flexShrink: 0, width: 26, height: 26,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        borderRadius: 7,
-                        color: isActive ? "var(--accent-hover)" : "var(--text-dim)",
-                        transition: "all 0.15s",
-                    }}>{icon}</span>
-                    {expanded && <span style={{ opacity: isActive ? 1 : 0.85 }}>{label}</span>}
-                </>
-            )}
+            <span className="nav-icon">{icon}</span>
+            {expanded && <span>{label}</span>}
         </NavLink>
     );
 }
@@ -214,7 +195,7 @@ export default function Layout() {
 
     const heading = useMemo(() => getPageHeading(location.pathname), [location.pathname]);
 
-    const SIDEBAR_W = expanded ? 230 : 60;
+    const SIDEBAR_W = expanded ? 220 : 56;
 
     const handleMarkRead = async () => {
         try {
@@ -237,12 +218,12 @@ export default function Layout() {
             {/* Mobile overlay */}
             {isMobile && expanded && (
                 <div className="fade-in" onClick={() => setExpanded(false)}
-                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 40, backdropFilter: "blur(4px)" }} />
+                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 40 }} />
             )}
 
             {/* ── Sidebar ────────────────────────────────────────────── */}
             <aside style={{
-                width: isMobile ? 230 : SIDEBAR_W,
+                width: isMobile ? 220 : SIDEBAR_W,
                 background: "var(--bg-surface)",
                 borderRight: "1px solid var(--border)",
                 display: "flex", flexDirection: "column", flexShrink: 0,
@@ -253,48 +234,42 @@ export default function Layout() {
                 height: isMobile ? "100dvh" : "auto",
                 transform: isMobile && !expanded ? "translateX(-100%)" : "translateX(0)",
             }}>
-                {/* Top gradient strip */}
-                <div style={{ height: 3, flexShrink: 0, background: "linear-gradient(90deg, var(--accent), #8B5CF6, #06B6D4)" }} />
-
-                {/* Brand */}
+                {/* Brand — same height as the header, so their borders line up */}
                 <div style={{
-                    padding: expanded ? "14px 16px" : "14px 0",
+                    padding: expanded ? "0 10px 0 14px" : 0,
                     display: "flex", alignItems: "center", justifyContent: expanded ? "flex-start" : "center",
-                    gap: 10, minHeight: 60, borderBottom: "1px solid var(--border-light)",
+                    gap: 10, height: 52, flexShrink: 0, borderBottom: "1px solid var(--border)",
                 }}>
                     <div
                         onClick={() => !expanded && setExpanded(true)}
-                        style={{ width: 34, height: 34, borderRadius: 9, overflow: "hidden", flexShrink: 0, cursor: expanded ? "default" : "pointer" }}
+                        style={{ width: 24, height: 24, borderRadius: 6, overflow: "hidden", flexShrink: 0, cursor: expanded ? "default" : "pointer" }}
                     >
                         <img src="/logo.png" alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     </div>
                     {expanded && (
-                        <div className="fade-in" style={{ flex: 1, overflow: "hidden" }}>
-                            <p style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", margin: 0, whiteSpace: "nowrap" }}>NexusPanel</p>
-                            <p style={{ fontSize: 10, color: "var(--accent-hover)", textTransform: "uppercase", letterSpacing: "0.06em", margin: 0, whiteSpace: "nowrap" }}>VPS Dashboard</p>
-                        </div>
+                        <span style={{ flex: 1, fontWeight: 600, fontSize: 14, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden" }}>NexusPanel</span>
                     )}
                     {expanded && (
-                        <button onClick={() => setExpanded(false)} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: 5, display: "flex", borderRadius: 7 }}>
+                        <button onClick={() => setExpanded(false)} title="Collapse" className="btn-ghost" style={{ padding: 4, border: "none", color: "var(--text-dim)" }}>
                             {I.chevronL}
                         </button>
                     )}
                 </div>
 
                 {/* Nav sections */}
-                <nav style={{ flex: 1, padding: "12px 8px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 0 }} className="no-scrollbar">
+                <nav style={{ flex: 1, padding: "8px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 0 }} className="no-scrollbar">
                     {NAV_SECTIONS.map((section, si) => (
-                        <div key={section.id} style={{ marginBottom: 6 }}>
+                        <div key={section.id} style={{ marginBottom: 4 }}>
                             {/* Section label */}
                             {expanded ? (
-                                <p style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", padding: "8px 12px 4px", margin: 0 }}>
+                                <p style={{ fontSize: 11, fontWeight: 500, color: "var(--text-dim)", padding: "12px 10px 4px", margin: 0 }}>
                                     {section.label}
                                 </p>
                             ) : si > 0 ? (
-                                <div style={{ height: 1, background: "var(--border-light)", margin: "8px 10px" }} />
+                                <div style={{ height: 1, background: "var(--border)", margin: "8px 8px" }} />
                             ) : null}
 
-                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                                 {section.items.map(item => (
                                     <NavItem key={item.to} {...item} expanded={expanded} />
                                 ))}
@@ -304,28 +279,22 @@ export default function Layout() {
                 </nav>
 
                 {/* Settings, pinned under the scrolling sections */}
-                <div style={{ padding: "8px", borderTop: "1px solid var(--border-light)" }}>
+                <div style={{ padding: "8px", borderTop: "1px solid var(--border)" }}>
                     <NavItem {...SETTINGS_ITEM} expanded={expanded} />
                 </div>
 
                 {/* User footer */}
-                <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border-light)", background: "rgba(0,0,0,0.1)", display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ position: "relative", flexShrink: 0 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), #8B5CF6)", padding: 2 }}>
-                            <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "var(--bg-surface)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "var(--accent-hover)" }}>
-                                {user?.username?.[0]?.toUpperCase()}
-                            </div>
-                        </div>
-                        <span className="status-dot" style={{ background: "var(--success)", width: 8, height: 8, position: "absolute", bottom: 0, right: 0, border: "1.5px solid var(--bg-surface)" }} />
+                <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: expanded ? "flex-start" : "center", gap: 10 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: "var(--bg-active)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                        {user?.username?.[0]?.toUpperCase()}
                     </div>
                     {expanded && (
                         <>
-                            <div style={{ flex: 1, overflow: "hidden" }}>
-                                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", margin: 0 }}>{user?.username}</p>
-                                <p style={{ fontSize: 10, color: "var(--success)", margin: 0 }}>Administrator</p>
+                            <div style={{ flex: 1, overflow: "hidden", lineHeight: 1.3 }}>
+                                <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", margin: 0 }}>{user?.username}</p>
+                                <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>Admin</p>
                             </div>
-                            <button onClick={handleLogout} title="Logout"
-                                style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)", cursor: "pointer", padding: 7, borderRadius: 8, display: "flex", flexShrink: 0 }}>
+                            <button onClick={handleLogout} title="Log out" className="btn-ghost" style={{ padding: 6, border: "none", color: "var(--text-dim)" }}>
                                 {I.logout}
                             </button>
                         </>
@@ -338,9 +307,9 @@ export default function Layout() {
 
                 {/* Header */}
                 <header style={{
-                    height: 58, flexShrink: 0,
-                    background: "var(--bg-surface)",
-                    borderBottom: "1px solid var(--border-light)",
+                    height: 52, flexShrink: 0,
+                    background: "var(--bg-base)",
+                    borderBottom: "1px solid var(--border)",
                     display: "flex", alignItems: "center", padding: "0 20px", gap: 14,
                     position: "relative", zIndex: 10,
                 }}>
@@ -350,14 +319,14 @@ export default function Layout() {
                         </button>
                     )}
 
-                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 6, overflow: "hidden", whiteSpace: "nowrap" }}>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 6, overflow: "hidden", whiteSpace: "nowrap", fontSize: 13 }}>
                         {heading.section && (
-                            <span className="hide-mobile" style={{ fontSize: 13, color: "var(--text-dim)", flexShrink: 0 }}>{heading.section} ›</span>
+                            <span className="hide-mobile" style={{ color: "var(--text-dim)", flexShrink: 0 }}>{heading.section} /</span>
                         )}
                         {heading.parent && (
-                            <Link to={heading.parent.to} style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "none", flexShrink: 0 }}>{heading.parent.title} ›</Link>
+                            <Link to={heading.parent.to} style={{ color: "var(--text-muted)", textDecoration: "none", flexShrink: 0 }}>{heading.parent.title} /</Link>
                         )}
-                        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis" }}>{heading.title}</h2>
+                        <h2 style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis" }}>{heading.title}</h2>
                     </div>
 
                     {/* Header chips */}
@@ -365,45 +334,45 @@ export default function Layout() {
                         {/* The panel's own VPS only — every node is on Servers, where this leads */}
                         {cpuPct != null && (
                             <Link to="/systems" className="hide-mobile" title="CPU and RAM of the VPS that runs the panel — every server is on Servers"
-                                style={{ display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
-                                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>Panel host</span>
+                                style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", fontSize: 12 }}>
+                                <span style={{ color: "var(--text-dim)" }}>Panel host</span>
                                 <ResourceChip label="CPU" value={`${cpuPct}%`} color={cpuColor} />
                                 {ramPct != null && <ResourceChip label="RAM" value={`${ramPct}%`} color={ramColor} />}
                             </Link>
                         )}
 
                         {/* Notification bell */}
-                        <button className="btn-ghost" style={{ padding: 8, borderRadius: "50%", position: "relative" }}
+                        <button className="btn-ghost" title="Notifications" style={{ padding: 6, border: "none", position: "relative" }}
                             onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs && unreadCount > 0) handleMarkRead(); }}>
                             {I.bell}
                             {unreadCount > 0 && (
-                                <span style={{ position: "absolute", top: 5, right: 5, width: 7, height: 7, borderRadius: "50%", background: "var(--danger)", border: "2px solid var(--bg-surface)" }} />
+                                <span style={{ position: "absolute", top: 4, right: 4, width: 7, height: 7, borderRadius: "50%", background: "var(--danger)", border: "2px solid var(--bg-base)" }} />
                             )}
                         </button>
 
                         {/* Notification dropdown */}
                         {showNotifs && (
                             <div className="card slide-up" style={{
-                                position: "absolute", top: "calc(100% + 8px)", right: 16,
+                                position: "absolute", top: "calc(100% + 6px)", right: 16,
                                 width: 340, maxHeight: 440, padding: 0, overflowY: "auto",
-                                zIndex: 50, boxShadow: "0 16px 48px rgba(0,0,0,0.5)", border: "1px solid var(--border)",
+                                zIndex: 50, boxShadow: "var(--shadow-popover)",
                             }}>
-                                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-input)", position: "sticky", top: 0, zIndex: 2 }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700 }}>Notifications</span>
-                                    {unreadCount > 0 && <span className="badge" style={{ background: "var(--accent-dim)", color: "var(--accent-hover)", fontSize: 10 }}>{unreadCount} new</span>}
+                                <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-card)", position: "sticky", top: 0, zIndex: 2 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 600 }}>Notifications</span>
+                                    {unreadCount > 0 && <span className="badge" style={{ background: "var(--accent-dim)", color: "var(--accent-hover)" }}>{unreadCount} new</span>}
                                 </div>
                                 {notifs.length === 0 ? (
                                     <div style={{ padding: "32px 24px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No notifications</div>
                                 ) : (
                                     notifs.map(n => (
                                         <div key={n._id} style={{
-                                            padding: "12px 16px", borderBottom: "1px solid var(--border-light)",
+                                            padding: "10px 14px", borderBottom: "1px solid var(--border-light)",
                                             display: "flex", gap: 10, alignItems: "flex-start",
-                                            background: n.read ? "transparent" : "var(--bg-input)",
-                                            borderLeft: `3px solid ${NOTIF_TYPE_COLOR[n.type] || "var(--accent)"}`,
+                                            background: n.read ? "transparent" : "var(--bg-hover)",
                                         }}>
+                                            <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, marginTop: 7, background: NOTIF_TYPE_COLOR[n.type] || "var(--accent)" }} />
                                             <div style={{ flex: 1 }}>
-                                                <p style={{ margin: 0, fontSize: 13, color: "var(--text)", lineHeight: 1.4, fontWeight: n.read ? 400 : 600 }}>{n.message}</p>
+                                                <p style={{ margin: 0, fontSize: 13, color: "var(--text)", lineHeight: 1.4, fontWeight: n.read ? 400 : 500 }}>{n.message}</p>
                                                 <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{new Date(n.createdAt).toLocaleString()}</p>
                                             </div>
                                             <button onClick={(e) => { e.stopPropagation(); handleRemoveNotif(n._id); }}
@@ -498,17 +467,12 @@ function PanelStateBanner() {
     );
 }
 
+/** "● CPU 23%" — the dot carries the colour, the text stays quiet. */
 function ResourceChip({ label, value, color }) {
     return (
-        <div style={{
-            display: "flex", alignItems: "center", gap: 5,
-            padding: "4px 10px", borderRadius: 99,
-            background: "var(--bg-input)", border: "1px solid var(--border)",
-            fontSize: 11, fontWeight: 600,
-        }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-muted)" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block" }} />
-            <span style={{ color: "var(--text-muted)" }}>{label}</span>
-            <span style={{ color }}>{value}</span>
-        </div>
+            {label} <span style={{ color: "var(--text)" }}>{value}</span>
+        </span>
     );
 }

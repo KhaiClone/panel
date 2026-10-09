@@ -97,9 +97,7 @@ function GroupSection({ label, color, bots, selected, onToggleBot, onToggleGroup
         <div className="card card-hover" style={{
             padding: 20, marginBottom: 12,
             border: `1px solid ${color ? color + '40' : 'var(--border)'}`,
-            background: color
-                ? `linear-gradient(135deg, var(--bg-card) 0%, ${color}05 100%)`
-                : 'var(--bg-card)',
+            background: 'var(--bg-card)',
         }}>
             {/* Group header row */}
             <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: bots.length > 0 ? 16 : 0 }}>
@@ -231,7 +229,7 @@ export default function MultiManage() {
             {/* Sticky Action Toolbar */}
             <div style={{
                 position: "sticky", top: 16, zIndex: 10,
-                background: "var(--bg-card)", backdropFilter: "blur(20px)",
+                background: "var(--bg-card)",
                 padding: "12px 20px", marginBottom: 24,
                 borderRadius: 16,
                 border: `1px solid ${hasSelection ? "var(--accent)" : "var(--border)"}`,

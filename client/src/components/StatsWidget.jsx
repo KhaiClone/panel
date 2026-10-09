@@ -13,9 +13,8 @@ function ProgressBar({ percent, color }) {
         <div style={{ background: "var(--bg-input)", borderRadius: 6, height: 8, overflow: "hidden" }}>
             <div style={{
                 width: `${pct}%`, height: "100%", borderRadius: 6,
-                background: `linear-gradient(90deg, ${color}cc, ${color})`,
+                background: color,
                 transition: "width 0.4s ease",
-                boxShadow: pct > 70 ? `0 0 8px ${color}60` : 'none',
             }}/>
         </div>
     );
