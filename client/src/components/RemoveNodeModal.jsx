@@ -262,7 +262,7 @@ export default function RemoveNodeModal({ node, onClose, onRemoved, onOpenProjec
                             ))}
                             {!blocked && impact.egressBots.length > 0 && box("info", (
                                 <>
-                                    {impact.egressBots.length} project(s) send their traffic through this node (Egress Proxy). Their pin is cleared; restart them to use their own node&apos;s IP:
+                                    {impact.egressBots.length} project(s) send their traffic through this node (Bot Egress). Their pin is cleared; restart them to use their own node&apos;s IP:
                                     <ul style={listStyle}>
                                         {impact.egressBots.map((b) => (
                                             <li key={b._id}><ProjectLink bot={b} onOpen={onOpenProject} /></li>

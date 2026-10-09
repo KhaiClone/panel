@@ -59,7 +59,7 @@ export default function ProxyPage() {
         <div className="page fade-in" style={{ maxWidth: 1000 }}>
             <div style={{ marginBottom: 20 }}>
                 <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>
-                    Egress Proxy
+                    Bot Egress
                 </h1>
                 <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
                     Pin a project's public IP to any VPS, independent of the node that runs it. Traffic is

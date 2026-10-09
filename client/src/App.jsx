@@ -10,6 +10,7 @@ import BotDetail from "./pages/BotDetail";
 import GroupsPage from "./pages/GroupsPage";
 import MultiManage from "./pages/MultiManage";
 import PanelManage from "./pages/PanelManage";
+import GitKeysPage from "./pages/GitKeysPage";
 import TerminalPage from "./pages/TerminalPage";
 import ProxyPage from "./pages/ProxyPage";
 import ProxiesPage from "./pages/ProxiesPage";
@@ -64,7 +65,10 @@ export default function App() {
                             <Route path="groups"        element={<GroupsPage />} />
                             <Route path="multi-manage"  element={<MultiManage />} />
                             <Route path="tags"          element={<TagsPage />} />
-                            <Route path="panel-manage"  element={<PanelManage />} />
+                            {/* Panel Settings has one URL per tab; the bare path opens Overview. */}
+                            <Route path="panel-manage"  element={<Navigate to="/panel-manage/overview" replace />} />
+                            <Route path="panel-manage/:tab" element={<PanelManage />} />
+                            <Route path="git-keys"      element={<GitKeysPage />} />
                             <Route path="proxy"         element={<ProxyPage />} />
                             {/* /proxy pins a bot's IP to a VPS; /proxies is the panel's own egress pool. */}
                             <Route path="proxies"       element={<ProxiesPage />} />

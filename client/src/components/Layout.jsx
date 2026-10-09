@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, NavLink, Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 
@@ -12,9 +12,10 @@ const I = {
     tags:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
     bulk:       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
     proxy:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
-    system:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+    settings:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>,
+    servers:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>,
+    key:        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>,
     proxyPool:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/><path d="M16 8l4-4"/><path d="M20 8V4h-4"/></svg>,
-    panel:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>,
     orders:     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>,
     stock:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><line x1="12" y1="13" x2="12" y2="21"/></svg>,
     voucher:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18}}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4Z"/><line x1="14" y1="5" x2="14" y2="7"/><line x1="14" y1="11" x2="14" y2="13"/><line x1="14" y1="17" x2="14" y2="19"/></svg>,
@@ -34,86 +35,97 @@ const I = {
 };
 
 // One account, one nav. Everything here is reachable to whoever is logged in.
+// The shop comes first: it is what the admin opens every day.
 const NAV_SECTIONS = [
     {
-        id: "main",
-        label: "Main",
+        id: "shop",
+        label: "Shop",
         items: [
-            { to: "/systems",  label: "Systems",  icon: I.system },
+            { to: "/orders",       label: "Orders",       icon: I.orders },
+            { to: "/stock",        label: "Stock",        icon: I.stock },
+            { to: "/vouchers",     label: "Vouchers",     icon: I.voucher },
+            { to: "/ticket-menus", label: "Ticket Menus", icon: I.menus },
+            { to: "/supporters",   label: "Supporters",   icon: I.supporters },
+        ],
+    },
+    {
+        id: "auto",
+        label: "Auto Services",
+        items: [
+            { to: "/quests",  label: "Auto Quest", icon: I.quests },
+            { to: "/badges",  label: "Auto Badge", icon: I.badges },
+            { to: "/decors",  label: "Decors",     icon: I.decors },
+            { to: "/pricing", label: "Pricing",    icon: I.pricing },
+        ],
+    },
+    {
+        id: "infra",
+        label: "Infrastructure",
+        items: [
+            { to: "/systems",  label: "Servers",  icon: I.servers },
             { to: "/bots",     label: "Bots",     icon: I.bots },
             { to: "/sites",    label: "Sites",    icon: I.sites },
-            { to: "/domains",  label: "Domains",  icon: I.domains },
+            { to: "/lavalink", label: "Lavalink", icon: I.lavalink },
+            { to: "/terminal", label: "Terminal", icon: I.terminal },
+            { to: "/git-keys", label: "Git Keys", icon: I.key },
         ],
     },
     {
-        id: "tools",
-        label: "Tools",
+        id: "network",
+        label: "Network",
+        items: [
+            { to: "/domains", label: "Domains",    icon: I.domains },
+            // Two different things, deliberately side by side: "Bot Egress" pins a
+            // BOT's public IP to a VPS; "Proxy Pool" is the panel's own egress pool.
+            { to: "/proxy",   label: "Bot Egress", icon: I.proxy },
+            { to: "/proxies", label: "Proxy Pool", icon: I.proxyPool },
+        ],
+    },
+    {
+        id: "bot-tools",
+        label: "Bot Tools",
         items: [
             { to: "/multi-manage", label: "Bulk Ops", icon: I.bulk },
-            // Two different things, deliberately side by side: "Egress Proxy" pins a
-            // BOT's public IP to a VPS; "Proxy Pool" is the panel's own egress pool.
-            { to: "/proxy",        label: "Egress Proxy", icon: I.proxy },
-            { to: "/proxies",      label: "Proxy Pool",   icon: I.proxyPool },
-        ],
-    },
-    {
-        id: "organize",
-        label: "Organize",
-        items: [
-            { to: "/groups", label: "Groups", icon: I.groups },
-            { to: "/tags",   label: "Tags",   icon: I.tags },
-        ],
-    },
-    {
-        id: "system",
-        label: "System",
-        items: [
-            { to: "/terminal",     label: "Terminal", icon: I.terminal },
-            { to: "/orders",       label: "Orders",   icon: I.orders },
-            { to: "/stock",        label: "Stock",    icon: I.stock },
-            { to: "/vouchers",     label: "Vouchers", icon: I.voucher },
-            { to: "/ticket-menus", label: "Ticket Menus", icon: I.menus },
-            { to: "/supporters",   label: "Supporters", icon: I.supporters },
-            { to: "/decors",       label: "Decors",   icon: I.decors },
-            { to: "/quests",       label: "Quests",   icon: I.quests },
-            { to: "/pricing",      label: "Pricing",  icon: I.pricing },
-            { to: "/badges",       label: "Badges",   icon: I.badges },
-            { to: "/lavalink",     label: "Lavalink", icon: I.lavalink },
-            { to: "/panel-manage", label: "Panel",    icon: I.panel },
+            { to: "/groups",       label: "Groups",   icon: I.groups },
+            { to: "/tags",         label: "Tags",     icon: I.tags },
         ],
     },
 ];
 
-const PAGE_TITLES = {
-    "/bots":         "Bots",
-    "/sites":        "Sites",
-    "/domains":      "Domains",
-    "/groups":       "Groups",
-    "/tags":         "Tags",
-    "/multi-manage": "Bulk Operations",
-    "/panel-manage": "Panel Settings",
-    "/proxy":        "Egress Proxy",
-    "/terminal":     "Terminal",
-    "/systems":      "Systems",
-    "/orders":       "Orders",
-    "/stock":        "Stock",
-    "/vouchers":     "Vouchers",
-    "/ticket-menus": "Ticket Menus",
-    "/supporters":   "Supporters",
-    "/decors":       "Decors",
-    "/quests":       "Auto Quest",
-    "/lavalink":     "Lavalink",
-};
+// Pinned under the sections, above the account.
+const SETTINGS_ITEM = { to: "/panel-manage", label: "Panel Settings", icon: I.settings };
+
+// Header titles come from the nav itself, so a new page cannot be left without one.
+const NAV_PAGES = Object.fromEntries([
+    ...NAV_SECTIONS.flatMap((s) => s.items.map((it) => [it.to, { section: s.label, title: it.label }])),
+    [SETTINGS_ITEM.to, { section: null, title: SETTINGS_ITEM.label }],
+]);
+
+// Detail pages, shown under the list they open from.
+const DETAIL_PAGES = [
+    { prefix: "/bots/",   parent: "/bots",    title: "Bot Detail" },
+    { prefix: "/sites/",  parent: "/sites",   title: "Site Detail" },
+    { prefix: "/nodes/",  parent: "/systems", title: "Server Detail" },
+    { prefix: "/quests/", parent: "/quests",  title: "Quest Account" },
+];
 
 const NOTIF_TYPE_COLOR = {
     start: "var(--success)", stop: "var(--warning)", restart: "var(--accent)",
     expired: "var(--danger)", reinstall: "#a78bfa", info: "var(--accent)",
 };
 
-function getPageTitle(pathname) {
-    if (pathname.startsWith("/bots/")) return "Bot Detail";
-    if (pathname.startsWith("/sites/")) return "Site Detail";
-    return PAGE_TITLES[pathname] || "NexusPanel";
+/** { section, parent?: { to, title }, title } for the header. */
+function getPageHeading(pathname) {
+    const page = NAV_PAGES[pathname];
+    if (page) return page;
+    const detail = DETAIL_PAGES.find((d) => pathname.startsWith(d.prefix));
+    if (detail) {
+        const parent = NAV_PAGES[detail.parent];
+        return { section: parent.section, parent: { to: detail.parent, title: parent.title }, title: detail.title };
+    }
+    // /panel-manage/<tab> and anything else nested under a nav entry.
+    const base = Object.keys(NAV_PAGES).find((to) => pathname.startsWith(`${to}/`));
+    return base ? NAV_PAGES[base] : { section: null, title: "NexusPanel" };
 }
 
 function NavItem({ to, icon, label, expanded }) {
@@ -151,7 +163,7 @@ function NavItem({ to, icon, label, expanded }) {
 
 export default function Layout() {
     const { user, logout } = useAuth();
-    const { stats, bots } = useData();
+    const { stats } = useData();
     const navigate = useNavigate();
     const location = useLocation();
     const [expanded, setExpanded] = useState(true);
@@ -200,9 +212,7 @@ export default function Layout() {
     const cpuColor = cpuPct == null ? "var(--text-dim)" : cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)";
     const ramColor = ramPct == null ? "var(--text-dim)" : ramPct > 85 ? "var(--danger)" : ramPct > 60 ? "var(--warning)" : "#60A5FA";
 
-    const onlineBots = bots.filter(b => b.live?.status === "online").length;
-
-    const pageTitle = useMemo(() => getPageTitle(location.pathname), [location.pathname]);
+    const heading = useMemo(() => getPageHeading(location.pathname), [location.pathname]);
 
     const SIDEBAR_W = expanded ? 230 : 60;
 
@@ -293,31 +303,10 @@ export default function Layout() {
                     ))}
                 </nav>
 
-                {/* Sidebar stats strip (only when expanded) */}
-                {expanded && cpuPct != null && (
-                    <div className="fade-in" style={{ margin: "0 10px 10px", padding: "10px 12px", background: "var(--bg-input)", borderRadius: 10, border: "1px solid var(--border-light)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>Server Health</span>
-                            <span style={{ fontSize: 11, color: onlineBots > 0 ? "var(--success)" : "var(--text-dim)" }}>
-                                {onlineBots} online
-                            </span>
-                        </div>
-                        {[
-                            { label: "CPU", pct: cpuPct, color: cpuColor },
-                            { label: "RAM", pct: ramPct, color: ramColor },
-                        ].map(({ label, pct, color }) => (
-                            <div key={label} style={{ marginBottom: 6 }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                                    <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{label}</span>
-                                    <span style={{ fontSize: 10, fontWeight: 600, color }}>{pct}%</span>
-                                </div>
-                                <div style={{ height: 4, background: "var(--border)", borderRadius: 99, overflow: "hidden" }}>
-                                    <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: color, borderRadius: 99, transition: "width 0.5s ease" }} />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                {/* Settings, pinned under the scrolling sections */}
+                <div style={{ padding: "8px", borderTop: "1px solid var(--border-light)" }}>
+                    <NavItem {...SETTINGS_ITEM} expanded={expanded} />
+                </div>
 
                 {/* User footer */}
                 <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border-light)", background: "rgba(0,0,0,0.1)", display: "flex", alignItems: "center", gap: 8 }}>
@@ -361,23 +350,27 @@ export default function Layout() {
                         </button>
                     )}
 
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pageTitle}</h2>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 6, overflow: "hidden", whiteSpace: "nowrap" }}>
+                        {heading.section && (
+                            <span className="hide-mobile" style={{ fontSize: 13, color: "var(--text-dim)", flexShrink: 0 }}>{heading.section} ›</span>
+                        )}
+                        {heading.parent && (
+                            <Link to={heading.parent.to} style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "none", flexShrink: 0 }}>{heading.parent.title} ›</Link>
+                        )}
+                        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis" }}>{heading.title}</h2>
                     </div>
 
                     {/* Header chips */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }} ref={notifRef}>
-                        {/* Global node switcher (admin, with registered nodes only) */}
-
-                        {/* Resource chips */}
-                        <div className="hide-mobile" style={{ display: "flex", gap: 6 }}>
-                            {cpuPct != null && (
+                        {/* The panel's own VPS only — every node is on Servers, where this leads */}
+                        {cpuPct != null && (
+                            <Link to="/systems" className="hide-mobile" title="CPU and RAM of the VPS that runs the panel — every server is on Servers"
+                                style={{ display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
+                                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>Panel host</span>
                                 <ResourceChip label="CPU" value={`${cpuPct}%`} color={cpuColor} />
-                            )}
-                            {ramPct != null && (
-                                <ResourceChip label="RAM" value={`${ramPct}%`} color={ramColor} />
-                            )}
-                        </div>
+                                {ramPct != null && <ResourceChip label="RAM" value={`${ramPct}%`} color={ramColor} />}
+                            </Link>
+                        )}
 
                         {/* Notification bell */}
                         <button className="btn-ghost" style={{ padding: 8, borderRadius: "50%", position: "relative" }}

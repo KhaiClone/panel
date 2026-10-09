@@ -7,7 +7,7 @@ import { RemovalStatus, removalActive } from "../components/RemoveNodeModal";
 import { fmtBytes, fmtPercent } from "../components/MetricChart";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Systems — every VPS side by side, one row each.
+//  Servers (/systems) — every VPS side by side, one row each.
 //
 //  Live values come from /api/nodes (which already carries each node's stats),
 //  the trend behind them from /api/nodes/history in a single request for all
@@ -209,7 +209,7 @@ export default function SystemsPage() {
         <div className="page fade-in">
             <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
                 <div className="min-w-0">
-                    <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Systems</h1>
+                    <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Servers</h1>
                     <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "6px 0 0" }}>
                         Every VPS the panel manages. Select one to see its full history.
                     </p>

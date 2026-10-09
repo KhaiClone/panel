@@ -6,7 +6,7 @@ import ConfirmModal from "../components/ConfirmModal";
 //  Proxy Pool — the proxies YOU give the panel, plus the switches that decide
 //  which sources a feature egresses through.
 //
-//  Not to be confused with /proxy ("Egress Proxy"), which pins a BOT's public IP
+//  Not to be confused with /proxy ("Bot Egress"), which pins a BOT's public IP
 //  to a VPS. This page is about the panel's own outbound traffic: Auto Quest
 //  today, more features later (a proxy carries `uses` for exactly that).
 // ─────────────────────────────────────────────────────────────────────────────
