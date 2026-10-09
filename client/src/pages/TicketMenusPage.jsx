@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, Toggle } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ticket Menus — what a customer picks in a new ArnTo-Shop ticket: a service
@@ -15,75 +15,6 @@ const ALL = "__all";
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
-function Toggle({ checked, onChange, disabled, title }) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={checked}
-            disabled={disabled}
-            title={title}
-            onClick={(e) => {
-                e.stopPropagation();
-                onChange(!checked);
-            }}
-            style={{
-                width: 40,
-                height: 22,
-                borderRadius: 999,
-                border: "1px solid var(--border)",
-                background: checked ? "var(--accent)" : "var(--bg-input)",
-                position: "relative",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.4 : 1,
-                transition: "background 0.15s",
-                flexShrink: 0,
-            }}
-        >
-            <span style={{ position: "absolute", top: 2, left: checked ? 20 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
-        </button>
-    );
-}
-
-function Field({ label, hint, children }) {
-    return (
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-            {children}
-            {hint && <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>{hint}</span>}
-        </label>
-    );
-}
-
-function Notice({ tone = "warning", children }) {
-    return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `var(--${tone}-bg)`, color: `var(--${tone})`, border: `1px solid var(--${tone}-border)`, fontSize: 13, lineHeight: 1.5 }}>
-            {children}
-        </div>
-    );
-}
-
-function Modal({ title, onClose, children, width = 560 }) {
-    return createPortal(
-        <div className="modal-overlay" onClick={onClose}>
-            <div
-                className="card slide-up modal-card-mobile"
-                style={{ maxWidth: width, width: "100%", maxHeight: "90vh", overflowY: "auto", padding: 24, position: "relative", zIndex: 1001 }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12 }}>
-                    <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{title}</h3>
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={onClose}>
-                        ✕
-                    </button>
-                </div>
-                {children}
-            </div>
-        </div>,
-        document.body,
-    );
-}
-
 /** A Unicode emoji as it is, a server emoji from Discord's CDN. */
 function Emoji({ value, size = 18 }) {
     if (!value) return <span style={{ width: size, display: "inline-block" }} />;
@@ -92,9 +23,9 @@ function Emoji({ value, size = 18 }) {
     return <span style={{ fontSize: size - 2, lineHeight: 1, flexShrink: 0 }}>{value}</span>;
 }
 
-const IconButton = ({ title, onClick, disabled, children }) => (
-    <button type="button" className="btn-ghost" title={title} disabled={disabled} onClick={onClick} style={{ padding: "3px 8px", fontSize: 12 }}>
-        {children}
+const IconButton = ({ title, icon, onClick, disabled, danger }) => (
+    <button type="button" className={`btn-ghost btn-icon btn-sm${danger ? " is-danger" : ""}`} title={title} aria-label={title} disabled={disabled} onClick={onClick} style={{ border: "none" }}>
+        <Icon name={icon} size={14} />
     </button>
 );
 
@@ -248,7 +179,7 @@ function SettingsForm({ initial, onSave, saving }) {
             style={{ display: "flex", flexDirection: "column", gap: 16 }}
         >
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 500 }}>
                     <Toggle checked={other.enabled} onChange={setO("enabled")} /> "Khác" — last option of every product menu
                 </label>
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, opacity: other.enabled ? 1 : 0.5 }}>
@@ -270,8 +201,8 @@ function SettingsForm({ initial, onSave, saving }) {
                 </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--border-light)", paddingTop: 14 }}>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>Sellers</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>Sellers</div>
                 <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
                     Names for the product form, and each seller's ticket category — used when the service has no category of its own.
                 </div>
@@ -280,14 +211,12 @@ function SettingsForm({ initial, onSave, saving }) {
                         <input className="input mono" placeholder="Discord ID" value={s.id} onChange={setS(i, "id")} />
                         <input className="input" placeholder="Name" value={s.name} onChange={setS(i, "name")} />
                         <input className="input mono" placeholder="Category ID" value={s.category} onChange={setS(i, "category")} />
-                        <IconButton title="Remove" onClick={() => setSellers((list) => list.filter((_, j) => j !== i))}>
-                            ✕
-                        </IconButton>
+                        <IconButton title="Remove" icon="x" onClick={() => setSellers((list) => list.filter((_, j) => j !== i))} />
                     </div>
                 ))}
                 <div>
-                    <button type="button" className="btn-ghost" style={{ padding: "5px 12px", fontSize: 12 }} onClick={() => setSellers((l) => [...l, { id: "", name: "", category: "" }])}>
-                        + Seller
+                    <button type="button" className="btn-ghost btn-sm" onClick={() => setSellers((l) => [...l, { id: "", name: "", category: "" }])}>
+                        <Icon name="plus" size={14} /> Add seller
                     </button>
                 </div>
             </div>
@@ -308,65 +237,44 @@ const emptyProduct = (services = []) => ({ name: "", description: "", emoji: "",
 function ProductRows({ rows, all, services, sellers, scope, onEdit, onToggle, onMove, onDelete }) {
     const sellerName = (id) => sellers.find((s) => s.id === id)?.name || id;
     const label = (key) => services.find((s) => s.key === key)?.label || key;
-    if (!rows.length) return <div style={{ padding: "24px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No products here yet.</div>;
+    if (!rows.length) return <EmptyState compact icon="menus" title="No products here yet" />;
     return (
-        <div className="table-responsive">
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                    <tr style={{ color: "var(--text-dim)", fontSize: 11, textAlign: "left" }}>
-                        {["", "Product", "Seller", "Channel", ...(scope === ALL ? ["Menus"] : []), "Shown", ""].map((h, i) => (
-                            <th key={i} style={{ padding: "6px 8px", fontWeight: 600, whiteSpace: "nowrap" }}>
-                                {h}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.map((p, i) => (
-                        <tr key={p.id} style={{ borderTop: "1px solid var(--border-light)", opacity: p.enabled ? 1 : 0.55 }}>
-                            <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}>
-                                {/* Up/down swap with the neighbour shown here; the order is shared by every menu. */}
-                                <IconButton title="Move up" disabled={!i} onClick={() => onMove(p, all.indexOf(rows[i - 1]))}>
-                                    ↑
-                                </IconButton>
-                                <IconButton title="Move down" disabled={i === rows.length - 1} onClick={() => onMove(p, all.indexOf(rows[i + 1]))}>
-                                    ↓
-                                </IconButton>
-                            </td>
-                            <td style={{ padding: "6px 8px", minWidth: 180 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <Emoji value={p.emoji} />
-                                    <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontWeight: 600 }}>{p.name}</div>
-                                        {p.description && <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{p.description}</div>}
-                                    </div>
-                                </div>
-                            </td>
-                            <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>{p.sellerId ? sellerName(p.sellerId) : <span style={{ color: "var(--text-dim)" }}>—</span>}</td>
-                            <td className="mono" style={{ padding: "6px 8px", fontSize: 12 }}>
-                                {p.suffix}
-                            </td>
-                            {scope === ALL && (
-                                <td style={{ padding: "6px 8px", fontSize: 12 }}>
-                                    {p.services.length ? p.services.map(label).join(", ") : <span style={{ color: "var(--warning)" }}>none</span>}
-                                </td>
-                            )}
-                            <td style={{ padding: "6px 8px" }}>
-                                <Toggle checked={p.enabled} onChange={(v) => onToggle(p, v)} />
-                            </td>
-                            <td style={{ padding: "6px 4px", whiteSpace: "nowrap", textAlign: "right" }}>
-                                <IconButton title="Edit" onClick={() => onEdit(p)}>
-                                    Edit
-                                </IconButton>
-                                <IconButton title={scope === ALL ? "Delete" : "Delete, or take it out of this menu"} onClick={() => onDelete(p)}>
-                                    ✕
-                                </IconButton>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+        <DataTable columns={["", "Product", "Seller", "Channel", ...(scope === ALL ? ["Menus"] : []), "Shown", ""]}>
+            {rows.map((p, i) => (
+                <tr key={p.id} style={{ opacity: p.enabled ? 1 : 0.55 }}>
+                    <td className="nowrap" style={{ padding: "6px 6px 6px 10px" }}>
+                        {/* Up/down swap with the neighbour shown here; the order is shared by every menu. */}
+                        <IconButton title="Move up" icon="arrowUp" disabled={!i} onClick={() => onMove(p, all.indexOf(rows[i - 1]))} />
+                        <IconButton title="Move down" icon="arrowDown" disabled={i === rows.length - 1} onClick={() => onMove(p, all.indexOf(rows[i + 1]))} />
+                    </td>
+                    <td style={{ minWidth: 180 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <Emoji value={p.emoji} />
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 500 }}>{p.name}</div>
+                                {p.description && <div className="cell-sub">{p.description}</div>}
+                            </div>
+                        </div>
+                    </td>
+                    <td className="nowrap">{p.sellerId ? sellerName(p.sellerId) : <span style={{ color: "var(--text-dim)" }}>—</span>}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>
+                        {p.suffix}
+                    </td>
+                    {scope === ALL && (
+                        <td style={{ fontSize: 12 }}>
+                            {p.services.length ? p.services.map(label).join(", ") : <span style={{ color: "var(--warning)" }}>none</span>}
+                        </td>
+                    )}
+                    <td>
+                        <Toggle checked={p.enabled} onChange={(v) => onToggle(p, v)} />
+                    </td>
+                    <td className="actions">
+                        <IconButton title="Edit" icon="pencil" onClick={() => onEdit(p)} />
+                        <IconButton title={scope === ALL ? "Delete" : "Delete, or take it out of this menu"} icon="trash" danger onClick={() => onDelete(p)} />
+                    </td>
+                </tr>
+            ))}
+        </DataTable>
     );
 }
 
@@ -466,26 +374,23 @@ export default function TicketMenusPage() {
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                    <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Ticket Menus</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
-                        What a customer picks in a new ArnTo-Shop ticket: a service, then a product. <code className="mono">/menu</code> on ArnTo-Shop edits the same
-                        menus.
-                    </p>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-ghost" style={{ padding: "8px 14px" }} disabled={!data} onClick={() => setModal({ kind: "settings" })}>
-                        Khác &amp; sellers
-                    </button>
-                    <button className="btn-ghost" style={{ padding: "8px 14px" }} disabled={!data} onClick={() => setModal({ kind: "product" })}>
-                        + Product
-                    </button>
-                    <button className="btn-primary" style={{ padding: "8px 14px" }} disabled={!data} onClick={() => setModal({ kind: "service" })}>
-                        + Service
-                    </button>
-                </div>
-            </div>
+            <PageHeader
+                title="Ticket Menus"
+                description={<>A new ArnTo-Shop ticket asks for a service, then a product. <code className="mono">/menu</code> edits the same menus.</>}
+                actions={
+                    <>
+                        <button className="btn-ghost" disabled={!data} onClick={() => setModal({ kind: "settings" })}>
+                            <Icon name="settings" /> Khác &amp; sellers
+                        </button>
+                        <button className="btn-ghost" disabled={!data} onClick={() => setModal({ kind: "product" })}>
+                            <Icon name="plus" /> New product
+                        </button>
+                        <button className="btn-primary" disabled={!data} onClick={() => setModal({ kind: "service" })}>
+                            <Icon name="plus" /> New service
+                        </button>
+                    </>
+                }
+            />
 
             {error && <Notice tone="danger">{error}</Notice>}
             {data && !data.imported && (
@@ -504,25 +409,20 @@ export default function TicketMenusPage() {
                         {services.map((s, i) => (
                             <div
                                 key={s.key}
-                                className="card"
+                                className={`select-card${s.key === selected ? " active" : ""}${s.enabled ? "" : " off"}`}
                                 onClick={() => setSelected(s.key)}
-                                style={{ padding: "10px 12px", cursor: "pointer", borderColor: s.key === selected ? "var(--accent)" : undefined, opacity: s.enabled ? 1 : 0.6 }}
                             >
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <Emoji value={s.emoji} />
                                     <div style={{ minWidth: 0, flex: 1 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</div>
+                                        <div style={{ fontWeight: 500, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</div>
                                         <div style={{ fontSize: 11, color: s.products > data.limit ? "var(--danger)" : "var(--text-dim)" }}>
                                             <span className="mono">{s.key}</span> · {s.products} product{s.products === 1 ? "" : "s"}
                                         </div>
                                     </div>
                                     <div style={{ display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
-                                        <IconButton title="Move up" disabled={!i} onClick={() => moveService(s, i - 1)}>
-                                            ↑
-                                        </IconButton>
-                                        <IconButton title="Move down" disabled={i === services.length - 1} onClick={() => moveService(s, i + 1)}>
-                                            ↓
-                                        </IconButton>
+                                        <IconButton title="Move up" icon="chevronUp" disabled={!i} onClick={() => moveService(s, i - 1)} />
+                                        <IconButton title="Move down" icon="chevronDown" disabled={i === services.length - 1} onClick={() => moveService(s, i + 1)} />
                                     </div>
                                     <Toggle
                                         checked={s.enabled}
@@ -533,16 +433,10 @@ export default function TicketMenusPage() {
                             </div>
                         ))}
                         {!services.length && (
-                            <div className="card" style={{ padding: "24px 14px", textAlign: "center", color: "var(--text-dim)", fontSize: 13, borderStyle: "dashed" }}>
-                                No services yet.
-                            </div>
+                            <EmptyState compact icon="menus" title="No services yet" />
                         )}
-                        <div
-                            className="card"
-                            onClick={() => setSelected(ALL)}
-                            style={{ padding: "10px 12px", cursor: "pointer", borderColor: selected === ALL ? "var(--accent)" : undefined, fontSize: 13 }}
-                        >
-                            <b>All products</b> <span style={{ color: "var(--text-dim)" }}>· {products.length}</span>
+                        <div className={`select-card${selected === ALL ? " active" : ""}`} onClick={() => setSelected(ALL)} style={{ fontSize: 13 }}>
+                            <span style={{ fontWeight: 500 }}>All products</span> <span style={{ color: "var(--text-dim)" }}>· {products.length}</span>
                             {products.some((p) => !p.services.length) && <div style={{ fontSize: 11, color: "var(--warning)" }}>Some are in no menu</div>}
                         </div>
                     </div>
@@ -550,7 +444,7 @@ export default function TicketMenusPage() {
                     <div className="card" style={{ padding: 18, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
                         {selected === ALL ? (
                             <>
-                                <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>All products</h2>
+                                <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>All products</h2>
                                 <ProductRows
                                     rows={products}
                                     all={products}
@@ -567,7 +461,7 @@ export default function TicketMenusPage() {
                             <>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                                     <Emoji value={service.emoji} size={22} />
-                                    <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{service.label}</h2>
+                                    <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{service.label}</h2>
                                     <div className="tab-bar" style={{ marginLeft: "auto" }}>
                                         {[
                                             ["products", `Products (${rows.length})`],
@@ -578,12 +472,11 @@ export default function TicketMenusPage() {
                                             </button>
                                         ))}
                                     </div>
-                                    <button className="btn-ghost" style={{ padding: "6px 12px" }} onClick={() => setModal({ kind: "service", item: service })}>
-                                        Edit service
+                                    <button className="btn-ghost" onClick={() => setModal({ kind: "service", item: service })}>
+                                        <Icon name="pencil" /> Edit service
                                     </button>
                                     <button
                                         className="btn-danger"
-                                        style={{ padding: "6px 12px" }}
                                         onClick={() =>
                                             setConfirm({
                                                 title: `Delete the service "${service.label}"?`,
@@ -619,8 +512,8 @@ export default function TicketMenusPage() {
                                             onDelete={askDeleteProduct}
                                         />
                                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                            <button className="btn-primary" style={{ padding: "6px 12px" }} onClick={() => setModal({ kind: "product", preset: [selected] })}>
-                                                + New product here
+                                            <button className="btn-primary" onClick={() => setModal({ kind: "product", preset: [selected] })}>
+                                                <Icon name="plus" /> New product here
                                             </button>
                                             {products.some((p) => !p.services.includes(selected)) && (
                                                 <select className="input" style={{ maxWidth: 260 }} value="" onChange={(e) => addExisting(e.target.value)}>
@@ -653,7 +546,13 @@ export default function TicketMenusPage() {
                                 )}
                             </>
                         ) : (
-                            <div style={{ padding: "32px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>Press + Service to start.</div>
+                            <EmptyState
+                                compact
+                                icon="menus"
+                                title="No service yet"
+                                description="A service is the first menu a customer sees in a new ticket."
+                                action={<button className="btn-primary" onClick={() => setModal({ kind: "service" })}><Icon name="plus" /> New service</button>}
+                            />
                         )}
                     </div>
                 </div>

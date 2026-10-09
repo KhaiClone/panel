@@ -34,7 +34,7 @@ export default function NodeFilter({ bots, value, onChange }) {
                 className={`tab-item ${value === "all" ? "active" : ""}`}
                 onClick={() => onChange("all")}
             >
-                All Nodes
+                All nodes
             </button>
             {options.map((o) => (
                 <button
@@ -43,7 +43,7 @@ export default function NodeFilter({ bots, value, onChange }) {
                     onClick={() => onChange(o.id)}
                     title={`Node "${o.label}"`}
                 >
-                    ⬡ {o.label}
+                    {o.label}
                 </button>
             ))}
         </div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatusBadge, Toggle } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Stock — goods kept ready (accounts, keys…) for ArnTo-assistant to DM.
@@ -57,75 +57,6 @@ const timeLeft = (ts) => {
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
-function Toggle({ checked, onChange, disabled, title }) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={checked}
-            disabled={disabled}
-            title={title}
-            onClick={(e) => {
-                e.stopPropagation();
-                onChange(!checked);
-            }}
-            style={{
-                width: 40,
-                height: 22,
-                borderRadius: 999,
-                border: "1px solid var(--border)",
-                background: checked ? "var(--accent)" : "var(--bg-input)",
-                position: "relative",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.4 : 1,
-                transition: "background 0.15s",
-                flexShrink: 0,
-            }}
-        >
-            <span style={{ position: "absolute", top: 2, left: checked ? 20 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
-        </button>
-    );
-}
-
-function Field({ label, hint, children }) {
-    return (
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-            {children}
-            {hint && <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>{hint}</span>}
-        </label>
-    );
-}
-
-function Notice({ tone = "warning", children }) {
-    return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `var(--${tone}-bg)`, color: `var(--${tone})`, border: `1px solid var(--${tone}-border)`, fontSize: 13, lineHeight: 1.5 }}>
-            {children}
-        </div>
-    );
-}
-
-function Modal({ title, onClose, children, width = 560 }) {
-    return createPortal(
-        <div className="modal-overlay" onClick={onClose}>
-            <div
-                className="card slide-up modal-card-mobile"
-                style={{ maxWidth: width, width: "100%", maxHeight: "90vh", overflowY: "auto", padding: 24, position: "relative", zIndex: 1001 }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12 }}>
-                    <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{title}</h3>
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={onClose}>
-                        ✕
-                    </button>
-                </div>
-                {children}
-            </div>
-        </div>,
-        document.body,
-    );
-}
-
 function Secret({ text, shown, onToggle }) {
     return (
         <span
@@ -138,9 +69,6 @@ function Secret({ text, shown, onToggle }) {
         </span>
     );
 }
-
-const th = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", textAlign: "left" };
-const td = { padding: "9px 12px", verticalAlign: "top" };
 
 // ── Product settings (create + edit) ─────────────────────────────────────────
 
@@ -240,13 +168,13 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
             </Field>
             {preview && (
                 <div style={{ borderLeft: "4px solid var(--accent)", background: "var(--bg-input)", borderRadius: 6, padding: "10px 14px", fontSize: 13 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 6 }}>{d.title || d.name || "Product name"}</div>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>{d.title || d.name || "Product name"}</div>
                     <div style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", marginBottom: 8, fontSize: 12 }}>{d.message || defaultMessage}</div>
                     {preview.fields ? (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 24px" }}>
                             {preview.fields.map((f) => (
                                 <div key={f.name}>
-                                    <div style={{ fontSize: 12, fontWeight: 700 }}>{f.name}:</div>
+                                    <div style={{ fontSize: 12, fontWeight: 600 }}>{f.name}:</div>
                                     <div className="mono" style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{f.value}</div>
                                 </div>
                             ))}
@@ -373,67 +301,54 @@ function StockTab({ product, onChanged }) {
                 {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <input className="input" style={{ flex: "1 1 200px", maxWidth: 300 }} placeholder="Search the stock…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
+            <div className="toolbar">
+                <SearchInput value={search} onChange={setSearch} placeholder="Search the stock…" style={{ flex: "1 1 200px", maxWidth: 300 }} />
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>
                     <Toggle checked={showAll} onChange={setShowAll} /> Show contents
                 </label>
-                <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-dim)" }}>
+                <span className="toolbar-count">
                     {visible.length} / {items.length} items
                 </span>
-                <button className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12, color: "var(--danger)" }} disabled={!product.counts.available} onClick={() => setConfirm({ kind: "all" })}>
-                    Delete all
+                <button className="btn-ghost btn-sm is-danger" disabled={!product.counts.available} onClick={() => setConfirm({ kind: "all" })}>
+                    <Icon name="trash" size={14} /> Delete all
                 </button>
             </div>
 
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !items.length ? (
-                <div className="card" style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13, borderStyle: "dashed" }}>
-                    The stock is empty — paste items in the box above.
-                </div>
+                <EmptyState compact icon="stock" title="The stock is empty" description="Paste items in the box above." />
             ) : (
-                <div style={{ overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 8 }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 520 }}>
-                        <thead>
-                            <tr style={{ background: "var(--bg-input)" }}>
-                                <th style={th}>#</th>
-                                <th style={th}>Content</th>
-                                <th style={th}>Added</th>
-                                <th style={th}>Status</th>
-                                <th style={th} />
+                <>
+                    <DataTable minWidth={520} columns={["#", "Content", "Added", "Status", ""]}>
+                        {visible.slice(0, limit).map((i) => (
+                            <tr key={i.id}>
+                                <td className="mono top" style={{ color: "var(--text-dim)", fontSize: 11 }}>{i.id}</td>
+                                <td className="top" style={{ maxWidth: 420 }}>
+                                    <Secret text={i.content} shown={showAll || shown.has(i.id)} onToggle={() => toggleShown(i.id)} />
+                                </td>
+                                <td className="muted top">{fmtDate(i.addedAt)}</td>
+                                <td className="top">
+                                    {i.status === "reserved" ? <StatusBadge tone="warning">Delivering</StatusBadge> : <StatusBadge tone="success">Available</StatusBadge>}
+                                </td>
+                                <td className="actions top">
+                                    {i.status === "available" && (
+                                        <button className="btn-ghost btn-sm is-danger" onClick={() => setConfirm({ kind: "one", item: i })}>
+                                            Delete
+                                        </button>
+                                    )}
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {visible.slice(0, limit).map((i) => (
-                                <tr key={i.id} style={{ borderTop: "1px solid var(--border-light)" }}>
-                                    <td className="mono" style={{ ...td, color: "var(--text-dim)", fontSize: 11 }}>{i.id}</td>
-                                    <td style={{ ...td, maxWidth: 420 }}>
-                                        <Secret text={i.content} shown={showAll || shown.has(i.id)} onToggle={() => toggleShown(i.id)} />
-                                    </td>
-                                    <td style={{ ...td, whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 12 }}>{fmtDate(i.addedAt)}</td>
-                                    <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>
-                                        {i.status === "reserved" ? <span style={{ color: "var(--warning)" }}>Delivering</span> : <span style={{ color: "var(--success)" }}>Available</span>}
-                                    </td>
-                                    <td style={{ ...td, textAlign: "right" }}>
-                                        {i.status === "available" && (
-                                            <button className="btn-ghost" style={{ padding: "3px 9px", fontSize: 12, color: "var(--danger)" }} onClick={() => setConfirm({ kind: "one", item: i })}>
-                                                Delete
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                        ))}
+                    </DataTable>
                     {visible.length > limit && (
-                        <div style={{ padding: 10, textAlign: "center", borderTop: "1px solid var(--border-light)" }}>
-                            <button className="btn-ghost" style={{ padding: "5px 14px", fontSize: 12 }} onClick={() => setLimit((n) => n + 200)}>
+                        <div style={{ textAlign: "center" }}>
+                            <button className="btn-ghost btn-sm" onClick={() => setLimit((n) => n + 200)}>
                                 Show more ({visible.length - limit})
                             </button>
                         </div>
                     )}
-                </div>
+                </>
             )}
 
             {confirm && (
@@ -507,9 +422,9 @@ function HistoryTab({ product, refreshKey }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <input className="input" style={{ flex: "1 1 200px", maxWidth: 320 }} placeholder="Search delivery ID, buyer, staff…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-dim)" }}>
+            <div className="toolbar">
+                <SearchInput value={search} onChange={setSearch} placeholder="Search delivery ID, buyer, staff…" style={{ flex: "1 1 200px", maxWidth: 320 }} />
+                <span className="toolbar-count">
                     {visible.length} / {rows.length} deliveries
                 </span>
             </div>
@@ -517,93 +432,79 @@ function HistoryTab({ product, refreshKey }) {
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !rows.length ? (
-                <div className="card" style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13, borderStyle: "dashed" }}>
-                    Nothing delivered yet.
-                </div>
+                <EmptyState compact icon="send" title="Nothing delivered yet" description="Deliveries made with /giao or the Deliver button show up here." />
             ) : (
-                <div style={{ overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 8 }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 820 }}>
-                        <thead>
-                            <tr style={{ background: "var(--bg-input)" }}>
-                                {["ID", "Buyer", "Delivered by", "Delivered", "Expires", "Content", "Remind", ""].map((h) => (
-                                    <th key={h} style={th}>{h}</th>
-                                ))}
+                <DataTable minWidth={820} columns={["ID", "Buyer", "Delivered by", "Delivered", "Expires", "Content", "Remind", ""]}>
+                    {visible.map((r) => {
+                        const left = timeLeft(r.expiresAt);
+                        return (
+                            <tr key={r.id}>
+                                <td className="mono nowrap top">{r.id}</td>
+                                <td className="nowrap top">
+                                    <div>{r.buyerTag || "—"}</div>
+                                    <div className="mono cell-sub">{r.buyerId}</div>
+                                </td>
+                                <td className="nowrap top" style={{ fontSize: 12 }}>
+                                    {r.staffTag || "—"}
+                                    <div className="cell-sub">{r.via === "discord" ? "/giao" : "Panel"}</div>
+                                </td>
+                                <td className="muted top">
+                                    {r.status === "pending" ? <StatusBadge tone="warning">Delivering…</StatusBadge> : fmtDate(r.deliveredAt)}
+                                </td>
+                                <td className="nowrap top" style={{ fontSize: 12 }}>
+                                    {r.expiresAt ? (
+                                        <>
+                                            <div>{fmtDate(r.expiresAt)}</div>
+                                            <div className="cell-sub" style={{ color: left.color }}>{left.text}</div>
+                                        </>
+                                    ) : (
+                                        <span style={{ color: "var(--text-dim)" }}>None</span>
+                                    )}
+                                </td>
+                                <td className="top" style={{ maxWidth: 280 }}>
+                                    {r.content != null && (
+                                        <Secret
+                                            text={r.content}
+                                            shown={shown.has(r.id)}
+                                            onToggle={() =>
+                                                setShown((cur) => {
+                                                    const next = new Set(cur);
+                                                    if (next.has(r.id)) next.delete(r.id);
+                                                    else next.add(r.id);
+                                                    return next;
+                                                })
+                                            }
+                                        />
+                                    )}
+                                </td>
+                                <td className="top">
+                                    {r.expiresAt && r.status === "delivered" && (
+                                        <Toggle
+                                            checked={r.reminders}
+                                            disabled={busy === r.id || !(r.ownExpiry || product.reminders.enabled)}
+                                            title={r.ownExpiry || product.reminders.enabled ? "Expiry reminders for this delivery" : "Expiry reminders are off for this product"}
+                                            onChange={(v) => act(r.id, () => api.post(`/stock/deliveries/${r.id}/reminders`, { enabled: v }))}
+                                        />
+                                    )}
+                                </td>
+                                <td className="actions top">
+                                    {r.status === "delivered" && (
+                                        <button
+                                            className="btn-ghost btn-sm"
+                                            disabled={busy === r.id}
+                                            onClick={() => {
+                                                setDays(product.reminders.days || 30);
+                                                setExtend(r);
+                                            }}
+                                        >
+                                            Extend
+                                        </button>
+                                    )}
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {visible.map((r) => {
-                                const left = timeLeft(r.expiresAt);
-                                return (
-                                    <tr key={r.id} style={{ borderTop: "1px solid var(--border-light)" }}>
-                                        <td className="mono" style={{ ...td, whiteSpace: "nowrap" }}>{r.id}</td>
-                                        <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                            <div>{r.buyerTag || "—"}</div>
-                                            <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{r.buyerId}</div>
-                                        </td>
-                                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>
-                                            {r.staffTag || "—"}
-                                            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{r.via === "discord" ? "/giao" : "Panel"}</div>
-                                        </td>
-                                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: "var(--text-dim)" }}>
-                                            {r.status === "pending" ? <span style={{ color: "var(--warning)" }}>Delivering…</span> : fmtDate(r.deliveredAt)}
-                                        </td>
-                                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12 }}>
-                                            {r.expiresAt ? (
-                                                <>
-                                                    <div>{fmtDate(r.expiresAt)}</div>
-                                                    <div style={{ fontSize: 11, color: left.color }}>{left.text}</div>
-                                                </>
-                                            ) : (
-                                                <span style={{ color: "var(--text-dim)" }}>None</span>
-                                            )}
-                                        </td>
-                                        <td style={{ ...td, maxWidth: 280 }}>
-                                            {r.content != null && (
-                                                <Secret
-                                                    text={r.content}
-                                                    shown={shown.has(r.id)}
-                                                    onToggle={() =>
-                                                        setShown((cur) => {
-                                                            const next = new Set(cur);
-                                                            if (next.has(r.id)) next.delete(r.id);
-                                                            else next.add(r.id);
-                                                            return next;
-                                                        })
-                                                    }
-                                                />
-                                            )}
-                                        </td>
-                                        <td style={td}>
-                                            {r.expiresAt && r.status === "delivered" && (
-                                                <Toggle
-                                                    checked={r.reminders}
-                                                    disabled={busy === r.id || !(r.ownExpiry || product.reminders.enabled)}
-                                                    title={r.ownExpiry || product.reminders.enabled ? "Expiry reminders for this delivery" : "Expiry reminders are off for this product"}
-                                                    onChange={(v) => act(r.id, () => api.post(`/stock/deliveries/${r.id}/reminders`, { enabled: v }))}
-                                                />
-                                            )}
-                                        </td>
-                                        <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                                            {r.status === "delivered" && (
-                                                <button
-                                                    className="btn-ghost"
-                                                    style={{ padding: "3px 9px", fontSize: 12 }}
-                                                    disabled={busy === r.id}
-                                                    onClick={() => {
-                                                        setDays(product.reminders.days || 30);
-                                                        setExtend(r);
-                                                    }}
-                                                >
-                                                    Extend
-                                                </button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                        );
+                    })}
+                </DataTable>
             )}
 
             {extend && (
@@ -817,23 +718,20 @@ export default function StockPage() {
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                    <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Stock</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
-                        Goods ready for automatic delivery — run <code className="mono">/giao</code> on ArnTo-assistant and it DMs one random item to the buyer.
-                        Everything but creating a product type also works there with <code className="mono">/kho</code>.
-                    </p>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-ghost" style={{ padding: "8px 14px" }} disabled={!products.length} onClick={() => setDeliverFor(selectedId || "")}>
-                        Deliver
-                    </button>
-                    <button className="btn-primary" style={{ padding: "8px 14px" }} onClick={() => setCreating(true)}>
-                        + Product
-                    </button>
-                </div>
-            </div>
+            <PageHeader
+                title="Stock"
+                description={<>Goods ArnTo-assistant DMs to buyers with <code className="mono">/giao</code>; <code className="mono">/kho</code> manages them on Discord.</>}
+                actions={
+                    <>
+                        <button className="btn-ghost" disabled={!products.length} onClick={() => setDeliverFor(selectedId || "")}>
+                            <Icon name="send" /> Deliver
+                        </button>
+                        <button className="btn-primary" onClick={() => setCreating(true)}>
+                            <Icon name="plus" /> New product
+                        </button>
+                    </>
+                }
+            />
 
             {error && <Notice tone="danger">{error}</Notice>}
             {status && !status.deliverer && (
@@ -850,9 +748,12 @@ export default function StockPage() {
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !products.length ? (
-                <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-dim)", fontSize: 14, borderStyle: "dashed" }}>
-                    No products yet. Press <b>+ Product</b> to start.
-                </div>
+                <EmptyState
+                    icon="stock"
+                    title="No products yet"
+                    description="A product holds the items ArnTo-assistant delivers, and how its DM looks."
+                    action={<button className="btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New product</button>}
+                />
             ) : (
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "minmax(240px, 300px) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -861,33 +762,27 @@ export default function StockPage() {
                             return (
                                 <div
                                     key={p.id}
-                                    className="card"
+                                    className={`select-card${active ? " active" : ""}${p.enabled ? "" : " off"}`}
                                     onClick={() => {
                                         setSelectedId(p.id);
                                         setSaveMsg(null);
                                     }}
-                                    style={{
-                                        padding: "12px 14px",
-                                        cursor: "pointer",
-                                        borderColor: active ? "var(--accent)" : undefined,
-                                        opacity: p.enabled ? 1 : 0.6,
-                                    }}
                                 >
                                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                         <div style={{ minWidth: 0, flex: 1 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                                            <div style={{ fontWeight: 500, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                                             <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{p.code}</div>
                                         </div>
                                         <Toggle checked={p.enabled} title={p.enabled ? "On — turn off to hide it from /giao" : "Off"} onChange={(v) => toggleEnabled(p, v)} />
                                     </div>
-                                    <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 12 }}>
-                                        <span style={{ color: p.counts.available ? "var(--success)" : "var(--danger)" }}>
-                                            <b>{p.counts.available}</b> in stock
-                                        </span>
-                                        <span style={{ color: "var(--text-dim)" }}>
-                                            <b>{p.counts.delivered}</b> delivered
-                                        </span>
-                                        {p.reminders?.enabled && <span style={{ color: "var(--text-dim)" }}>⏰ {p.reminders.days} days</span>}
+                                    <div className="meta-row">
+                                        <StatusBadge tone={p.counts.available ? "success" : "danger"}>{p.counts.available} in stock</StatusBadge>
+                                        <span>{p.counts.delivered} delivered</span>
+                                        {p.reminders?.enabled && (
+                                            <span title="Expiry reminders">
+                                                <Icon name="clock" size={12} /> {p.reminders.days} days
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             );
@@ -897,7 +792,7 @@ export default function StockPage() {
                     {selected && (
                         <div className="card" style={{ padding: 18, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                                <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{selected.name}</h2>
+                                <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{selected.name}</h2>
                                 <div className="tab-bar" style={{ marginLeft: "auto" }}>
                                     {[
                                         ["stock", `Stock (${selected.counts.available})`],
@@ -909,8 +804,8 @@ export default function StockPage() {
                                         </button>
                                     ))}
                                 </div>
-                                <button className="btn-primary" style={{ padding: "7px 14px" }} disabled={!selected.enabled || !selected.counts.available} onClick={() => setDeliverFor(selected.id)}>
-                                    Deliver
+                                <button className="btn-primary" disabled={!selected.enabled || !selected.counts.available} onClick={() => setDeliverFor(selected.id)}>
+                                    <Icon name="send" /> Deliver
                                 </button>
                             </div>
 
@@ -920,11 +815,11 @@ export default function StockPage() {
                                 <>
                                     <ProductForm initial={selectedDraft} defaultMessage={defaultMessage} onSave={save} saving={saving} />
                                     {saveMsg && <Notice tone={saveMsg.tone}>{saveMsg.text}</Notice>}
-                                    <div style={{ borderTop: "1px solid var(--border-light)", paddingTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                                         <span style={{ fontSize: 12, color: "var(--text-dim)", flex: 1 }}>
                                             Deleting a product also deletes its stock and delivery history; its deliveries get no more expiry reminders.
                                         </span>
-                                        <button className="btn-danger" style={{ padding: "7px 14px" }} onClick={() => setConfirmDelete(true)}>
+                                        <button className="btn-danger" onClick={() => setConfirmDelete(true)}>
                                             Delete product
                                         </button>
                                     </div>

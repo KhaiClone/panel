@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Supporters — ArnTo-Shop's paid helpers (hỗ trợ viên) and their salary.
@@ -21,77 +21,23 @@ const mask = (acct) => (acct && acct.length > 4 ? `•••${acct.slice(-4)}` :
 const SNOWFLAKE = /^\d{17,20}$/;
 
 const KIND = {
-    joined: { text: "Joined", color: "var(--success)" },
-    left: { text: "Left", color: "var(--text-dim)" },
-    salary: { text: "Salary", color: "var(--success)" },
-    add: { text: "Added", color: "var(--success)" },
-    deduct: { text: "Deducted", color: "var(--danger)" },
-    payout: { text: "Paid out", color: "var(--accent)" },
-    import: { text: "Imported", color: "var(--text-muted)" },
+    joined: { text: "Joined", tone: "success" },
+    left: { text: "Left", tone: "neutral" },
+    salary: { text: "Salary", tone: "success" },
+    add: { text: "Added", tone: "success" },
+    deduct: { text: "Deducted", tone: "danger" },
+    payout: { text: "Paid out", tone: "accent" },
+    import: { text: "Imported", tone: "neutral" },
 };
 
-const th = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", textAlign: "left" };
-const td = { padding: "9px 12px", verticalAlign: "top" };
-const tableBox = { overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 8 };
-const empty = { padding: "32px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13, borderStyle: "dashed" };
-const small = { padding: "4px 10px", fontSize: 12 };
-
 // ── Building blocks ──────────────────────────────────────────────────────────
-
-function Field({ label, hint, children }) {
-    return (
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-            {children}
-            {hint && <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>{hint}</span>}
-        </label>
-    );
-}
-
-function Notice({ tone = "warning", children }) {
-    return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `var(--${tone}-bg)`, color: `var(--${tone})`, border: `1px solid var(--${tone}-border)`, fontSize: 13, lineHeight: 1.5 }}>
-            {children}
-        </div>
-    );
-}
-
-function Modal({ title, onClose, children, width = 520 }) {
-    return createPortal(
-        <div className="modal-overlay" onClick={onClose}>
-            <div
-                className="card slide-up modal-card-mobile"
-                style={{ maxWidth: width, width: "100%", maxHeight: "90vh", overflowY: "auto", padding: 24, position: "relative", zIndex: 1001 }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12 }}>
-                    <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{title}</h3>
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={onClose}>
-                        ✕
-                    </button>
-                </div>
-                {children}
-            </div>
-        </div>,
-        document.body,
-    );
-}
 
 function Who({ tag, id }) {
     return (
         <>
             <div>{tag || "—"}</div>
-            <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{id}</div>
+            <div className="mono cell-sub">{id}</div>
         </>
-    );
-}
-
-function Stat({ label, value, tone }) {
-    return (
-        <div className="card" style={{ padding: "12px 16px", minWidth: 150 }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginTop: 2, color: tone ? `var(--${tone})` : undefined }}>{value}</div>
-        </div>
     );
 }
 
@@ -238,8 +184,8 @@ function AdjustModal({ supporter, sellers, onClose, onDone }) {
             <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div className="tab-bar">
                     {[
-                        ["add", "+ Add"],
-                        ["deduct", "− Deduct"],
+                        ["add", "Add"],
+                        ["deduct", "Deduct"],
                     ].map(([k, label]) => (
                         <button type="button" key={k} className={`tab-item ${d.kind === k ? "active" : ""}`} onClick={() => set({ kind: k })}>
                             {label}
@@ -305,7 +251,7 @@ function PayModal({ supporter, sellerName, onClose, onDone }) {
                         {s.accountName ? ` · ${s.accountName}` : ""}
                     </div>
                     <div>
-                        Amount: <b style={{ fontSize: 16 }}>{money(s.balance)}</b>
+                        Amount: <b style={{ fontSize: 15 }}>{money(s.balance)}</b>
                     </div>
                     {s.owed.length > 0 && (
                         <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
@@ -378,7 +324,7 @@ function SyncModal({ result, nameOf, onClose }) {
     const line = (label, ids, tone) =>
         ids?.length > 0 && (
             <div style={{ fontSize: 13, lineHeight: 1.7 }}>
-                <b style={{ color: tone ? `var(--${tone})` : undefined }}>{label}:</b> {ids.map((x) => (typeof x === "string" ? nameOf(x) : `${x.tag || x.id}`)).join(", ")}
+                <span style={{ fontWeight: 500, color: tone ? `var(--${tone})` : undefined }}>{label}:</span> {ids.map((x) => (typeof x === "string" ? nameOf(x) : `${x.tag || x.id}`)).join(", ")}
             </div>
         );
     const nothing = !result.given?.length && !result.missing?.length && !result.extra?.length && !result.failed?.length;
@@ -429,10 +375,10 @@ function History({ userId, onClear, sellerName, refreshKey }) {
     return (
         <div className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>History</h2>
+                <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>History</h2>
                 {userId && (
-                    <button className="btn-ghost" style={small} onClick={onClear}>
-                        {rows[0]?.userTag || userId} ✕
+                    <button className="chip active" title="Show everyone's history" onClick={onClear}>
+                        {rows[0]?.userTag || userId} <Icon name="x" size={12} />
                     </button>
                 )}
                 <div className="tab-bar" style={{ marginLeft: "auto" }}>
@@ -447,46 +393,35 @@ function History({ userId, onClear, sellerName, refreshKey }) {
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !rows.length ? (
-                <div className="card" style={empty}>Nothing yet.</div>
+                <EmptyState compact icon="history" title="Nothing yet" />
             ) : (
-                <div style={tableBox}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 820 }}>
-                        <thead>
-                            <tr style={{ background: "var(--bg-input)" }}>
-                                {["When", "Supporter", "What", "Amount", "Balance", "Owed by / order", "Note", "By"].map((h) => (
-                                    <th key={h} style={th}>{h}</th>
-                                ))}
+                <DataTable minWidth={820} columns={["When", "Supporter", "What", { label: "Amount", align: "right" }, { label: "Balance", align: "right" }, "Owed by / order", "Note", "By"]}>
+                    {rows.map((e) => {
+                        const k = KIND[e.kind] || { text: e.kind, tone: "neutral" };
+                        return (
+                            <tr key={e.id}>
+                                <td className="muted top">{fmtDate(e.createdAt)}</td>
+                                <td className="nowrap top">
+                                    <Who tag={e.userTag} id={e.userId} />
+                                </td>
+                                <td className="top"><StatusBadge tone={k.tone}>{k.text}</StatusBadge></td>
+                                <td className="mono num top" style={{ color: e.amount > 0 ? "var(--success)" : e.amount < 0 ? "var(--danger)" : "var(--text-dim)" }}>
+                                    {e.amount ? `${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))}` : "—"}
+                                </td>
+                                <td className="mono num top">{money(e.balance)}</td>
+                                <td className="nowrap top" style={{ fontSize: 12 }}>
+                                    {e.sellerId ? sellerName(e.sellerId) : <span style={{ color: "var(--text-dim)" }}>—</span>}
+                                    {e.orderId && <div className="mono cell-sub">#{e.orderId}</div>}
+                                </td>
+                                <td className="top" style={{ fontSize: 12, maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{e.note || <span style={{ color: "var(--text-dim)" }}>—</span>}</td>
+                                <td className="nowrap top" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                    {e.byTag || "—"}
+                                    {e.via === "discord" && <span style={{ color: "var(--text-dim)" }}> · Discord</span>}
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {rows.map((e) => {
-                                const k = KIND[e.kind] || { text: e.kind };
-                                return (
-                                    <tr key={e.id} style={{ borderTop: "1px solid var(--border-light)" }}>
-                                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: "var(--text-dim)" }}>{fmtDate(e.createdAt)}</td>
-                                        <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                            <Who tag={e.userTag} id={e.userId} />
-                                        </td>
-                                        <td style={{ ...td, color: k.color, fontWeight: 600, whiteSpace: "nowrap" }}>{k.text}</td>
-                                        <td className="mono" style={{ ...td, whiteSpace: "nowrap", color: e.amount > 0 ? "var(--success)" : e.amount < 0 ? "var(--danger)" : "var(--text-dim)" }}>
-                                            {e.amount ? `${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))}` : "—"}
-                                        </td>
-                                        <td className="mono" style={{ ...td, whiteSpace: "nowrap" }}>{money(e.balance)}</td>
-                                        <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap" }}>
-                                            {e.sellerId ? sellerName(e.sellerId) : <span style={{ color: "var(--text-dim)" }}>—</span>}
-                                            {e.orderId && <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>#{e.orderId}</div>}
-                                        </td>
-                                        <td style={{ ...td, fontSize: 12, maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{e.note || <span style={{ color: "var(--text-dim)" }}>—</span>}</td>
-                                        <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap", color: "var(--text-muted)" }}>
-                                            {e.byTag || "—"}
-                                            {e.via === "discord" && <span style={{ color: "var(--text-dim)" }}> · Discord</span>}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                        );
+                    })}
+                </DataTable>
             )}
         </div>
     );
@@ -576,113 +511,99 @@ export default function SupportersPage() {
     const left = visible.filter((r) => !r.active);
 
     const table = (list) => (
-        <div style={tableBox}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
-                <thead>
-                    <tr style={{ background: "var(--bg-input)" }}>
-                        {["Supporter", "Bank", "Balance", "Owed by", "Earned / paid", "Joined", ""].map((h, i) => (
-                            <th key={`${h}-${i}`} style={th}>{h}</th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {list.map((s) => (
-                        <tr key={s.userId} style={{ borderTop: "1px solid var(--border-light)", opacity: s.active ? 1 : 0.6 }}>
-                            <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                <Who tag={s.userTag} id={s.userId} />
-                                {s.note && <div style={{ fontSize: 11, color: "var(--text-muted)", maxWidth: 220, whiteSpace: "normal" }}>{s.note}</div>}
-                            </td>
-                            <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                <div>{s.bank.code}</div>
-                                <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }} title={s.accountNumber}>
-                                    {mask(s.accountNumber)}
+        <DataTable minWidth={900} columns={["Supporter", "Bank", { label: "Balance", align: "right" }, "Owed by", "Earned / paid", "Joined", ""]}>
+            {list.map((s) => (
+                <tr key={s.userId} style={{ opacity: s.active ? 1 : 0.6 }}>
+                    <td className="nowrap top">
+                        <Who tag={s.userTag} id={s.userId} />
+                        {s.note && <div className="cell-sub" style={{ color: "var(--text-muted)", maxWidth: 220, whiteSpace: "normal" }}>{s.note}</div>}
+                    </td>
+                    <td className="nowrap top">
+                        <div>{s.bank.code}</div>
+                        <div className="mono cell-sub" title={s.accountNumber}>
+                            {mask(s.accountNumber)}
+                        </div>
+                    </td>
+                    <td className="mono num top" style={{ fontWeight: 600, color: s.balance > 0 ? "var(--warning)" : "var(--text-dim)" }}>{money(s.balance)}</td>
+                    <td className="nowrap top" style={{ fontSize: 12 }}>
+                        {s.owed.length ? (
+                            s.owed.map((o) => (
+                                <div key={o.sellerId || "none"}>
+                                    {sellerName(o.sellerId)} <span className="mono">{money(o.amount)}</span>
                                 </div>
-                            </td>
-                            <td className="mono" style={{ ...td, whiteSpace: "nowrap", fontWeight: 700, color: s.balance > 0 ? "var(--warning)" : "var(--text-dim)" }}>{money(s.balance)}</td>
-                            <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap" }}>
-                                {s.owed.length ? (
-                                    s.owed.map((o) => (
-                                        <div key={o.sellerId || "none"}>
-                                            {sellerName(o.sellerId)} <span className="mono">{money(o.amount)}</span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <span style={{ color: "var(--text-dim)" }}>—</span>
-                                )}
-                            </td>
-                            <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap" }}>
-                                <div className="mono">{money(s.earned)}</div>
-                                <div style={{ color: "var(--text-dim)" }}>
-                                    paid <span className="mono">{money(s.paid)}</span> · {s.orders} order{s.orders === 1 ? "" : "s"}
-                                </div>
-                            </td>
-                            <td style={{ ...td, fontSize: 12, whiteSpace: "nowrap", color: "var(--text-dim)" }}>
-                                {fmtDate(s.joinedAt)}
-                                {!s.active && <div>left {fmtDate(s.leftAt)}</div>}
-                            </td>
-                            <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                                <div style={{ display: "inline-flex", gap: 6 }}>
-                                    {s.active ? (
-                                        <>
-                                            <button className="btn-primary" style={small} disabled={s.balance <= 0} title={s.balance > 0 ? "Pay the whole balance" : "Nothing to pay"} onClick={() => setModal({ type: "pay", supporter: s })}>
-                                                Pay
-                                            </button>
-                                            <button className="btn-ghost" style={small} title="Add or deduct" onClick={() => setModal({ type: "adjust", supporter: s })}>
-                                                ±
-                                            </button>
-                                            <button className="btn-ghost" style={small} onClick={() => setModal({ type: "edit", supporter: s })}>
-                                                Edit
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <button className="btn-ghost" style={small} onClick={() => setModal({ type: "new", supporter: s })}>
-                                            Add again
-                                        </button>
-                                    )}
-                                    <button className="btn-ghost" style={small} onClick={() => setHistoryOf(s.userId)}>
-                                        History
+                            ))
+                        ) : (
+                            <span style={{ color: "var(--text-dim)" }}>—</span>
+                        )}
+                    </td>
+                    <td className="nowrap top" style={{ fontSize: 12 }}>
+                        <div className="mono">{money(s.earned)}</div>
+                        <div style={{ color: "var(--text-dim)" }}>
+                            paid <span className="mono">{money(s.paid)}</span> · {s.orders} order{s.orders === 1 ? "" : "s"}
+                        </div>
+                    </td>
+                    <td className="muted top">
+                        {fmtDate(s.joinedAt)}
+                        {!s.active && <div>left {fmtDate(s.leftAt)}</div>}
+                    </td>
+                    <td className="actions top">
+                        <div className="row-actions">
+                            {s.active ? (
+                                <>
+                                    <button className="btn-primary btn-sm" disabled={s.balance <= 0} title={s.balance > 0 ? "Pay the whole balance" : "Nothing to pay"} onClick={() => setModal({ type: "pay", supporter: s })}>
+                                        Pay
                                     </button>
-                                    {s.active && (
-                                        <button
-                                            className="btn-danger"
-                                            style={small}
-                                            disabled={s.balance > 0}
-                                            title={s.balance > 0 ? "Pay them first" : "Remove — the Supporter role is taken back"}
-                                            onClick={() => setConfirmRemove(s)}
-                                        >
-                                            Remove
-                                        </button>
-                                    )}
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+                                    <button className="btn-ghost btn-sm" title="Add to or deduct from the balance" onClick={() => setModal({ type: "adjust", supporter: s })}>
+                                        Adjust
+                                    </button>
+                                    <button className="btn-ghost btn-sm" onClick={() => setModal({ type: "edit", supporter: s })}>
+                                        Edit
+                                    </button>
+                                </>
+                            ) : (
+                                <button className="btn-ghost btn-sm" onClick={() => setModal({ type: "new", supporter: s })}>
+                                    Add again
+                                </button>
+                            )}
+                            <button className="btn-ghost btn-sm" onClick={() => setHistoryOf(s.userId)}>
+                                History
+                            </button>
+                            {s.active && (
+                                <button
+                                    className="btn-ghost btn-sm is-danger"
+                                    disabled={s.balance > 0}
+                                    title={s.balance > 0 ? "Pay them first" : "Remove — the Supporter role is taken back"}
+                                    onClick={() => setConfirmRemove(s)}
+                                >
+                                    Remove
+                                </button>
+                            )}
+                        </div>
+                    </td>
+                </tr>
+            ))}
+        </DataTable>
     );
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                    <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Supporters</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0", maxWidth: 760, lineHeight: 1.5 }}>
-                        ArnTo-Shop's paid helpers. Adding one gives them the <b>Supporter</b> role; salary comes from <code className="mono">/done</code>. The <b>Staff</b> role is yours to hand out on Discord — nothing here touches it.
-                    </p>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button className="btn-ghost" style={{ padding: "8px 14px" }} disabled={syncing || !status?.handler} onClick={sync} title="Give the role to every supporter who lacks it; list who holds it without being one">
-                        {syncing ? "Checking…" : "Check roles"}
-                    </button>
-                    <button className="btn-ghost" style={{ padding: "8px 14px" }} onClick={() => setModal({ type: "texts" })}>
-                        DM texts
-                    </button>
-                    <button className="btn-primary" style={{ padding: "8px 14px" }} onClick={() => setModal({ type: "new" })}>
-                        + Supporter
-                    </button>
-                </div>
-            </div>
+            <PageHeader
+                title="Supporters"
+                description={<>ArnTo-Shop's paid helpers: adding one gives the Supporter role, <code className="mono">/done</code> adds to their salary.</>}
+                actions={
+                    <>
+                        <button className="btn-ghost" disabled={syncing || !status?.handler} onClick={sync} title="Give the role to every supporter who lacks it; list who holds it without being one">
+                            <Icon name="shieldCheck" /> {syncing ? "Checking…" : "Check roles"}
+                        </button>
+                        <button className="btn-ghost" onClick={() => setModal({ type: "texts" })}>
+                            <Icon name="message" /> DM texts
+                        </button>
+                        <button className="btn-primary" onClick={() => setModal({ type: "new" })}>
+                            <Icon name="plus" /> New supporter
+                        </button>
+                    </>
+                }
+            />
 
             {error && <Notice tone="danger">{error}</Notice>}
             {status && !status.imported && (
@@ -700,15 +621,15 @@ export default function SupportersPage() {
             {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
 
             {status && (
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                    <Stat label="Supporters" value={status.active} />
-                    <Stat label="Owed in total" value={money(status.owed)} tone={status.owed > 0 ? "warning" : undefined} />
+                <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 220px))" }}>
+                    <StatCard label="Supporters" value={status.active} />
+                    <StatCard label="Owed in total" value={money(status.owed)} tone={status.owed > 0 ? "warning" : undefined} />
                 </div>
             )}
 
             <div className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <input className="input" style={{ flex: "1 1 200px", maxWidth: 320 }} placeholder="Search name, ID, bank, note…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <div className="toolbar">
+                    <SearchInput value={search} onChange={setSearch} placeholder="Search name, ID, bank, note…" style={{ flex: "1 1 200px", maxWidth: 320 }} />
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-muted)", cursor: "pointer" }}>
                         <input type="checkbox" checked={showLeft} onChange={(e) => setShowLeft(e.target.checked)} />
                         Show those who left
@@ -717,15 +638,18 @@ export default function SupportersPage() {
                 {loading ? (
                     <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
                 ) : !rows.length ? (
-                    <div className="card" style={empty}>
-                        No supporters yet. Press <b>+ Supporter</b>, or run <code className="mono">/staff-new</code> on ArnTo-Shop.
-                    </div>
+                    <EmptyState
+                        compact
+                        icon="supporters"
+                        title="No supporters yet"
+                        description={<>Add one here, or run <code className="mono">/staff-new</code> on ArnTo-Shop.</>}
+                    />
                 ) : (
                     <>
-                        {active.length > 0 ? table(active) : <div className="card" style={empty}>Nobody matches.</div>}
+                        {active.length > 0 ? table(active) : <EmptyState compact icon="search" title="Nobody matches" />}
                         {showLeft && left.length > 0 && (
                             <>
-                                <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", margin: "6px 0 0" }}>Left</h3>
+                                <h3 className="section-title" style={{ margin: "6px 0 0" }}>Left</h3>
                                 {table(left)}
                             </>
                         )}

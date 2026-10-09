@@ -7,14 +7,11 @@ import Dashboard from "./pages/Dashboard";
 import SitesPage from "./pages/SitesPage";
 import DomainsPage from "./pages/DomainsPage";
 import BotDetail from "./pages/BotDetail";
-import GroupsPage from "./pages/GroupsPage";
-import MultiManage from "./pages/MultiManage";
 import PanelManage from "./pages/PanelManage";
 import GitKeysPage from "./pages/GitKeysPage";
 import TerminalPage from "./pages/TerminalPage";
 import ProxyPage from "./pages/ProxyPage";
 import ProxiesPage from "./pages/ProxiesPage";
-import TagsPage from "./pages/TagsPage";
 import NodeDetailPage from "./pages/NodeDetailPage";
 import OrdersPage from "./pages/OrdersPage";
 import StockPage from "./pages/StockPage";
@@ -62,9 +59,11 @@ export default function App() {
                             <Route path="sites"         element={<SitesPage />} />
                             <Route path="sites/:id"     element={<BotDetail />} />
                             <Route path="domains"       element={<DomainsPage />} />
-                            <Route path="groups"        element={<GroupsPage />} />
-                            <Route path="multi-manage"  element={<MultiManage />} />
-                            <Route path="tags"          element={<TagsPage />} />
+                            {/* Groups, Tags and Bulk Ops are part of the Bots page now:
+                                its Groups and Tags tabs, and its select mode. */}
+                            <Route path="groups"        element={<Navigate to="/bots?view=groups" replace />} />
+                            <Route path="tags"          element={<Navigate to="/bots?view=tags" replace />} />
+                            <Route path="multi-manage"  element={<Navigate to="/bots?select=1" replace />} />
                             {/* Panel Settings has one URL per tab; the bare path opens Overview. */}
                             <Route path="panel-manage"  element={<Navigate to="/panel-manage/overview" replace />} />
                             <Route path="panel-manage/:tab" element={<PanelManage />} />

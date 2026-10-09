@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
+import { Icon } from "./ui";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -37,18 +38,22 @@ const defaultForm = {
 
 const MEM_HINT = 'e.g. "300M", "1G" — leave blank for no limit';
 
+const SECTION = { padding: 16, background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, display: "flex", flexDirection: "column", gap: 16 };
+const SECTION_TITLE = { fontSize: 13, fontWeight: 600, color: "var(--text)", margin: 0 };
+
 // ── Sub-components ─────────────────────────────────────────────────────────
 
 function TabBar({ value, onChange, options }) {
     return (
         <div className="tab-bar" style={{ display: "flex", width: "100%", gap: 4 }}>
-            {options.map(({ key, label }) => (
+            {options.map(({ key, label, icon }) => (
                 <button
                     key={key} type="button"
                     onClick={() => onChange(key)}
                     className={`tab-item ${value === key ? "active" : ""}`}
-                    style={{ flex: 1, padding: "12px", fontSize: 14 }}
+                    style={{ flex: 1, padding: "8px 10px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
                 >
+                    {icon && <Icon name={icon} size={15} />}
                     {label}
                 </button>
             ))}
@@ -150,23 +155,24 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
     const isFullstack = isWebsite && form.websiteMode === "fullstack";
     const isStatic = isWebsite && form.websiteMode === "static";
 
-    const ICONS = { discord: "🤖", website: "🌐", service: "⚙️" };
-    const deployLabel = `${ICONS[form.projectType] || "📦"} ${isGit ? "Deploy from Git" : "Import Local"}`;
+    const deployLabel = isGit ? "Deploy from Git" : "Import local";
 
     return createPortal(
         <div className="modal-overlay">
             <div className="card slide-up modal-card-mobile" style={{ width: "100%", maxWidth: 680, maxHeight: "92vh", overflowY: "auto", padding: 0, display: "flex", flexDirection: "column" }}>
 
                 {/* Header */}
-                <div style={{ display: "flex", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid var(--border-light)", background: "var(--bg-surface)", position: "sticky", top: 0, zIndex: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)", position: "sticky", top: 0, zIndex: 10 }}>
                     <div style={{ flex: 1 }}>
-                        <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", margin: 0 }}>Create New Instance</h2>
-                        <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>Deploy a project from Git or a local directory</p>
+                        <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>New project</h2>
+                        <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "2px 0 0" }}>Deploy a project from Git or a local directory</p>
                     </div>
-                    <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, padding: 4 }}>✕</button>
+                    <button type="button" onClick={onClose} className="btn-ghost btn-icon" style={{ border: "none" }} title="Close">
+                        <Icon name="x" />
+                    </button>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}>
+                <form onSubmit={handleSubmit} style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
 
                     {/* ── Project Type ─────────────────────────────────── */}
                     <div>
@@ -175,9 +181,9 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                             value={form.projectType}
                             onChange={(v) => setForm((f) => ({ ...f, projectType: v }))}
                             options={[
-                                { key: "discord", label: "🤖 Discord Bot" },
-                                { key: "website", label: "🌐 Website" },
-                                { key: "service", label: "⚙️ Service" },
+                                { key: "discord", label: "Discord bot", icon: "bots" },
+                                { key: "website", label: "Website", icon: "globe" },
+                                { key: "service", label: "Service", icon: "servers" },
                             ]}
                         />
                         {isService && (
@@ -189,8 +195,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
 
                     {/* ── Website Mode (only for website) ──────────────── */}
                     {isWebsite && (
-                        <div style={{ padding: 16, background: "rgba(34,197,94,0.05)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 12 }}>
-                            <label className="label" style={{ color: "var(--success)" }}>Website Mode</label>
+                        <div style={{ ...SECTION, gap: 0 }}>
+                            <label className="label">Website mode</label>
                             <TabBar
                                 value={form.websiteMode}
                                 onChange={(v) => setForm((f) => ({
@@ -200,8 +206,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 installCommand: v === "static" ? "" : "npm install --omit=dev",
                             }))}
                                 options={[
-                                    { key: "static", label: "📄 Static (nginx serves dist)" },
-                                    { key: "fullstack", label: "⚙️ Full-Stack (PM2 + nginx)" },
+                                    { key: "static", label: "Static (nginx serves dist)" },
+                                    { key: "fullstack", label: "Full-stack (PM2 + nginx)" },
                                 ]}
                             />
                             <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "10px 0 0" }}>
@@ -219,8 +225,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                             value={form.source}
                             onChange={(v) => setForm((f) => ({ ...f, source: v }))}
                             options={[
-                                { key: "git", label: "🔗 GitHub / Git URL" },
-                                { key: "local", label: "📂 Local Directory" },
+                                { key: "git", label: "Git repository", icon: "proxy" },
+                                { key: "local", label: "Local directory", icon: "folder" },
                             ]}
                         />
                     </div>
@@ -230,7 +236,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                         <div>
                             <label className="label">Node (VPS)</label>
                             <select className="input" value={form.nodeId} onChange={set("nodeId")}>
-                                <option value="auto">⚡ Auto — panel picks the least-loaded node</option>
+                                <option value="auto">Auto — panel picks the least-loaded node</option>
                                 {nodes.map((n) => {
                                     const ramFree = n.stats?.memory ? `${Math.round(100 - n.stats.memory.usedPercent)}% RAM free` : "no stats";
                                     const diskFree = n.stats?.disk ? `${(n.stats.disk.freeBytes / 1073741824).toFixed(0)}GB disk free` : "";
@@ -267,9 +273,9 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
 
                     {/* ── Git Fields ────────────────────────────────────── */}
                     {isGit && (
-                        <div style={{ padding: 20, background: "rgba(99,102,241,0.05)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
+                        <div style={SECTION}>
                             <div>
-                                <label className="label" style={{ color: "var(--accent-hover)" }}>Git Repository URL *</label>
+                                <label className="label">Git repository URL *</label>
                                 <input className="input" placeholder="https://github.com/user/repo.git" value={form.repoUrl} onChange={set("repoUrl")} required={isGit} />
                             </div>
                             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -320,8 +326,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
 
                     {/* ── Website Config ────────────────────────────────── */}
                     {isWebsite && (
-                        <div style={{ padding: 20, background: "rgba(34,197,94,0.05)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
-                            <h3 style={{ fontSize: 13, fontWeight: 700, color: "var(--success)", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Website Configuration</h3>
+                        <div style={SECTION}>
+                            <h3 style={SECTION_TITLE}>Website configuration</h3>
 
                             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: isFullstack ? "1fr 1fr" : "1fr", gap: 16 }}>
                                 <div>
@@ -367,8 +373,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
 
                     {/* ── Service Config ───────────────────────────────── */}
                     {isService && (
-                        <div style={{ padding: 20, background: "rgba(167,139,250,0.05)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 16 }}>
-                            <h3 style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Service Configuration</h3>
+                        <div style={SECTION}>
+                            <h3 style={SECTION_TITLE}>Service configuration</h3>
                             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                 <div>
                                     <label className="label">Service Port</label>
@@ -416,16 +422,10 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                     return (
                                         <button
                                             key={tag._id} type="button" onClick={() => toggleTag(tag._id)}
-                                            className="badge"
-                                            style={{
-                                                cursor: "pointer", transition: "all 0.2s",
-                                                background: isActive ? `${tag.color}25` : "var(--bg-input)",
-                                                border: `1px solid ${isActive ? tag.color + "50" : "var(--border)"}`,
-                                                color: isActive ? tag.color : "var(--text-muted)",
-                                                padding: "4px 12px",
-                                            }}
+                                            className={`chip${isActive ? " active" : ""}`}
+                                            aria-pressed={isActive}
                                         >
-                                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: isActive ? tag.color : "var(--text-dim)", transition: "all 0.2s" }} />
+                                            <span className="chip-dot" style={{ background: tag.color }} />
                                             {tag.name}
                                         </button>
                                     );
@@ -437,8 +437,8 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)" }}>{error}</div>}
 
                     {loading && (
-                        <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--accent-dim)", color: "var(--accent-hover)", border: "1px solid var(--accent)", display: "flex", alignItems: "center", gap: 12 }}>
-                            <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid var(--accent-hover)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
+                        <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                            <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid var(--accent-hover)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
                             {isStatic ? (isGit ? "Cloning repository…" : "Registering site…")
                                 : isWebsite ? "Cloning, installing and building…"
                                 : isService ? "Cloning and setting up service…"
@@ -448,9 +448,9 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     )}
 
                     {/* Footer */}
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
-                        <button type="button" className="btn-ghost" onClick={onClose} disabled={loading} style={{ padding: "10px 20px" }}>Cancel</button>
-                        <button type="submit" className="btn-primary" disabled={loading} style={{ padding: "10px 24px" }}>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                        <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
+                        <button type="submit" className="btn-primary" disabled={loading}>
                             {loading ? "Deploying..." : deployLabel}
                         </button>
                     </div>

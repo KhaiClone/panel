@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { DataTable, EmptyState, Icon, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
 const money = (n) => (typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—");
 
 const STATUS = {
-    pending:   { label: "Pending",   color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)" },
-    completed: { label: "Completed", color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)" },
-    cancelled: { label: "Cancelled", color: "var(--danger)",  bg: "var(--danger-bg)",  border: "var(--danger-border)" },
+    pending:   { label: "Pending",   tone: "warning" },
+    completed: { label: "Completed", tone: "success" },
+    cancelled: { label: "Cancelled", tone: "danger" },
 };
-const st = (s) => STATUS[s] || { label: s || "—", color: "var(--text-muted)", bg: "var(--bg-input)", border: "var(--border)" };
+const st = (s) => STATUS[s] || { label: s || "—", tone: "neutral" };
 
 const SELLERS = [
     { id: "all", label: "All sellers" },
@@ -17,45 +18,32 @@ const SELLERS = [
     { id: "871329074046435338", label: "KhaiDev" },
 ];
 
-function StatCard({ label, value, color }) {
+function Metric({ label, value, tone }) {
     return (
-        <div className="card" style={{ padding: "16px 20px", borderBottom: `2px solid ${color}` }}>
-            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>{label}</p>
-            <p style={{ fontSize: 26, fontWeight: 800, color: "#fff", margin: 0, lineHeight: 1 }}>{value}</p>
+        <div style={{ minWidth: 64 }}>
+            <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                {tone && <span className="status-dot" style={{ width: 6, height: 6, background: `var(--${tone})` }} />}
+                {label}
+            </p>
+            <p style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", margin: "2px 0 0" }}>{value}</p>
         </div>
     );
 }
 
-const SELLER_COLOR = { "427399742906040333": "#22c55e", "871329074046435338": "#6366f1" };
-
-function Metric({ label, value, color }) {
+function SellerCard({ data }) {
     return (
-        <div style={{ textAlign: "center", minWidth: 64 }}>
-            <p style={{ fontSize: 18, fontWeight: 800, color: color || "var(--text)", margin: 0, lineHeight: 1.1 }}>{value}</p>
-            <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "3px 0 0", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</p>
-        </div>
-    );
-}
-
-function SellerCard({ id, data }) {
-    const color = SELLER_COLOR[id] || "var(--accent)";
-    return (
-        <div className="card" style={{ padding: "16px 20px", borderLeft: `3px solid ${color}` }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: color }} />
-                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{data.name}</h3>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                    <p style={{ fontSize: 20, fontWeight: 800, color, margin: 0, lineHeight: 1 }}>{money(data.revenue)}</p>
-                    <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "2px 0 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Revenue</p>
-                </div>
+        <div className="card" style={{ padding: "14px 16px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{data.name}</h3>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>
+                    Revenue <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginLeft: 6 }}>{money(data.revenue)}</span>
+                </p>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
                 <Metric label="Orders" value={data.total} />
-                <Metric label="Pending" value={data.pending} color="var(--warning)" />
-                <Metric label="Completed" value={data.completed} color="var(--success)" />
-                <Metric label="Cancelled" value={data.cancelled} color="var(--danger)" />
+                <Metric label="Pending" value={data.pending} tone="warning" />
+                <Metric label="Completed" value={data.completed} tone="success" />
+                <Metric label="Cancelled" value={data.cancelled} tone="danger" />
                 <Metric label="Buyers" value={data.buyers} />
             </div>
         </div>
@@ -132,43 +120,36 @@ export default function OrdersPage() {
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 20 }}>
-            <div>
-                <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Orders (ArnTo-Shop)</h1>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>View and process orders from the ArnTo-Shop bot.</p>
-            </div>
+            <PageHeader title="Orders" description="Orders placed through the ArnTo-Shop bot. Complete or cancel the pending ones here or on Discord." />
 
-            {error && (
-                <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13 }}>{error}</div>
-            )}
+            {error && <Notice tone="danger">{error}</Notice>}
 
             {/* Aggregate stats (all sellers) */}
             {stats && (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-                    <StatCard label="Total orders" value={stats.total} color="var(--accent)" />
-                    <StatCard label="Pending" value={stats.pending} color="var(--warning)" />
-                    <StatCard label="Completed" value={stats.completed} color="var(--success)" />
-                    <StatCard label="Cancelled" value={stats.cancelled} color="var(--danger)" />
-                    <StatCard label="Revenue" value={money(stats.revenue)} color="#a78bfa" />
+                <div className="stat-grid">
+                    <StatCard label="Total orders" value={stats.total} />
+                    <StatCard label="Pending" value={stats.pending} tone="warning" />
+                    <StatCard label="Completed" value={stats.completed} tone="success" />
+                    <StatCard label="Cancelled" value={stats.cancelled} tone="danger" />
+                    <StatCard label="Revenue" value={money(stats.revenue)} />
                 </div>
             )}
 
             {/* Per-seller breakdown */}
             {stats?.bySeller && Object.keys(stats.bySeller).length > 0 && (
                 <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>By seller</p>
+                    <p className="section-title" style={{ margin: "0 0 10px" }}>By seller</p>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
                         {Object.entries(stats.bySeller).map(([id, data]) => (
-                            <SellerCard key={id} id={id} data={data} />
+                            <SellerCard key={id} data={data} />
                         ))}
                     </div>
                 </div>
             )}
 
             {/* Filters */}
-            <div className="card" style={{ padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-                <div style={{ position: "relative", flex: "1 1 220px", maxWidth: 340 }}>
-                    <input className="input" placeholder="Search order ID, product, buyer…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                </div>
+            <div className="toolbar">
+                <SearchInput value={search} onChange={setSearch} placeholder="Search order ID, product, buyer…" style={{ flex: "1 1 220px", maxWidth: 340 }} />
                 <div className="tab-bar">
                     {["all", "pending", "completed", "cancelled"].map((f) => (
                         <button key={f} className={`tab-item ${statusFilter === f ? "active" : ""}`} onClick={() => setStatusFilter(f)}>
@@ -176,90 +157,76 @@ export default function OrdersPage() {
                         </button>
                     ))}
                 </div>
-                <select className="input" style={{ width: "auto", padding: "7px 12px" }} value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}>
+                <select className="input" style={{ width: "auto" }} value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}>
                     {SELLERS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
-                <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--text-dim)" }}>{visible.length} / {orders.length}</span>
+                <span className="toolbar-count">{visible.length} / {orders.length}</span>
             </div>
 
             {/* Table */}
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : visible.length === 0 ? (
-                <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-dim)", fontSize: 14, borderStyle: "dashed" }}>
-                    No orders match.
-                </div>
+                <EmptyState
+                    icon="orders"
+                    title={orders.length ? "No orders match" : "No orders yet"}
+                    description={orders.length ? "Try another status, seller or search." : "Orders appear here as soon as a buyer orders through ArnTo-Shop."}
+                />
             ) : (
                 <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 720 }}>
-                            <thead>
-                                <tr style={{ background: "var(--bg-input)", textAlign: "left" }}>
-                                    {["Order ID", "Product", "Buyer", "Seller", "Price", "Date", "Status", ""].map((h) => (
-                                        <th key={h} style={{ padding: "10px 14px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
-                                    ))}
+                    <DataTable flush minWidth={720} columns={["Order ID", "Product", "Buyer", "Seller", { label: "Price", align: "right" }, "Date", "Status", ""]}>
+                        {paged.map((o) => {
+                            const s = st(o.status);
+                            return (
+                                <tr key={o._id || o.orderId}>
+                                    <td className="mono nowrap">{o.orderId}</td>
+                                    <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</td>
+                                    <td className="nowrap">
+                                        {o.buyerTag || <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11 }}>{o.buyerId}</span>}
+                                    </td>
+                                    <td className="nowrap">{o.sellerName}</td>
+                                    <td className="mono num">{money(o.price)}</td>
+                                    <td className="muted">
+                                        {o.orderDate ? new Date(o.orderDate).toLocaleDateString("en-GB") : "—"}
+                                    </td>
+                                    <td><StatusBadge tone={s.tone}>{s.label}</StatusBadge></td>
+                                    <td className="actions">
+                                        {o.status === "pending" && o.source === "decoGift" && (
+                                            // Finished in ArnTo-Auto's staff channel, which delivers the gift links first.
+                                            <span title="Approve or cancel it in ArnTo-Auto's Deco Gift staff channel on Discord" style={{ fontSize: 12, color: "var(--text-dim)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                                <Icon name="gift" size={14} /> Deco Gift · Discord
+                                            </span>
+                                        )}
+                                        {o.status === "pending" && o.source !== "decoGift" && (
+                                            <div className="row-actions">
+                                                <button className="btn-success btn-sm" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
+                                                    {busy === o.orderId ? "Working…" : "Complete"}
+                                                </button>
+                                                <button className="btn-ghost btn-sm is-danger" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "cancel" })}>
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        )}
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {paged.map((o) => {
-                                    const s = st(o.status);
-                                    return (
-                                        <tr key={o._id || o.orderId} style={{ borderTop: "1px solid var(--border-light)" }}>
-                                            <td className="mono" style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{o.orderId}</td>
-                                            <td style={{ padding: "10px 14px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</td>
-                                            <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                                                {o.buyerTag || <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11 }}>{o.buyerId}</span>}
-                                            </td>
-                                            <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{o.sellerName}</td>
-                                            <td className="mono" style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>{money(o.price)}</td>
-                                            <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 12 }}>
-                                                {o.orderDate ? new Date(o.orderDate).toLocaleDateString("en-GB") : "—"}
-                                            </td>
-                                            <td style={{ padding: "10px 14px" }}>
-                                                <span className="status-pill" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }}>
-                                                    <span className="status-dot" style={{ background: s.color, width: 6, height: 6 }} />
-                                                    {s.label}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: "10px 14px", whiteSpace: "nowrap", textAlign: "right" }}>
-                                                {o.status === "pending" && o.source === "decoGift" && (
-                                                    // Finished in ArnTo-Auto's staff channel, which delivers the gift links first.
-                                                    <span title="Approve or cancel it in ArnTo-Auto's Deco Gift staff channel on Discord" style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                                                        🎁 Deco Gift · Discord
-                                                    </span>
-                                                )}
-                                                {o.status === "pending" && o.source !== "decoGift" && (
-                                                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                                                        <button className="btn-success" style={{ padding: "4px 10px", fontSize: 12 }} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
-                                                            {busy === o.orderId ? "…" : "Complete"}
-                                                        </button>
-                                                        <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger)" }} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "cancel" })}>
-                                                            Cancel
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                            );
+                        })}
+                    </DataTable>
 
                     {/* Pagination */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderTop: "1px solid var(--border-light)", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
                         <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                            {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, visible.length)} / {visible.length}
+                            {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, visible.length)} of {visible.length}
                         </span>
-                        <select className="input" style={{ width: "auto", padding: "5px 10px", fontSize: 12 }} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-                            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}/page</option>)}
+                        <select className="input" style={{ width: "auto", padding: "4px 8px", fontSize: 12 }} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                            {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} per page</option>)}
                         </select>
-                        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => setPage(1)}>«</button>
-                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>‹ Prev</button>
-                            <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 90, textAlign: "center" }}>Page {safePage} / {totalPages}</span>
-                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>Next ›</button>
-                            <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => setPage(totalPages)}>»</button>
+                        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+                            <button className="btn-ghost btn-icon btn-sm" title="First page" disabled={safePage <= 1} onClick={() => setPage(1)}><Icon name="chevronsLeft" /></button>
+                            <button className="btn-ghost btn-icon btn-sm" title="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><Icon name="chevronLeft" /></button>
+                            <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 90, textAlign: "center" }}>Page {safePage} of {totalPages}</span>
+                            <button className="btn-ghost btn-icon btn-sm" title="Next page" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}><Icon name="chevronRight" /></button>
+                            <button className="btn-ghost btn-icon btn-sm" title="Last page" disabled={safePage >= totalPages} onClick={() => setPage(totalPages)}><Icon name="chevronsRight" /></button>
                         </div>
                     </div>
                 </div>
@@ -274,6 +241,7 @@ export default function OrdersPage() {
                             : `Product: ${confirm.order.name}\n\nThe bot will DM the buyer about the cancellation and post a notice in the ticket — same as pressing ❌ on Discord.`
                     }
                     confirmText={confirm.action === "done" ? "Complete" : "Cancel order"}
+                    danger={confirm.action !== "done"}
                     onConfirm={doAction}
                     onCancel={() => setConfirm(null)}
                 />

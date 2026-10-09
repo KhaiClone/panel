@@ -1,4 +1,5 @@
 import { useData } from "../context/DataContext";
+import { Icon } from "./ui";
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -10,9 +11,9 @@ const fmt = (bytes) => {
 function ProgressBar({ percent, color }) {
     const pct = Math.min(Math.max(percent ?? 0, 0), 100);
     return (
-        <div style={{ background: "var(--bg-input)", borderRadius: 6, height: 8, overflow: "hidden" }}>
+        <div style={{ background: "var(--bg-hover)", borderRadius: 3, height: 4, overflow: "hidden" }}>
             <div style={{
-                width: `${pct}%`, height: "100%", borderRadius: 6,
+                width: `${pct}%`, height: "100%", borderRadius: 3,
                 background: color,
                 transition: "width 0.4s ease",
             }}/>
@@ -40,9 +41,9 @@ export default function StatsWidget() {
     const ram  = stats?.memory?.usedPercent ?? 0;
     const disk = stats?.disk?.usedPercent   ?? null;
 
-    const cpuColor  = cpu  > 80 ? "#ef4444" : cpu  > 50 ? "#f59e0b" : "#10b981";
-    const ramColor  = ram  > 80 ? "#ef4444" : ram  > 50 ? "#f59e0b" : "#6366f1";
-    const diskColor = disk !== null ? (disk > 85 ? "#ef4444" : disk > 65 ? "#f59e0b" : "#0ea5e9") : "#64748b";
+    const cpuColor  = cpu  > 80 ? "var(--danger)" : cpu  > 50 ? "var(--warning)" : "var(--success)";
+    const ramColor  = ram  > 80 ? "var(--danger)" : ram  > 50 ? "var(--warning)" : "var(--info)";
+    const diskColor = disk !== null ? (disk > 85 ? "var(--danger)" : disk > 65 ? "var(--warning)" : "var(--accent)") : "var(--text-dim)";
 
     const metrics = [
         {
@@ -69,43 +70,38 @@ export default function StatsWidget() {
     ];
 
     return (
-        <div className="card">
+        <div className="card" style={{ padding: 16 }}>
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                    </svg>
-                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>System Resources</span>
+                    <Icon name="activity" style={{ color: "var(--text-muted)" }} />
+                    <span style={{ fontWeight: 500, fontSize: 13, color: "var(--text)" }}>Panel host</span>
+                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}>the VPS that runs the panel</span>
                 </div>
-                <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 5, fontWeight: 500 }}>
-                    <span className="status-dot" style={{ width: 6, height: 6, background: "var(--success)" }}/>
+                <span className="status-badge">
+                    <span className="status-dot" style={{ background: "var(--success)" }}/>
                     Live
                 </span>
             </div>
 
-            {/* Divider below header */}
-            <div style={{ height: 1, background: "var(--border-light)", marginBottom: 16 }} />
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
                 {metrics.map(({ label, value, sub, percent, color }) => (
                     <div
                         key={label}
                         style={{
                             display: "flex", flexDirection: "column", gap: 8,
-                            padding: "12px 16px", borderRadius: 10,
-                            background: `${color}06`,
-                            border: `1px solid ${color}15`,
-                            transition: "all 0.2s",
+                            padding: "12px 14px", borderRadius: 8,
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--border)",
                         }}
                     >
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>{label}</span>
-                            <span className="mono" style={{ fontSize: 13, fontWeight: 700, color }}>{value}</span>
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>{label}</span>
+                            <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{value}</span>
                         </div>
                         <ProgressBar percent={percent} color={color} />
                         {sub && (
-                            <p className="mono" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: -2 }}>{sub}</p>
+                            <p className="mono" style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>{sub}</p>
                         )}
                     </div>
                 ))}

@@ -129,9 +129,7 @@ root/
     │       │   ├── SitesPage.jsx    ← Website management
     │       │   ├── DomainsPage.jsx  ← Unified domain list
     │       │   ├── SystemPage.jsx   ← System stats + per-process table + trend charts
-    │       │   ├── GroupsPage.jsx   ← Group management
-    │       │   ├── TagsPage.jsx     ← Tag management
-    │       │   ├── MultiManage.jsx  ← Bulk operations UI
+    │       │   ├── bots/            ← Bots page Groups / Tags tabs and bulk select bar
     │       │   ├── ProxyPage.jsx    ← Egress proxy per bot
     │       │   ├── ProxiesPage.jsx  ← Proxy pool (static / rotating) + Auto Quest egress
     │       │   └── PanelManage.jsx  ← Panel self-management

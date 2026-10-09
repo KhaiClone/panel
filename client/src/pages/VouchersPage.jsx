@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatusBadge, Toggle } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Vouchers — rewards the admin hands out and claims by hand.
@@ -28,103 +28,29 @@ const countsKey = (v) => `${v.counts.pending}-${v.counts.claimed}-${v.counts.rej
 const SNOWFLAKE = /^\d{17,20}$/;
 
 const STATUS = {
-    pending: { text: "Waiting", color: "var(--warning)" },
-    claimed: { text: "Claimed", color: "var(--success)" },
-    rejected: { text: "Rejected", color: "var(--danger)" },
+    pending: { text: "Waiting", tone: "warning" },
+    claimed: { text: "Claimed", tone: "success" },
+    rejected: { text: "Rejected", tone: "danger" },
 };
 const DM = {
-    off: { text: "Not sent", color: "var(--text-dim)" },
-    pending: { text: "Sending…", color: "var(--warning)" },
-    sent: { text: "Sent", color: "var(--success)" },
-    dm_blocked: { text: "DMs closed", color: "var(--danger)" },
-    unknown_user: { text: "Unknown user", color: "var(--danger)" },
-    failed: { text: "Failed", color: "var(--danger)" },
+    off: { text: "Not sent", tone: "neutral" },
+    pending: { text: "Sending…", tone: "warning" },
+    sent: { text: "Sent", tone: "success" },
+    dm_blocked: { text: "DMs closed", tone: "danger" },
+    unknown_user: { text: "Unknown user", tone: "danger" },
+    failed: { text: "Failed", tone: "danger" },
 };
 
 // ── Building blocks ──────────────────────────────────────────────────────────
-
-function Toggle({ checked, onChange, disabled, title }) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={checked}
-            disabled={disabled}
-            title={title}
-            onClick={(e) => {
-                e.stopPropagation();
-                onChange(!checked);
-            }}
-            style={{
-                width: 40,
-                height: 22,
-                borderRadius: 999,
-                border: "1px solid var(--border)",
-                background: checked ? "var(--accent)" : "var(--bg-input)",
-                position: "relative",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.4 : 1,
-                transition: "background 0.15s",
-                flexShrink: 0,
-            }}
-        >
-            <span style={{ position: "absolute", top: 2, left: checked ? 20 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
-        </button>
-    );
-}
-
-function Field({ label, hint, children }) {
-    return (
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-            {children}
-            {hint && <span style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>{hint}</span>}
-        </label>
-    );
-}
-
-function Notice({ tone = "warning", children }) {
-    return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `var(--${tone}-bg)`, color: `var(--${tone})`, border: `1px solid var(--${tone}-border)`, fontSize: 13, lineHeight: 1.5 }}>
-            {children}
-        </div>
-    );
-}
-
-function Modal({ title, onClose, children, width = 560 }) {
-    return createPortal(
-        <div className="modal-overlay" onClick={onClose}>
-            <div
-                className="card slide-up modal-card-mobile"
-                style={{ maxWidth: width, width: "100%", maxHeight: "90vh", overflowY: "auto", padding: 24, position: "relative", zIndex: 1001 }}
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12 }}>
-                    <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{title}</h3>
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={onClose}>
-                        ✕
-                    </button>
-                </div>
-                {children}
-            </div>
-        </div>,
-        document.body,
-    );
-}
 
 function Member({ tag, id }) {
     return (
         <>
             <div>{tag || "—"}</div>
-            <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{id}</div>
+            <div className="mono cell-sub">{id}</div>
         </>
     );
 }
-
-const th = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", textAlign: "left" };
-const td = { padding: "9px 12px", verticalAlign: "top" };
-const tableBox = { overflowX: "auto", border: "1px solid var(--border-light)", borderRadius: 8 };
-const empty = { padding: "32px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13, borderStyle: "dashed" };
 
 // ── Voucher settings (create + edit) ─────────────────────────────────────────
 
@@ -203,59 +129,48 @@ function VoucherForm({ initial, isNew, onSave, saving }) {
 
 function UsesTable({ rows, showVoucher, busy, onClaim, onReject }) {
     return (
-        <div style={tableBox}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: showVoucher ? 860 : 760 }}>
-                <thead>
-                    <tr style={{ background: "var(--bg-input)" }}>
-                        {["ID", "Member", ...(showVoucher ? ["Voucher"] : []), "Note", "Requested", "Status", ""].map((h, i) => (
-                            <th key={`${h}-${i}`} style={th}>{h}</th>
-                        ))}
+        <DataTable minWidth={showVoucher ? 860 : 760} columns={["ID", "Member", ...(showVoucher ? ["Voucher"] : []), "Note", "Requested", "Status", ""]}>
+            {rows.map((r) => {
+                const s = STATUS[r.status] || STATUS.pending;
+                return (
+                    <tr key={r.id}>
+                        <td className="mono nowrap top">{r.id}</td>
+                        <td className="nowrap top">
+                            <Member tag={r.userTag} id={r.userId} />
+                        </td>
+                        {showVoucher && (
+                            <td className="nowrap top">
+                                <div>{r.voucherName || "—"}</div>
+                                <div className="mono cell-sub">{r.voucherCode}</div>
+                            </td>
+                        )}
+                        <td className="top" style={{ maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12 }}>{r.note || <span style={{ color: "var(--text-dim)" }}>—</span>}</td>
+                        <td className="muted top">{fmtDate(r.createdAt)}</td>
+                        <td className="top">
+                            <StatusBadge tone={s.tone}>{s.text}</StatusBadge>
+                            {r.status !== "pending" && (
+                                <div className="cell-sub" style={{ whiteSpace: "nowrap" }}>
+                                    {r.via === "discord" ? `${r.staffTag || "—"} · Discord` : "Panel"} · {fmtDate(r.resolvedAt)}
+                                </div>
+                            )}
+                            {r.reason && <div className="cell-sub" style={{ color: "var(--text-muted)" }}>{r.reason}</div>}
+                        </td>
+                        <td className="actions top">
+                            {r.status === "pending" && (
+                                <div className="row-actions">
+                                    <button className="btn-primary btn-sm" disabled={busy === r.id} onClick={() => onClaim(r)}>
+                                        Claim
+                                    </button>
+                                    <button className="btn-ghost btn-sm is-danger" disabled={busy === r.id} onClick={() => onReject(r)}>
+                                        Reject
+                                    </button>
+                                </div>
+                            )}
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    {rows.map((r) => {
-                        const s = STATUS[r.status] || STATUS.pending;
-                        return (
-                            <tr key={r.id} style={{ borderTop: "1px solid var(--border-light)" }}>
-                                <td className="mono" style={{ ...td, whiteSpace: "nowrap" }}>{r.id}</td>
-                                <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                    <Member tag={r.userTag} id={r.userId} />
-                                </td>
-                                {showVoucher && (
-                                    <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                        <div>{r.voucherName || "—"}</div>
-                                        <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{r.voucherCode}</div>
-                                    </td>
-                                )}
-                                <td style={{ ...td, maxWidth: 260, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12 }}>{r.note || <span style={{ color: "var(--text-dim)" }}>—</span>}</td>
-                                <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: "var(--text-dim)" }}>{fmtDate(r.createdAt)}</td>
-                                <td style={{ ...td, fontSize: 12 }}>
-                                    <span style={{ color: s.color, fontWeight: 600 }}>{s.text}</span>
-                                    {r.status !== "pending" && (
-                                        <div style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
-                                            {r.via === "discord" ? `${r.staffTag || "—"} · Discord` : "Panel"} · {fmtDate(r.resolvedAt)}
-                                        </div>
-                                    )}
-                                    {r.reason && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.reason}</div>}
-                                </td>
-                                <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                                    {r.status === "pending" && (
-                                        <div style={{ display: "inline-flex", gap: 6 }}>
-                                            <button className="btn-primary" style={{ padding: "4px 12px", fontSize: 12 }} disabled={busy === r.id} onClick={() => onClaim(r)}>
-                                                Claim
-                                            </button>
-                                            <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12, color: "var(--danger)" }} disabled={busy === r.id} onClick={() => onReject(r)}>
-                                                Reject
-                                            </button>
-                                        </div>
-                                    )}
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        </div>
+                );
+            })}
+        </DataTable>
     );
 }
 
@@ -290,7 +205,7 @@ function UsesTab({ voucher, refreshKey, actions }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div className="toolbar">
                 <div className="tab-bar">
                     {["all", "pending", "claimed", "rejected"].map((f) => (
                         <button key={f} className={`tab-item ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)}>
@@ -298,8 +213,8 @@ function UsesTab({ voucher, refreshKey, actions }) {
                         </button>
                     ))}
                 </div>
-                <input className="input" style={{ flex: "1 1 180px", maxWidth: 280 }} placeholder="Search ID, member, note…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-dim)" }}>
+                <SearchInput value={search} onChange={setSearch} placeholder="Search ID, member, note…" style={{ flex: "1 1 180px", maxWidth: 280 }} />
+                <span className="toolbar-count">
                     {visible.length} / {rows.length} uses
                 </span>
             </div>
@@ -307,9 +222,12 @@ function UsesTab({ voucher, refreshKey, actions }) {
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !rows.length ? (
-                <div className="card" style={empty}>
-                    Nobody has used it yet. Members run <code className="mono">/voucher dung ma:{voucher.code}</code> on ArnTo-assistant.
-                </div>
+                <EmptyState
+                    compact
+                    icon="voucher"
+                    title="Nobody has used it yet"
+                    description={<>Members run <code className="mono">/voucher dung ma:{voucher.code}</code> on ArnTo-assistant.</>}
+                />
             ) : (
                 <UsesTable rows={visible} busy={actions.busy} onClaim={(r) => actions.claim(r)} onReject={(r) => actions.reject(r)} />
             )}
@@ -446,9 +364,9 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
                 {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <input className="input" style={{ flex: "1 1 200px", maxWidth: 300 }} placeholder="Search member…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-dim)" }}>
+            <div className="toolbar">
+                <SearchInput value={search} onChange={setSearch} placeholder="Search member…" style={{ flex: "1 1 200px", maxWidth: 300 }} />
+                <span className="toolbar-count">
                     {visible.length} / {rows.length} members
                 </span>
             </div>
@@ -456,77 +374,72 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !rows.length ? (
-                <div className="card" style={empty}>
-                    {voucher.audience === "public" ? "Not given to anyone — anyone with the code can use it." : "Not given to anyone yet — nobody can use it."}
-                </div>
+                <EmptyState
+                    compact
+                    icon="users"
+                    title="Not given to anyone yet"
+                    description={voucher.audience === "public" ? "Anyone with the code can use it." : "Nobody can use it until it is given to someone above."}
+                />
             ) : (
-                <div style={tableBox}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 640 }}>
-                        <thead>
-                            <tr style={{ background: "var(--bg-input)" }}>
-                                {["Member", "Uses", "DM", "Given", ""].map((h) => (
-                                    <th key={h} style={th}>{h}</th>
-                                ))}
+                <DataTable minWidth={640} columns={["Member", "Uses", "DM", "Given", ""]}>
+                    {visible.map((g) => {
+                        const limit = g.uses ?? voucher.perUser;
+                        const dm = DM[g.dm] || DM.off;
+                        return (
+                            <tr key={g.userId}>
+                                <td className="nowrap top">
+                                    <Member tag={g.userTag} id={g.userId} />
+                                </td>
+                                <td className="nowrap top">
+                                    {editing?.userId === g.userId ? (
+                                        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                                            <input
+                                                className="input"
+                                                type="number"
+                                                min={0}
+                                                autoFocus
+                                                value={editing.uses}
+                                                placeholder={limitText(voucher.perUser)}
+                                                onChange={(e) => setEditing({ ...editing, uses: e.target.value })}
+                                                onKeyDown={(e) => e.key === "Enter" && saveUses()}
+                                                style={{ width: 70, padding: "4px 8px" }}
+                                            />
+                                            <button className="btn-primary btn-sm" onClick={saveUses}>Save</button>
+                                            <button className="btn-ghost btn-icon btn-sm" title="Cancel" onClick={() => setEditing(null)}>
+                                                <Icon name="x" size={14} />
+                                            </button>
+                                        </span>
+                                    ) : (
+                                        <span
+                                            style={{ cursor: "pointer", color: limit && g.used >= limit ? "var(--danger)" : undefined }}
+                                            title="Click to set this member's own limit (empty = the voucher's)"
+                                            onClick={() => setEditing({ userId: g.userId, uses: g.uses ?? "" })}
+                                        >
+                                            <b>{g.used}</b> / {limitText(limit)}
+                                            {g.uses !== null && <span style={{ fontSize: 11, color: "var(--text-dim)" }}> (own)</span>}
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="top"><StatusBadge tone={dm.tone}>{dm.text}</StatusBadge></td>
+                                <td className="muted top">{fmtDate(g.grantedAt)}</td>
+                                <td className="actions top">
+                                    <div className="row-actions">
+                                        <button
+                                            className="btn-ghost btn-sm"
+                                            disabled={busy === g.userId || g.dm === "pending" || !status?.dmSender}
+                                            onClick={() => act(g.userId, () => api.post(`/vouchers/${voucher.id}/grants/${g.userId}/dm`))}
+                                        >
+                                            {g.dm === "off" ? "DM" : "DM again"}
+                                        </button>
+                                        <button className="btn-ghost btn-sm is-danger" disabled={busy === g.userId} onClick={() => setConfirm(g)}>
+                                            Remove
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {visible.map((g) => {
-                                const limit = g.uses ?? voucher.perUser;
-                                const dm = DM[g.dm] || DM.off;
-                                return (
-                                    <tr key={g.userId} style={{ borderTop: "1px solid var(--border-light)" }}>
-                                        <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                            <Member tag={g.userTag} id={g.userId} />
-                                        </td>
-                                        <td style={{ ...td, whiteSpace: "nowrap" }}>
-                                            {editing?.userId === g.userId ? (
-                                                <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                                                    <input
-                                                        className="input"
-                                                        type="number"
-                                                        min={0}
-                                                        autoFocus
-                                                        value={editing.uses}
-                                                        placeholder={limitText(voucher.perUser)}
-                                                        onChange={(e) => setEditing({ ...editing, uses: e.target.value })}
-                                                        onKeyDown={(e) => e.key === "Enter" && saveUses()}
-                                                        style={{ width: 70 }}
-                                                    />
-                                                    <button className="btn-primary" style={{ padding: "3px 9px", fontSize: 12 }} onClick={saveUses}>Save</button>
-                                                    <button className="btn-ghost" style={{ padding: "3px 9px", fontSize: 12 }} onClick={() => setEditing(null)}>✕</button>
-                                                </span>
-                                            ) : (
-                                                <span
-                                                    style={{ cursor: "pointer", color: limit && g.used >= limit ? "var(--danger)" : undefined }}
-                                                    title="Click to set this member's own limit (empty = the voucher's)"
-                                                    onClick={() => setEditing({ userId: g.userId, uses: g.uses ?? "" })}
-                                                >
-                                                    <b>{g.used}</b> / {limitText(limit)}
-                                                    {g.uses !== null && <span style={{ fontSize: 11, color: "var(--text-dim)" }}> (own)</span>}
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: dm.color }}>{dm.text}</td>
-                                        <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: "var(--text-dim)" }}>{fmtDate(g.grantedAt)}</td>
-                                        <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                                            <button
-                                                className="btn-ghost"
-                                                style={{ padding: "3px 9px", fontSize: 12 }}
-                                                disabled={busy === g.userId || g.dm === "pending" || !status?.dmSender}
-                                                onClick={() => act(g.userId, () => api.post(`/vouchers/${voucher.id}/grants/${g.userId}/dm`))}
-                                            >
-                                                {g.dm === "off" ? "DM" : "DM again"}
-                                            </button>
-                                            <button className="btn-ghost" style={{ padding: "3px 9px", fontSize: 12, color: "var(--danger)" }} disabled={busy === g.userId} onClick={() => setConfirm(g)}>
-                                                Remove
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                        );
+                    })}
+                </DataTable>
             )}
 
             {confirm && (
@@ -719,22 +632,20 @@ export default function VouchersPage() {
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                    <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Vouchers</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
-                        Members use them with <code className="mono">/voucher dung</code> on ArnTo-assistant; an admin claims each use and hands the reward over.
-                    </p>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-ghost" style={{ padding: "8px 14px" }} disabled={!status} onClick={() => setShowSettings(true)}>
-                        Claim settings
-                    </button>
-                    <button className="btn-primary" style={{ padding: "8px 14px" }} onClick={() => setCreating(true)}>
-                        + Voucher
-                    </button>
-                </div>
-            </div>
+            <PageHeader
+                title="Vouchers"
+                description={<>Members use them with <code className="mono">/voucher dung</code> on ArnTo-assistant; an admin claims each use and hands the reward over.</>}
+                actions={
+                    <>
+                        <button className="btn-ghost" disabled={!status} onClick={() => setShowSettings(true)}>
+                            <Icon name="settings" /> Claim settings
+                        </button>
+                        <button className="btn-primary" onClick={() => setCreating(true)}>
+                            <Icon name="plus" /> New voucher
+                        </button>
+                    </>
+                }
+            />
 
             {error && <Notice tone="danger">{error}</Notice>}
             {status && !status.dmSender && (
@@ -750,8 +661,10 @@ export default function VouchersPage() {
 
             {pending.length > 0 && (
                 <div className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
-                        Waiting for a claim <span style={{ color: "var(--warning)" }}>({pending.length})</span>
+                    <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                        <StatusBadge tone="warning" />
+                        Waiting for a claim
+                        <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>{pending.length}</span>
                     </h2>
                     <UsesTable rows={pending} showVoucher busy={busy} onClaim={actions.claim} onReject={actions.reject} />
                 </div>
@@ -760,9 +673,12 @@ export default function VouchersPage() {
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !vouchers.length ? (
-                <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-dim)", fontSize: 14, borderStyle: "dashed" }}>
-                    No vouchers yet. Press <b>+ Voucher</b> to start.
-                </div>
+                <EmptyState
+                    icon="voucher"
+                    title="No vouchers yet"
+                    description="A voucher is a reward members claim with a code."
+                    action={<button className="btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New voucher</button>}
+                />
             ) : (
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "minmax(240px, 300px) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -771,27 +687,34 @@ export default function VouchersPage() {
                             return (
                                 <div
                                     key={v.id}
-                                    className="card"
+                                    className={`select-card${active ? " active" : ""}${v.enabled && !expired(v) ? "" : " off"}`}
                                     onClick={() => {
                                         setSelectedId(v.id);
                                         setSaveMsg(null);
                                     }}
-                                    style={{ padding: "12px 14px", cursor: "pointer", borderColor: active ? "var(--accent)" : undefined, opacity: v.enabled && !expired(v) ? 1 : 0.6 }}
                                 >
                                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                         <div style={{ minWidth: 0, flex: 1 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</div>
+                                            <div style={{ fontWeight: 500, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</div>
                                             <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{v.code}</div>
                                         </div>
                                         <Toggle checked={v.enabled} title={v.enabled ? "On — turn off to refuse new uses" : "Off"} onChange={(on) => toggleEnabled(v, on)} />
                                     </div>
-                                    <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 12, flexWrap: "wrap" }}>
-                                        <span style={{ color: "var(--text-dim)" }}>{v.audience === "public" ? "🌐 Anyone" : `👥 ${v.counts.granted} member${v.counts.granted === 1 ? "" : "s"}`}</span>
-                                        <span style={{ color: "var(--text-dim)" }}>
-                                            <b>{v.counts.used}</b> / {limitText(v.total)} used
+                                    <div className="meta-row">
+                                        {v.audience === "public" ? (
+                                            <span title="Anyone with the code">
+                                                <Icon name="globe" size={12} /> Anyone
+                                            </span>
+                                        ) : (
+                                            <span title="Members it was given to">
+                                                <Icon name="users" size={12} /> {v.counts.granted} member{v.counts.granted === 1 ? "" : "s"}
+                                            </span>
+                                        )}
+                                        <span>
+                                            {v.counts.used} / {limitText(v.total)} used
                                         </span>
-                                        {v.counts.pending > 0 && <span style={{ color: "var(--warning)" }}>⏳ {v.counts.pending}</span>}
-                                        {v.expiresAt && <span style={{ color: expired(v) ? "var(--danger)" : "var(--text-dim)" }}>{expired(v) ? "Expired" : `until ${fmtDate(v.expiresAt)}`}</span>}
+                                        {v.counts.pending > 0 && <StatusBadge tone="warning" title="Waiting for a claim">{v.counts.pending} waiting</StatusBadge>}
+                                        {v.expiresAt && <span style={{ color: expired(v) ? "var(--danger)" : undefined }}>{expired(v) ? "Expired" : `until ${fmtDate(v.expiresAt)}`}</span>}
                                     </div>
                                 </div>
                             );
@@ -802,7 +725,7 @@ export default function VouchersPage() {
                         <div className="card" style={{ padding: 18, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                                 <div style={{ minWidth: 0 }}>
-                                    <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>{selected.name}</h2>
+                                    <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{selected.name}</h2>
                                     <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
                                         <span className="mono">{selected.code}</span> · {limitText(selected.perUser)} use{selected.perUser === 1 ? "" : "s"} per member
                                     </div>
@@ -826,11 +749,11 @@ export default function VouchersPage() {
                                 <>
                                     <VoucherForm initial={selectedDraft} onSave={save} saving={saving} />
                                     {saveMsg && <Notice tone={saveMsg.tone}>{saveMsg.text}</Notice>}
-                                    <div style={{ borderTop: "1px solid var(--border-light)", paddingTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                                         <span style={{ fontSize: 12, color: "var(--text-dim)", flex: 1 }}>
                                             Deleting a voucher also deletes its members and its history. Turn it off instead to keep the history.
                                         </span>
-                                        <button className="btn-danger" style={{ padding: "7px 14px" }} onClick={() => setConfirmDelete(true)}>
+                                        <button className="btn-danger" onClick={() => setConfirmDelete(true)}>
                                             Delete voucher
                                         </button>
                                     </div>
