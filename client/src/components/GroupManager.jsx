@@ -1,39 +1,7 @@
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import api from "../api/client";
-
-// ── Color presets ──────────────────────────────────────────────────────────
-const COLOR_PRESETS = [
-    "#6366f1", // indigo
-    "#8b5cf6", // violet
-    "#ec4899", // pink
-    "#f59e0b", // amber
-    "#10b981", // emerald
-    "#3b82f6", // blue
-    "#ef4444", // red
-    "#f97316", // orange
-];
-
-function ColorPicker({ value, onChange }) {
-    return (
-        <div className="flex gap-2 flex-wrap mt-1">
-            {COLOR_PRESETS.map((c) => (
-                <button
-                    key={c}
-                    type="button"
-                    onClick={() => onChange(c)}
-                    title={c}
-                    style={{ background: c }}
-                    className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
-                        value === c
-                            ? "border-white scale-110"
-                            : "border-transparent"
-                    }`}
-                />
-            ))}
-        </div>
-    );
-}
+import { EmptyState, Field, Icon, Modal, Notice } from "./ui";
+import ColorPicker, { PRESET_COLORS } from "../pages/bots/ColorPicker";
 
 // ── Main Component ─────────────────────────────────────────────────────────
 export default function GroupManager({ onClose, onChanged }) {
@@ -42,7 +10,7 @@ export default function GroupManager({ onClose, onChanged }) {
 
     // New group form
     const [newName, setNewName] = useState("");
-    const [newColor, setNewColor] = useState(COLOR_PRESETS[0]);
+    const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
     const [creating, setCreating] = useState(false);
 
     // Inline edit state: { id, name, color }
@@ -121,153 +89,131 @@ export default function GroupManager({ onClose, onChanged }) {
         }
     };
 
-    return createPortal(
-        /* Backdrop */
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-            <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl">
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
-                    <h2 className="text-lg font-semibold text-slate-100">
-                        🗂️ Manage Groups
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="text-slate-500 hover:text-slate-300 text-xl leading-none"
-                    >
-                        ✕
-                    </button>
-                </div>
+    return (
+        <Modal title="Manage groups" onClose={onClose} width={480}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {error && <Notice tone="danger">{error}</Notice>}
 
-                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-                    {/* Error */}
-                    {error && (
-                        <div className="bg-red-900/40 border border-red-700 text-red-400 text-sm rounded-lg px-3 py-2">
-                            {error}
-                        </div>
-                    )}
-
-                    {/* Existing groups */}
-                    {loading ? (
-                        <div className="flex justify-center py-6">
-                            <div className="animate-spin h-6 w-6 border-4 border-indigo-500 border-t-transparent rounded-full" />
-                        </div>
-                    ) : groups.length === 0 ? (
-                        <p className="text-slate-500 text-sm text-center py-4">
-                            No groups yet. Create one below.
-                        </p>
-                    ) : (
-                        <ul className="space-y-2">
-                            {groups.map((g) =>
-                                editing?.id === g._id ? (
-                                    /* Inline edit row */
-                                    <li
-                                        key={g._id}
-                                        className="bg-slate-700/60 rounded-lg p-3 space-y-2"
-                                    >
-                                        <input
-                                            className="input text-sm w-full"
-                                            value={editing.name}
-                                            onChange={(e) =>
-                                                setEditing((prev) => ({
-                                                    ...prev,
-                                                    name: e.target.value,
-                                                }))
-                                            }
-                                        />
-                                        <ColorPicker
-                                            value={editing.color}
-                                            onChange={(c) =>
-                                                setEditing((prev) => ({
-                                                    ...prev,
-                                                    color: c,
-                                                }))
-                                            }
-                                        />
-                                        <div className="flex gap-2 pt-1">
-                                            <button
-                                                className="btn-primary text-xs py-1 px-3"
-                                                onClick={handleSave}
-                                                disabled={saving}
-                                            >
-                                                {saving ? "Saving…" : "Save"}
-                                            </button>
-                                            <button
-                                                className="btn-ghost text-xs py-1 px-3"
-                                                onClick={() => setEditing(null)}
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    </li>
-                                ) : (
-                                    /* Normal row */
-                                    <li
-                                        key={g._id}
-                                        className="flex items-center gap-3 bg-slate-700/40 rounded-lg px-3 py-2"
-                                    >
-                                        <span
-                                            className="w-3 h-3 rounded-full shrink-0"
-                                            style={{ background: g.color }}
-                                        />
-                                        <span className="flex-1 text-sm text-slate-200 truncate">
-                                            {g.name}
-                                        </span>
+                {/* Existing groups */}
+                {loading ? (
+                    <div style={{ display: "flex", justifyContent: "center", padding: "24px 0" }}>
+                        <span className="spinner" style={{ width: 22, height: 22 }} />
+                    </div>
+                ) : groups.length === 0 ? (
+                    <EmptyState compact icon="folder" title="No groups yet" description="Create one below." />
+                ) : (
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                        {groups.map((g) =>
+                            editing?.id === g._id ? (
+                                /* Inline edit row */
+                                <li
+                                    key={g._id}
+                                    style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 8, border: "1px solid var(--border-focus)", background: "var(--bg-input)" }}
+                                >
+                                    <input
+                                        className="input"
+                                        value={editing.name}
+                                        onChange={(e) =>
+                                            setEditing((prev) => ({
+                                                ...prev,
+                                                name: e.target.value,
+                                            }))
+                                        }
+                                    />
+                                    <ColorPicker
+                                        value={editing.color}
+                                        onChange={(c) =>
+                                            setEditing((prev) => ({
+                                                ...prev,
+                                                color: c,
+                                            }))
+                                        }
+                                    />
+                                    <div style={{ display: "flex", gap: 8 }}>
                                         <button
-                                            className="text-slate-500 hover:text-slate-200 text-xs px-2"
-                                            onClick={() =>
-                                                setEditing({
-                                                    id: g._id,
-                                                    name: g.name,
-                                                    color: g.color,
-                                                })
-                                            }
+                                            className="btn-primary btn-sm"
+                                            onClick={handleSave}
+                                            disabled={saving}
                                         >
-                                            ✏️
+                                            {saving ? "Saving…" : "Save"}
                                         </button>
                                         <button
-                                            className="text-red-500 hover:text-red-400 text-xs px-2"
-                                            onClick={() => handleDelete(g)}
+                                            className="btn-ghost btn-sm"
+                                            onClick={() => setEditing(null)}
                                         >
-                                            🗑️
+                                            Cancel
                                         </button>
-                                    </li>
-                                ),
-                            )}
-                        </ul>
-                    )}
+                                    </div>
+                                </li>
+                            ) : (
+                                /* Normal row */
+                                <li
+                                    key={g._id}
+                                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 6px 6px 12px", borderRadius: 8, border: "1px solid var(--border)" }}
+                                >
+                                    <span className="chip-dot" style={{ width: 8, height: 8, background: g.color }} />
+                                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {g.name}
+                                    </span>
+                                    <button
+                                        className="btn-ghost btn-icon btn-sm"
+                                        title="Edit"
+                                        onClick={() =>
+                                            setEditing({
+                                                id: g._id,
+                                                name: g.name,
+                                                color: g.color,
+                                            })
+                                        }
+                                    >
+                                        <Icon name="pencil" size={14} />
+                                    </button>
+                                    <button
+                                        className="btn-ghost btn-icon btn-sm is-danger"
+                                        title="Delete"
+                                        onClick={() => handleDelete(g)}
+                                    >
+                                        <Icon name="trash" size={14} />
+                                    </button>
+                                </li>
+                            ),
+                        )}
+                    </ul>
+                )}
 
-                    {/* Create new group */}
-                    <form
-                        onSubmit={handleCreate}
-                        className="border-t border-slate-700 pt-4 space-y-3"
-                    >
-                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                            New Group
-                        </p>
+                {/* Create new group */}
+                <form
+                    onSubmit={handleCreate}
+                    style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 16, borderTop: "1px solid var(--border)" }}
+                >
+                    <p className="section-title" style={{ margin: 0 }}>New group</p>
+                    <Field label="Name">
                         <input
-                            className="input text-sm w-full"
+                            className="input"
                             placeholder="Group name…"
                             value={newName}
                             onChange={(e) => setNewName(e.target.value)}
                         />
-                        <div>
-                            <p className="text-xs text-slate-500 mb-1">Color</p>
-                            <ColorPicker
-                                value={newColor}
-                                onChange={setNewColor}
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            className="btn-primary text-sm w-full"
-                            disabled={creating || !newName.trim()}
-                        >
-                            {creating ? "Creating…" : "➕ Create Group"}
-                        </button>
-                    </form>
-                </div>
+                    </Field>
+                    {/* Not a Field: its <label> would pass a click on the caption to the first swatch */}
+                    <div>
+                        <span className="label">Colour</span>
+                        <ColorPicker
+                            value={newColor}
+                            onChange={setNewColor}
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        className="btn-primary"
+                        style={{ width: "100%" }}
+                        disabled={creating || !newName.trim()}
+                    >
+                        {!creating && <Icon name="plus" />}
+                        {creating ? "Creating…" : "Create group"}
+                    </button>
+                </form>
             </div>
-        </div>,
-        document.body,
+        </Modal>
     );
 }

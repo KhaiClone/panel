@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import api from "../../api/client";
 import ConfirmModal from "../../components/ConfirmModal";
 import { useData } from "../../context/DataContext";
+import { Icon, StatusBadge, StatusIcon } from "../../components/ui";
 import Section from "./Section";
 
 // ── API keys: one per project calling /api/external ─────────────────────────
@@ -94,7 +95,7 @@ function ApiKeysSection() {
                     </label>
                     <input className="input mono" value={form.urlKey} disabled={!form.writeEnv || !form.setUrl} onChange={(e) => setForm({ ...form, urlKey: e.target.value })} style={{ width: 150 }} />
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>= panel gateway</span>
-                    <button className="btn-primary" disabled={!form.botId || busy} onClick={create} style={{ padding: "6px 12px", fontSize: 12, marginLeft: "auto" }}>
+                    <button className="btn-primary" disabled={!form.botId || busy} onClick={create} style={{ marginLeft: "auto" }}>
                         {busy ? "Creating…" : "Create key"}
                     </button>
                 </div>
@@ -103,11 +104,11 @@ function ApiKeysSection() {
             {created?.wroteEnv && (
                 <div className="card" style={{ padding: 12, borderColor: "var(--success)", fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                     <span>
-                        ✅ Written to <strong>{created.record.botName}</strong>'s .env as <span className="mono">{created.wroteEnv}</span>
+                        <StatusIcon tone="success" /> Written to <strong>{created.record.botName}</strong>'s .env as <span className="mono">{created.wroteEnv}</span>
                         {created.gateway && <>, with <span className="mono">{created.gateway.key}={created.gateway.url}</span></>}. It takes effect when the project restarts.
                     </span>
-                    <button className="btn-ghost" disabled={restart === "running" || restart === "done"} onClick={() => restartProject(created.record.botId)} style={{ padding: "4px 10px", fontSize: 12, marginLeft: "auto" }}>
-                        {restart === "running" ? "Restarting…" : restart === "done" ? "Restarted ✓" : `Restart ${created.record.botName} now`}
+                    <button className="btn-ghost btn-sm" disabled={restart === "running" || restart === "done"} onClick={() => restartProject(created.record.botId)} style={{ marginLeft: "auto" }}>
+                        {restart === "done" ? <><Icon name="check" size={14} /> Restarted</> : restart === "running" ? "Restarting…" : <><Icon name="restart" size={14} /> Restart {created.record.botName} now</>}
                     </button>
                     {restart && restart !== "running" && restart !== "done" && <span style={{ color: "var(--danger)", width: "100%" }}>{restart}</span>}
                 </div>
@@ -117,7 +118,7 @@ function ApiKeysSection() {
                     <span>Key for <strong>{created.record.botName}</strong> — shown once, copy it now:</span>
                     <div style={{ display: "flex", gap: 8 }}>
                         <input className="input mono" readOnly value={created.key} onFocus={(e) => e.target.select()} style={{ flex: 1, minWidth: 0 }} />
-                        <button className="btn-ghost" onClick={() => navigator.clipboard?.writeText(created.key)} style={{ padding: "4px 10px", fontSize: 12 }}>Copy</button>
+                        <button className="btn-ghost" onClick={() => navigator.clipboard?.writeText(created.key)}><Icon name="copy" size={14} /> Copy</button>
                     </div>
                 </div>
             )}
@@ -130,7 +131,7 @@ function ApiKeysSection() {
                             {k.label !== k.botName && <span style={{ color: "var(--text-muted)" }}>{k.label}</span>}
                             <span className="mono" style={{ color: "var(--text-dim)" }}>{k.prefix}…</span>
                             <span style={{ color: "var(--text-dim)", marginLeft: "auto" }}>created {fmtWhen(k.createdAt)} · last used {fmtWhen(k.lastUsedAt)}</span>
-                            <button className="btn-ghost" onClick={() => setRevokeConfirm(k)} style={{ padding: "2px 8px", fontSize: 11, color: "var(--danger)" }}>Revoke</button>
+                            <button className="btn-ghost btn-sm is-danger" onClick={() => setRevokeConfirm(k)}>Revoke</button>
                         </div>
                     ))}
                 </div>
@@ -146,7 +147,7 @@ function ApiKeysSection() {
 
             {data.callbacks.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)" }}>Localhost callbacks the panel holds</span>
+                    <span className="section-title">Localhost callbacks the panel holds</span>
                     {data.callbacks.map((c) => (
                         <div key={`${c.url}|${c.ownerBotId}`} style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                             <span className="mono" style={{ color: "var(--text-dim)", overflowWrap: "anywhere" }}>{c.url}</span>
@@ -178,7 +179,7 @@ function PanelGatewaySection() {
             <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
                 Projects call the panel's API at <span className="mono">http://127.0.0.1:4201</span> on whatever node they run on. The agent there
                 forwards to the panel holding its node — so neither moving the panel nor migrating a project needs a .env change.
-                Set it with <strong>API Keys</strong> above (PANEL_API_URL).
+                Set it with <strong>API keys</strong> above (PANEL_API_URL).
             </p>
             {error && <p style={{ margin: 0, fontSize: 12, color: "var(--danger)" }}>{error}</p>}
             {!rows ? (
@@ -198,7 +199,7 @@ function PanelGatewaySection() {
                                   : `→ ${g.panelUrl} unreachable (${g.reach?.error || "?"})`;
                         return (
                             <div key={g.nodeId} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "baseline", flexWrap: "wrap" }}>
-                                <span>{ok ? "✅" : "⚠️"}</span>
+                                <StatusIcon tone={ok ? "success" : "warning"} />
                                 <strong style={{ color: "var(--text)" }}>{g.name}</strong>
                                 {g.localUrl && <span className="mono" style={{ color: "var(--text-dim)" }}>{g.localUrl}</span>}
                                 <span className="mono" style={{ color: ok ? "var(--text-muted)" : "var(--warning)", overflowWrap: "anywhere" }}>{why}</span>
@@ -207,7 +208,7 @@ function PanelGatewaySection() {
                     })}
                 </div>
             )}
-            <div><button className="btn-ghost" onClick={load} style={{ padding: "4px 10px", fontSize: 12 }}>Refresh</button></div>
+            <div><button className="btn-ghost btn-sm" onClick={load}><Icon name="refresh" size={14} /> Refresh</button></div>
         </div>
     );
 }
@@ -216,7 +217,7 @@ function PanelGatewaySection() {
 // Data the bots and the panel both use lives on the panel (bots call it through
 // their gateway); commands to the bots go through a private Discord channel.
 
-const BUS_STATUS_COLOR = { done: "var(--success)", failed: "var(--danger)", sent: "var(--accent)", queued: "var(--text-muted)" };
+const BUS_STATUS_TONE = { done: "success", failed: "danger", sent: "accent", queued: "neutral" };
 
 function SharedDataSection() {
     const { bots } = useData();
@@ -267,9 +268,9 @@ function SharedDataSection() {
                 {!bus.configured ? (
                     <span style={{ color: "var(--text-muted)" }}>off — set PANEL_DISCORD_TOKEN and PANEL_BUS_CHANNEL_ID in .env</span>
                 ) : bus.ready ? (
-                    <span style={{ color: "var(--success)" }}>✅ {bus.botTag} on channel <span className="mono">{bus.channelId}</span></span>
+                    <span style={{ color: "var(--success)" }}><StatusIcon tone="success" /> {bus.botTag} on channel <span className="mono">{bus.channelId}</span></span>
                 ) : (
-                    <span style={{ color: "var(--warning)" }}>⚠️ not connected{bus.error ? ` — ${bus.error}` : ""}</span>
+                    <span style={{ color: "var(--warning)" }}><StatusIcon tone="warning" /> not connected{bus.error ? ` — ${bus.error}` : ""}</span>
                 )}
                 {Object.entries(bus.counts || {}).map(([k, n]) => <span key={k} style={{ color: "var(--text-dim)" }}>{k}: {n}</span>)}
             </div>
@@ -281,7 +282,7 @@ function SharedDataSection() {
                             <strong style={{ color: "var(--text)" }}>{c.name || c.botId}</strong>
                             <span className="mono" style={{ color: "var(--text-dim)", overflowWrap: "anywhere" }}>{c.commands.join(", ")}</span>
                             <span style={{ color: "var(--text-dim)" }}>· seen {new Date(c.at).toLocaleString()}</span>
-                            <button className="btn-ghost" disabled={!bus.ready || busy === `ping:${c.botId}`} onClick={ping(c.botId, c.name)} style={{ padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}>
+                            <button className="btn-ghost btn-sm" disabled={!bus.ready || busy === `ping:${c.botId}`} onClick={ping(c.botId, c.name)} style={{ marginLeft: "auto" }}>
                                 {busy === `ping:${c.botId}` ? "Pinging…" : "Ping"}
                             </button>
                         </div>
@@ -314,7 +315,7 @@ function SharedDataSection() {
                     <option value="collection">collection</option>
                     <option value="value">value</option>
                 </select>
-                <button className="btn-primary" disabled={!form.botId || !form.name || busy === "declare"} onClick={declare} style={{ padding: "6px 12px", fontSize: 12 }}>Declare</button>
+                <button className="btn-primary" disabled={!form.botId || !form.name || busy === "declare"} onClick={declare}>Declare</button>
             </div>
 
             <div style={{ fontSize: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
@@ -322,14 +323,16 @@ function SharedDataSection() {
                 {decorSite.configured ? (
                     <span style={{ color: "var(--text-muted)" }}>
                         publishes to <span className="mono">{decorSite.repo}</span>
-                        {decorSite.last?.at ? ` · last: ${decorSite.last.ok ? "✅" : "❌"} ${decorSite.last.message} (${new Date(decorSite.last.at).toLocaleString()})` : " · nothing published yet"}
+                        {decorSite.last?.at
+                            ? <> · last: <StatusIcon tone={decorSite.last.ok ? "success" : "danger"} /> {decorSite.last.message} ({new Date(decorSite.last.at).toLocaleString()})</>
+                            : " · nothing published yet"}
                     </span>
                 ) : (
                     <span style={{ color: "var(--text-muted)" }}>off — set DECOR_SITE_GITHUB_TOKEN (Contents: read & write on the site repo) in .env</span>
                 )}
                 {decorSite.configured && (
-                    <button className="btn-ghost" disabled={busy === "publish"} onClick={publish} style={{ padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}>
-                        {busy === "publish" ? "Publishing…" : "Publish now"}
+                    <button className="btn-ghost btn-sm" disabled={busy === "publish"} onClick={publish} style={{ marginLeft: "auto" }}>
+                        <Icon name="upload" size={14} /> {busy === "publish" ? "Publishing…" : "Publish now"}
                     </button>
                 )}
             </div>
@@ -339,18 +342,18 @@ function SharedDataSection() {
                     <summary style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>Recent commands ({recent.length})</summary>
                     <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 6 }}>
                         {recent.map((r) => (
-                            <div key={r.id} style={{ display: "flex", gap: 8, fontSize: 11, flexWrap: "wrap" }}>
+                            <div key={r.id} style={{ display: "flex", gap: 8, fontSize: 11, flexWrap: "wrap", alignItems: "center" }}>
                                 <span style={{ color: "var(--text-dim)" }}>{new Date(r.createdAt).toLocaleString()}</span>
                                 <span style={{ color: "var(--text-muted)" }}>{r.targetName || r.target}</span>
                                 <span className="mono">{r.cmd}</span>
-                                <span style={{ color: BUS_STATUS_COLOR[r.status] || "var(--text-muted)" }}>{r.status}</span>
+                                <StatusBadge tone={BUS_STATUS_TONE[r.status] || "neutral"}>{r.status}</StatusBadge>
                                 {r.error && <span style={{ color: "var(--danger)", overflowWrap: "anywhere" }}>{r.error}</span>}
                             </div>
                         ))}
                     </div>
                 </details>
             )}
-            <div><button className="btn-ghost" onClick={load} style={{ padding: "4px 10px", fontSize: 12 }}>Refresh</button></div>
+            <div><button className="btn-ghost btn-sm" onClick={load}><Icon name="refresh" size={14} /> Refresh</button></div>
         </div>
     );
 }
@@ -358,13 +361,13 @@ function SharedDataSection() {
 export default function IntegrationsTab() {
     return (
         <>
-            <Section icon="🔑" title="API Keys" hint="One per project calling the external API">
+            <Section icon="key" title="API keys" hint="One per project calling the external API">
                 <ApiKeysSection />
             </Section>
-            <Section icon="🚪" title="Panel Gateway" hint="127.0.0.1:4201 on every node">
+            <Section icon="plug" title="Panel gateway" hint="127.0.0.1:4201 on every node">
                 <PanelGatewaySection />
             </Section>
-            <Section icon="🗄️" title="Shared Data & Discord Bus" hint="Bots call the panel; the panel talks to them on Discord">
+            <Section icon="database" title="Shared data & Discord bus" hint="Bots call the panel; the panel talks to them on Discord">
                 <SharedDataSection />
             </Section>
         </>

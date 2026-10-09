@@ -9,16 +9,21 @@ import FileEditor from '../components/FileEditor';
 import ShellTerminal from '../components/ShellTerminal';
 import NodeVersionCard from '../components/NodeVersionCard';
 import { useData } from '../context/DataContext';
-import { Icon } from '../components/ui';
+import { Icon, Notice, PageHeader, StatCard, StatusBadge, StatusIcon } from '../components/ui';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-const STATUS_STYLES = {
-    online:    { color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)", label: "Online" },
-    stopped:   { color: "var(--danger)", bg: "var(--danger-bg)", border: "var(--danger-border)", label: "Stopped" },
-    errored:   { color: "var(--orange)", bg: "var(--orange-bg)", border: "var(--orange-border)", label: "Errored" },
-    launching: { color: "var(--warning)", bg: "var(--warning-bg)", border: "var(--warning-border)", label: "Starting" },
+// Same words and tones as the bot cards on the Bots page (components/BotCard.jsx)
+const STATUS = {
+    online:    { tone: "success", label: "Online" },
+    stopped:   { tone: "neutral", label: "Stopped" },
+    errored:   { tone: "danger",  label: "Errored" },
+    launching: { tone: "warning", label: "Starting" },
 };
-const getStyle = (s) => STATUS_STYLES[s] ?? { color: "var(--text-muted)", bg: "var(--bg-hover)", border: "var(--border)", label: s ?? "Unknown" };
+const getStatus = (s) => STATUS[s] ?? { tone: "neutral", label: s ?? "Unknown" };
+
+// A small caption above a value or a sub-section
+const CAPTION = { fontSize: 12, fontWeight: 500, color: "var(--text-muted)", margin: "0 0 4px" };
+const SUBHEAD = { fontSize: 13, fontWeight: 600, color: "var(--text)", margin: 0 };
 
 const fmt = (bytes) => {
     if (!bytes) return '—';
@@ -63,59 +68,14 @@ const parseMemLimit = (s) => {
     return v > 0 ? v : null;
 };
 
-function ProgressBar({ percent, color, animated = false }) {
+function ProgressBar({ percent, color }) {
     const pct = Math.min(Math.max(percent ?? 0, 0), 100);
     return (
-        <div style={{ background: "var(--bg-input)", borderRadius: 8, height: 10, overflow: "hidden", position: "relative" }}>
-            <div style={{ 
-                width: `${pct}%`, height: "100%", borderRadius: 8, background: color, 
-                transition: "width 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
-                position: "relative",
-                overflow: "hidden"
-            }}>
-                {animated && <div style={{ 
-                    position: "absolute", top: 0, left: 0, bottom: 0, width: "200%",
-                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)",
-                    animation: "shimmer 2s infinite"
-                }} />}
-            </div>
+        <div style={{ background: "var(--bg-input)", borderRadius: 4, height: 6, overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, background: color, transition: "width 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }} />
         </div>
     );
 }
-
-// ── SVG Icon Components ─────────────────────────────────────────────────────
-const IconCpu = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
-        <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
-        <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
-        <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
-        <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
-        <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
-    </svg>
-);
-const IconMemory = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
-        <rect x="2" y="6" width="20" height="12" rx="2"/>
-        <line x1="6" y1="10" x2="6" y2="14"/><line x1="10" y1="10" x2="10" y2="14"/>
-        <line x1="14" y1="10" x2="14" y2="14"/><line x1="18" y1="10" x2="18" y2="14"/>
-    </svg>
-);
-const IconClock = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
-        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-    </svg>
-);
-const IconRefresh = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
-        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
-    </svg>
-);
-const IconHourglass = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
-        <path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>
-        <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
-    </svg>
-);
 
 // Inline spinner for buttons
 const BtnSpinner = () => (
@@ -231,41 +191,28 @@ function WebsitePanel({ bot, onRefresh }) {
     };
 
     const InfoMsg = ({ msg }) => msg ? (
-        <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500,
-            background: msg.type === "success" ? "var(--success-bg)" : "var(--danger-bg)",
-            color: msg.type === "success" ? "var(--success)" : "var(--danger)",
-            border: `1px solid ${msg.type === "success" ? "var(--success-border)" : "var(--danger-border)"}` }}>
-            {msg.text}
-        </div>
+        <Notice tone={msg.type === "success" ? "success" : "danger"}>{msg.text}</Notice>
     ) : null;
 
     return (
-        <div className="card" style={{ border: "1px solid var(--success-border)", background: "var(--success-bg)" }}>
+        <div className="card">
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--success-border)" }}>
-                <span style={{ fontSize: 18 }}>🌐</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)", flexWrap: "wrap" }}>
+                <Icon name="globe" style={{ color: "var(--text-dim)" }} />
                 <div>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", margin: 0 }}>Website</h3>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Website</h3>
                     <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                         {wc.mode === "static" ? "Static site — served by nginx" : "Full-stack — PM2 API + nginx frontend"}
                     </p>
                 </div>
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                    {wc.sslEnabled && (
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)" }}>
-                            🔒 SSL Active
-                        </span>
-                    )}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+                    {wc.sslEnabled && <StatusBadge tone="success">SSL active</StatusBadge>}
                     <button
-                        className="btn-ghost"
-                        style={{ padding: "5px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}
+                        className="btn-ghost btn-sm"
                         onClick={() => { setEditingConfig(v => !v); setConfigMsg(null); }}
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 13, height: 13 }}>
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                        </svg>
-                        Edit Config
+                        <Icon name="pencil" size={14} />
+                        Edit config
                     </button>
                 </div>
             </div>
@@ -274,15 +221,15 @@ function WebsitePanel({ bot, onRefresh }) {
             {!editingConfig && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
                     {[
-                        { label: "Public Port", value: wc.port },
-                        wc.mode === "fullstack" && { label: "API Port", value: wc.apiPort },
-                        { label: "Mode", value: wc.mode === "static" ? "Static" : "Full-Stack" },
-                        { label: "Dist Folder", value: wc.distFolder },
-                        wc.buildCommand && { label: "Build Command", value: wc.buildCommand },
+                        { label: "Public port", value: wc.port },
+                        wc.mode === "fullstack" && { label: "API port", value: wc.apiPort },
+                        { label: "Mode", value: wc.mode === "static" ? "Static" : "Full-stack" },
+                        { label: "Dist folder", value: wc.distFolder },
+                        wc.buildCommand && { label: "Build command", value: wc.buildCommand },
                         wc.domain && { label: "Domain", value: wc.domain },
                     ].filter(Boolean).map(({ label, value }) => (
-                        <div key={label} style={{ background: "var(--bg-input)", borderRadius: 8, padding: "10px 14px" }}>
-                            <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px" }}>{label}</p>
+                        <div key={label} style={{ background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px" }}>
+                            <p style={CAPTION}>{label}</p>
                             <p className="mono" style={{ fontSize: 13, color: "var(--text)", margin: 0, wordBreak: "break-all" }}>{value}</p>
                         </div>
                     ))}
@@ -292,16 +239,16 @@ function WebsitePanel({ bot, onRefresh }) {
             {/* Edit config form */}
             {editingConfig && (
                 <form onSubmit={handleSaveConfig} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20, padding: 16, background: "var(--bg-input)", borderRadius: 10, border: "1px solid var(--border)" }}>
-                    <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Edit Website Config</h4>
+                    <h4 style={SUBHEAD}>Edit website config</h4>
                     <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: wc.mode === "fullstack" ? "1fr 1fr" : "1fr", gap: 12 }}>
                         <div>
-                            <label className="label">Public Port</label>
+                            <label className="label">Public port</label>
                             <input className="input mono" type="number" min="1" max="65535" value={cfgPort} onChange={e => setCfgPort(e.target.value)} />
                             <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>nginx listens on this port. UFW updated automatically.</p>
                         </div>
                         {wc.mode === "fullstack" && (
                             <div>
-                                <label className="label">API Port (PM2)</label>
+                                <label className="label">API port (PM2)</label>
                                 <input className="input mono" type="number" min="1" max="65535" value={cfgApiPort} onChange={e => setCfgApiPort(e.target.value)} />
                                 <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Port your backend server listens on internally.</p>
                             </div>
@@ -309,21 +256,21 @@ function WebsitePanel({ bot, onRefresh }) {
                     </div>
                     <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                         <div>
-                            <label className="label">Dist Folder *</label>
+                            <label className="label">Dist folder *</label>
                             <input className="input mono" value={cfgDistFolder} onChange={e => setCfgDistFolder(e.target.value)} required placeholder="client/dist" />
                             <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Relative to project root or absolute path.</p>
                         </div>
                         <div>
-                            <label className="label">Build Command</label>
+                            <label className="label">Build command</label>
                             <input className="input mono" value={cfgBuildCmd} onChange={e => setCfgBuildCmd(e.target.value)} placeholder="npm run build" />
                             <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Leave blank to skip build step.</p>
                         </div>
                     </div>
                     <InfoMsg msg={configMsg} />
                     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button type="button" className="btn-ghost" onClick={cancelEdit} disabled={savingConfig} style={{ padding: "8px 16px" }}>Cancel</button>
-                        <button type="submit" className="btn-primary" disabled={savingConfig} style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: 6 }}>
-                            {savingConfig ? <><BtnSpinner /> Saving…</> : "Save & Reload nginx"}
+                        <button type="button" className="btn-ghost" onClick={cancelEdit} disabled={savingConfig}>Cancel</button>
+                        <button type="submit" className="btn-primary" disabled={savingConfig}>
+                            {savingConfig ? <><BtnSpinner /> Saving…</> : "Save & reload nginx"}
                         </button>
                     </div>
                 </form>
@@ -331,16 +278,18 @@ function WebsitePanel({ bot, onRefresh }) {
             {!editingConfig && configMsg && <div style={{ marginBottom: 16 }}><InfoMsg msg={configMsg} /></div>}
 
             {/* Access link */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "10px 14px", background: "var(--bg-input)", borderRadius: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Access URL:</span>
-                <span className="mono" style={{ fontSize: 13, color: "var(--accent-hover)", flex: 1, wordBreak: "break-all" }}>{accessUrl}</span>
-                <button onClick={handleCopyUrl} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}>{urlCopied ? "✓ Copied" : "Copy"}</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "8px 8px 8px 14px", background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Access URL</span>
+                <span className="mono" style={{ fontSize: 13, color: "var(--text)", flex: 1, wordBreak: "break-all" }}>{accessUrl}</span>
+                <button onClick={handleCopyUrl} className="btn-ghost btn-sm" style={{ flexShrink: 0 }}>
+                    <Icon name={urlCopied ? "check" : "copy"} size={14} /> {urlCopied ? "Copied" : "Copy"}
+                </button>
             </div>
 
             {/* Domain / SSL form */}
             <form onSubmit={handleDomain} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
-                    {wc.domain ? "Update Domain & SSL" : "Add Custom Domain + SSL"}
+                <h4 style={SUBHEAD}>
+                    {wc.domain ? "Update domain & SSL" : "Add custom domain + SSL"}
                 </h4>
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
@@ -349,39 +298,32 @@ function WebsitePanel({ bot, onRefresh }) {
                         <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Must already point to this server's IP.</p>
                     </div>
                     <div>
-                        <label className="label">Let's Encrypt Email</label>
+                        <label className="label">Let's Encrypt email</label>
                         <input className="input mono" placeholder="admin@example.com" value={email} onChange={e => setEmail(e.target.value)} type="email" />
                         <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Optional — for certificate renewal notices.</p>
                     </div>
                 </div>
                 <InfoMsg msg={domainMsg} />
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button type="submit" className="btn-primary" disabled={savingDomain} style={{ padding: "9px 20px", display: "flex", alignItems: "center", gap: 8 }}>
-                        {savingDomain ? <><BtnSpinner /> Issuing SSL…</> : "🔒 Save & Issue SSL"}
+                    <button type="submit" className="btn-primary" disabled={savingDomain}>
+                        {savingDomain ? <><BtnSpinner /> Issuing SSL…</> : <><Icon name="lock" /> Save & issue SSL</>}
                     </button>
                 </div>
             </form>
 
             {/* Custom nginx config — only shown when domain is set (nginx mode) */}
             {wc.domain && (
-                <div style={{ marginTop: 20, borderTop: "1px solid var(--success-border)", paddingTop: 16 }}>
+                <div style={{ marginTop: 20, borderTop: "1px solid var(--border-light)", paddingTop: 16 }}>
                     <button
                         type="button"
                         onClick={() => { setNginxExpanded(v => !v); setNginxMsg(null); }}
                         style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", padding: 0, width: "100%" }}
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                            style={{ width: 14, height: 14, color: "var(--text-muted)", transform: nginxExpanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
-                            <polyline points="9 18 15 12 9 6"/>
-                        </svg>
-                        <h4 style={{ fontSize: 13, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
-                            Custom Nginx Config
+                        <Icon name="chevronRight" size={14} style={{ color: "var(--text-muted)", transform: nginxExpanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+                        <h4 style={SUBHEAD}>
+                            Custom nginx config
                         </h4>
-                        {wc.extraNginxConfig && (
-                            <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "var(--info-bg)", color: "var(--info)", border: "1px solid var(--info-border)" }}>
-                                Active
-                            </span>
-                        )}
+                        {wc.extraNginxConfig && <StatusBadge tone="info">Active</StatusBadge>}
                     </button>
 
                     {nginxExpanded && (
@@ -402,14 +344,14 @@ function WebsitePanel({ bot, onRefresh }) {
                             <InfoMsg msg={nginxMsg} />
                             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                                 {cfgNginx.trim() && (
-                                    <button type="button" className="btn-ghost" style={{ padding: "7px 14px", fontSize: 12, color: "var(--danger)" }}
+                                    <button type="button" className="btn-ghost btn-sm is-danger"
                                         onClick={() => { setCfgNginx(""); setNginxMsg(null); }}
                                         disabled={savingNginx}>
                                         Clear
                                     </button>
                                 )}
-                                <button type="submit" className="btn-primary" disabled={savingNginx} style={{ padding: "7px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                                    {savingNginx ? <><BtnSpinner /> Applying…</> : "Apply & Reload nginx"}
+                                <button type="submit" className="btn-primary btn-sm" disabled={savingNginx}>
+                                    {savingNginx ? <><BtnSpinner /> Applying…</> : "Apply & reload nginx"}
                                 </button>
                             </div>
                         </form>
@@ -548,7 +490,7 @@ export default function BotDetail() {
         return (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
                 <div style={{ width: 48, height: 48, borderRadius: "50%", border: "4px solid var(--border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }}/>
-                <p style={{ fontSize: 15, color: "var(--text-muted)", fontWeight: 500 }}>Initializing Environment…</p>
+                <p style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 500 }}>Initializing environment…</p>
             </div>
         );
     }
@@ -563,7 +505,7 @@ export default function BotDetail() {
     const memLimitBytes = parseMemLimit(bot.maxMemory);
     const activeMemLimitBytes = memLimitBytes || (1024 * 1024 * 1024); // 1GB fallback
     const memPercent   = bot.live?.memory ? parseFloat(((bot.live.memory / activeMemLimitBytes) * 100).toFixed(1)) : 0;
-    const s            = getStyle(bot.live?.status);
+    const s            = getStatus(bot.live?.status);
 
     const toggleEditTag = (tagId) => setEditTags(prev => prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]);
 
@@ -572,40 +514,34 @@ export default function BotDetail() {
             
             {/* Action message */}
             {actionMsg && (
-                <div className="slide-up" style={{
-                    display: "flex", alignItems: "center", gap: 12, marginBottom: 24,
-                    padding: "12px 20px", borderRadius: 10, fontSize: 14, fontWeight: 500,
-                    background: actionMsg.type === 'success' ? "var(--success-bg)" : actionMsg.type === 'info' ? "var(--accent-dim)" : "var(--danger-bg)",
-                    border: `1px solid ${actionMsg.type === 'success' ? "var(--success-border)" : actionMsg.type === 'info' ? "var(--accent)" : "var(--danger-border)"}`,
-                    color: actionMsg.type === 'success' ? "var(--success)" : actionMsg.type === 'info' ? "var(--accent-hover)" : "var(--danger)",
-                }}>
-                    {actionMsg.type === 'success' ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>
-                    ) : actionMsg.type === 'info' ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    ) : (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16, flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    )}
-                    {actionMsg.text}
-                    <button onClick={() => setActionMsg(null)} style={{ marginLeft: "auto", background: "none", border: "none", color: "inherit", cursor: "pointer", opacity: 0.7, padding: 4, display: "flex", alignItems: "center" }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
+                <div className="slide-up" style={{ marginBottom: 20 }}>
+                    <Notice tone={actionMsg.type === 'success' ? 'success' : actionMsg.type === 'info' ? 'info' : 'danger'}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <span style={{ flex: 1, minWidth: 0 }}>{actionMsg.text}</span>
+                            <button onClick={() => setActionMsg(null)} className="btn-ghost btn-icon btn-sm" style={{ border: "none", margin: "-4px -6px -4px 0" }} title="Dismiss">
+                                <Icon name="x" size={14} />
+                            </button>
+                        </div>
+                    </Notice>
                 </div>
             )}
 
             {/* Header */}
-            <div className="mobile-wrap" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 12, flexWrap: "wrap" }}>
-                <div className="min-w-0" style={{ display: "flex", alignItems: "center", gap: 16, flex: 1 }}>
-                    <button onClick={() => navigate(backPath)} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)", flexShrink: 0 }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                    <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
-                            <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>{bot.name}</h1>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 20 }}>
+                <button onClick={() => navigate(backPath)} className="btn-ghost btn-icon" title="Back" style={{ marginTop: 1 }}>
+                    <Icon name="chevronLeft" />
+                </button>
+                <div className="min-w-0" style={{ flex: 1 }}>
+                    <PageHeader
+                        title={bot.name}
+                        description={<span className="mono" style={{ color: "var(--text-dim)" }}>{bot.buyerID} / {bot.botID}</span>}
+                        actions={<StatusBadge tone={s.tone}>{s.label}</StatusBadge>}
+                    />
+                    {(isLocal || bot.nodeName || currentGroup || botTags.length > 0) && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
                             {isLocal && (
-                                <span className="badge" style={{ background: "var(--accent-dim)", border: "1px solid var(--accent)", color: "var(--accent)", display: "flex", alignItems: "center", gap: 5 }}>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 11, height: 11 }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                                    Local
+                                <span className="badge" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                                    <Icon name="folder" size={12} /> Local
                                 </span>
                             )}
                             {bot.nodeName && (
@@ -614,50 +550,37 @@ export default function BotDetail() {
                                 </span>
                             )}
                             {currentGroup && (
-                                <span className="badge" style={{ background: `${currentGroup.color}20`, border: `1px solid ${currentGroup.color}40`, color: currentGroup.color }}>{currentGroup.name}</span>
+                                <span className="badge" title="Group" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                                    <span className="chip-dot" style={{ background: currentGroup.color }} />
+                                    {currentGroup.name}
+                                </span>
                             )}
                             {botTags.map(tag => (
-                                <span key={tag._id} className="badge" style={{ background: `${tag.color}20`, border: `1px solid ${tag.color}40`, color: tag.color }}>
-                                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: tag.color }}/>
+                                <span key={tag._id} className="badge" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                                    <span className="chip-dot" style={{ background: tag.color }} />
                                     {tag.name}
                                 </span>
                             ))}
                         </div>
-                        <p className="mono" style={{ fontSize: 13, color: "var(--text-dim)" }}>
-                            {bot.buyerID} / {bot.botID}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="status-pill" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, padding: "8px 16px", fontSize: 14 }}>
-                    <span className="status-dot" style={{ background: s.color, width: 10, height: 10 }}/>
-                    {s.label}
+                    )}
                 </div>
             </div>
 
-            <div style={{ height: 1, background: "var(--border)", marginBottom: 24 }} />
-
             {/* Summary stats */}
-            <div className="grid-2-mobile gap-sm-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 32 }}>
-                {[
-                    { label: "CPU Usage",  value: `${bot.live?.cpu ?? 0}%`,                        color: "var(--accent-hover)", Icon: IconCpu },
-                    { label: "Memory",     value: fmt(bot.live?.memory),                            color: "var(--info)",             Icon: IconMemory },
-                    { label: "Uptime",     value: isOnline ? formatUptime(bot.live?.uptime) : "—", color: "var(--success)",      Icon: IconClock },
-                    { label: "Restarts",   value: bot.live?.restarts ?? 0,                          color: "var(--danger)",       Icon: IconRefresh },
-                    { label: "Time Left",  value: msLeft !== null ? formatTimeLeft(msLeft) : "∞",  color: msLeft !== null && msLeft < 3 * 86_400_000 ? "var(--danger)" : "var(--warning)", Icon: IconHourglass },
-                ].map(({ label, value, color, Icon }) => (
-                    <div key={label} className="card card-hover" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
-                            <span style={{ color, opacity: 0.6 }}><Icon /></span>
-                        </div>
-                        <p className="mono" style={{ fontSize: 22, fontWeight: 700, color }}>{value}</p>
-                    </div>
-                ))}
+            <div className="stat-grid" style={{ marginBottom: 24 }}>
+                <StatCard label="CPU usage" value={`${bot.live?.cpu ?? 0}%`} />
+                <StatCard label="Memory" value={fmt(bot.live?.memory)} />
+                <StatCard label="Uptime" value={isOnline ? formatUptime(bot.live?.uptime) : "—"} />
+                <StatCard label="Restarts" value={bot.live?.restarts ?? 0} />
+                <StatCard
+                    label="Time left"
+                    value={msLeft !== null ? formatTimeLeft(msLeft) : "∞"}
+                    tone={msLeft !== null && msLeft < 3 * 86_400_000 ? "danger" : undefined}
+                />
             </div>
 
             {/* Tabs */}
-            <div className="tab-bar" style={{ marginBottom: 24, display: "inline-flex" }}>
+            <div className="tab-bar" style={{ marginBottom: 24, display: "inline-flex", maxWidth: "100%" }}>
                 {TABS.map(t => (
                     <button key={t} className={`tab-item ${tab === t ? 'active' : ''}`} onClick={() => { setTab(t); if (t === 'Terminal') setTermOpened(true); }}>
                         {t}
@@ -676,7 +599,7 @@ export default function BotDetail() {
                             <div className="card">
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
                                     <div>
-                                        <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Runtime Controls</h2>
+                                        <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Runtime controls</h2>
                                         <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>Manage the PM2 instance lifecycle</p>
                                     </div>
                                     <span className="mono badge" style={{ background: "var(--bg-input)", color: "var(--text-dim)", border: "1px solid var(--border)" }}>
@@ -686,37 +609,37 @@ export default function BotDetail() {
                                 
                                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                     {isStopped && (
-                                        <button className="btn-success" style={{ padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => runAction('start', 'start')}>
+                                        <button className="btn-success" style={{ padding: "9px 14px" }} disabled={!!busy} onClick={() => runAction('start', 'start')}>
                                             {busy === 'start' ? (
                                                 <><BtnSpinner /> Starting…</>
                                             ) : (
-                                                <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Instance</>
+                                                <><Icon name="play" size={14} /> Start instance</>
                                             )}
                                         </button>
                                     )}
                                     {isOnline && (
-                                        <button className="btn-danger" style={{ padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => runAction('stop', 'stop')}>
+                                        <button className="btn-danger" style={{ padding: "9px 14px" }} disabled={!!busy} onClick={() => runAction('stop', 'stop')}>
                                             {busy === 'stop' ? (
                                                 <><BtnSpinner /> Stopping…</>
                                             ) : (
-                                                <><svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop Instance</>
+                                                <><Icon name="stop" size={14} /> Stop instance</>
                                             )}
                                         </button>
                                     )}
-                                    <button className="btn-warning" style={{ padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
+                                    <button className="btn-warning" style={{ padding: "9px 14px" }} disabled={!!busy} onClick={() => runAction('restart', 'restart')}>
                                         {busy === 'restart' ? (
                                             <><BtnSpinner /> Restarting…</>
                                         ) : (
-                                            <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restart Instance</>
+                                            <><Icon name="restart" size={14} /> Restart instance</>
                                         )}
                                     </button>
-                                    <button className="btn-primary" style={{ padding: "12px", gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
+                                    <button className="btn-primary" style={{ padding: "9px 14px", gridColumn: "1 / -1" }} disabled={!!busy} onClick={() => setConfirm({ action: 'update' })}>
                                         {busy === 'update' ? (
                                             <><BtnSpinner /> Processing…</>
                                         ) : isLocal ? (
-                                            <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Rebuild from Local</>
+                                            <><Icon name="upload" size={14} /> Rebuild from local</>
                                         ) : (
-                                            <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Pull &amp; Update from Git</>
+                                            <><Icon name="download" size={14} /> Pull &amp; update from Git</>
                                         )}
                                     </button>
                                 </div>
@@ -725,16 +648,16 @@ export default function BotDetail() {
                             {/* Instance Metadata card */}
                             <div className="card">
                                 <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
-                                    Instance Metadata
+                                    Instance metadata
                                 </h3>
                                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                                     {[
                                         { label: 'Source',          value: isLocal ? `Local: ${bot.localPath}` : bot.repoUrl },
                                         { label: 'Branch',          value: bot.branch || 'main' },
-                                        { label: 'Start Command',   value: bot.startScript },
-                                        { label: 'Install Command', value: bot.installCommand || '—' },
+                                        { label: 'Start command',   value: bot.startScript },
+                                        { label: 'Install command', value: bot.installCommand || '—' },
                                         { label: 'Node.js',         value: bot.nodeVersion ? `v${bot.nodeVersion}` : 'System default' },
-                                        { label: 'Memory Limit',    value: bot.maxMemory || 'Unrestricted' },
+                                        { label: 'Memory limit',    value: bot.maxMemory || 'Unrestricted' },
                                         { label: 'Created',         value: fmtDate(bot.createdAt) },
                                         { label: 'Expires',         value: bot.expiresAt ? fmtDate(bot.expiresAt) : 'Permanent' },
                                     ].map(({ label, value }) => (
@@ -755,7 +678,7 @@ export default function BotDetail() {
                         {/* Divider */}
                         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                             <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
-                            <h3 style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0, whiteSpace: "nowrap" }}>Configuration</h3>
+                            <h3 className="section-title" style={{ margin: 0, whiteSpace: "nowrap" }}>Configuration</h3>
                             <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
                         </div>
 
@@ -764,21 +687,21 @@ export default function BotDetail() {
                             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 32 }}>
                                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                                     <div>
-                                        <label className="label">Instance Name</label>
+                                        <label className="label">Instance name</label>
                                         <input className="input" value={editName} onChange={e => setEditName(e.target.value)} />
                                     </div>
                                     <div>
-                                        <label className="label">Start Command</label>
+                                        <label className="label">Start command</label>
                                         <input className="input mono" value={editScript} onChange={e => setEditScript(e.target.value)} />
                                         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Supports sudo, e.g. <span className="mono">sudo java -jar app.jar</span></p>
                                     </div>
                                     <div>
-                                        <label className="label">Install Command</label>
+                                        <label className="label">Install command</label>
                                         <input className="input mono" placeholder="Leave empty to skip" value={editInstallCommand} onChange={e => setEditInstallCommand(e.target.value)} />
                                         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Executed during rebuild or git pull.</p>
                                     </div>
                                     <div>
-                                        <label className="label">Group Assignment</label>
+                                        <label className="label">Group</label>
                                         <select className="input" value={editGroupId} onChange={e => setEditGroupId(e.target.value)}>
                                             <option value="">Ungrouped</option>
                                             {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
@@ -793,15 +716,10 @@ export default function BotDetail() {
                                                     return (
                                                         <button
                                                             key={tag._id} type="button" onClick={() => toggleEditTag(tag._id)}
-                                                            className="badge"
-                                                            style={{
-                                                                cursor: "pointer", transition: "all 0.2s",
-                                                                background: isActive ? `${tag.color}25` : "var(--bg-input)",
-                                                                border: `1px solid ${isActive ? tag.color + "50" : "var(--border)"}`,
-                                                                color: isActive ? tag.color : "var(--text-muted)",
-                                                            }}
+                                                            className={`chip${isActive ? " active" : ""}`}
+                                                            aria-pressed={isActive}
                                                         >
-                                                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: isActive ? tag.color : "var(--text-dim)", transition: "all 0.2s" }}/>
+                                                            <span className="chip-dot" style={{ background: isActive ? tag.color : "var(--text-dim)" }} />
                                                             {tag.name}
                                                         </button>
                                                     );
@@ -814,21 +732,21 @@ export default function BotDetail() {
                                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                                     <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                         <div>
-                                            <label className="label">Memory Limit</label>
+                                            <label className="label">Memory limit</label>
                                             <input className="input mono" placeholder="e.g. 500M, 1G" value={editMaxMemory} onChange={e => setEditMaxMemory(e.target.value)} />
                                         </div>
                                         <div>
-                                            <label className="label">Monthly Price (VND)</label>
+                                            <label className="label">Monthly price (VND)</label>
                                             <input type="number" className="input mono" placeholder="e.g. 50000" value={editPrice} onChange={e => setEditPrice(e.target.value)} disabled={!editMaxMemory} />
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="label">Subscription Expiration</label>
+                                        <label className="label">Subscription expiration</label>
                                         <input type="datetime-local" className="input" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} />
                                     </div>
                                     
                                     <div style={{ marginTop: "auto", background: "var(--bg-input)", padding: 16, borderRadius: 8, border: "1px solid var(--border)" }}>
-                                        <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Need Help?</h4>
+                                        <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>Need help?</h4>
                                         <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
                                             Make sure the memory limit uses correct suffixes (K, M, G). The start command will be executed from the root of your project directory.
                                         </p>
@@ -837,16 +755,16 @@ export default function BotDetail() {
                             </div>
 
                             <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 20, borderTop: "1px solid var(--border-light)" }}>
-                                <button className="btn-primary" style={{ padding: "10px 24px", display: "flex", alignItems: "center", gap: 8 }} onClick={saveMeta} disabled={savingMeta}>
+                                <button className="btn-primary" onClick={saveMeta} disabled={savingMeta}>
                                     {savingMeta ? (
                                         <><BtnSpinner /> Saving…</>
                                     ) : (
-                                        <><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 15, height: 15 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Configuration</>
+                                        <><Icon name="check" /> Save configuration</>
                                     )}
                                 </button>
                                 {isLocal && (
-                                    <p style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic", display: "flex", alignItems: "center", gap: 6 }}>
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                    <p style={{ fontSize: 13, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+                                        <Icon name="info" size={14} />
                                         Local directory mapping — source code persists even if instance is deleted.
                                     </p>
                                 )}
@@ -865,10 +783,10 @@ export default function BotDetail() {
                             // The copy needs the current node to answer; without it the
                             // only way off is a fresh clone of the repo on the target.
                             const rebuild = sourceOffline || bot.live?.status === "node-offline";
-                            const domainNote = hasDomain && <><br /><span style={{ color: "var(--warning)" }}>⚠ This site has a domain — after moving, repoint its DNS A record to the new node's IP.</span></>;
+                            const domainNote = hasDomain && <><br /><span style={{ color: "var(--warning)" }}><StatusIcon tone="warning" size={13} /> This site has a domain — after moving, repoint its DNS A record to the new node's IP.</span></>;
                             return (
                                 <div style={{ padding: 20, borderRadius: 10, background: "var(--bg-input)", border: `1px solid ${rebuild ? "var(--danger-border)" : "var(--border)"}` }}>
-                                    <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 6px" }}>Move to another node</h3>
+                                    <h3 style={{ ...SUBHEAD, margin: "0 0 6px" }}>Move to another node</h3>
                                     {!rebuild ? (
                                         <p style={{ fontSize: 12.5, color: "var(--text-dim)", margin: "0 0 14px", lineHeight: 1.5 }}>
                                             Transfers all files (data, <span className="mono">.env</span>, git history) to the target node and restarts there. The project is briefly offline during the move.
@@ -911,7 +829,6 @@ export default function BotDetail() {
                                         </select>
                                         <button
                                             className={rebuild ? "btn-danger" : "btn-primary"}
-                                            style={{ padding: "9px 18px", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}
                                             disabled={!migrateTo || migrating}
                                             onClick={() => setConfirm({ action: rebuild ? "rebuild" : "migrate" })}
                                         >
@@ -928,15 +845,14 @@ export default function BotDetail() {
 
                         {/* Danger Zone */}
                         <div style={{ padding: 20, borderRadius: 10, background: 'var(--danger-bg)', border: '1px solid var(--danger-border)' }}>
-                            <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>Danger Zone</h3>
+                            <h3 style={{ ...SUBHEAD, color: 'var(--danger)', margin: '0 0 12px' }}>Danger zone</h3>
                             <button
-                                className="btn-ghost"
-                                style={{ padding: "10px 20px", color: "var(--danger)", border: "1px solid var(--danger-border)", background: "var(--danger-bg)", display: "flex", alignItems: "center", gap: 8 }}
+                                className="btn-danger"
                                 disabled={!!busy}
                                 onClick={() => setConfirm({ action: 'delete' })}
                             >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                                Delete Instance
+                                <Icon name="trash" />
+                                Delete instance
                             </button>
                         </div>
                     </div>
@@ -947,61 +863,60 @@ export default function BotDetail() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                         <div className="card grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-                                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Current Status</p>
-                                <span className="status-pill" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, fontSize: 15, padding: "8px 20px" }}>
-                                    <span className="status-dot" style={{ background: s.color, width: 10, height: 10 }}/>
+                                <p style={{ ...CAPTION, marginBottom: 12 }}>Current status</p>
+                                <span style={{ fontSize: 20, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                    <span className="status-dot" style={{ background: `var(--${s.tone === "neutral" ? "text-dim" : s.tone})` }} />
                                     {s.label}
                                 </span>
                             </div>
                             <div style={{ borderLeft: "1px solid var(--border-light)", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-                                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Uptime</p>
-                                <p style={{ fontSize: 28, fontWeight: 700, color: "var(--accent-hover)" }}>{isOnline ? formatUptime(bot.live?.uptime) : '—'}</p>
+                                <p style={{ ...CAPTION, marginBottom: 12 }}>Uptime</p>
+                                <p style={{ fontSize: 20, fontWeight: 600, color: "var(--text)" }}>{isOnline ? formatUptime(bot.live?.uptime) : '—'}</p>
                             </div>
                             <div style={{ borderLeft: "1px solid var(--border-light)", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-                                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Process Restarts</p>
-                                <p style={{ fontSize: 28, fontWeight: 700, color: "var(--danger)" }}>{bot.live?.restarts ?? 0}</p>
+                                <p style={{ ...CAPTION, marginBottom: 12 }}>Process restarts</p>
+                                <p style={{ fontSize: 20, fontWeight: 600, color: "var(--text)" }}>{bot.live?.restarts ?? 0}</p>
                             </div>
                         </div>
 
                         <div className="card">
                             <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", marginBottom: 24, paddingBottom: 16, borderBottom: "1px solid var(--border-light)" }}>
-                                Live Hardware Metrics
+                                Live hardware metrics
                             </h2>
                             <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
                                 {/* CPU */}
                                 <div>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                            <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconCpu /></span>
-                                            <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>CPU Utilization</span>
+                                            <span style={{ padding: 6, background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><Icon name="cpu" /></span>
+                                            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>CPU utilization</span>
                                         </div>
-                                        <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)" }}>
+                                        <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)" }}>
                                             {cpuPct}%
                                         </span>
                                     </div>
-                                    <ProgressBar percent={cpuPct} color={cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)"} animated={isOnline} />
+                                    <ProgressBar percent={cpuPct} color={cpuPct > 80 ? "var(--danger)" : cpuPct > 50 ? "var(--warning)" : "var(--success)"} />
                                 </div>
                                 {/* Memory */}
                                 <div>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                            <span style={{ padding: 6, background: "var(--bg-input)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><IconMemory /></span>
-                                            <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>Memory Utilization</span>
+                                            <span style={{ padding: 6, background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 6, display: "flex", alignItems: "center", color: "var(--text-muted)" }}><Icon name="memory" /></span>
+                                            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>Memory utilization</span>
                                         </div>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                             <span className="mono" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
                                                 ({memPercent}%)
                                             </span>
-                                            <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: memPercent > 80 ? "var(--danger)" : "var(--accent)" }}>
+                                            <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: memPercent > 80 ? "var(--danger)" : "var(--text)" }}>
                                                 {fmt(bot.live?.memory)}{memLimitBytes ? ` / ${fmt(memLimitBytes)}` : " / 1.00 GB"}
                                             </span>
                                         </div>
                                     </div>
-                                    <ProgressBar percent={memPercent} color={memPercent > 85 ? "var(--danger)" : "var(--accent-hover)"} animated={isOnline} />
+                                    <ProgressBar percent={memPercent} color={memPercent > 85 ? "var(--danger)" : "var(--info)"} />
                                     {memLimitBytes && memPercent >= 80 && (
-                                        <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--danger-bg)", border: "1px solid var(--danger-border)", borderRadius: 6, display: "inline-flex", gap: 8, color: "var(--danger)", fontSize: 13, fontWeight: 500 }}>
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14, flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                            Warning: Memory critical at {memPercent}%. PM2 should restart the process if it hits 100%.
+                                        <div style={{ marginTop: 12 }}>
+                                            <Notice tone="danger">Memory critical at {memPercent}%. PM2 should restart the process if it hits 100%.</Notice>
                                         </div>
                                     )}
                                 </div>
@@ -1017,7 +932,7 @@ export default function BotDetail() {
 
                 {/* Logs Tab */}
                 {tab === 'Logs' && (
-                    <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg-base)", boxShadow: "var(--shadow-popover)" }}>
+                    <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", background: "var(--bg-base)" }}>
                         <LogViewer botId={id} />
                     </div>
                 )}
@@ -1060,9 +975,9 @@ export default function BotDetail() {
             {/* Modals */}
             {confirm?.action === 'update' && (
                 <ConfirmModal
-                    title={isLocal ? 'Rebuild Local Instance?' : 'Synchronize Git Repository?'}
+                    title={isLocal ? 'Rebuild local instance?' : 'Synchronize Git repository?'}
                     message={`${isLocal ? 'Execute the install command' : 'Pull latest changes and reinstall dependencies'}. A running instance is restarted; a stopped one stays stopped.`}
-                    confirmText="Continue Update" danger={false}
+                    confirmText="Continue update" danger={false}
                     onConfirm={() => { setConfirm(null); runAction('update', 'update'); }}
                     onCancel={() => setConfirm(null)}
                 />
@@ -1093,9 +1008,9 @@ export default function BotDetail() {
                 <ConfirmModal
                     title={`Terminate "${bot.name}"?`}
                     message={isLocal
-                        ? "This will stop the PM2 process and remove the instance from the panel.\n\n📂 Your project folder will NOT be deleted."
-                        : "This will stop the PM2 process, remove the instance, and delete the project folder from disk.\n\n⚠️ This action is irreversible."}
-                    confirmText={isLocal ? "Remove from Panel" : "Delete Everything"}
+                        ? "This will stop the PM2 process and remove the instance from the panel.\n\nYour project folder will NOT be deleted."
+                        : "This will stop the PM2 process, remove the instance, and delete the project folder from disk.\n\nThis action is irreversible."}
+                    confirmText={isLocal ? "Remove from panel" : "Delete everything"}
                     onConfirm={handleDelete}
                     onCancel={() => setConfirm(null)}
                 />

@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import Sparkline from "../components/Sparkline";
 import NodeModal from "../components/NodeModal";
+import RangeTabs from "../components/RangeTabs";
 import { RemovalStatus, removalActive } from "../components/RemoveNodeModal";
 import { fmtBytes, fmtPercent } from "../components/MetricChart";
+import { DataTable, Icon, Notice, PageHeader, StatCard, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Servers (/systems) — every VPS side by side, one row each.
@@ -14,19 +16,11 @@ import { fmtBytes, fmtPercent } from "../components/MetricChart";
 //  nodes. Clicking a row opens that node's detail page.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RANGES = [
-    { key: "1h", label: "1H" },
-    { key: "6h", label: "6H" },
-    { key: "24h", label: "24H" },
-    { key: "7d", label: "7D" },
-    { key: "30d", label: "30D" },
-];
-
 const LIVE_POLL_MS = 8000;
 const HISTORY_POLL_MS = 60_000;
 
-const barColor = (pct) =>
-    pct >= 90 ? "var(--danger)" : pct >= 75 ? "var(--warning)" : "var(--success)";
+const barTone = (pct) => (pct >= 90 ? "danger" : pct >= 75 ? "warning" : "success");
+const barColor = (pct) => `var(--${barTone(pct)})`;
 
 const fmtUptime = (s) => {
     if (!Number.isFinite(s)) return "—";
@@ -37,10 +31,10 @@ const fmtUptime = (s) => {
 };
 
 const REMOVAL_LABEL = {
-    running: ["Cleaning up the VPS…", "var(--warning)"],
-    done: ["VPS cleaned up", "var(--success)"],
-    failed: ["VPS clean-up stopped", "var(--danger)"],
-    lost: ["No word from the VPS", "var(--danger)"],
+    running: ["Cleaning up the VPS…", "warning"],
+    done: ["VPS cleaned up", "success"],
+    failed: ["VPS clean-up stopped", "danger"],
+    lost: ["No word from the VPS", "danger"],
 };
 
 /** Nodes removed in the last day — the VPS clean-up keeps going after its modal is closed. */
@@ -48,12 +42,12 @@ function RecentRemovals({ removals }) {
     const [open, setOpen] = useState(null);
     if (!removals.length) return null;
     return (
-        <div className="card" style={{ padding: 0, marginTop: 20, overflow: "hidden" }}>
-            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontSize: 11, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-                Removed nodes (last 24 h)
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontSize: 14, fontWeight: 600 }}>
+                Removed nodes <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-dim)" }}>last 24 h</span>
             </div>
             {removals.map((r) => {
-                const [label, color] = r.vps ? REMOVAL_LABEL[r.vps.status] || [r.vps.status, "var(--text-muted)"] : ["Panel only", "var(--text-muted)"];
+                const [label, tone] = r.vps ? REMOVAL_LABEL[r.vps.status] || [r.vps.status, "neutral"] : ["Panel only", "neutral"];
                 return (
                     <div key={r.id} style={{ borderBottom: "1px solid var(--border)" }}>
                         <div
@@ -63,11 +57,11 @@ function RecentRemovals({ removals }) {
                             <span style={{ fontWeight: 600 }}>{r.name}</span>
                             <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.host}</span>
                             <span style={{ flex: 1 }} />
-                            <span style={{ fontSize: 12, color }}>{label}</span>
+                            <StatusBadge tone={tone}>{label}</StatusBadge>
                             <span style={{ fontSize: 11, color: "var(--text-dim)", whiteSpace: "nowrap" }}>
                                 {new Date(r.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
                             </span>
-                            <span style={{ color: "var(--text-dim)" }}>{open === r.id ? "▾" : "▸"}</span>
+                            <Icon name={open === r.id ? "chevronDown" : "chevronRight"} size={14} style={{ color: "var(--text-dim)" }} />
                         </div>
                         {open === r.id && (
                             <div style={{ padding: "0 16px 14px" }}>
@@ -96,18 +90,6 @@ function MetricCell({ percent, points, width = 96 }) {
                 </div>
             </div>
             <Sparkline values={points} color={color} width={width} height={26} range={[0, 100]} />
-        </div>
-    );
-}
-
-function StatTile({ label, value, sub, color = "var(--text)" }) {
-    return (
-        <div className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--text-muted)", fontWeight: 600 }}>
-                {label}
-            </span>
-            <span className="mono" style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1.1 }}>{value}</span>
-            {sub && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{sub}</span>}
         </div>
     );
 }
@@ -206,140 +188,99 @@ export default function SystemsPage() {
     }, [nodes]);
 
     return (
-        <div className="page fade-in">
-            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
-                <div className="min-w-0">
-                    <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Servers</h1>
-                    <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "6px 0 0" }}>
-                        Every VPS the panel manages. Select one to see its full history.
-                    </p>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <button className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={syncWg} disabled={wg.busy}>
-                    {wg.busy ? "Syncing…" : "Sync WireGuard"}
-                </button>
-                <button className="btn-primary" style={{ padding: "6px 14px", fontSize: 12 }} onClick={() => setAddOpen(true)}>
-                    + Add node
-                </button>
-                <div className="tab-bar" style={{ display: "flex", gap: 4 }}>
-                    {RANGES.map((r) => (
-                        <button
-                            key={r.key}
-                            className={`tab-item${range === r.key ? " active" : ""}`}
-                            style={{ fontSize: 12, padding: "5px 12px" }}
-                            onClick={() => setRange(r.key)}
-                        >
-                            {r.label}
+        <div className="page fade-in" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <PageHeader
+                title="Servers"
+                description="Every VPS the panel manages. Select one to see its full history."
+                actions={
+                    <>
+                        <button className="btn-ghost" onClick={syncWg} disabled={wg.busy}>
+                            <Icon name="refresh" /> {wg.busy ? "Syncing…" : "Sync WireGuard"}
                         </button>
-                    ))}
-                </div>
-                </div>
-            </div>
+                        <button className="btn-primary" onClick={() => setAddOpen(true)}>
+                            <Icon name="plus" /> Add node
+                        </button>
+                        <RangeTabs value={range} onChange={setRange} />
+                    </>
+                }
+            />
 
-            {wg.msg && (
-                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13, marginBottom: 16 }}>
-                    {wg.msg}
-                </div>
-            )}
+            {wg.msg && <Notice tone="info">{wg.msg}</Notice>}
 
-            {error && (
-                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13, marginBottom: 16 }}>
-                    {error}
-                </div>
-            )}
+            {error && <Notice tone="danger">{error}</Notice>}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
-                <StatTile
+            <div className="stat-grid">
+                <StatCard
                     label="Nodes"
                     value={`${totals.nodesOnline}/${totals.nodesTotal}`}
-                    sub="online"
-                    color={totals.nodesOnline === totals.nodesTotal ? "var(--success)" : "var(--warning)"}
+                    hint="online"
+                    tone={totals.nodesOnline === totals.nodesTotal ? "success" : "warning"}
                 />
-                <StatTile label="Projects" value={totals.bots} sub="across all nodes" />
-                <StatTile label="CPU" value={totals.cpu === null ? "—" : fmtPercent(totals.cpu)} sub="weighted by cores" color={totals.cpu === null ? "var(--text)" : barColor(totals.cpu)} />
-                <StatTile label="Memory" value={totals.ram === null ? "—" : fmtPercent(totals.ram)} sub={totals.ramText} color={totals.ram === null ? "var(--text)" : barColor(totals.ram)} />
-                <StatTile label="Disk" value={totals.disk === null ? "—" : fmtPercent(totals.disk)} sub={totals.diskText} color={totals.disk === null ? "var(--text)" : barColor(totals.disk)} />
+                <StatCard label="Projects" value={totals.bots} hint="across all nodes" />
+                <StatCard label="CPU" value={totals.cpu === null ? "—" : fmtPercent(totals.cpu)} hint="weighted by cores" tone={totals.cpu === null ? undefined : barTone(totals.cpu)} />
+                <StatCard label="Memory" value={totals.ram === null ? "—" : fmtPercent(totals.ram)} hint={totals.ramText} tone={totals.ram === null ? undefined : barTone(totals.ram)} />
+                <StatCard label="Disk" value={totals.disk === null ? "—" : fmtPercent(totals.disk)} hint={totals.diskText} tone={totals.disk === null ? undefined : barTone(totals.disk)} />
             </div>
 
-            <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-                <table style={{ width: "100%", minWidth: 880, borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                        <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                            {["System", "CPU", "Memory", "Disk", "Network", "Uptime", "Projects"].map((h, i) => (
-                                <th
-                                    key={h}
-                                    style={{
-                                        textAlign: i === 0 ? "left" : "left",
-                                        padding: "11px 16px",
-                                        fontSize: 11,
-                                        fontWeight: 600,
-                                        letterSpacing: ".08em",
-                                        textTransform: "uppercase",
-                                        color: "var(--text-muted)",
-                                        whiteSpace: "nowrap",
-                                    }}
-                                >
-                                    {h}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading && (
-                            <tr><td colSpan={7} style={{ padding: 28, textAlign: "center", color: "var(--text-muted)" }}>Loading…</td></tr>
-                        )}
-                        {!loading && nodes.length === 0 && (
-                            <tr><td colSpan={7} style={{ padding: 28, textAlign: "center", color: "var(--text-muted)" }}>No nodes registered yet.</td></tr>
-                        )}
-                        {nodes.map((n) => {
-                            const h = hist[n._id] || {};
-                            const s = n.stats;
-                            const offline = n.status !== "online";
-                            const dot = offline ? (n.status === "disabled" ? "var(--text-dim)" : "var(--danger)") : "var(--success)";
-                            return (
-                                <tr
-                                    key={n._id}
-                                    onClick={() => navigate(`/nodes/${n._id}`)}
-                                    style={{ borderBottom: "1px solid var(--border)", cursor: "pointer", opacity: offline ? 0.55 : 1 }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-input)")}
-                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                >
-                                    <td style={{ padding: "13px 16px" }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0, boxShadow: offline ? "none" : "0 0 8px var(--success)" }} />
-                                            <div className="min-w-0">
-                                                <div style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
-                                                    {n.name}
-                                                    {n.isPanelNode && (
-                                                        <span className="badge" style={{ marginLeft: 8, fontSize: 10 }}>panel</span>
-                                                    )}
-                                                </div>
-                                                <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                                                    {offline ? n.status : (s?.cpu?.model ? String(s.cpu.model).slice(0, 34) : n.host)}
-                                                </div>
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <DataTable flush minWidth={880} columns={["System", "CPU", "Memory", "Disk", "Network", "Uptime", "Projects"]}>
+                    {loading && (
+                        <tr><td colSpan={7} style={{ padding: 28, textAlign: "center", color: "var(--text-muted)" }}>Loading…</td></tr>
+                    )}
+                    {!loading && nodes.length === 0 && (
+                        <tr><td colSpan={7} style={{ padding: 28, textAlign: "center", color: "var(--text-muted)" }}>No nodes registered yet.</td></tr>
+                    )}
+                    {nodes.map((n) => {
+                        const h = hist[n._id] || {};
+                        const s = n.stats;
+                        const offline = n.status !== "online";
+                        const dot = offline ? (n.status === "disabled" ? "var(--text-dim)" : "var(--danger)") : "var(--success)";
+                        return (
+                            <tr
+                                key={n._id}
+                                className="row-click"
+                                onClick={() => navigate(`/nodes/${n._id}`)}
+                                style={{ opacity: offline ? 0.55 : 1 }}
+                            >
+                                <td>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                                        <span className="status-dot" style={{ background: dot }} title={n.status} />
+                                        <div className="min-w-0">
+                                            <div style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+                                                {n.name}
+                                                {n.isPanelNode && (
+                                                    <span className="badge" style={{ marginLeft: 8, background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>panel</span>
+                                                )}
+                                            </div>
+                                            <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                                                {offline ? n.status : (s?.cpu?.model ? String(s.cpu.model).slice(0, 34) : n.host)}
                                             </div>
                                         </div>
-                                    </td>
-                                    <td style={{ padding: "13px 16px" }}><MetricCell percent={s?.cpu?.usagePercent} points={h.cpu} /></td>
-                                    <td style={{ padding: "13px 16px" }}><MetricCell percent={s?.memory?.usedPercent} points={h.ram} /></td>
-                                    <td style={{ padding: "13px 16px" }}><MetricCell percent={s?.disk?.usedPercent} points={h.disk} /></td>
-                                    <td className="mono" style={{ padding: "13px 16px", fontSize: 12, whiteSpace: "nowrap", color: "var(--text-muted)" }}>
-                                        {s?.network ? (
-                                            <>
-                                                <div style={{ color: "var(--success)" }}>↓ {fmtBytes(s.network.rxBytesPerSec)}/s</div>
-                                                <div style={{ color: "var(--accent)" }}>↑ {fmtBytes(s.network.txBytesPerSec)}/s</div>
-                                            </>
-                                        ) : "—"}
-                                    </td>
-                                    <td className="mono" style={{ padding: "13px 16px", fontSize: 12, whiteSpace: "nowrap", color: "var(--text-muted)" }}>
-                                        {fmtUptime(s?.uptime)}
-                                    </td>
-                                    <td className="mono" style={{ padding: "13px 16px", fontSize: 13, fontWeight: 600 }}>{n.botCount ?? 0}</td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                                    </div>
+                                </td>
+                                <td><MetricCell percent={s?.cpu?.usagePercent} points={h.cpu} /></td>
+                                <td><MetricCell percent={s?.memory?.usedPercent} points={h.ram} /></td>
+                                <td><MetricCell percent={s?.disk?.usedPercent} points={h.disk} /></td>
+                                <td className="mono nowrap" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                    {s?.network ? (
+                                        <>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }} title="Received">
+                                                <Icon name="arrowDown" size={12} style={{ color: "var(--success)" }} /> {fmtBytes(s.network.rxBytesPerSec)}/s
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 4 }} title="Sent">
+                                                <Icon name="arrowUp" size={12} style={{ color: "var(--info)" }} /> {fmtBytes(s.network.txBytesPerSec)}/s
+                                            </div>
+                                        </>
+                                    ) : "—"}
+                                </td>
+                                <td className="mono nowrap" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                                    {fmtUptime(s?.uptime)}
+                                </td>
+                                <td className="mono" style={{ fontWeight: 600 }}>{n.botCount ?? 0}</td>
+                            </tr>
+                        );
+                    })}
+                </DataTable>
             </div>
 
             <RecentRemovals removals={removals} />

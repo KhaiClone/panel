@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client";
-import { StatusBadge } from "./ui";
+import { Icon, StatusBadge } from "./ui";
 import ConfirmModal from "./ConfirmModal";
 
 /**
@@ -59,8 +59,9 @@ function Progress({ label, cur, accounts, onStop, busy }) {
     return (
         <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
-                    {cur.stopping ? "⏹ Stopping" : "▶"} {label}
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <Icon name={cur.stopping ? "stop" : "play"} size={12} />
+                    {cur.stopping ? `Stopping ${label}` : label}
                 </span>
                 <span style={{ fontSize: 12, color: "var(--text-muted)", flex: 1, minWidth: 160 }}>
                     {cur.done}/{cur.total} account(s)
@@ -68,8 +69,8 @@ function Progress({ label, cur, accounts, onStop, busy }) {
                     {` · ${cur.trigger === "manual" ? "started manually" : "scheduled"} ${fmtClock(cur.startedAt)}`}
                 </span>
                 {!cur.stopping && (
-                    <button className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} disabled={busy} onClick={onStop}>
-                        ■ Stop
+                    <button className="btn-ghost btn-sm" disabled={busy} onClick={onStop}>
+                        <Icon name="stop" size={12} /> Stop
                     </button>
                 )}
             </div>
@@ -86,7 +87,7 @@ function Progress({ label, cur, accounts, onStop, busy }) {
 function Section({ title, children }) {
     return (
         <div style={{ flex: "1 1 260px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+            <p className="section-title" style={{ margin: 0 }}>
                 {title}
             </p>
             {children}
@@ -230,7 +231,9 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ flex: "1 1 280px", minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>⏱ Scheduler</span>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <Icon name="clock" style={{ color: "var(--text-dim)" }} /> Scheduler
+                        </span>
                         <StatusBadge color={pill.color}>{pill.text}</StatusBadge>
                     </div>
                     <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
@@ -254,22 +257,22 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
                         title={paused ? "Resume first" : st.run.current ? "A pass is already running" : ""}
                         onClick={() => setConfirm("run")}
                     >
-                        ▶ Run all now
+                        <Icon name="play" size={14} /> Run all now
                     </button>
                     <button
                         className="btn-ghost"
                         disabled={busy || paused || !!st.enroll.current || !st.subscribers}
                         onClick={() => setConfirm("enroll")}
                     >
-                        ⤓ Enroll now
+                        <Icon name="download" size={14} /> Enroll now
                     </button>
                     {paused ? (
                         <button className="btn-success" disabled={busy} onClick={() => act(() => api.post("/quests/control/resume"), "Resumed.")}>
-                            ▶ Resume
+                            <Icon name="play" size={14} /> Resume
                         </button>
                     ) : (
                         <button className="btn-warning" disabled={busy} onClick={() => setConfirm("pause")}>
-                            ⏸ Pause all
+                            <Icon name="pause" size={14} /> Pause all
                         </button>
                     )}
                 </div>
@@ -301,9 +304,10 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
             {/* ── Schedule settings ── */}
             <button
                 onClick={() => setOpen((o) => !o)}
-                style={{ marginTop: 14, background: "none", border: "none", color: "var(--text-dim)", fontSize: 12, cursor: "pointer", padding: 0 }}
+                aria-expanded={open}
+                style={{ marginTop: 14, background: "none", border: "none", color: "var(--text-dim)", fontSize: 12, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
             >
-                {open ? "▾" : "▸"} Schedule settings{dirty && !open ? " (unsaved)" : ""}
+                <Icon name={open ? "chevronDown" : "chevronRight"} size={14} /> Schedule settings{dirty && !open ? " (unsaved)" : ""}
             </button>
 
             {open && (

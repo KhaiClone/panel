@@ -2,6 +2,7 @@
 export { default as Icon } from "./Icon";
 export { default as PageHeader } from "./PageHeader";
 export { default as StatusBadge } from "./StatusBadge";
+export { default as StatusIcon } from "./StatusIcon";
 export { default as StatCard } from "./StatCard";
 export { default as DataTable } from "./DataTable";
 export { default as EmptyState } from "./EmptyState";

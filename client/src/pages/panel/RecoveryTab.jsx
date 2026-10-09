@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../../api/client";
 import ConfirmModal from "../../components/ConfirmModal";
+import { Icon, StatusBadge, StatusIcon } from "../../components/ui";
 import Section from "./Section";
 
 // ── Backups on Discord and rolling back to one ──────────────────────────────
@@ -128,13 +129,15 @@ function BackupSection({ onRestart, onRestarting }) {
                 <strong style={{ color: "var(--text)" }}>Webhook</strong>
                 {data.configured ? (
                     <span style={{ color: "var(--text-muted)" }}>
-                        {last ? `last backup ${last.ok ? "✅" : "❌"} ${new Date(last.at).toLocaleString()} — ${last.message}` : "no backup sent since the panel started"}
+                        {last
+                            ? <>last backup <StatusIcon tone={last.ok ? "success" : "danger"} /> {new Date(last.at).toLocaleString()} — {last.message}</>
+                            : "no backup sent since the panel started"}
                     </span>
                 ) : (
-                    <span style={{ color: "var(--warning)" }}>⚠️ off — set DISCORD_BACKUP_WEBHOOK in .env</span>
+                    <span style={{ color: "var(--warning)" }}><StatusIcon tone="warning" /> off — set DISCORD_BACKUP_WEBHOOK in .env</span>
                 )}
                 {data.configured && (
-                    <button className="btn-ghost" disabled={!!busy || data.running} onClick={runNow} style={{ padding: "2px 8px", fontSize: 11, marginLeft: "auto" }}>
+                    <button className="btn-ghost btn-sm" disabled={!!busy || data.running} onClick={runNow} style={{ marginLeft: "auto" }}>
                         {busy === "run" || data.running ? "Sending…" : "Backup now"}
                     </button>
                 )}
@@ -147,8 +150,8 @@ function BackupSection({ onRestart, onRestarting }) {
                     </p>
                     <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)", overflowWrap: "anywhere" }}>{pending.join("  ")}</div>
                     <div style={{ display: "flex", gap: 8 }}>
-                        <button className="btn-primary" disabled={!!busy} onClick={onRestart} style={{ padding: "4px 10px", fontSize: 12 }}>Restart now</button>
-                        <button className="btn-ghost" disabled={!!busy} onClick={clear} style={{ padding: "4px 10px", fontSize: 12 }}>{busy === "clear" ? "Removing…" : "Discard"}</button>
+                        <button className="btn-primary btn-sm" disabled={!!busy} onClick={onRestart}>Restart now</button>
+                        <button className="btn-ghost btn-sm" disabled={!!busy} onClick={clear}>{busy === "clear" ? "Removing…" : "Discard"}</button>
                     </div>
                 </div>
             )}
@@ -156,14 +159,15 @@ function BackupSection({ onRestart, onRestarting }) {
             {lastRestore && (
                 <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
                     <span style={{ color: lastRestore.ok ? "var(--success)" : "var(--danger)" }}>
+                        <StatusIcon tone={lastRestore.ok ? "success" : "danger"} />{" "}
                         {lastRestore.ok
-                            ? `✅ Restored backup ${lastRestore.backup} at ${new Date(lastRestore.at).toLocaleString()}: ${lastRestore.restored.join(", ")}`
-                            : `❌ Restore skipped at ${new Date(lastRestore.at).toLocaleString()}: ${lastRestore.error}`}
+                            ? `Restored backup ${lastRestore.backup} at ${new Date(lastRestore.at).toLocaleString()}: ${lastRestore.restored.join(", ")}`
+                            : `Restore skipped at ${new Date(lastRestore.at).toLocaleString()}: ${lastRestore.error}`}
                     </span>
                     {lastRestore.kept?.length > 0 && (
                         <span style={{ color: "var(--text-dim)" }}>Previous files kept in data/: <span className="mono">{lastRestore.kept.join(", ")}</span></span>
                     )}
-                    {(lastRestore.notes || []).map((n, i) => <span key={i} style={{ color: "var(--text-dim)" }}>ℹ️ {n}</span>)}
+                    {(lastRestore.notes || []).map((n, i) => <span key={i} style={{ color: "var(--text-dim)" }}><StatusIcon tone="info" /> {n}</span>)}
                 </div>
             )}
 
@@ -176,7 +180,7 @@ function BackupSection({ onRestart, onRestarting }) {
                     onKeyDown={(e) => e.key === "Enter" && inspect()}
                     style={{ flex: "1 1 280px", minWidth: 0 }}
                 />
-                <button className="btn-primary" disabled={!source.trim() || !!busy} onClick={() => inspect()} style={{ padding: "6px 12px", fontSize: 12 }}>
+                <button className="btn-primary" disabled={!source.trim() || !!busy} onClick={() => inspect()}>
                     {busy === "inspect" ? "Checking…" : "Check backup"}
                 </button>
             </div>
@@ -185,9 +189,9 @@ function BackupSection({ onRestart, onRestarting }) {
                 <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, border: "1px solid var(--danger-border)", background: "var(--danger-bg)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                         <strong style={{ fontSize: 13, color: "var(--text)" }}>Backup {preview.takenAt}</strong>
-                        <span style={{ fontSize: 11, color: "var(--success)" }}>✅ every piece present, checksums match</span>
+                        <span style={{ fontSize: 11, color: "var(--success)" }}><StatusIcon tone="success" size={12} /> every piece present, checksums match</span>
                     </div>
-                    {preview.notes.map((n, i) => <span key={i} style={{ fontSize: 12, color: "var(--text-muted)" }}>ℹ️ {n}</span>)}
+                    {preview.notes.map((n, i) => <span key={i} style={{ fontSize: 12, color: "var(--text-muted)" }}><StatusIcon tone="info" /> {n}</span>)}
 
                     {["panel", "shared"].filter((k) => preview.parts[k]).map((k) => (
                         <div key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -217,10 +221,10 @@ function BackupSection({ onRestart, onRestarting }) {
                     )}
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button className="btn-primary" disabled={!chosenDb || !!busy} onClick={() => setConfirming(true)} style={{ padding: "6px 14px", fontSize: 12, background: "var(--danger)" }}>
+                        <button className="btn-danger" disabled={!chosenDb || !!busy} onClick={() => setConfirming(true)}>
                             {busy === "restore" ? "Staging…" : "Roll back & restart"}
                         </button>
-                        <button className="btn-ghost" disabled={busy === "restore"} onClick={() => setPreview(null)} style={{ padding: "6px 12px", fontSize: 12 }}>Cancel</button>
+                        <button className="btn-ghost" disabled={busy === "restore"} onClick={() => setPreview(null)}>Cancel</button>
                     </div>
                 </div>
             )}
@@ -228,23 +232,23 @@ function BackupSection({ onRestart, onRestarting }) {
             {entries.length > 0 && (
                 <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
                     {shown.map((e, i) => (
-                        <div key={e.messageId} style={{ display: "flex", gap: 10, padding: "6px 12px", fontSize: 12, alignItems: "baseline", flexWrap: "wrap", borderBottom: i < shown.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                        <div key={e.messageId} style={{ display: "flex", gap: 10, padding: "6px 12px", fontSize: 12, alignItems: "center", flexWrap: "wrap", borderBottom: i < shown.length - 1 ? "1px solid var(--border-light)" : "none" }}>
                             <span style={{ color: "var(--text)" }}>{new Date(e.at).toLocaleString()}</span>
                             <span style={{ color: "var(--text-dim)" }}>
                                 {Object.entries(e.dbs).map(([k, d]) => `${k} ${fmtKB(d.gz)}`).join(" · ")}{e.env ? " · .env" : ""}
                             </span>
                             {e.reason === "manual" && <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>manual</span>}
                             <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                                {e.link && <a href={e.link} target="_blank" rel="noreferrer" className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11 }}>Discord ↗</a>}
-                                <button className="btn-ghost" disabled={!!busy} onClick={() => { setSource(e.source); inspect(e.source); }} style={{ padding: "2px 8px", fontSize: 11 }}>Check</button>
+                                {e.link && <a href={e.link} target="_blank" rel="noreferrer" className="btn-ghost btn-sm" style={{ textDecoration: "none" }}>Discord <Icon name="externalLink" size={12} /></a>}
+                                <button className="btn-ghost btn-sm" disabled={!!busy} onClick={() => { setSource(e.source); inspect(e.source); }}>Check</button>
                             </span>
                         </div>
                     ))}
                 </div>
             )}
             <div style={{ display: "flex", gap: 8 }}>
-                {entries.length > 8 && <button className="btn-ghost" onClick={() => setShowAll(!showAll)} style={{ padding: "4px 10px", fontSize: 12 }}>{showAll ? "Show fewer" : `Show all ${entries.length}`}</button>}
-                <button className="btn-ghost" onClick={load} style={{ padding: "4px 10px", fontSize: 12 }}>Refresh</button>
+                {entries.length > 8 && <button className="btn-ghost btn-sm" onClick={() => setShowAll(!showAll)}>{showAll ? "Show fewer" : `Show all ${entries.length}`}</button>}
+                <button className="btn-ghost btn-sm" onClick={load}><Icon name="refresh" size={14} /> Refresh</button>
             </div>
         </div>
     );
@@ -252,8 +256,9 @@ function BackupSection({ onRestart, onRestarting }) {
 
 // ── Moving the panel to another node ────────────────────────────────────────
 
-const CHECK_ICON = { ok: "✅", info: "ℹ️", warn: "⚠️", error: "❌" };
-const STEP_ICON = { running: "⏳", ok: "✅", warn: "⚠️", error: "❌" };
+const CHECK_TONE = { ok: "success", info: "info", warn: "warning", error: "danger" };
+const STEP_MARK = { running: { tone: "accent", icon: "hourglass" }, ok: { tone: "success" }, warn: { tone: "warning" }, error: { tone: "danger" } };
+const JOB_TONE = { done: "success", failed: "danger" };
 
 function MoveResult({ result }) {
     if (!result?.target) return null;
@@ -261,27 +266,26 @@ function MoveResult({ result }) {
     const href = url || `http://${target.host}:${port}`;
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
-            <p style={{ margin: 0, color: "var(--success)", fontWeight: 700 }}>The panel now runs on {target.name}. This copy is being stopped.</p>
+            <p style={{ margin: 0, color: "var(--success)", fontWeight: 600 }}>The panel now runs on {target.name}. This copy is being stopped.</p>
             <p style={{ margin: 0 }}>
                 It answers at <span className="mono">{href}</span>. This node's domains will redirect there once the new panel has flipped them.
             </p>
-            <div><a className="btn-primary" href={href} style={{ padding: "6px 12px", fontSize: 12, display: "inline-block" }}>Open the new panel</a></div>
+            <div><a className="btn-primary btn-sm" href={href} style={{ textDecoration: "none" }}>Open the new panel <Icon name="externalLink" size={12} /></a></div>
         </div>
     );
 }
 
 function MoveJob({ job, lost }) {
     const title = job.kind === "move" ? `Moving the panel to ${job.targetName}` : `Preparing ${job.targetName}`;
-    const statusColor = job.status === "done" ? "var(--success)" : job.status === "failed" ? "var(--danger)" : "var(--accent)";
     return (
         <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <strong style={{ fontSize: 13, color: "var(--text)" }}>{title}</strong>
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: statusColor }}>{job.status}</span>
+                <StatusBadge tone={JOB_TONE[job.status] || "accent"}>{job.status[0].toUpperCase() + job.status.slice(1)}</StatusBadge>
             </div>
             {job.steps.map((s, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "flex-start" }}>
-                    <span>{STEP_ICON[s.status] || "•"}</span>
+                    <StatusIcon {...(STEP_MARK[s.status] || {})} style={{ alignSelf: "flex-start", marginTop: 2 }} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ color: "var(--text)" }}>{s.label}</div>
                         {s.detail && (
@@ -388,10 +392,10 @@ function PanelMoveSection() {
                         <option key={n._id} value={n._id}>{n.name} ({n.host}){n.online ? "" : " — offline"}</option>
                     ))}
                 </select>
-                <button className="btn-ghost" disabled={!targetId || checking || !idle} onClick={runCheck} style={{ padding: "6px 12px", fontSize: 12 }}>
+                <button className="btn-ghost" disabled={!targetId || checking || !idle} onClick={runCheck}>
                     {checking ? "Checking…" : "Check"}
                 </button>
-                <button className="btn-primary" disabled={!pf?.canPrepare || !idle} onClick={start("prepare")} style={{ padding: "6px 12px", fontSize: 12 }} title="Firewall access, dependencies, client build and HTTPS for its domains on the new host — nothing is paused">
+                <button className="btn-primary" disabled={!pf?.canPrepare || !idle} onClick={start("prepare")} title="Firewall access, dependencies, client build and HTTPS for its domains on the new host — nothing is paused">
                     {starting === "prepare" ? "Starting…" : "Prepare"}
                 </button>
             </div>
@@ -402,7 +406,7 @@ function PanelMoveSection() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {pf.checks.map((c, i) => (
                         <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "flex-start" }}>
-                            <span>{CHECK_ICON[c.level] || "•"}</span>
+                            <StatusIcon tone={CHECK_TONE[c.level]} style={{ alignSelf: "flex-start", marginTop: 2 }} />
                             <span style={{ color: c.level === "error" ? "var(--danger)" : c.level === "warn" ? "var(--warning)" : "var(--text-muted)", overflowWrap: "anywhere" }}>{c.message}</span>
                         </div>
                     ))}
@@ -414,7 +418,7 @@ function PanelMoveSection() {
                     <p style={{ margin: 0, fontSize: 13 }}>Every check passed. Type <strong className="mono">{pf.target.name}</strong> to move the panel there.</p>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <input className="input" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={pf.target.name} style={{ flex: "1 1 200px", minWidth: 0 }} />
-                        <button className="btn-primary" disabled={confirmName !== pf.target.name || !!starting} onClick={start("start")} style={{ padding: "6px 14px", fontSize: 12, background: "var(--danger)" }}>
+                        <button className="btn-danger" disabled={confirmName !== pf.target.name || !!starting} onClick={start("start")}>
                             {starting === "start" ? "Starting…" : "Move panel"}
                         </button>
                     </div>
@@ -440,10 +444,10 @@ function PanelMoveSection() {
 export default function RecoveryTab({ onRestart, onRestarting }) {
     return (
         <>
-            <Section icon="💾" title="Backup & Rollback" hint="Hourly to Discord; roll back from a message link" danger>
+            <Section icon="archive" title="Backup & rollback" hint="Hourly to Discord; roll back from a message link" danger>
                 <BackupSection onRestart={onRestart} onRestarting={onRestarting} />
             </Section>
-            <Section icon="🚚" title="Move Panel" hint="Run the panel on another node" danger>
+            <Section icon="truck" title="Move panel" hint="Run the panel on another node" danger>
                 <PanelMoveSection />
             </Section>
         </>

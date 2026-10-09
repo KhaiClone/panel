@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../../api/client";
 import ConfirmModal from "../../components/ConfirmModal";
+import { DataTable, EmptyState, Icon, Notice, StatusBadge } from "../../components/ui";
 import Section from "./Section";
 
 // ── PanelDomainsSection ───────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ function PanelDomainsSection() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {deleteConfirm && (
                 <ConfirmModal
-                    title={`Remove Domain "${deleteConfirm}"`}
+                    title={`Remove domain "${deleteConfirm}"`}
                     message={`This removes "${deleteConfirm}" from its node's nginx config. Its certificate stays on disk.`}
                     confirmText="Remove"
                     onConfirm={() => handleDelete(deleteConfirm)}
@@ -104,21 +105,16 @@ function PanelDomainsSection() {
                         <option key={n._id} value={n._id}>{n.name} ({n.host}){n.isPanelNode ? " — panel" : ""}</option>
                     ))}
                 </select>
-                <button type="submit" className="btn-primary" disabled={adding || !newDomain.trim() || !nodeId} style={{ fontSize: 13, whiteSpace: "nowrap" }}>
-                    {adding ? "Adding…" : "+ Add Domain"}
+                <button type="submit" className="btn-primary" disabled={adding || !newDomain.trim() || !nodeId}>
+                    {!adding && <Icon name="plus" />}
+                    {adding ? "Adding…" : "Add domain"}
                 </button>
             </form>
 
-            {error && (
-                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 13 }}>
-                    {error}
-                </div>
-            )}
+            {error && <Notice tone="danger">{error}</Notice>}
 
             {domains.length === 0 ? (
-                <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
-                    No domains configured. Add one above to reach the panel by name.
-                </div>
+                <EmptyState compact icon="globe" title="No domains configured" description="Add one above to reach the panel by name." />
             ) : (
                 <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
                     {domains.map((d, i) => (
@@ -130,9 +126,9 @@ function PanelDomainsSection() {
                                 borderBottom: i < domains.length - 1 ? "1px solid var(--border-light)" : "none",
                             }}
                         >
-                            <span style={{ fontSize: 15, flexShrink: 0 }}>🌐</span>
+                            <Icon name="globe" style={{ color: "var(--text-dim)" }} />
                             <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-                                <div className="mono" style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <div className="mono" style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {d.sslEnabled ? `https://${d.domain}` : `http://${d.domain}`}
                                 </div>
                                 <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
@@ -140,25 +136,25 @@ function PanelDomainsSection() {
                                 </div>
                             </div>
                             {d.sslEnabled ? (
-                                <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 SSL</span>
+                                <StatusBadge tone="success">SSL</StatusBadge>
                             ) : (
                                 <button
                                     onClick={() => handleSSL(d.domain)}
                                     disabled={sslLoading[d.domain]}
-                                    className="btn-ghost"
-                                    style={{ fontSize: 11, padding: "3px 8px", color: "var(--text-muted)", whiteSpace: "nowrap", flexShrink: 0 }}
+                                    className="btn-ghost btn-sm"
+                                    style={{ flexShrink: 0 }}
                                     title="Let's Encrypt, issued on the domain's node"
                                 >
+                                    <Icon name="lock" size={14} />
                                     {sslLoading[d.domain] ? "Issuing…" : "Enable SSL"}
                                 </button>
                             )}
                             <button
                                 onClick={() => setDeleteConfirm(d.domain)}
-                                className="btn-ghost"
-                                style={{ padding: "4px 8px", color: "var(--danger)", fontSize: 13, flexShrink: 0 }}
+                                className="btn-ghost btn-icon btn-sm is-danger"
                                 title="Remove domain"
                             >
-                                🗑️
+                                <Icon name="trash" size={14} />
                             </button>
                         </div>
                     ))}
@@ -233,80 +229,73 @@ function EnvEditor({ onRestart }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Restart-required banner */}
             {saved && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontSize: 13 }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16, flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    .env saved — restart the panel for new values to take effect.
-                    <button onClick={onRestart} className="btn-warning" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 12, flexShrink: 0 }}>Restart Now</button>
-                </div>
+                <Notice tone="warning">
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <span style={{ flex: "1 1 240px" }}>.env saved — restart the panel for new values to take effect.</span>
+                        <button onClick={onRestart} className="btn-warning btn-sm">Restart now</button>
+                    </div>
+                </Notice>
             )}
 
-            {error && !entries && (
-                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 13 }}>{error}</div>
-            )}
+            {error && !entries && <Notice tone="danger">{error}</Notice>}
 
-            {/* Table */}
-            <div className="scroll-x" style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "auto" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", background: "var(--bg-input)", borderBottom: "1px solid var(--border)", padding: "8px 12px", gap: 8, minWidth: 480 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Key</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Value</span>
-                    <span />
-                </div>
-
+            <DataTable minWidth={480} columns={[{ label: "Key", width: "34%" }, "Value", { label: "", width: 48 }]}>
                 {entries.length === 0 && (
-                    <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No entries found. Click "+ Add Variable" to start.</div>
+                    <tr><td colSpan={3} style={{ padding: 20, textAlign: "center", color: "var(--text-dim)" }}>No entries found. Click "Add variable" to start.</td></tr>
                 )}
 
                 {entries.map((entry) => {
                     const isSensitive = SENSITIVE_RE.test(entry.key);
                     const isRevealed = revealed.has(entry.id);
                     return (
-                        <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "minmax(160px,1fr) 2fr 60px", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border-light)", alignItems: "center", minWidth: 480 }}>
-                            <input
-                                className="input mono"
-                                style={{ fontSize: 12, padding: "5px 8px" }}
-                                placeholder="KEY_NAME"
-                                value={entry.key}
-                                onChange={e => updateEntry(entry.id, "key", e.target.value)}
-                                spellCheck={false}
-                            />
-                            <div style={{ display: "flex", gap: 4 }}>
+                        <tr key={entry.id}>
+                            <td style={{ padding: "6px 6px 6px 12px" }}>
                                 <input
                                     className="input mono"
-                                    style={{ fontSize: 12, padding: "5px 8px", flex: 1 }}
-                                    type={isSensitive && !isRevealed ? "password" : "text"}
-                                    placeholder="value"
-                                    value={entry.value}
-                                    onChange={e => updateEntry(entry.id, "value", e.target.value)}
+                                    style={{ fontSize: 12, padding: "5px 8px" }}
+                                    placeholder="KEY_NAME"
+                                    value={entry.key}
+                                    onChange={e => updateEntry(entry.id, "key", e.target.value)}
                                     spellCheck={false}
                                 />
-                                {isSensitive && (
-                                    <button type="button" onClick={() => toggleReveal(entry.id)} className="btn-ghost" style={{ padding: "4px 7px", fontSize: 13, flexShrink: 0 }} title={isRevealed ? "Hide" : "Reveal"}>
-                                        {isRevealed
-                                            ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                                            : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                                        }
-                                    </button>
-                                )}
-                            </div>
-                            <button type="button" onClick={() => removeRow(entry.id)} className="btn-ghost" style={{ padding: "4px 8px", color: "var(--danger)", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }} title="Delete">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                            </button>
-                        </div>
+                            </td>
+                            <td style={{ padding: "6px" }}>
+                                <div style={{ display: "flex", gap: 4 }}>
+                                    <input
+                                        className="input mono"
+                                        style={{ fontSize: 12, padding: "5px 8px", flex: 1 }}
+                                        type={isSensitive && !isRevealed ? "password" : "text"}
+                                        placeholder="value"
+                                        value={entry.value}
+                                        onChange={e => updateEntry(entry.id, "value", e.target.value)}
+                                        spellCheck={false}
+                                    />
+                                    {isSensitive && (
+                                        <button type="button" onClick={() => toggleReveal(entry.id)} className="btn-ghost btn-icon btn-sm" title={isRevealed ? "Hide" : "Reveal"}>
+                                            <Icon name={isRevealed ? "eyeOff" : "eye"} size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                            </td>
+                            <td className="actions" style={{ padding: "6px 12px 6px 6px" }}>
+                                <button type="button" onClick={() => removeRow(entry.id)} className="btn-ghost btn-icon btn-sm is-danger" title="Delete">
+                                    <Icon name="trash" size={14} />
+                                </button>
+                            </td>
+                        </tr>
                     );
                 })}
-            </div>
+            </DataTable>
 
-            {error && entries && (
-                <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--danger-bg)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 13 }}>{error}</div>
-            )}
+            {error && entries && <Notice tone="danger">{error}</Notice>}
 
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button type="button" onClick={addRow} className="btn-ghost" style={{ fontSize: 13 }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    Add Variable
+                <button type="button" onClick={addRow} className="btn-ghost">
+                    <Icon name="plus" />
+                    Add variable
                 </button>
-                {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)", fontStyle: "italic" }}>Unsaved changes</span>}
-                <button type="button" onClick={handleSave} disabled={saving || !dirty} className="btn-primary" style={{ marginLeft: "auto", fontSize: 13 }}>
+                {dirty && <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Unsaved changes</span>}
+                <button type="button" onClick={handleSave} disabled={saving || !dirty} className="btn-primary" style={{ marginLeft: "auto" }}>
                     {saving ? "Saving…" : "Save .env"}
                 </button>
             </div>
@@ -317,10 +306,10 @@ function EnvEditor({ onRestart }) {
 export default function ConfigTab({ onRestart }) {
     return (
         <>
-            <Section icon="📄" title="Environment Variables" hint=".env — requires a restart to apply">
+            <Section icon="fileText" title="Environment variables" hint=".env — requires a restart to apply">
                 <EnvEditor onRestart={onRestart} />
             </Section>
-            <Section icon="🌐" title="Panel Domains" hint="One per node, via nginx">
+            <Section icon="globe" title="Panel domains" hint="One per node, via nginx">
                 <PanelDomainsSection />
             </Section>
         </>

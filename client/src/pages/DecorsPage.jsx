@@ -4,6 +4,7 @@ import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import DecorPrices from "../components/DecorPrices";
 import DecorPreview from "../components/decor/DecorPreview";
+import { EmptyState, Icon, Modal, Notice, PageHeader, SearchInput } from "../components/ui";
 import "./DecorsPage.css";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,9 +29,9 @@ const TYPE_INFO = {
 const TYPE_FILTERS = [["all", "All"], ...Object.entries(TYPE_INFO).map(([k, t]) => [k, t.label])];
 
 const WAYS = [
-    { key: "loginWithNitro", flag: "noLoginWithNitro", label: "Login (with Nitro)", short: "Nitro", icon: "🔵" },
-    { key: "loginWithoutNitro", flag: "noLoginWithoutNitro", label: "Login (no Nitro)", short: "No Nitro", icon: "⚪" },
-    { key: "gift", flag: "noGift", label: "Gift", short: "Gift", icon: "🎁" },
+    { key: "loginWithNitro", flag: "noLoginWithNitro", label: "Login (with Nitro)", short: "Nitro", icon: "zap" },
+    { key: "loginWithoutNitro", flag: "noLoginWithoutNitro", label: "Login (no Nitro)", short: "No Nitro", icon: "user" },
+    { key: "gift", flag: "noGift", label: "Gift", short: "Gift", icon: "gift" },
 ];
 
 const SALE_FILTERS = [
@@ -149,7 +150,7 @@ function DecorCard({ decor, saving, onOpen, onToggle }) {
             </div>
             <div className="dc-card-tags">
                 <TypeBadge type={decor.type} />
-                {decor.decorFrom === "importedDecors" && <span className="dc-badge dc-badge-limited">⚡ Limited</span>}
+                {decor.decorFrom === "importedDecors" && <span className="dc-badge dc-badge-limited"><Icon name="zap" size={11} /> Limited</span>}
             </div>
             <div className="dc-card-info">
                 <h3 className="dc-card-name">{decor.name}</h3>
@@ -196,9 +197,9 @@ function Pagination({ page, pages, onPage }) {
     });
     return (
         <div className="dc-pages">
-            <button type="button" className="dc-page" disabled={page === 1} onClick={() => onPage(page - 1)}>←</button>
+            <button type="button" className="dc-page" disabled={page === 1} onClick={() => onPage(page - 1)} aria-label="Previous page"><Icon name="chevronLeft" /></button>
             {out}
-            <button type="button" className="dc-page" disabled={page === pages} onClick={() => onPage(page + 1)}>→</button>
+            <button type="button" className="dc-page" disabled={page === pages} onClick={() => onPage(page + 1)} aria-label="Next page"><Icon name="chevronRight" /></button>
         </div>
     );
 }
@@ -225,16 +226,16 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
     return createPortal(
         <div className="modal-overlay" onClick={onClose}>
             <div className="card dc-modal decor-page fade-in" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dc-modal-close" onClick={onClose} aria-label="Close">✕</button>
+                <button type="button" className="dc-modal-close" onClick={onClose} aria-label="Close"><Icon name="x" /></button>
                 <div className="dc-modal-layout">
                     <div className="dc-modal-media">
                         <div className="dc-modal-frame">
                             <DecorPreview decor={decor} replay={replay} />
                         </div>
                         {decor.type === 1 && decor.effects?.length > 0 && (
-                            <button type="button" className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setReplay((n) => n + 1)}>▶ Replay animation</button>
+                            <button type="button" className="btn-ghost btn-sm" onClick={() => setReplay((n) => n + 1)}><Icon name="play" size={12} /> Replay animation</button>
                         )}
-                        {imported && <span className="dc-badge dc-badge-limited" style={{ padding: "4px 10px" }}>⚡ Limited Decor</span>}
+                        {imported && <span className="dc-badge dc-badge-limited" style={{ padding: "4px 10px" }}><Icon name="zap" size={12} /> Limited decor</span>}
                     </div>
 
                     <div style={{ minWidth: 0 }}>
@@ -244,7 +245,9 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                         {decor.summary && <p className="dc-modal-summary">{decor.summary}</p>}
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 11 }}>
                             <span className="mono" style={{ color: "var(--text-dim)" }}>{decor.sku_id}</span>
-                            <button type="button" className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => copy("sku", decor.sku_id)}>{copied === "sku" ? "Copied ✓" : "Copy sku"}</button>
+                            <button type="button" className="btn-ghost btn-sm" onClick={() => copy("sku", decor.sku_id)}>
+                                <Icon name={copied === "sku" ? "check" : "copy"} size={12} /> {copied === "sku" ? "Copied" : "Copy sku"}
+                            </button>
                         </div>
 
                         <div className="dc-section-label">Prices &amp; sale status</div>
@@ -263,9 +266,9 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                                             aria-pressed={on}
                                             title={on ? "On sale — click to turn off" : "Off — click to turn on"}
                                         />
-                                        <span className="dc-price-row-label">{w.icon} {wayLabel(decor, w)}</span>
+                                        <span className="dc-price-row-label"><Icon name={w.icon} size={12} /> {wayLabel(decor, w)}</span>
                                         <div className="dc-price-row-vals">
-                                            {orig != null && <><span className="dc-price-orig">{money(orig)}</span><span style={{ color: "var(--text-dim)" }}>→</span></>}
+                                            {orig != null && <><span className="dc-price-orig">{money(orig)}</span><Icon name="arrowRight" size={12} style={{ color: "var(--text-dim)" }} /></>}
                                             {!on ? (
                                                 <span className="dc-price-note">Not sold{price ? ` (${money(price)})` : ""}</span>
                                             ) : price ? (
@@ -290,7 +293,7 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                                         <button key={m.sku_id} type="button" className="dc-member" onClick={() => onOpen(m.sku_id)}>
                                             <TypeBadge type={m.type} small />
                                             <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
-                                            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>›</span>
+                                            <Icon name="chevronRight" size={12} style={{ color: "var(--text-dim)" }} />
                                         </button>
                                     ))}
                                 </div>
@@ -312,14 +315,14 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                                         <option value="">— Other —</option>
                                         {categories.map((c) => <option key={c.sku_id} value={c.sku_id}>{c.name}</option>)}
                                     </select>
-                                    <button type="button" className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => onDelete(decor)}>Delete</button>
+                                    <button type="button" className="btn-ghost btn-sm is-danger" onClick={() => onDelete(decor)}><Icon name="trash" size={12} /> Delete</button>
                                 </div>
                             </>
                         )}
 
                         <div style={{ marginTop: 20 }}>
-                            <button type="button" className="btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }} onClick={() => copy("shop", `https://discord.com/shop#itemSkuId=${decor.sku_id}`)}>
-                                {copied === "shop" ? "Copied ✓" : "Copy Discord Shop link"}
+                            <button type="button" className="btn-ghost" onClick={() => copy("shop", `https://discord.com/shop#itemSkuId=${decor.sku_id}`)}>
+                                <Icon name={copied === "shop" ? "check" : "copy"} size={14} /> {copied === "shop" ? "Copied" : "Copy Discord Shop link"}
                             </button>
                         </div>
                     </div>
@@ -336,7 +339,7 @@ function ImportForm({ onImported }) {
     const [deco, setDeco] = useState("");
     const [preview, setPreview] = useState(null);
     const [busy, setBusy] = useState(false);
-    const [msg, setMsg] = useState(null); // { ok, text }
+    const [msg, setMsg] = useState(null); // { ok, warn?, text }
 
     const doPreview = async () => {
         if (!deco.trim()) return;
@@ -356,8 +359,8 @@ function ImportForm({ onImported }) {
             const { data } = await api.post("/decors/import", { deco: deco.trim() }, { timeout: 75_000 });
             const parts = [`Imported "${data.decor?.name}" (${data.decor?.sku_id})`];
             if (data.importedMembers?.length) parts.push(`+${data.importedMembers.length} decor(s) in the bundle`);
-            if (data.failedMembers?.length) parts.push(`⚠ ${data.failedMembers.length} decor(s) in the bundle could not be fetched`);
-            setMsg({ ok: true, text: parts.join(" · ") });
+            if (data.failedMembers?.length) parts.push(`${data.failedMembers.length} decor(s) in the bundle could not be fetched`);
+            setMsg({ ok: true, warn: data.failedMembers?.length > 0, text: parts.join(" · ") });
             setDeco(""); setPreview(null);
             onImported();
         } catch (err) {
@@ -378,11 +381,7 @@ function ImportForm({ onImported }) {
                 placeholder="1491907428344795276 or https://discord.com/shop#itemSkuId=…"
                 autoFocus
             />
-            {msg && (
-                <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, background: msg.ok ? "var(--success-bg)" : "var(--danger-bg)", color: msg.ok ? "var(--success)" : "var(--danger)", border: `1px solid ${msg.ok ? "var(--success-border)" : "var(--danger-border)"}` }}>
-                    {msg.text}
-                </div>
-            )}
+            {msg && <Notice tone={!msg.ok ? "danger" : msg.warn ? "warning" : "success"}>{msg.text}</Notice>}
             {preview && (
                 <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                     <div className="decor-page" style={{ width: 120, flexShrink: 0, borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)" }}>
@@ -390,7 +389,7 @@ function ImportForm({ onImported }) {
                     </div>
                     <div style={{ minWidth: 0 }}>
                         <TypeBadge type={preview.type} />
-                        <p style={{ fontSize: 14, fontWeight: 700, margin: "6px 0 2px" }}>{preview.name}</p>
+                        <p style={{ fontSize: 14, fontWeight: 600, margin: "6px 0 2px" }}>{preview.name}</p>
                         <p className="mono" style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
                             {money(preview.prices?.withNitro)} (Nitro) · {money(preview.prices?.withoutNitro)}
                         </p>
@@ -417,15 +416,10 @@ function ImportModal({ onClose, onImported }) {
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
     }, [onClose]);
-    return createPortal(
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="card fade-in modal-card-mobile" style={{ width: "100%", maxWidth: 560, position: "relative" }} onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dc-modal-close decor-page" onClick={onClose} aria-label="Close">✕</button>
-                <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 12px" }}>Import decor</h3>
-                <ImportForm onImported={onImported} />
-            </div>
-        </div>,
-        document.body,
+    return (
+        <Modal title="Import decor" onClose={onClose}>
+            <ImportForm onImported={onImported} />
+        </Modal>
     );
 }
 
@@ -623,22 +617,18 @@ export default function DecorsPage() {
 
     return (
         <div className="fade-in page decor-page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 18 }}>
-            <div className="dc-head">
-                <div>
-                    <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Decor</h1>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "4px 0 0" }}>
-                        Like the decor site, with a sale switch per way: Login with Nitro, Login without Nitro, Gift.
-                    </p>
-                </div>
-                <button type="button" className="btn-primary" onClick={() => setImporting(true)}>＋ Import decor</button>
+            <PageHeader
+                title="Decors"
+                description="Like the decor site, with a sale switch per way: Login with Nitro, Login without Nitro, Gift."
+                actions={<button type="button" className="btn-primary" onClick={() => setImporting(true)}><Icon name="plus" /> Import decor</button>}
+            />
+
+            <div className="tab-bar" style={{ display: "inline-flex", alignSelf: "flex-start" }}>
+                <button type="button" className={`tab-item${tab === "decors" ? " active" : ""}`} onClick={() => setTab("decors")}>Decor ({decors.length})</button>
+                <button type="button" className={`tab-item${tab === "prices" ? " active" : ""}`} onClick={() => setTab("prices")}>Price tiers</button>
             </div>
 
-            <div className="dc-tabs">
-                <button type="button" className={`dc-tab${tab === "decors" ? " active" : ""}`} onClick={() => setTab("decors")}>Decor ({decors.length})</button>
-                <button type="button" className={`dc-tab${tab === "prices" ? " active" : ""}`} onClick={() => setTab("prices")}>Price tiers</button>
-            </div>
-
-            {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13 }}>{error}</div>}
+            {error && <Notice tone="danger">{error}</Notice>}
 
             {tab === "prices" ? (
                 <DecorPrices onChange={fetchDecors} />
@@ -646,7 +636,7 @@ export default function DecorsPage() {
                 <>
                     <div className="dc-toolbar">
                         <div className="dc-toolbar-row">
-                            <input className="input" style={{ flex: "1 1 220px", minWidth: 0, padding: "7px 12px", fontSize: 13 }} placeholder="Search name or sku_id…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                            <SearchInput value={search} onChange={setSearch} placeholder="Search name or sku_id…" style={{ flex: "1 1 220px" }} />
                             <select className="input" style={{ width: "auto", padding: "7px 10px", fontSize: 12 }} value={source} onChange={(e) => setSource(e.target.value)}>
                                 <option value="all">All sources</option>
                                 <option value="decors">Shop (/decor-load)</option>
@@ -671,7 +661,7 @@ export default function DecorsPage() {
                                 {stats.partial > 0 && <button type="button" className="dc-stat dc-stat--warn" onClick={() => setSale("partial")}>Partly off: {stats.partial}</button>}
                                 {stats.off > 0 && <button type="button" className="dc-stat" onClick={() => setSale("off")}>Not for sale: {stats.off}</button>}
                                 {(search || type !== "all" || source !== "all" || sale !== "all") && (
-                                    <button type="button" className="dc-stat" onClick={() => { setSearch(""); setType("all"); setSource("all"); setSale("all"); }}>✕ Clear filters</button>
+                                    <button type="button" className="dc-stat" onClick={() => { setSearch(""); setType("all"); setSource("all"); setSale("all"); }}><Icon name="x" size={12} /> Clear filters</button>
                                 )}
                             </div>
                             <BulkSelect items={filtered} label={`Bulk for the ${filtered.length} filtered decor…`} onRun={runBulk} />
@@ -681,7 +671,11 @@ export default function DecorsPage() {
                     {loading ? (
                         <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Loading decor…</div>
                     ) : filtered.length === 0 ? (
-                        <div style={{ padding: 40, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>{decors.length ? "No decor matches the filters." : "No decor yet."}</div>
+                        <EmptyState
+                            icon="decors"
+                            title={decors.length ? "No decor matches the filters" : "No decor yet"}
+                            description={decors.length ? "Try another type, source or sale status." : undefined}
+                        />
                     ) : shownSections ? (
                         <div className="dc-sections">
                             {shownSections.map(({ key, cat, items }) => (

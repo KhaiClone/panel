@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestControl from "../components/QuestControl";
-import { StatCard, StatusBadge } from "../components/ui";
+import { EmptyState, Icon, PageHeader, StatCard, StatusBadge, Toggle } from "../components/ui";
 
 // ── Shared status metadata (English) ─────────────────────────────────────────
 const STATUS = {
@@ -40,7 +40,7 @@ const retentionText = (a) => {
 
 const modeLabel = (a) =>
     a.mode === "monthly"
-        ? "♾️ Monthly plan"
+        ? "Monthly plan"
         : a.mode === "all"
           ? "All quests"
           : `${a.selectedQuestIds?.length || 0} quest(s)`;
@@ -106,11 +106,11 @@ function EgressMenu() {
                 </p>
                 <p style={{ margin: "2px 0 0", fontSize: 11.5, color: "var(--text-muted)" }}>{hint}</p>
             </div>
-            <input
-                type="checkbox"
+            <Toggle
                 checked={!!pool.settings[field]}
                 disabled={saving}
-                onChange={(e) => save({ [field]: e.target.checked })}
+                onChange={(on) => save({ [field]: on })}
+                title={label}
             />
         </div>
     );
@@ -120,9 +120,10 @@ function EgressMenu() {
             <button
                 onClick={() => setOpen((o) => !o)}
                 className="btn-ghost"
-                style={{ padding: "6px 12px", fontSize: 12.5 }}
+                aria-expanded={open}
             >
-                🌐 Egress: {summary} {open ? "▾" : "▸"}
+                <Icon name="globe" /> Egress: {summary}
+                <Icon name={open ? "chevronDown" : "chevronRight"} size={14} style={{ color: "var(--text-dim)" }} />
             </button>
 
             {open && pool && (
@@ -165,8 +166,8 @@ function EgressMenu() {
                     {err && <p style={{ fontSize: 12, color: "var(--danger)", margin: "10px 0 0" }}>{err}</p>}
 
                     <p style={{ margin: "14px 0 0", fontSize: 12 }}>
-                        <Link to="/proxies" style={{ color: "var(--accent)" }}>
-                            Manage proxies →
+                        <Link to="/proxies" style={{ color: "var(--accent-hover)", display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
+                            Manage proxies <Icon name="arrowRight" size={14} />
                         </Link>
                     </p>
                 </div>
@@ -197,20 +198,25 @@ function AccountRow({ a, live, onOpen }) {
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
                     <span
-                        style={{ width: 34, height: 34, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)", display: "grid", placeItems: "center", fontSize: 15, flexShrink: 0 }}
+                        style={{ width: 34, height: 34, borderRadius: 8, background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)", display: "grid", placeItems: "center", flexShrink: 0 }}
                     >
-                        🎮
+                        <Icon name="gamepad" />
                     </span>
                     <div style={{ minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {a.username}
                         </p>
                         <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-dim)", display: "flex", alignItems: "center", gap: 6 }}>
+                            {a.mode === "monthly" && <Icon name="infinity" size={12} />}
                             {modeLabel(a)}
-                            {a.ref && <span title="Owner linked">· 👤</span>}
+                            {a.ref && (
+                                <span title="Owner linked" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                    · <Icon name="user" size={12} />
+                                </span>
+                            )}
                             {retentionText(a) && (
-                                <span title="Data is kept for 1 week, then deleted (a monthly plan's week starts when it expires)">
-                                    · 🕒 {retentionText(a)}
+                                <span title="Data is kept for 1 week, then deleted (a monthly plan's week starts when it expires)" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                    · <Icon name="clock" size={12} /> {retentionText(a)}
                                 </span>
                             )}
                         </p>
@@ -218,7 +224,7 @@ function AccountRow({ a, live, onOpen }) {
                 </div>
                 <StatusPill status={a.status} />
                 <span style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{progressText}</span>
-                <span style={{ color: "var(--text-dim)", fontSize: 18 }}>›</span>
+                <Icon name="chevronRight" style={{ color: "var(--text-dim)" }} />
             </div>
 
             {pct !== null && (
@@ -293,14 +299,10 @@ export default function QuestsPage() {
         <div className="page fade-in" style={{ maxWidth: 1100 }}>
             {/* ── Page title ── */}
             <div style={{ marginBottom: 24 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>
-                    Auto Quest
-                </h1>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
-                    Monitor every account running quests. Click an account to inspect its quests.
-                    Single-quest accounts are erased 1 week after their run — token, progress and
-                    owner link included.
-                </p>
+                <PageHeader
+                    title="Auto Quest"
+                    description="Monitor every account running quests. Click an account to inspect its quests. Single-quest accounts are erased 1 week after their run — token, progress and owner link included."
+                />
             </div>
 
             {/* ── Scheduler: pause, run now, schedule ── */}
@@ -323,13 +325,7 @@ export default function QuestsPage() {
 
             {/* ── Account list ── */}
             {accounts.length === 0 ? (
-                <div className="card" style={{ padding: "40px 20px", textAlign: "center" }}>
-                    <p style={{ fontSize: 26, margin: "0 0 8px" }}>🕹️</p>
-                    <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0, fontWeight: 600 }}>No accounts yet</p>
-                    <p style={{ color: "var(--text-dim)", fontSize: 12.5, margin: "4px 0 0" }}>
-                        Accounts appear here once a user starts a quest run.
-                    </p>
-                </div>
+                <EmptyState icon="quests" title="No accounts yet" description="Accounts appear here once a user starts a quest run." />
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {accounts.map((a) => (
@@ -342,9 +338,10 @@ export default function QuestsPage() {
             <div style={{ marginTop: 28 }}>
                 <button
                     onClick={() => setShowAdd((s) => !s)}
-                    style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 12, cursor: "pointer", padding: 0 }}
+                    aria-expanded={showAdd}
+                    style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 12, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
                 >
-                    {showAdd ? "▾" : "▸"} Add account manually
+                    <Icon name={showAdd ? "chevronDown" : "chevronRight"} size={14} /> Add account manually
                 </button>
                 {showAdd && (
                     <div className="card" style={{ marginTop: 10, padding: 18, display: "flex", flexDirection: "column", gap: 14, maxWidth: 480 }}>
@@ -378,11 +375,11 @@ export default function QuestsPage() {
 
                         <div className="form-group">
                             <label className="label">Mode</label>
-                            <div style={{ display: "flex", gap: 8 }}>
-                                <button type="button" className={mode === "all" ? "btn-primary" : "btn-ghost"} onClick={() => setMode("all")}>
+                            <div className="tab-bar" style={{ display: "inline-flex", alignSelf: "flex-start" }}>
+                                <button type="button" className={`tab-item${mode === "all" ? " active" : ""}`} onClick={() => setMode("all")}>
                                     Run all now
                                 </button>
-                                <button type="button" className={mode === "monthly" ? "btn-primary" : "btn-ghost"} onClick={() => setMode("monthly")}>
+                                <button type="button" className={`tab-item${mode === "monthly" ? " active" : ""}`} onClick={() => setMode("monthly")}>
                                     Monthly plan
                                 </button>
                             </div>

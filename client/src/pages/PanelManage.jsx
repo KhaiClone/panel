@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  Panel Settings — the panel's own process, config and plumbing, in four tabs
-//  (one URL each: /panel-manage/<tab>). The bar on top — status, Restart,
-//  Rebuild — stays on every tab, so a change anywhere can be applied right there.
+//  (one URL each: /panel-manage/<tab>). The header — status, Restart, Rebuild —
+//  stays on every tab, so a change anywhere can be applied right there.
 //  Each tab lives in pages/panel/.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback } from "react";
@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { Icon, PageHeader, StatusBadge, StatusIcon } from "../components/ui";
 import OverviewTab from "./panel/OverviewTab";
 import ConfigTab from "./panel/ConfigTab";
 import IntegrationsTab from "./panel/IntegrationsTab";
@@ -43,7 +44,7 @@ function ReconnectOverlay({ onReconnected }) {
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "var(--overlay)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
             <div style={{ width: 60, height: 60, borderRadius: "50%", border: "4px solid var(--accent-border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }}/>
             <div style={{ textAlign: "center" }}>
-                <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", margin: "0 0 8px 0" }}>Panel Restarting{dots}</h2>
+                <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--text)", margin: "0 0 8px 0" }}>Panel restarting{dots}</h2>
                 <p style={{ fontSize: 14, color: "var(--text-muted)", margin: "0 0 4px 0" }}>Waiting for the panel to come back online</p>
                 <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>Attempt #{attempt}</p>
             </div>
@@ -52,27 +53,22 @@ function ReconnectOverlay({ onReconnected }) {
     );
 }
 
-function Pill({ color, children }) {
-    return (
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", padding: "2px 8px", borderRadius: 99, background: `color-mix(in srgb, ${color} 12%, transparent)`, color, border: `1px solid color-mix(in srgb, ${color} 25%, transparent)` }}>
-            {children}
-        </span>
-    );
-}
-
 function BuildResult({ buildOutput, onDismiss }) {
     return (
         <div className="card" style={{ padding: 16, border: `1px solid ${buildOutput.success ? 'var(--success-border)' : 'var(--danger-border)'}`, background: buildOutput.success ? 'var(--success-bg)' : 'var(--danger-bg)' }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: buildOutput.output || buildOutput.agents?.length ? 12 : 0 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: buildOutput.success ? "var(--success)" : "var(--danger)", margin: 0 }}>{buildOutput.success ? "✅ Build Successful" : "❌ Build Failed"}</h3>
-                <button onClick={onDismiss} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }}>Dismiss</button>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: buildOutput.success ? "var(--success)" : "var(--danger)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                    <Icon name={buildOutput.success ? "checkCircle" : "xCircle"} />
+                    {buildOutput.success ? "Build successful" : "Build failed"}
+                </h3>
+                <button onClick={onDismiss} className="btn-ghost btn-sm">Dismiss</button>
             </div>
             {buildOutput.message && <p style={{ fontSize: 13, margin: "0 0 8px 0" }}>{buildOutput.message}</p>}
             {buildOutput.agents?.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "0 0 10px 0" }}>
                     {buildOutput.agents.map((a) => (
                         <div key={a.nodeId} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12 }}>
-                            <span>{a.ok ? "✅" : "❌"}</span>
+                            <StatusIcon tone={a.ok ? "success" : "danger"} />
                             <strong style={{ color: "var(--text)", whiteSpace: "nowrap" }}>Agent · {a.name}{a.isPanelNode ? " (panel)" : ""}</strong>
                             <span style={{ color: a.ok ? "var(--text-muted)" : "var(--danger)", minWidth: 0, overflowWrap: "anywhere" }}>{a.message}</span>
                         </div>
@@ -101,7 +97,7 @@ export default function PanelManage() {
 
     const handleRestart = () => {
         setConfirm({
-            title: "Restart Panel",
+            title: "Restart panel",
             message: "The panel will restart. You'll lose connection for a few seconds while it comes back up. Continue?",
             onConfirm: async () => {
                 setConfirm(null);
@@ -116,7 +112,7 @@ export default function PanelManage() {
     // proxy's read timeout on its own.
     const handleRebuild = () => {
         setConfirm({
-            title: "Update Agents, Rebuild & Restart Panel",
+            title: "Update agents, rebuild & restart panel",
             message: "First updates the agent on every node (git pull, install, restart — bots keep running), then rebuilds the client UI and restarts the panel. The panel stays online during the build. Continue?",
             onConfirm: async () => {
                 setConfirm(null); setBuildOutput(null);
@@ -169,23 +165,31 @@ export default function PanelManage() {
             {confirm && <ConfirmModal title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
 
             {/* Status + the two actions every tab may need */}
-            <div className="card" style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <Pill color={isOnline ? "var(--success)" : "var(--danger)"}>{pm2?.status || "Unknown"}</Pill>
-                {env?.isDev && <Pill color="var(--warning)">Dev Mode</Pill>}
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                    v{env?.version || "?"}
-                    {git?.commitHash && <span className="mono" style={{ color: "var(--text-dim)" }}> · {git.commitHash.substring(0, 7)}</span>}
-                    {pm2?.pm_uptime && <> · up {fmtUptime(pm2.pm_uptime)}</>}
-                </span>
-                <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                    <button onClick={handleRestart} disabled={!!building} className="btn-warning" style={{ padding: "6px 12px", fontSize: 12 }} title="Restarts the PM2 process">
-                        🔄 Restart
-                    </button>
-                    <button onClick={handleRebuild} disabled={!!building} className="btn-primary" style={{ padding: "6px 12px", fontSize: 12, cursor: building ? "wait" : "pointer" }} title="Updates every node's agent, then rebuilds and restarts the panel">
-                        {building === "agents" ? "⏳ Updating agents…" : building ? "⏳ Rebuilding…" : "🛠️ Rebuild & Restart"}
-                    </button>
-                </div>
-            </div>
+            <PageHeader
+                title="Panel Settings"
+                description={
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <StatusBadge tone={isOnline ? "success" : "danger"}>{pm2?.status ? pm2.status[0].toUpperCase() + pm2.status.slice(1) : "Unknown"}</StatusBadge>
+                        {env?.isDev && <StatusBadge tone="warning">Dev mode</StatusBadge>}
+                        <span>
+                            v{env?.version || "?"}
+                            {git?.commitHash && <span className="mono" style={{ color: "var(--text-dim)" }}> · {git.commitHash.substring(0, 7)}</span>}
+                            {pm2?.pm_uptime && <> · up {fmtUptime(pm2.pm_uptime)}</>}
+                        </span>
+                    </span>
+                }
+                actions={
+                    <>
+                        <button onClick={handleRestart} disabled={!!building} className="btn-ghost" title="Restarts the PM2 process">
+                            <Icon name="restart" /> Restart
+                        </button>
+                        <button onClick={handleRebuild} disabled={!!building} className="btn-primary" style={{ cursor: building ? "wait" : "pointer" }} title="Updates every node's agent, then rebuilds and restarts the panel">
+                            <Icon name={building ? "hourglass" : "wrench"} />
+                            {building === "agents" ? "Updating agents…" : building ? "Rebuilding…" : "Rebuild & restart"}
+                        </button>
+                    </>
+                }
+            />
 
             {buildOutput && <BuildResult buildOutput={buildOutput} onDismiss={() => setBuildOutput(null)} />}
 

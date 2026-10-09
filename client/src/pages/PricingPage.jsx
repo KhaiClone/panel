@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
+import { DataTable, Field, Notice, PageHeader, StatusBadge, Toggle } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Pricing — bảng giá của các hệ thống auto.
@@ -28,81 +29,15 @@ const fmtUnit = (n, unit) =>
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
-function Toggle({ checked, onChange, disabled, title }) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={checked}
-            disabled={disabled}
-            title={title}
-            onClick={() => onChange(!checked)}
-            style={{
-                width: 40,
-                height: 22,
-                borderRadius: 999,
-                border: "1px solid var(--border)",
-                background: checked ? "var(--accent)" : "var(--bg-input)",
-                position: "relative",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.4 : 1,
-                transition: "background 0.15s",
-                flexShrink: 0,
-            }}
-        >
-            <span
-                style={{
-                    position: "absolute",
-                    top: 2,
-                    left: checked ? 20 : 2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    background: "#fff",
-                    transition: "left 0.15s",
-                }}
-            />
-        </button>
-    );
-}
-
 function Card({ children, style }) {
     return (
-        <div
-            style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                padding: 20,
-                backdropFilter: "var(--glass-blur)",
-                ...style,
-            }}
-        >
+        <div className="card" style={style}>
             {children}
         </div>
     );
 }
 
-function Field({ label, hint, children }) {
-    return (
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-            {children}
-            {hint && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{hint}</span>}
-        </label>
-    );
-}
-
-const inputStyle = {
-    background: "var(--bg-input)",
-    border: "1px solid var(--border)",
-    borderRadius: 8,
-    padding: "8px 10px",
-    color: "var(--text)",
-    fontSize: 13,
-    outline: "none",
-    width: "100%",
-};
+const capitalize = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 // ── Badge pricing table ──────────────────────────────────────────────────────
 
@@ -151,90 +86,62 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                     type="button"
                     disabled={!dirty || saving || !badge.supported}
                     onClick={() => onSave(badgeKey)}
-                    style={{
-                        background: dirty && badge.supported ? "var(--accent)" : "var(--bg-input)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        padding: "8px 16px",
-                        color: "var(--text)",
-                        fontSize: 13,
-                        fontWeight: 500,
-                        cursor: dirty && badge.supported && !saving ? "pointer" : "not-allowed",
-                        opacity: dirty && badge.supported ? 1 : 0.5,
-                    }}
+                    className={dirty && badge.supported ? "btn-primary" : "btn-ghost"}
                 >
                     {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
                 </button>
             </div>
 
-            <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
-                    <thead>
-                        <tr style={{ color: "var(--text-dim)", fontSize: 11, textAlign: "left" }}>
-                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>#</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>TIER / OPTION</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>THRESHOLD</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500 }}>RARITY</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500, width: 150 }}>PRICE (VND)</th>
-                            <th style={{ padding: "6px 8px", fontWeight: 500, width: 70 }}>ON SALE</th>
+            <DataTable
+                flush
+                minWidth={560}
+                columns={["#", "Tier / option", "Threshold", "Rarity", { label: "Price (VND)", width: 150 }, { label: "On sale", width: 70 }]}
+            >
+                {badge.tiers.map((t, i) => {
+                    const d = drafts[t.key] ?? { price: "", enabled: false };
+                    const priced = d.price !== "" && Number(d.price) > 0;
+                    return (
+                        <tr key={t.key}>
+                            <td style={{ color: "var(--text-dim)" }}>{i + 1}</td>
+                            <td>
+                                <div style={{ fontWeight: 500 }}>{t.name}</div>
+                                <div className="cell-sub">{t.key}</div>
+                            </td>
+                            <td style={{ color: "var(--text-muted)" }}>
+                                {fmtUnit(t.threshold, badge.unit)}
+                            </td>
+                            <td>
+                                <StatusBadge color={RARITY_COLOR[t.rarityName]}>{capitalize(t.rarityName)}</StatusBadge>
+                            </td>
+                            <td>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min="0"
+                                    step="1000"
+                                    placeholder="not set"
+                                    value={d.price}
+                                    disabled={!badge.supported}
+                                    onChange={(e) =>
+                                        setDraft(badgeKey, t.key, { price: e.target.value })
+                                    }
+                                    style={{ padding: "6px 8px", fontSize: 13 }}
+                                />
+                            </td>
+                            <td>
+                                <Toggle
+                                    checked={d.enabled}
+                                    disabled={!priced || !badge.supported}
+                                    title={priced ? "" : "Set a price before selling"}
+                                    onChange={(v) =>
+                                        setDraft(badgeKey, t.key, { enabled: v })
+                                    }
+                                />
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        {badge.tiers.map((t, i) => {
-                            const d = drafts[t.key] ?? { price: "", enabled: false };
-                            const priced = d.price !== "" && Number(d.price) > 0;
-                            return (
-                                <tr key={t.key} style={{ borderTop: "1px solid var(--border-light)" }}>
-                                    <td style={{ padding: "8px", color: "var(--text-dim)" }}>{i + 1}</td>
-                                    <td style={{ padding: "8px" }}>
-                                        <div style={{ fontWeight: 500 }}>{t.name}</div>
-                                        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t.key}</div>
-                                    </td>
-                                    <td style={{ padding: "8px", color: "var(--text-muted)" }}>
-                                        {fmtUnit(t.threshold, badge.unit)}
-                                    </td>
-                                    <td style={{ padding: "8px" }}>
-                                        <span
-                                            style={{
-                                                color: RARITY_COLOR[t.rarityName],
-                                                fontSize: 11,
-                                                textTransform: "uppercase",
-                                                letterSpacing: 0.4,
-                                            }}
-                                        >
-                                            {t.rarityName}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: "8px" }}>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="1000"
-                                            placeholder="not set"
-                                            value={d.price}
-                                            disabled={!badge.supported}
-                                            onChange={(e) =>
-                                                setDraft(badgeKey, t.key, { price: e.target.value })
-                                            }
-                                            style={{ ...inputStyle, padding: "6px 8px" }}
-                                        />
-                                    </td>
-                                    <td style={{ padding: "8px" }}>
-                                        <Toggle
-                                            checked={d.enabled}
-                                            disabled={!priced || !badge.supported}
-                                            title={priced ? "" : "Set a price before selling"}
-                                            onChange={(v) =>
-                                                setDraft(badgeKey, t.key, { enabled: v })
-                                            }
-                                        />
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
+                    );
+                })}
+            </DataTable>
         </Card>
     );
 }
@@ -366,8 +273,8 @@ export default function PricingPage() {
 
     if (!pricing || !settings) {
         return (
-            <div style={{ padding: 24, color: "var(--text-muted)" }}>
-                {error ? <span style={{ color: "var(--danger)" }}>{error}</span> : "Loading…"}
+            <div className="page" style={{ color: "var(--text-muted)" }}>
+                {error ? <Notice tone="danger">{error}</Notice> : "Loading…"}
             </div>
         );
     }
@@ -378,43 +285,22 @@ export default function PricingPage() {
     );
 
     return (
-        <div style={{ padding: 24, maxWidth: 1100 }}>
+        <div className="page fade-in" style={{ maxWidth: 1100 }}>
             <div style={{ marginBottom: 20 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Pricing</h1>
-                <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "6px 0 0" }}>
-                    Flat prices per tier — each tier has one fixed price, whatever tier the buyer is on now.
-                    Thresholds are Discord's numbers and cannot be changed here.
-                </p>
+                <PageHeader
+                    title="Pricing"
+                    description="Flat prices per tier — each tier has one fixed price, whatever tier the buyer is on now. Thresholds are Discord's numbers and cannot be changed here."
+                />
             </div>
 
             {error && (
-                <div
-                    style={{
-                        background: "var(--danger-bg)",
-                        border: "1px solid var(--danger-border)",
-                        color: "var(--danger)",
-                        borderRadius: 8,
-                        padding: "10px 14px",
-                        fontSize: 13,
-                        marginBottom: 16,
-                    }}
-                >
-                    {error}
+                <div style={{ marginBottom: 16 }}>
+                    <Notice tone="danger">{error}</Notice>
                 </div>
             )}
             {toast && (
-                <div
-                    style={{
-                        background: "var(--success-bg)",
-                        border: "1px solid var(--success-border)",
-                        color: "var(--success)",
-                        borderRadius: 8,
-                        padding: "10px 14px",
-                        fontSize: 13,
-                        marginBottom: 16,
-                    }}
-                >
-                    {toast}
+                <div style={{ marginBottom: 16 }}>
+                    <Notice tone="success">{toast}</Notice>
                 </div>
             )}
 
@@ -467,7 +353,7 @@ export default function PricingPage() {
                             onChange={(e) =>
                                 setSettings((s) => ({ ...s, nonNitroSurcharge: e.target.value }))
                             }
-                            style={inputStyle}
+                            className="input"
                         />
                     </Field>
                     <Field label="Overshoot multiplier" hint="Makes up for the ~94% credit rate of /science. 1.1 = send 10% extra.">
@@ -477,7 +363,7 @@ export default function PricingPage() {
                             step="0.05"
                             value={settings.overshoot}
                             onChange={(e) => setSettings((s) => ({ ...s, overshoot: e.target.value }))}
-                            style={inputStyle}
+                            className="input"
                         />
                     </Field>
                     <Field label="Forfeit on a wrong declared tier" hint="Applies to buyers without Nitro, checked after payment.">
@@ -496,16 +382,7 @@ export default function PricingPage() {
                     type="button"
                     onClick={saveSettings}
                     disabled={saving === "settings"}
-                    style={{
-                        background: "var(--accent)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        padding: "8px 16px",
-                        color: "var(--text)",
-                        fontSize: 13,
-                        fontWeight: 500,
-                        cursor: saving === "settings" ? "not-allowed" : "pointer",
-                    }}
+                    className="btn-primary"
                 >
                     {saving === "settings" ? "Saving…" : "Save settings"}
                 </button>
@@ -549,7 +426,7 @@ export default function PricingPage() {
                             onChange={(e) =>
                                 setOthers((o) => ({ ...o, questPricePerItem: e.target.value }))
                             }
-                            style={inputStyle}
+                            className="input"
                         />
                     </Field>
                     <Field label="Auto Quest — monthly plan">
@@ -561,7 +438,7 @@ export default function PricingPage() {
                             onChange={(e) =>
                                 setOthers((o) => ({ ...o, questMonthlyPrice: e.target.value }))
                             }
-                            style={inputStyle}
+                            className="input"
                         />
                     </Field>
                 </div>
@@ -570,16 +447,7 @@ export default function PricingPage() {
                     type="button"
                     onClick={saveOthers}
                     disabled={saving === "others"}
-                    style={{
-                        background: "var(--accent)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        padding: "8px 16px",
-                        color: "var(--text)",
-                        fontSize: 13,
-                        fontWeight: 500,
-                        cursor: saving === "others" ? "not-allowed" : "pointer",
-                    }}
+                    className="btn-primary"
                 >
                     {saving === "others" ? "Saving…" : "Save prices"}
                 </button>

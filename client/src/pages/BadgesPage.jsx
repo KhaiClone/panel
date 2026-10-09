@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client";
+import { EmptyState, Notice, PageHeader, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Auto Badge — đơn hàng + duyệt tay.
@@ -10,15 +11,15 @@ import api from "../api/client";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS = {
-    paid:          { label: "Paid",          color: "var(--text-muted)" },
-    verifying:     { label: "Verifying",     color: "var(--accent)" },
-    sending:       { label: "Sending",       color: "var(--accent)" },
-    sent:          { label: "Done",          color: "var(--success)" },
-    manual_review: { label: "Needs review",  color: "var(--warning)" },
-    forfeited:     { label: "Forfeited",     color: "var(--danger)" },
-    refund_due:    { label: "Refund due",    color: "var(--danger)" },
-    token_dead:    { label: "Token dead",    color: "var(--danger)" },
-    error:         { label: "Error",         color: "var(--danger)" },
+    paid:          { label: "Paid",          tone: "neutral" },
+    verifying:     { label: "Verifying",     tone: "accent" },
+    sending:       { label: "Sending",       tone: "accent" },
+    sent:          { label: "Done",          tone: "success" },
+    manual_review: { label: "Needs review",  tone: "warning" },
+    forfeited:     { label: "Forfeited",     tone: "danger" },
+    refund_due:    { label: "Refund due",    tone: "danger" },
+    token_dead:    { label: "Token dead",    tone: "danger" },
+    error:         { label: "Error",         tone: "danger" },
 };
 
 const fmtTime = (ts) => {
@@ -40,51 +41,24 @@ const badgeVi = (k) =>
 
 function Card({ children, style }) {
     return (
-        <div
-            style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                padding: 18,
-                backdropFilter: "var(--glass-blur)",
-                ...style,
-            }}
-        >
+        <div className="card" style={{ padding: 18, ...style }}>
             {children}
         </div>
     );
 }
 
+const BTN_CLASS = { primary: "btn-primary", danger: "btn-danger", default: "btn-ghost" };
+
 function Btn({ children, onClick, tone = "default", disabled }) {
-    const bg =
-        tone === "danger" ? "var(--danger-bg)"
-        : tone === "primary" ? "var(--accent)"
-        : "var(--bg-input)";
-    const fg = tone === "danger" ? "var(--danger)" : "var(--text)";
     return (
-        <button
-            type="button"
-            onClick={onClick}
-            disabled={disabled}
-            style={{
-                background: bg,
-                border: `1px solid ${tone === "danger" ? "var(--danger-border)" : "var(--border)"}`,
-                borderRadius: 8,
-                padding: "6px 12px",
-                color: fg,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.5 : 1,
-            }}
-        >
+        <button type="button" onClick={onClick} disabled={disabled} className={`${BTN_CLASS[tone] || BTN_CLASS.default} btn-sm`}>
             {children}
         </button>
     );
 }
 
 function OrderRow({ order, onAction, busy }) {
-    const st = STATUS[order.status] ?? { label: order.status, color: "var(--text-muted)" };
+    const st = STATUS[order.status] ?? { label: order.status, tone: "neutral" };
     const pct = order.total ? Math.round((order.sent / order.total) * 100) : 0;
 
     return (
@@ -129,7 +103,7 @@ function OrderRow({ order, onAction, busy }) {
                 </div>
 
                 <div style={{ flex: "0 0 130px", textAlign: "right" }}>
-                    <div style={{ color: st.color, fontSize: 12, fontWeight: 500 }}>{st.label}</div>
+                    <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                     {order.status === "sending" && (
                         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
                             {order.sent}/{order.total} ({pct}%)
@@ -166,10 +140,10 @@ function OrderRow({ order, onAction, busy }) {
 // ── Pool reader ──────────────────────────────────────────────────────────────────
 
 const READER_STATUS = {
-    ok:        { label: "Working",       color: "var(--success)" },
-    no_nitro:  { label: "Nitro lapsed",  color: "var(--warning)" },
-    dead:      { label: "Token dead",    color: "var(--danger)" },
-    unknown:   { label: "Not checked",   color: "var(--text-dim)" },
+    ok:        { label: "Working",       tone: "success" },
+    no_nitro:  { label: "Nitro lapsed",  tone: "warning" },
+    dead:      { label: "Token dead",    tone: "danger" },
+    unknown:   { label: "Not checked",   tone: "neutral" },
 };
 
 function ReaderPool({ pool, onAdd, onAction, busy }) {
@@ -195,12 +169,7 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                 }}
             >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span
-                        style={{
-                            width: 8, height: 8, borderRadius: "50%",
-                            background: pool?.ok ? "var(--success)" : "var(--danger)",
-                        }}
-                    />
+                    <span className="status-dot" style={{ background: pool?.ok ? "var(--success)" : "var(--danger)" }} />
                     <span style={{ fontSize: 14, fontWeight: 600 }}>Reader pool</span>
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                         {pool
@@ -234,34 +203,26 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                     }}
                 >
                     <div style={{ flex: "2 1 280px" }}>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
+                        <label className="label">
                             Token (the account must have Nitro)
-                        </div>
+                        </label>
                         <input
+                            className="input"
                             type="password"
                             value={token}
                             onChange={(e) => setToken(e.target.value)}
                             placeholder="Paste a Discord token"
-                            style={{
-                                background: "var(--bg-input)", border: "1px solid var(--border)",
-                                borderRadius: 8, padding: "8px 10px", color: "var(--text)",
-                                fontSize: 13, outline: "none", width: "100%",
-                            }}
                         />
                     </div>
                     <div style={{ flex: "1 1 140px" }}>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
+                        <label className="label">
                             Label (optional)
-                        </div>
+                        </label>
                         <input
+                            className="input"
                             value={label}
                             onChange={(e) => setLabel(e.target.value)}
                             placeholder="e.g. main account"
-                            style={{
-                                background: "var(--bg-input)", border: "1px solid var(--border)",
-                                borderRadius: 8, padding: "8px 10px", color: "var(--text)",
-                                fontSize: 13, outline: "none", width: "100%",
-                            }}
                         />
                     </div>
                     <Btn tone="primary" disabled={busy || !token.trim()} onClick={submit}>
@@ -303,7 +264,7 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                             )}
                         </div>
                         <div style={{ flex: "0 0 110px", textAlign: "right" }}>
-                            <div style={{ color: st.color, fontSize: 12 }}>{st.label}</div>
+                            <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
                             {r.onCooldown && (
                                 <div style={{ fontSize: 11, color: "var(--warning)" }}>
                                     cooling down until {fmtTime(r.cooldownUntil)}
@@ -414,24 +375,17 @@ export default function BadgesPage() {
     const pending = orders.filter((o) => o.status === "manual_review").length;
 
     return (
-        <div style={{ padding: 24, maxWidth: 1100 }}>
-            <div style={{ marginBottom: 18 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Auto Badge</h1>
-                <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "6px 0 0" }}>
-                    Badge orders. Payment happens on ArnTo-Auto; the panel reads the real progress, then
-                    sends — once sent, the order is done. Press "Verify now" if you need to cross-check.
-                </p>
+        <div className="page fade-in" style={{ maxWidth: 1100 }}>
+            <div style={{ marginBottom: 20 }}>
+                <PageHeader
+                    title="Auto Badge"
+                    description={'Badge orders. Payment happens on ArnTo-Auto; the panel reads the real progress, then sends — once sent, the order is done. Press "Verify now" if you need to cross-check.'}
+                />
             </div>
 
             {error && (
-                <div
-                    style={{
-                        background: "var(--danger-bg)", border: "1px solid var(--danger-border)",
-                        color: "var(--danger)", borderRadius: 8, padding: "10px 14px",
-                        fontSize: 13, marginBottom: 14,
-                    }}
-                >
-                    {error}
+                <div style={{ marginBottom: 14 }}>
+                    <Notice tone="danger">{error}</Notice>
                 </div>
             )}
 
@@ -444,12 +398,7 @@ export default function BadgesPage() {
                         key={s || "all"}
                         type="button"
                         onClick={() => setFilter(s)}
-                        style={{
-                            background: filter === s ? "var(--accent-dim)" : "var(--bg-input)",
-                            border: `1px solid ${filter === s ? "var(--accent)" : "var(--border)"}`,
-                            borderRadius: 999, padding: "4px 12px", color: "var(--text)",
-                            fontSize: 12, cursor: "pointer",
-                        }}
+                        className={`chip${filter === s ? " active" : ""}`}
                     >
                         {s === "" ? "All" : (STATUS[s]?.label ?? s)}
                         {s === "manual_review" && pending > 0 ? ` (${pending})` : ""}
@@ -457,17 +406,15 @@ export default function BadgesPage() {
                 ))}
             </div>
 
-            <Card>
-                {orders.length === 0 ? (
-                    <div style={{ color: "var(--text-dim)", fontSize: 13, padding: "8px 0" }}>
-                        No orders yet.
-                    </div>
-                ) : (
-                    orders.map((o) => (
+            {orders.length === 0 ? (
+                <EmptyState compact icon="badges" title="No orders yet" />
+            ) : (
+                <Card>
+                    {orders.map((o) => (
                         <OrderRow key={o.orderId} order={o} onAction={onAction} busy={busy} />
-                    ))
-                )}
-            </Card>
+                    ))}
+                </Card>
+            )}
         </div>
     );
 }

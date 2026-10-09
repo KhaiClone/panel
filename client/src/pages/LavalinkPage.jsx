@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client";
-import { StatusBadge } from "../components/ui";
+import { EmptyState, Icon, Modal, Notice, PageHeader, StatCard, StatusBadge } from "../components/ui";
 import LiveLog from "../components/LiveLog";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,15 +28,15 @@ const POLL_MS = 30_000;
 const SOURCES = ["youtube", "bandcamp", "soundcloud", "twitch", "vimeo", "nico", "http", "local"];
 
 const STATE_META = {
-    running: { label: "running", color: "var(--success)" },
-    "config-drift": { label: "config drift", color: "var(--warning)" },
-    stopped: { label: "stopped", color: "var(--text-dim)" },
-    "not-installed": { label: "not installed", color: "var(--text-dim)" },
-    errored: { label: "errored", color: "var(--danger)" },
-    "java-missing": { label: "java missing", color: "var(--danger)" },
-    "java-too-old": { label: "java too old", color: "var(--danger)" },
-    "agent-outdated": { label: "agent outdated", color: "var(--warning)" },
-    "node-offline": { label: "node offline", color: "var(--danger)" },
+    running: { label: "Running", color: "var(--success)" },
+    "config-drift": { label: "Config drift", color: "var(--warning)" },
+    stopped: { label: "Stopped", color: "var(--text-dim)" },
+    "not-installed": { label: "Not installed", color: "var(--text-dim)" },
+    errored: { label: "Errored", color: "var(--danger)" },
+    "java-missing": { label: "Java missing", color: "var(--danger)" },
+    "java-too-old": { label: "Java too old", color: "var(--danger)" },
+    "agent-outdated": { label: "Agent outdated", color: "var(--warning)" },
+    "node-offline": { label: "Node offline", color: "var(--danger)" },
 };
 
 const NOT_INSTALLED = ["not-installed", "java-missing", "java-too-old"];
@@ -69,7 +69,7 @@ const fmtSince = (ts) => {
 };
 
 function Pill({ state }) {
-    const meta = STATE_META[state] || { label: state || "unknown", color: "var(--text-dim)" };
+    const meta = STATE_META[state] || { label: state || "Unknown", color: "var(--text-dim)" };
     return <StatusBadge color={meta.color}>{meta.label}</StatusBadge>;
 }
 
@@ -89,26 +89,10 @@ function Field({ label, hint, children }) {
 
 // ── Tổng quan ────────────────────────────────────────────────────────────────
 
-const TONE = { ok: "var(--success)", warn: "var(--warning)", bad: "var(--danger)" };
-
-function StatTile({ label, value, sub, tone }) {
-    return (
-        <div className="card" style={{ padding: "14px 16px" }}>
-            <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                {label}
-            </p>
-            <p style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 700, color: tone ? TONE[tone] : "var(--text)" }}>
-                {value}
-            </p>
-            {sub ? <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-dim)" }}>{sub}</p> : null}
-        </div>
-    );
-}
-
 function Metric({ label, value, dim }) {
     return (
         <div>
-            <p style={{ margin: 0, fontSize: 10, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+            <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)" }}>
                 {label}
             </p>
             <p style={{ margin: "1px 0 0", fontSize: 13, fontWeight: 600, color: dim ? "var(--text-muted)" : "var(--text)" }}>
@@ -121,23 +105,13 @@ function Metric({ label, value, dim }) {
 /** A warning strip above the table, with an optional button on its right. */
 function Alert({ children, action }) {
     return (
-        <div
-            className="card"
-            style={{
-                padding: "12px 16px",
-                marginBottom: 12,
-                fontSize: 13,
-                color: "var(--warning)",
-                border: "1px solid var(--warning-border)",
-                background: "var(--warning-bg)",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                flexWrap: "wrap",
-            }}
-        >
-            <div style={{ flex: 1, minWidth: 220 }}>{children}</div>
-            {action}
+        <div style={{ marginBottom: 12 }}>
+            <Notice tone="warning">
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 220 }}>{children}</div>
+                    {action}
+                </div>
+            </Notice>
         </div>
     );
 }
@@ -155,8 +129,8 @@ function CopyCode({ text }) {
     return (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 6 }}>
             <code style={{ flex: 1, color: "var(--text)", wordBreak: "break-all", fontSize: 12 }}>{text}</code>
-            <button type="button" className="btn-ghost" style={{ padding: "2px 10px", fontSize: 11 }} onClick={copy}>
-                {copied ? "Copied" : "Copy"}
+            <button type="button" className="btn-ghost btn-sm" onClick={copy}>
+                <Icon name={copied ? "check" : "copy"} size={14} /> {copied ? "Copied" : "Copy"}
             </button>
         </div>
     );
@@ -231,35 +205,33 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
     const source = tokenerHasLog ? which : "lavalink";
     const src = `/api/lavalink/nodes/${n.nodeId}/logs/stream?which=${source}&lines=200`;
     const canLog = n.online && n.state !== "agent-outdated" && !notInstalled;
-    const btn = { padding: "6px 12px", fontSize: 12 };
 
     return (
         <div style={{ padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {notInstalled ? (
-                    <button className="btn-primary" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("install", "Install")}>
+                    <button className="btn-primary btn-sm" disabled={!!busy || !n.online} onClick={() => onAction("install", "Install")}>
                         Install Lavalink
                     </button>
                 ) : (
                     <>
                         <button
-                            className="btn-ghost"
-                            style={btn}
+                            className="btn-ghost btn-sm"
                             disabled={!!busy || !n.online}
                             onClick={() => onAction(running ? "restart" : "start", running ? "Restart" : "Start")}
                         >
-                            {running ? "Restart" : "Start"}
+                            <Icon name={running ? "restart" : "play"} size={14} /> {running ? "Restart" : "Start"}
                         </button>
                         {running && (
-                            <button className="btn-ghost" style={btn} disabled={!!busy} onClick={() => onAction("stop", "Stop")}>
-                                Stop
+                            <button className="btn-ghost btn-sm" disabled={!!busy} onClick={() => onAction("stop", "Stop")}>
+                                <Icon name="stop" size={14} /> Stop
                             </button>
                         )}
-                        <button className="btn-ghost" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("sync", "Sync config")}>
-                            Sync
+                        <button className="btn-ghost btn-sm" disabled={!!busy || !n.online} onClick={() => onAction("sync", "Sync config")}>
+                            <Icon name="refresh" size={14} /> Sync
                         </button>
-                        <button className="btn-ghost" style={btn} disabled={!!busy || !n.online} onClick={() => onAction("update", "Update")}>
-                            Update
+                        <button className="btn-ghost btn-sm" disabled={!!busy || !n.online} onClick={() => onAction("update", "Update")}>
+                            <Icon name="download" size={14} /> Update
                         </button>
                     </>
                 )}
@@ -320,7 +292,7 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
                     height={340}
                     toolbarStart={
                         tokenerHasLog ? (
-                            <div style={{ display: "flex", gap: 4 }}>
+                            <div className="tab-bar" style={{ display: "inline-flex" }}>
                                 <ModePill active={source === "lavalink"} onClick={() => setWhich("lavalink")}>
                                     Lavalink
                                 </ModePill>
@@ -329,7 +301,7 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
                                 </ModePill>
                             </div>
                         ) : (
-                            <span style={{ fontSize: 12, fontWeight: 600 }}>Log Lavalink</span>
+                            <span style={{ fontSize: 12, fontWeight: 600 }}>Lavalink log</span>
                         )
                     }
                 />
@@ -368,18 +340,13 @@ function NodeRows({ n, open, onToggle, cols, wantsTokener, ...detail }) {
             >
                 <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                        <span
-                            style={{
-                                fontSize: 10,
-                                color: "var(--text-dim)",
-                                transition: "transform 0.15s ease",
-                                transform: open ? "rotate(90deg)" : "none",
-                            }}
-                        >
-                            ▶
-                        </span>
+                        <Icon
+                            name="chevronRight"
+                            size={14}
+                            style={{ color: "var(--text-dim)", transition: "transform 0.15s ease", transform: open ? "rotate(90deg)" : "none" }}
+                        />
                         <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {n.nodeName}
                             </div>
                             <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{n.host}</div>
@@ -717,23 +684,29 @@ export default function LavalinkPage() {
     return (
         <div className="fade-in page-compact">
             {/* ── Header ──────────────────────────────────────────────────── */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                <div style={{ flex: 1, minWidth: 240 }}>
-                    <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Lavalink</h1>
-                    <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-                        One Lavalink per node, all sharing one config. Bots connect to{" "}
-                        <code>127.0.0.1:{eff.port}</code> on their own node.
-                    </p>
-                </div>
-                <span className="hide-mobile" style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                    updated {fmtClock(statusAt)} · refreshes every 30s
-                </span>
-                <button className="btn-ghost" disabled={!!busy} onClick={() => run("Refreshing…", async () => null)}>
-                    Refresh
-                </button>
-                <button className="btn-primary" disabled={!!busy} onClick={checkUpdate}>
-                    Check for updates
-                </button>
+            <div style={{ marginBottom: 16 }}>
+                <PageHeader
+                    title="Lavalink"
+                    description={
+                        <>
+                            One Lavalink per node, all sharing one config. Bots connect to{" "}
+                            <code className="mono">127.0.0.1:{eff.port}</code> on their own node.
+                        </>
+                    }
+                    actions={
+                        <>
+                            <span className="hide-mobile" style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                                updated {fmtClock(statusAt)} · refreshes every 30s
+                            </span>
+                            <button className="btn-ghost" disabled={!!busy} onClick={() => run("Refreshing…", async () => null)}>
+                                <Icon name="refresh" /> Refresh
+                            </button>
+                            <button className="btn-primary" disabled={!!busy} onClick={checkUpdate}>
+                                Check for updates
+                            </button>
+                        </>
+                    }
+                />
             </div>
 
             {busy && (
@@ -748,38 +721,38 @@ export default function LavalinkPage() {
                 </div>
             )}
             {err && (
-                <div className="card" style={{ padding: "12px 16px", marginBottom: 12, color: "var(--danger)", fontSize: 13, border: "1px solid var(--danger-border)" }}>
-                    {err}
+                <div style={{ marginBottom: 12 }}>
+                    <Notice tone="danger">{err}</Notice>
                 </div>
             )}
             {msg && (
-                <div className="card" style={{ padding: "12px 16px", marginBottom: 12, color: "var(--success)", fontSize: 13, border: "1px solid var(--success-border)" }}>
-                    {msg}
+                <div style={{ marginBottom: 12 }}>
+                    <Notice tone="success">{msg}</Notice>
                 </div>
             )}
 
             {/* ── Overview ────────────────────────────────────────────────── */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
-                <StatTile
+            <div className="stat-grid" style={{ marginBottom: 16 }}>
+                <StatCard
                     label="Nodes running"
                     value={`${runningCount}/${nodes.length}`}
-                    tone={nodes.length && runningCount === nodes.length ? "ok" : runningCount ? "warn" : "bad"}
+                    tone={nodes.length && runningCount === nodes.length ? "success" : runningCount ? "warning" : "danger"}
                 />
-                <StatTile
+                <StatCard
                     label="Player"
                     value={totalPlayers === null ? "—" : `${totalPlayers}`}
-                    sub={totalPlayers === null ? "unreadable" : `${playingPlayers} playing`}
+                    hint={totalPlayers === null ? "unreadable" : `${playingPlayers} playing`}
                 />
-                <StatTile
+                <StatCard
                     label="Version"
                     value={fleetVersion || "—"}
-                    sub={newerRelease ? `${release.version} available` : release?.version ? "latest" : release?.error || ""}
-                    tone={newerRelease ? "warn" : undefined}
+                    hint={newerRelease ? `${release.version} available` : release?.version ? "latest" : release?.error || ""}
+                    tone={newerRelease ? "warning" : undefined}
                 />
-                <StatTile
+                <StatCard
                     label="GitHub check"
                     value={fmtTime(settings?.lastCheckAt)}
-                    sub={settings?.autoUpdate ? `auto-update 02:00 ${form.timezone}` : "auto-update is off"}
+                    hint={settings?.autoUpdate ? `auto-update 02:00 ${form.timezone}` : "auto-update is off"}
                 />
             </div>
             {settings?.lastError && (
@@ -833,9 +806,7 @@ export default function LavalinkPage() {
                     )}
 
                     {nodes.length === 0 ? (
-                        <div className="card" style={{ padding: 30, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
-                            No node is enabled yet.
-                        </div>
+                        <EmptyState icon="lavalink" title="No node is enabled yet" />
                     ) : (
                         <div className="card scroll-x" style={{ padding: 0 }}>
                             <table className="data-table">
@@ -879,7 +850,7 @@ export default function LavalinkPage() {
             {tab === "config" && (
                 <div className="slide-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <div className="card" style={{ padding: "18px 20px" }}>
-                        <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700 }}>Operation</h2>
+                        <h2 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 600 }}>Operation</h2>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, alignItems: "end" }}>
                             <Field label="Heap (-Xmx)" hint="JVM flag for running Lavalink, not part of the yaml">
                                 <input className="input" value={form.heap ?? ""} onChange={set("heap")} />
@@ -897,8 +868,8 @@ export default function LavalinkPage() {
 
                     <div className="card" style={{ padding: "18px 20px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-                            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, flex: 1 }}>Shared config</h2>
-                            <div style={{ display: "flex", gap: 6 }}>
+                            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, flex: 1 }}>Shared config</h2>
+                            <div className="tab-bar" style={{ display: "inline-flex" }}>
                                 <ModePill active={!eff.custom} disabled={!!busy} onClick={() => switchMode("form")}>
                                     Panel form
                                 </ModePill>
@@ -1138,7 +1109,7 @@ export default function LavalinkPage() {
                 </Modal>
             )}
             {showYaml && (
-                <Modal title="application.yml" onClose={() => setShowYaml(false)}>
+                <Modal title="application.yml" onClose={() => setShowYaml(false)} width={900}>
                     <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{yaml}</pre>
                 </Modal>
             )}
@@ -1146,57 +1117,17 @@ export default function LavalinkPage() {
     );
 }
 
+/** One segment of a .tab-bar: the log source, or the config's form / file mode. */
 function ModePill({ active, disabled, onClick, children }) {
     return (
         <button
             type="button"
             disabled={disabled}
             onClick={onClick}
-            style={{
-                background: active ? "var(--accent-dim)" : "var(--bg-input)",
-                border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                color: active ? "var(--accent-hover)" : "var(--text-muted)",
-                borderRadius: 999,
-                padding: "5px 14px",
-                fontSize: 12,
-                fontWeight: active ? 600 : 400,
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.6 : 1,
-            }}
+            className={`tab-item${active ? " active" : ""}`}
+            style={{ fontSize: 12, opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
         >
             {children}
         </button>
-    );
-}
-
-function Modal({ title, onClose, children }) {
-    return (
-        <div
-            onClick={onClose}
-            style={{
-                position: "fixed",
-                inset: 0,
-                background: "var(--overlay)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 100,
-                padding: 20,
-            }}
-        >
-            <div
-                className="card"
-                onClick={(e) => e.stopPropagation()}
-                style={{ padding: 20, maxWidth: 900, width: "100%", maxHeight: "80vh", overflow: "auto" }}
-            >
-                <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: 1 }}>{title}</h3>
-                    <button className="btn-ghost" style={{ padding: "4px 10px" }} onClick={onClose}>
-                        Close
-                    </button>
-                </div>
-                {children}
-            </div>
-        </div>
     );
 }

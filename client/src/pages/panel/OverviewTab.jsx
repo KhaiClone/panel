@@ -5,27 +5,21 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import api from "../../api/client";
+import { Icon, StatCard, StatusIcon } from "../../components/ui";
 import Section from "./Section";
 import { fmtBytes, fmtUptime } from "./format";
-
-// Icon beside the label rather than the value, so four fit a row — and two on a phone.
-function StatCard({ icon, label, value, sub, accent = "var(--text)" }) {
-    return (
-        <div className="card" style={{ padding: "12px 14px", minWidth: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0", display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 13 }}>{icon}</span>{label}
-            </p>
-            <p style={{ fontSize: 18, fontWeight: 700, color: accent, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</p>
-            {sub && <p style={{ fontSize: 10, color: "var(--text-dim)", margin: "2px 0 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</p>}
-        </div>
-    );
-}
 
 // ── Health checklist ─────────────────────────────────────────────────────────
 // Reads the same endpoints the other tabs do; each check turns a response into
 // { level, text }. Nothing here changes anything.
 
-const LEVEL_ICON = { ok: "✅", warn: "⚠️", error: "❌", off: "⏸️", loading: "⏳" };
+const LEVEL_MARK = {
+    ok: { tone: "success" },
+    warn: { tone: "warning" },
+    error: { tone: "danger" },
+    off: { tone: "neutral", icon: "pause" },
+    loading: { tone: "neutral", icon: "hourglass" },
+};
 const LEVEL_COLOR = { ok: "var(--text-muted)", warn: "var(--warning)", error: "var(--danger)", off: "var(--text-dim)", loading: "var(--text-dim)" };
 
 /** "5m", "2h 10m" — time since `at`, without the seconds. */
@@ -108,16 +102,18 @@ function HealthChecklist() {
                 {CHECKS.map((c, i) => {
                     const res = results[c.id] || { level: "loading", text: "Checking…" };
                     return (
-                        <div key={c.id} style={{ display: "flex", gap: 10, padding: "9px 12px", fontSize: 13, alignItems: "baseline", flexWrap: "wrap", borderBottom: i < CHECKS.length - 1 ? "1px solid var(--border-light)" : "none" }}>
-                            <span style={{ flexShrink: 0 }}>{LEVEL_ICON[res.level]}</span>
-                            <strong style={{ color: "var(--text)", minWidth: 110 }}>{c.label}</strong>
+                        <div key={c.id} style={{ display: "flex", gap: 10, padding: "8px 12px", fontSize: 13, alignItems: "center", flexWrap: "wrap", borderBottom: i < CHECKS.length - 1 ? "1px solid var(--border-light)" : "none" }}>
+                            <StatusIcon {...LEVEL_MARK[res.level]} />
+                            <span style={{ color: "var(--text)", fontWeight: 500, minWidth: 110 }}>{c.label}</span>
                             <span style={{ flex: "1 1 240px", minWidth: 0, fontSize: 12, color: LEVEL_COLOR[res.level], overflowWrap: "anywhere" }}>{res.text}</span>
-                            <Link to={c.to || `/panel-manage/${c.tab}`} className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11, textDecoration: "none", flexShrink: 0 }}>Open →</Link>
+                            <Link to={c.to || `/panel-manage/${c.tab}`} className="btn-ghost btn-sm" style={{ textDecoration: "none", flexShrink: 0 }}>
+                                Open <Icon name="chevronRight" size={14} />
+                            </Link>
                         </div>
                     );
                 })}
             </div>
-            <div><button className="btn-ghost" onClick={runAll} style={{ padding: "4px 10px", fontSize: 12 }}>Check again</button></div>
+            <div><button className="btn-ghost btn-sm" onClick={runAll}><Icon name="refresh" size={14} /> Check again</button></div>
         </div>
     );
 }
@@ -140,24 +136,28 @@ function PanelLogs() {
     useEffect(() => { if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [logs]);
 
     return (
-        <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: showLogs ? 400 : 0, maxHeight: 600, padding: 0, overflow: "hidden" }}>
-            <div style={{ padding: "12px 16px", borderBottom: showLogs ? "1px solid var(--border)" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>📋</span>
-                    <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Panel Logs</h2>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    {showLogs && <button onClick={fetchLogs} disabled={logsLoading} className="btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }}>{logsLoading ? "⏳" : "🔄 Refresh"}</button>}
-                    <button onClick={() => setShowLogs(!showLogs)} className="btn-primary" style={{ padding: "4px 8px", fontSize: 11 }}>{showLogs ? "Hide Logs" : "Load Logs"}</button>
-                </div>
-            </div>
+        <Section
+            icon="terminal"
+            title="Panel logs"
+            flush
+            actions={
+                <>
+                    {showLogs && (
+                        <button onClick={fetchLogs} disabled={logsLoading} className="btn-ghost btn-sm">
+                            <Icon name="refresh" size={14} /> {logsLoading ? "Loading…" : "Refresh"}
+                        </button>
+                    )}
+                    <button onClick={() => setShowLogs(!showLogs)} className={showLogs ? "btn-ghost btn-sm" : "btn-primary btn-sm"}>{showLogs ? "Hide logs" : "Load logs"}</button>
+                </>
+            }
+        >
             {showLogs && (
-                <div className="mono" style={{ flex: 1, padding: 16, background: "var(--bg-base)", overflowY: "auto", fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                <div className="mono" style={{ height: 400, maxHeight: "60vh", padding: 16, background: "var(--bg-base)", overflowY: "auto", fontSize: 11, color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                     {logs}
                     <div ref={logsEndRef} />
                 </div>
             )}
-        </div>
+        </Section>
     );
 }
 
@@ -165,13 +165,13 @@ export default function OverviewTab({ status }) {
     const { env, git, pm2 } = status;
     return (
         <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 120px), 1fr))", gap: 12 }}>
-                <StatCard icon="⚡" label="Version" value={`v${env?.version || "?"}`} sub={git?.commitHash ? `Commit: ${git.commitHash.substring(0, 7)}` : ""} />
-                <StatCard icon="⏱️" label="Uptime" value={fmtUptime(pm2?.pm_uptime)} sub={`${pm2?.restarts ?? 0} restart(s)`} />
-                <StatCard icon="💾" label="Memory" value={fmtBytes(pm2?.monit?.memory)} sub="Panel RAM usage" />
-                <StatCard icon="🖥️" label="CPU" value={`${pm2?.monit?.cpu || 0}%`} sub="Panel CPU usage" />
+            <div className="stat-grid">
+                <StatCard label="Version" value={`v${env?.version || "?"}`} hint={git?.commitHash ? `Commit ${git.commitHash.substring(0, 7)}` : ""} />
+                <StatCard label="Uptime" value={fmtUptime(pm2?.pm_uptime)} hint={`${pm2?.restarts ?? 0} restart(s)`} />
+                <StatCard label="Memory" value={fmtBytes(pm2?.monit?.memory)} hint="Panel RAM usage" />
+                <StatCard label="CPU" value={`${pm2?.monit?.cpu || 0}%`} hint="Panel CPU usage" />
             </div>
-            <Section icon="🩺" title="Health" hint="Each line opens the tab that fixes it">
+            <Section icon="activity" title="Health" hint="Each line opens the tab that fixes it">
                 <HealthChecklist />
             </Section>
             <PanelLogs />
