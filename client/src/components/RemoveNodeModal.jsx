@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
+import { Icon, Notice, StatusIcon } from "./ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  RemoveNodeModal — the way back from "Add node".
@@ -20,7 +21,7 @@ import api from "../api/client";
 //  lists the same removals for a day (RemovalStatus).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STEP_ICON = { running: "⏳", ok: "✅", warn: "⚠️", error: "❌" };
+const STEP_MARK = { running: { tone: "accent", icon: "hourglass" }, ok: { tone: "success" }, warn: { tone: "warning" }, error: { tone: "danger" } };
 const POLL_MS = 3000;
 
 const CHOICES = [
@@ -71,18 +72,12 @@ const manualCommand = (parts) =>
         .map(([, flag]) => ` ${flag}`)
         .join("");
 
-const box = (kind, children) => {
-    const c = {
-        danger: ["var(--danger-bg)", "var(--danger)", "var(--danger-border)"],
-        warn: ["var(--warning-bg)", "var(--warning)", "var(--warning-border)"],
-        info: ["var(--bg-input)", "var(--text-muted)", "var(--border)"],
-    }[kind];
-    return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: c[0], color: c[1], border: `1px solid ${c[2]}`, fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {children}
-        </div>
-    );
-};
+const NOTICE_TONE = { danger: "danger", warn: "warning", info: "info" };
+const box = (kind, children) => (
+    <Notice tone={NOTICE_TONE[kind]}>
+        <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{children}</div>
+    </Notice>
+);
 
 const projectPath = (b) => `/${b.projectType === "website" ? "sites" : "bots"}/${b._id}`;
 
@@ -128,7 +123,7 @@ export function RemovalStatus({ removal: r }) {
                 <strong style={{ fontSize: 13, color: "var(--text)" }}>Panel</strong>
                 {r.steps.map((s, i) => (
                     <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "flex-start" }}>
-                        <span>{STEP_ICON[s.status] || "•"}</span>
+                        <StatusIcon {...(STEP_MARK[s.status] || {})} style={{ alignSelf: "flex-start", marginTop: 1 }} />
                         <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ color: "var(--text)" }}>{s.label}</div>
                             {s.detail && (
@@ -137,7 +132,11 @@ export function RemovalStatus({ removal: r }) {
                         </div>
                     </div>
                 ))}
-                {!r.done && <div style={{ fontSize: 12, color: "var(--text-dim)" }}>⏳ Cleaning up what the panel kept for the node…</div>}
+                {!r.done && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "var(--text-dim)" }}>
+                        <StatusIcon tone="accent" icon="hourglass" /> Cleaning up what the panel kept for the node…
+                    </div>
+                )}
             </div>
 
             {v && (
@@ -216,11 +215,13 @@ export default function RemoveNodeModal({ node, onClose, onRemoved, onOpenProjec
         <div className="modal-overlay" onClick={busy ? undefined : close}>
             <div className="card slide-up modal-card-mobile" style={{ width: "100%", maxWidth: 600, padding: 0, maxHeight: "90vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
                 <div style={{ padding: "18px 24px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 12 }}>
-                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, flex: 1 }}>
+                    <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0, flex: 1 }}>
                         {removal ? `Removing "${removal.name}"` : `Remove node "${node.name}"`}
                     </h2>
                     {!busy && (
-                        <button onClick={close} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}>✕</button>
+                        <button type="button" className="btn-ghost btn-icon" style={{ width: 28, height: 28, border: "none" }} title="Close" onClick={close}>
+                            <Icon name="x" />
+                        </button>
                     )}
                 </div>
 
@@ -234,7 +235,7 @@ export default function RemoveNodeModal({ node, onClose, onRemoved, onOpenProjec
                         <>
                             {!impact && !impactError && box("info", "Checking what is on this node…")}
                             {impactError && box("danger", impactError)}
-                            {impact?.isPanelNode && box("danger", "This is the node the panel itself runs on — it cannot be removed. Move the panel to another node first (Panel Settings → Move Panel).")}
+                            {impact?.isPanelNode && box("danger", "This is the node the panel itself runs on — it cannot be removed. Move the panel to another node first (Panel Settings → Move panel).")}
                             {impact && !impact.isPanelNode && impact.bots.length > 0 && box("danger", (
                                 <>
                                     <b>{impact.bots.length} project(s) still live on this node</b>, so it cannot be removed yet — the panel would lose track of them.
@@ -252,7 +253,7 @@ export default function RemoveNodeModal({ node, onClose, onRemoved, onOpenProjec
 
                             {!blocked && impact.staleCopies.length > 0 && box("warn", (
                                 <>
-                                    ⚠ {impact.staleCopies.length} project(s) were moved off this node while it was down and are still in its PM2 list. The panel would stop them when the node answers again; once it is removed it cannot. If that machine boots again they run <b>alongside their new copies</b> — stop them there:
+                                    {impact.staleCopies.length} project(s) were moved off this node while it was down and are still in its PM2 list. The panel would stop them when the node answers again; once it is removed it cannot. If that machine boots again they run <b>alongside their new copies</b> — stop them there:
                                     <ul style={listStyle}>
                                         {impact.staleCopies.map((c) => (
                                             <li key={c.pm2Name}>{c.name} — <span className="mono">pm2 delete {c.pm2Name} && pm2 save</span></li>

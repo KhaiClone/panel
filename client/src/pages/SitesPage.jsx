@@ -6,17 +6,19 @@ import GroupManager from "../components/GroupManager";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import NodeFilter, { matchNode } from "../components/NodeFilter";
-import { StatCard } from "../components/ui";
+import { EmptyState, Icon, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
-// ── Status styles ─────────────────────────────────────────────────────────────
-const STATUS_STYLES = {
-    online:  { color: "var(--success)", bg: "var(--success-bg)", border: "var(--success-border)", label: "Online" },
-    stopped: { color: "var(--danger)",  bg: "var(--danger-bg)",  border: "var(--danger-border)",  label: "Stopped" },
-    errored: { color: "var(--orange)", bg: "var(--orange-bg)", border: "var(--orange-border)",     label: "Errored" },
+// ── Status, as on the Bots page ──────────────────────────────────────────────
+const STATUS = {
+    online:    { tone: "success", label: "Online" },
+    stopped:   { tone: "neutral", label: "Stopped" },
+    errored:   { tone: "danger",  label: "Errored" },
+    launching: { tone: "warning", label: "Starting" },
 };
-const getStyle = (s) => STATUS_STYLES[s] ?? {
-    color: "var(--text-muted)", bg: "var(--bg-hover)", border: "var(--border)", label: s ?? "Unknown",
-};
+const getStatus = (s) => STATUS[s] ?? { tone: "neutral", label: s ?? "Unknown" };
+
+const GRID = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))", gap: 16 };
+const CHIP = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)", flexShrink: 0 };
 
 // ── SiteCard ─────────────────────────────────────────────────────────────────
 function SiteCard({ site, onRefresh }) {
@@ -24,7 +26,7 @@ function SiteCard({ site, onRefresh }) {
     const [busy, setBusy] = useState(false);
     const [confirm, setConfirm] = useState(null);
 
-    const s = getStyle(site.live?.status);
+    const s = getStatus(site.live?.status);
     const wc = site.websiteConfig || {};
     const isOnline = site.live?.status === "online";
     const isStopped = !isOnline;
@@ -62,37 +64,26 @@ function SiteCard({ site, onRefresh }) {
     return (
         <>
             <div className="card card-hover" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", opacity: busy ? 0.7 : 1, transition: "opacity 0.2s" }}>
-                <div style={{ padding: "16px 18px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ padding: "14px 16px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
                     {/* Header row */}
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                        <div style={{ width: 38, height: 38, borderRadius: 10, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--success)", flexShrink: 0 }}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 18, height: 18 }}>
-                                <circle cx="12" cy="12" r="10"/>
-                                <line x1="2" y1="12" x2="22" y2="12"/>
-                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                            </svg>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--bg-input)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", flexShrink: 0 }}>
+                            <Icon name="globe" />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                                <h3 style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                <h3 style={{ fontWeight: 500, fontSize: 14, color: "var(--text)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                     {site.name}
                                 </h3>
-                                <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "2px 6px", borderRadius: 4,
-                                    background: wc.mode === "fullstack" ? "var(--warning-bg)" : "var(--success-bg)",
-                                    color: wc.mode === "fullstack" ? "var(--warning)" : "var(--success)",
-                                    border: `1px solid ${wc.mode === "fullstack" ? "var(--warning-border)" : "var(--success-border)"}`,
-                                    flexShrink: 0 }}>
-                                    {wc.mode === "fullstack" ? "Full-Stack" : "Static"}
+                                <span className="badge" style={CHIP}>
+                                    {wc.mode === "fullstack" ? "Full-stack" : "Static"}
                                 </span>
                             </div>
-                            <p className="mono" style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <p className="mono" style={{ fontSize: 11, color: "var(--text-dim)", margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {site.buyerID}
                             </p>
                         </div>
-                        <span className="status-pill" style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color, fontSize: 11, padding: "3px 8px", flexShrink: 0 }}>
-                            <span className="status-dot" style={{ background: s.color, width: 6, height: 6 }} />
-                            {s.label}
-                        </span>
+                        <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
                     </div>
 
                     {/* Domain / SSL row */}
@@ -102,34 +93,34 @@ function SiteCard({ site, onRefresh }) {
                                 {accessUrl}
                             </span>
                         ) : (
-                            <span style={{ fontSize: 12, color: "var(--text-dim)", fontStyle: "italic" }}>No domain — port {wc.port}</span>
+                            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>No domain — port {wc.port}</span>
                         )}
                         {wc.sslEnabled
-                            ? <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)", flexShrink: 0 }}>🔒 SSL</span>
-                            : wc.domain && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", flexShrink: 0 }}>⚠ No SSL</span>
+                            ? <StatusBadge tone="success">SSL</StatusBadge>
+                            : wc.domain && <StatusBadge tone="danger">No SSL</StatusBadge>
                         }
                     </div>
                 </div>
 
                 {/* Footer actions */}
-                <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border-light)", display: "flex", gap: 6, background: "var(--bg-base)" }}>
+                <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)", display: "flex", gap: 4, alignItems: "center" }}>
                     {isStopped ? (
-                        <button className="btn-success" style={{ padding: "5px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }} onClick={() => action("start")} disabled={busy} title="Start">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <button className="btn-ghost btn-icon btn-sm" style={{ border: "none" }} onClick={() => action("start")} disabled={busy} title="Start">
+                            <Icon name="play" size={14} />
                         </button>
                     ) : (
-                        <button className="btn-danger" style={{ padding: "5px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }} onClick={() => action("stop")} disabled={busy} title="Stop">
-                            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 14, height: 14 }}><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                        <button className="btn-ghost btn-icon btn-sm" style={{ border: "none" }} onClick={() => action("stop")} disabled={busy} title="Stop">
+                            <Icon name="stop" size={14} />
                         </button>
                     )}
-                    <button className="btn-warning" style={{ padding: "5px 10px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }} onClick={() => action("restart")} disabled={busy} title="Restart">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 14, height: 14 }}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    <button className="btn-ghost btn-icon btn-sm" style={{ border: "none" }} onClick={() => action("restart")} disabled={busy} title="Restart">
+                        <Icon name="restart" size={14} />
                     </button>
-                    <button className="btn-primary" style={{ flex: 1, padding: "5px 10px", fontSize: 12 }} onClick={() => navigate(`/sites/${site._id}`)} disabled={busy}>
+                    <button className="btn-ghost btn-sm" style={{ flex: 1, marginLeft: 4 }} onClick={() => navigate(`/sites/${site._id}`)} disabled={busy}>
                         Manage
                     </button>
-                    <button className="btn-ghost" style={{ padding: "5px 8px", color: "var(--danger)", fontSize: 12, display: "flex", alignItems: "center" }} onClick={() => setConfirm({ action: "delete" })} disabled={busy} title="Delete">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 14, height: 14 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    <button className="btn-ghost btn-icon btn-sm is-danger" style={{ border: "none" }} onClick={() => setConfirm({ action: "delete" })} disabled={busy} title="Delete">
+                        <Icon name="trash" size={14} />
                     </button>
                 </div>
             </div>
@@ -151,9 +142,26 @@ function SiteCard({ site, onRefresh }) {
     );
 }
 
+function SkeletonCard() {
+    return (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", gap: 12 }}>
+                    <div className="skeleton" style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0 }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div className="skeleton" style={{ height: 14, borderRadius: 4 }} />
+                        <div className="skeleton" style={{ height: 10, borderRadius: 4, width: "60%" }} />
+                    </div>
+                </div>
+                <div className="skeleton" style={{ height: 24, borderRadius: 6 }} />
+            </div>
+        </div>
+    );
+}
+
 // ── SitesPage ─────────────────────────────────────────────────────────────────
 export default function SitesPage() {
-    const { bots: allBots, groups, loading, refresh: fetchAll } = useData();
+    const { bots: allBots, loading, refresh: fetchAll } = useData();
     const [searchParams] = useSearchParams();
     const [showCreate, setShowCreate] = useState(false);
     const [showGroups, setShowGroups] = useState(false);
@@ -180,40 +188,24 @@ export default function SitesPage() {
     });
 
     return (
-        <div className="fade-in page" style={{ maxWidth: 1600 }}>
-
-            {/* Header */}
-            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
-                <div className="min-w-0" style={{ flex: 1 }}>
-                    <h1 style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>
-                        Sites
-                    </h1>
-                    <p style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 4 }}>
-                        Manage and monitor your hosted websites
-                    </p>
-                </div>
-                <div className="mobile-wrap" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                    <button className="btn-ghost btn-full-mobile" onClick={() => setShowGroups(true)}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}>
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                            <circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                        </svg>
-                        Manage Groups
-                    </button>
-                    <button className="btn-primary btn-full-mobile" onClick={() => setShowCreate(true)}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16 }}>
-                            <line x1="12" y1="5" x2="12" y2="19"/>
-                            <line x1="5" y1="12" x2="19" y2="12"/>
-                        </svg>
-                        New Site
-                    </button>
-                </div>
-            </div>
+        <div className="fade-in page" style={{ maxWidth: 1600, display: "flex", flexDirection: "column", gap: 20 }}>
+            <PageHeader
+                title="Sites"
+                description="Manage and monitor your hosted websites"
+                actions={
+                    <>
+                        <button className="btn-ghost btn-full-mobile" onClick={() => setShowGroups(true)}>
+                            <Icon name="users" /> Manage groups
+                        </button>
+                        <button className="btn-primary btn-full-mobile" onClick={() => setShowCreate(true)}>
+                            <Icon name="plus" /> New site
+                        </button>
+                    </>
+                }
+            />
 
             {/* Stats */}
-            <div className="stat-grid" style={{ marginBottom: 28 }}>
+            <div className="stat-grid">
                 <StatCard label="Total sites" value={sites.length} />
                 <StatCard label="Online" value={online} tone="success" />
                 <StatCard label="SSL active" value={ssl} tone="success" />
@@ -221,74 +213,43 @@ export default function SitesPage() {
             </div>
 
             {/* Filter bar */}
-            <div className="card" style={{ marginBottom: 20, padding: "12px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
-                <div style={{ position: "relative", flex: "1 1 250px", maxWidth: 400 }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16, position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-dim)", pointerEvents: "none" }}>
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input className="input" style={{ paddingLeft: 38 }} placeholder="Search by name, ID, or domain…" value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
+            <div className="toolbar">
+                <SearchInput value={search} onChange={setSearch} placeholder="Search by name, ID or domain…" style={{ flex: "1 1 250px", maxWidth: 400 }} />
                 <div className="tab-bar">
-                    {["all", "online", "stopped"].map(f => (
-                        <button key={f} className={`tab-item ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)} style={{ textTransform: "capitalize" }}>{f}</button>
+                    {[["all", "All"], ["online", "Online"], ["stopped", "Stopped"]].map(([f, label]) => (
+                        <button key={f} className={`tab-item ${filter === f ? "active" : ""}`} onClick={() => setFilter(f)}>
+                            {label}
+                        </button>
                     ))}
                 </div>
                 <NodeFilter bots={sites} value={nodeFilter} onChange={setNodeFilter} />
-                <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--text-dim)", fontWeight: 500 }}>
-                    {visible.length} / {sites.length}
-                </span>
+                <span className="toolbar-count">{visible.length} / {sites.length}</span>
             </div>
 
             {/* Grid */}
             {loading && sites.length === 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))", gap: 16 }}>
-                    {[1, 2, 3].map(i => (
-                        <div key={i} className="card" style={{ padding: 0, overflow: "hidden" }}>
-                            <div className="skeleton" style={{ height: 3 }} />
-                            <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-                                <div style={{ display: "flex", gap: 12 }}>
-                                    <div className="skeleton" style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0 }} />
-                                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-                                        <div className="skeleton" style={{ height: 14, borderRadius: 4 }} />
-                                        <div className="skeleton" style={{ height: 10, borderRadius: 4, width: "60%" }} />
-                                    </div>
-                                </div>
-                                <div className="skeleton" style={{ height: 24, borderRadius: 6 }} />
-                            </div>
-                        </div>
-                    ))}
+                <div style={GRID}>
+                    {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
                 </div>
             )}
 
             {!loading && visible.length === 0 && (
-                <div className="card" style={{ textAlign: "center", padding: "72px 24px", borderStyle: "dashed" }}>
-                    <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--bg-input)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 36, height: 36, color: "var(--text-dim)" }}>
-                            <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                        </svg>
-                    </div>
-                    <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
-                        {sites.length === 0 ? "No sites yet" : "No matches found"}
-                    </h3>
-                    <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 24, maxWidth: 360, margin: "0 auto 24px" }}>
-                        {sites.length === 0
-                            ? "Deploy your first static site or full-stack website."
-                            : "Try adjusting your search or filter."}
-                    </p>
-                    {sites.length === 0 && (
+                <EmptyState
+                    icon="sites"
+                    title={sites.length === 0 ? "No sites yet" : "No matches found"}
+                    description={sites.length === 0
+                        ? "Deploy your first static site or full-stack website."
+                        : "Try adjusting your search or filter."}
+                    action={sites.length === 0 && (
                         <button className="btn-primary" onClick={() => setShowCreate(true)}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 16, height: 16 }}>
-                                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                            Deploy First Site
+                            <Icon name="plus" /> Deploy first site
                         </button>
                     )}
-                </div>
+                />
             )}
 
             {!loading && visible.length > 0 && (
-                <div className="slide-up" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))", gap: 16 }}>
+                <div className="slide-up" style={GRID}>
                     {visible.map(site => (
                         <SiteCard key={site._id} site={site} onRefresh={fetchAll} />
                     ))}

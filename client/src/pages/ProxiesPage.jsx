@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
+import { EmptyState, Icon, Modal, Notice, PageHeader, StatusBadge, Toggle } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Proxy Pool — the proxies YOU give the panel, plus the switches that decide
@@ -43,56 +44,6 @@ const fmtTime = (ts) => {
         return "—";
     }
 };
-
-// ── Small building blocks ────────────────────────────────────────────────────
-
-function Toggle({ checked, onChange, disabled }) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={checked}
-            disabled={disabled}
-            onClick={() => onChange(!checked)}
-            style={{
-                width: 40,
-                height: 22,
-                borderRadius: 999,
-                border: "1px solid var(--border)",
-                background: checked ? "var(--accent)" : "var(--bg-input)",
-                position: "relative",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.5 : 1,
-                transition: "background 0.15s",
-                flexShrink: 0,
-            }}
-        >
-            <span
-                style={{
-                    position: "absolute",
-                    top: 2,
-                    left: checked ? 20 : 2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    background: "#fff",
-                    transition: "left 0.15s",
-                }}
-            />
-        </button>
-    );
-}
-
-function Badge({ children, color = "var(--text-dim)" }) {
-    return (
-        <span
-            className="badge"
-            style={{ background: `color-mix(in srgb, ${color} 13%, transparent)`, color, border: `1px solid color-mix(in srgb, ${color} 22%, transparent)` }}
-        >
-            {children}
-        </span>
-    );
-}
 
 // ── Settings: which sources Auto Quest draws from ────────────────────────────
 
@@ -141,15 +92,16 @@ function PoolSettings({ pool, featureLabel, onChange, onNodeToggle, saving }) {
                 checked={!!s[field]}
                 disabled={saving}
                 onChange={(v) => onChange({ [field]: v })}
+                title={title}
             />
         </div>
     );
 
     return (
         <div className="card" style={{ padding: "18px 20px", marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{featureLabel} egress</h2>
-                <Badge color="var(--accent)">Using {sourceLabel}</Badge>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", paddingBottom: 8 }}>
+                <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{featureLabel} egress</h2>
+                <StatusBadge tone="accent">Using {sourceLabel}</StatusBadge>
             </div>
             <Row
                 title="My proxies"
@@ -167,16 +119,13 @@ function PoolSettings({ pool, featureLabel, onChange, onNodeToggle, saving }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 0 12px", opacity: s.useNodes ? 1 : 0.55 }}>
                     {pool.allNodes.map((n) => (
                         <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0 5px 12px", flexWrap: "wrap" }}>
-                            <span
-                                style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: n.reason ? "var(--text-dim)" : "var(--success)" }}
-                            />
                             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{n.label}</span>
                             <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{n.endpoint}</span>
-                            <span style={{ fontSize: 11, color: n.reason ? "var(--warning)" : "var(--success)" }}>
+                            <StatusBadge tone={n.reason ? "warning" : "success"}>
                                 {n.reason ? NODE_LEFT_OUT[n.reason] || n.reason : "in the pool"}
-                            </span>
+                            </StatusBadge>
                             <span style={{ marginLeft: "auto" }}>
-                                <Toggle checked={n.questProxy} disabled={saving} onChange={(v) => onNodeToggle(n, v)} />
+                                <Toggle checked={n.questProxy} disabled={saving} onChange={(v) => onNodeToggle(n, v)} title={`${n.label} as a proxy`} />
                             </span>
                         </div>
                     ))}
@@ -263,241 +212,208 @@ function ProxyModal({ proxy, features, onClose, onSaved }) {
     };
 
     return (
-        <div className="modal-overlay">
-            <div
-                className="card slide-up modal-card-mobile"
-                style={{ width: "100%", maxWidth: 560, padding: 0, maxHeight: "90vh", overflowY: "auto" }}
+        <Modal title={isEdit ? `Edit “${proxy.label}”` : "Add proxy"} onClose={onClose}>
+            {/* autoComplete="off" throughout: the browser reads host/username/password
+                as a login form and silently autofills them. That produced a credential
+                the proxy rejected with 407 and no clue why. */}
+            <form
+                onSubmit={submit}
+                autoComplete="off"
+                style={{ display: "flex", flexDirection: "column", gap: 16 }}
             >
-                <div
-                    style={{
-                        padding: "18px 24px",
-                        borderBottom: "1px solid var(--border-light)",
-                        display: "flex",
-                        alignItems: "center",
-                    }}
-                >
-                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, flex: 1 }}>
-                        {isEdit ? `Edit “${proxy.label}”` : "Add proxy"}
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}
-                    >
-                        ✕
-                    </button>
+                <div>
+                    <label className="label">Label</label>
+                    <input
+                        className="input"
+                        placeholder="defaults to host:port"
+                        value={form.label}
+                        onChange={set("label")}
+                    />
                 </div>
 
-                {/* autoComplete="off" throughout: the browser reads host/username/password
-                    as a login form and silently autofills them. That produced a credential
-                    the proxy rejected with 407 and no clue why. */}
-                <form
-                    onSubmit={submit}
-                    autoComplete="off"
-                    style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: 12 }} className="grid-1-mobile">
                     <div>
-                        <label className="label">Label</label>
+                        <label className="label">Protocol</label>
+                        <select className="input" value={form.protocol} onChange={set("protocol")}>
+                            {PROTOCOLS.map((p) => (
+                                <option key={p} value={p}>
+                                    {p}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="label">Host *</label>
+                        <input className="input mono" value={form.host} onChange={set("host")} required />
+                    </div>
+                    <div>
+                        <label className="label">Port *</label>
                         <input
-                            className="input"
-                            placeholder="defaults to host:port"
-                            value={form.label}
-                            onChange={set("label")}
+                            className="input mono"
+                            type="number"
+                            min="1"
+                            max="65535"
+                            value={form.port}
+                            onChange={set("port")}
+                            required
                         />
                     </div>
+                </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr", gap: 12 }} className="grid-1-mobile">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="grid-1-mobile">
+                    <div>
+                        <label className="label">Username</label>
+                        <input
+                            className="input mono"
+                            name="proxy-user"
+                            autoComplete="off"
+                            spellCheck={false}
+                            value={form.username}
+                            onChange={set("username")}
+                        />
+                    </div>
+                    <div>
+                        <label className="label">
+                            Password {isEdit && proxy.hasPassword ? "(blank = keep current)" : ""}
+                        </label>
+                        <input
+                            className="input mono"
+                            // "new-password" is the one value Chrome actually honours here;
+                            // "off" alone is ignored on password inputs.
+                            type="password"
+                            name="proxy-pass"
+                            autoComplete="new-password"
+                            spellCheck={false}
+                            value={form.password}
+                            onChange={set("password")}
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    <label className="label">Type</label>
+                    <div style={{ display: "flex", gap: 10 }}>
+                        {[
+                            { v: "static", t: "Static", d: "One fixed exit IP." },
+                            { v: "rotating", t: "Rotating", d: "IP changes via a link." },
+                        ].map((o) => (
+                            <button
+                                key={o.v}
+                                type="button"
+                                className={`select-card${form.type === o.v ? " active" : ""}`}
+                                aria-pressed={form.type === o.v}
+                                onClick={() => setForm((f) => ({ ...f, type: o.v }))}
+                                style={{ flex: 1, textAlign: "left", color: "var(--text)", font: "inherit" }}
+                            >
+                                <span style={{ fontSize: 13, fontWeight: 600 }}>{o.t}</span>
+                                <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
+                                    {o.d}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {form.type === "rotating" && (
+                    <>
                         <div>
-                            <label className="label">Protocol</label>
-                            <select className="input" value={form.protocol} onChange={set("protocol")}>
-                                {PROTOCOLS.map((p) => (
-                                    <option key={p} value={p}>
-                                        {p}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="label">Host *</label>
-                            <input className="input mono" value={form.host} onChange={set("host")} required />
-                        </div>
-                        <div>
-                            <label className="label">Port *</label>
+                            <label className="label">Rotate link *</label>
                             <input
                                 className="input mono"
-                                type="number"
-                                min="1"
-                                max="65535"
-                                value={form.port}
-                                onChange={set("port")}
+                                placeholder="https://provider.example/api/changeip?key=…"
+                                value={form.rotateUrl}
+                                onChange={set("rotateUrl")}
                                 required
                             />
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
+                                The panel fetches this to change the exit IP. It only ever does so
+                                between runs — never while a quest is using the proxy.
+                            </p>
                         </div>
-                    </div>
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="grid-1-mobile">
-                        <div>
-                            <label className="label">Username</label>
-                            <input
-                                className="input mono"
-                                name="proxy-user"
-                                autoComplete="off"
-                                spellCheck={false}
-                                value={form.username}
-                                onChange={set("username")}
-                            />
-                        </div>
-                        <div>
-                            <label className="label">
-                                Password {isEdit && proxy.hasPassword ? "(blank = keep current)" : ""}
-                            </label>
-                            <input
-                                className="input mono"
-                                // "new-password" is the one value Chrome actually honours here;
-                                // "off" alone is ignored on password inputs.
-                                type="password"
-                                name="proxy-pass"
-                                autoComplete="new-password"
-                                spellCheck={false}
-                                value={form.password}
-                                onChange={set("password")}
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="label">Type</label>
-                        <div style={{ display: "flex", gap: 10 }}>
-                            {[
-                                { v: "static", t: "Static", d: "One fixed exit IP." },
-                                { v: "rotating", t: "Rotating", d: "IP changes via a link." },
-                            ].map((o) => (
-                                <button
-                                    key={o.v}
-                                    type="button"
-                                    onClick={() => setForm((f) => ({ ...f, type: o.v }))}
-                                    style={{
-                                        flex: 1,
-                                        textAlign: "left",
-                                        padding: "10px 12px",
-                                        borderRadius: 10,
-                                        cursor: "pointer",
-                                        background: form.type === o.v ? "var(--accent)22" : "var(--bg-input)",
-                                        border: `1px solid ${form.type === o.v ? "var(--accent)" : "var(--border)"}`,
-                                        color: "var(--text)",
-                                    }}
-                                >
-                                    <span style={{ fontSize: 13, fontWeight: 700 }}>{o.t}</span>
-                                    <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>
-                                        {o.d}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {form.type === "rotating" && (
-                        <>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="grid-1-mobile">
                             <div>
-                                <label className="label">Rotate link *</label>
+                                <label className="label">Min seconds between rotations</label>
                                 <input
                                     className="input mono"
-                                    placeholder="https://provider.example/api/changeip?key=…"
-                                    value={form.rotateUrl}
-                                    onChange={set("rotateUrl")}
-                                    required
+                                    type="number"
+                                    min="0"
+                                    value={form.rotateMinIntervalSec}
+                                    onChange={set("rotateMinIntervalSec")}
                                 />
-                                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
-                                    The panel fetches this to change the exit IP. It only ever does so
-                                    between runs — never while a quest is using the proxy.
-                                </p>
                             </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="grid-1-mobile">
-                                <div>
-                                    <label className="label">Min seconds between rotations</label>
-                                    <input
-                                        className="input mono"
-                                        type="number"
-                                        min="0"
-                                        value={form.rotateMinIntervalSec}
-                                        onChange={set("rotateMinIntervalSec")}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label">Idle auto-rotate (sec, 0 = off)</label>
-                                    <input
-                                        className="input mono"
-                                        type="number"
-                                        min="0"
-                                        value={form.rotateIdleIntervalSec}
-                                        onChange={set("rotateIdleIntervalSec")}
-                                    />
-                                </div>
+                            <div>
+                                <label className="label">Idle auto-rotate (sec, 0 = off)</label>
+                                <input
+                                    className="input mono"
+                                    type="number"
+                                    min="0"
+                                    value={form.rotateIdleIntervalSec}
+                                    onChange={set("rotateIdleIntervalSec")}
+                                />
                             </div>
-                        </>
-                    )}
-
-                    <div>
-                        <label className="label">Used for</label>
-                        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 4 }}>
-                            {features.map((f) => (
-                                <label
-                                    key={f.key}
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 7,
-                                        fontSize: 13,
-                                        color: "var(--text)",
-                                    }}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={form.uses.includes(f.key)}
-                                        onChange={(e) =>
-                                            setForm((v) => ({
-                                                ...v,
-                                                uses: e.target.checked
-                                                    ? [...v.uses, f.key]
-                                                    : v.uses.filter((u) => u !== f.key),
-                                            }))
-                                        }
-                                    />
-                                    {f.label}
-                                </label>
-                            ))}
                         </div>
-                        {form.uses.length === 0 && (
-                            <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--warning)" }}>
-                                With no feature selected, this proxy is never used.
-                            </p>
-                        )}
+                    </>
+                )}
+
+                <div>
+                    <label className="label">Used for</label>
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 4 }}>
+                        {features.map((f) => (
+                            <label
+                                key={f.key}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 7,
+                                    fontSize: 13,
+                                    color: "var(--text)",
+                                }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={form.uses.includes(f.key)}
+                                    onChange={(e) =>
+                                        setForm((v) => ({
+                                            ...v,
+                                            uses: e.target.checked
+                                                ? [...v.uses, f.key]
+                                                : v.uses.filter((u) => u !== f.key),
+                                        }))
+                                    }
+                                />
+                                {f.label}
+                            </label>
+                        ))}
                     </div>
-
-                    <div>
-                        <label className="label">Note</label>
-                        <input className="input" value={form.note} onChange={set("note")} />
-                    </div>
-
-                    <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text)" }}>
-                        <input type="checkbox" checked={form.enabled} onChange={set("enabled")} />
-                        Enabled (available to the pool)
-                    </label>
-
-                    {error && (
-                        <p style={{ fontSize: 13, color: "var(--danger)", margin: 0 }}>{error}</p>
+                    {form.uses.length === 0 && (
+                        <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--warning)" }}>
+                            With no feature selected, this proxy is never used.
+                        </p>
                     )}
+                </div>
 
-                    <div style={{ display: "flex", gap: 12 }}>
-                        <button type="button" className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
-                            Cancel
-                        </button>
-                        <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={saving}>
-                            {saving ? "Saving…" : isEdit ? "Save" : "Add"}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                <div>
+                    <label className="label">Note</label>
+                    <input className="input" value={form.note} onChange={set("note")} />
+                </div>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text)" }}>
+                    <input type="checkbox" checked={form.enabled} onChange={set("enabled")} />
+                    Enabled (available to the pool)
+                </label>
+
+                {error && <Notice tone="danger">{error}</Notice>}
+
+                <div style={{ display: "flex", gap: 12 }}>
+                    <button type="button" className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+                        Cancel
+                    </button>
+                    <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={saving}>
+                        {saving ? "Saving…" : isEdit ? "Save" : "Add"}
+                    </button>
+                </div>
+            </form>
+        </Modal>
     );
 }
 
@@ -529,93 +445,63 @@ function BulkModal({ onClose, onSaved }) {
     };
 
     return (
-        <div className="modal-overlay">
-            <div
-                className="card slide-up modal-card-mobile"
-                style={{ width: "100%", maxWidth: 560, padding: 0, maxHeight: "90vh", overflowY: "auto" }}
-            >
-                <div
-                    style={{
-                        padding: "18px 24px",
-                        borderBottom: "1px solid var(--border-light)",
-                        display: "flex",
-                        alignItems: "center",
-                    }}
-                >
-                    <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, flex: 1 }}>Bulk import</h2>
-                    <button
-                        onClick={onClose}
-                        style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}
-                    >
-                        ✕
+        <Modal title="Bulk import" onClose={onClose}>
+            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                    <label className="label">One proxy per line</label>
+                    <textarea
+                        className="input mono"
+                        rows={9}
+                        style={{ resize: "vertical" }}
+                        placeholder={"host:port\nhost:port:user:pass\nsocks5://user:pass@host:port"}
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        required
+                    />
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
+                        Everything imports as a static proxy. Rotating ones need their own rotate
+                        link, so add or edit those individually.
+                    </p>
+                </div>
+                <div>
+                    <label className="label">Protocol for lines without one</label>
+                    <select className="input" value={protocol} onChange={(e) => setProtocol(e.target.value)}>
+                        {PROTOCOLS.map((p) => (
+                            <option key={p} value={p}>
+                                {p}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {error && <Notice tone="danger">{error}</Notice>}
+
+                {/* Warning tone when some lines did not import */}
+                {result && (
+                    <Notice tone={result.errors?.length > 0 ? "warning" : "success"}>
+                        <p style={{ margin: 0 }}>Added {result.created.length} proxy(ies).</p>
+                        {result.errors?.length > 0 && (
+                            <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "var(--text-muted)" }}>
+                                {result.errors.map((e, i) => (
+                                    <li key={i} className="mono" style={{ fontSize: 12 }}>
+                                        {e.line} — {e.error}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </Notice>
+                )}
+
+                <div style={{ display: "flex", gap: 12 }}>
+                    <button type="button" className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+                        {result ? "Close" : "Cancel"}
+                    </button>
+                    <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={saving}>
+                        {saving ? "Importing…" : "Import"}
                     </button>
                 </div>
-                <form onSubmit={submit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div>
-                        <label className="label">One proxy per line</label>
-                        <textarea
-                            className="input mono"
-                            rows={9}
-                            style={{ resize: "vertical" }}
-                            placeholder={"host:port\nhost:port:user:pass\nsocks5://user:pass@host:port"}
-                            value={text}
-                            onChange={(e) => setText(e.target.value)}
-                            required
-                        />
-                        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0" }}>
-                            Everything imports as a static proxy. Rotating ones need their own rotate
-                            link, so add or edit those individually.
-                        </p>
-                    </div>
-                    <div>
-                        <label className="label">Protocol for lines without one</label>
-                        <select className="input" value={protocol} onChange={(e) => setProtocol(e.target.value)}>
-                            {PROTOCOLS.map((p) => (
-                                <option key={p} value={p}>
-                                    {p}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {error && <p style={{ fontSize: 13, color: "var(--danger)", margin: 0 }}>{error}</p>}
-
-                    {result && (
-                        <div
-                            style={{
-                                fontSize: 13,
-                                background: "var(--bg-input)",
-                                border: "1px solid var(--border)",
-                                borderRadius: 10,
-                                padding: 12,
-                            }}
-                        >
-                            <p style={{ margin: 0, color: "var(--success)" }}>
-                                Added {result.created.length} proxy(ies).
-                            </p>
-                            {result.errors?.length > 0 && (
-                                <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "var(--warning)" }}>
-                                    {result.errors.map((e, i) => (
-                                        <li key={i} className="mono" style={{ fontSize: 12 }}>
-                                            {e.line} — {e.error}
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-                    )}
-
-                    <div style={{ display: "flex", gap: 12 }}>
-                        <button type="button" className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
-                            {result ? "Close" : "Cancel"}
-                        </button>
-                        <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={saving}>
-                            {saving ? "Importing…" : "Import"}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            </form>
+        </Modal>
     );
 }
 
@@ -632,7 +518,7 @@ function ProxyRow({ p, state, onTest, onRotate, onToggle, onEdit, onDelete }) {
                             style={{
                                 margin: 0,
                                 fontSize: 14,
-                                fontWeight: 700,
+                                fontWeight: 600,
                                 color: "var(--text)",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
@@ -641,18 +527,18 @@ function ProxyRow({ p, state, onTest, onRotate, onToggle, onEdit, onDelete }) {
                         >
                             {p.label}
                         </p>
-                        <Badge color={rotating ? "var(--violet)" : "var(--text-dim)"}>
+                        <StatusBadge color={rotating ? "var(--violet)" : undefined}>
                             {rotating ? "Rotating" : "Static"}
-                        </Badge>
-                        {!p.enabled && <Badge color="var(--warning)">Disabled</Badge>}
-                        {p.busy && <Badge color="var(--accent)">In use</Badge>}
+                        </StatusBadge>
+                        {!p.enabled && <StatusBadge tone="warning">Disabled</StatusBadge>}
+                        {p.busy && <StatusBadge tone="accent">In use</StatusBadge>}
                     </div>
                     <p className="mono" style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)" }}>
                         {p.protocol}://{p.username ? `${p.username}:***@` : ""}
                         {p.host}:{p.port}
                     </p>
                 </div>
-                <Toggle checked={p.enabled} onChange={(v) => onToggle(p, v)} />
+                <Toggle checked={p.enabled} onChange={(v) => onToggle(p, v)} title="Enabled" />
             </div>
 
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: "var(--text-dim)" }}>
@@ -671,29 +557,24 @@ function ProxyRow({ p, state, onTest, onRotate, onToggle, onEdit, onDelete }) {
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => onTest(p)}>
-                    {state?.testing ? "Testing…" : "Test IP"}
+                <button className="btn-ghost btn-sm" onClick={() => onTest(p)}>
+                    <Icon name="activity" size={14} /> {state?.testing ? "Testing…" : "Test IP"}
                 </button>
                 {rotating && (
                     <button
-                        className="btn-ghost"
-                        style={{ padding: "6px 12px", fontSize: 12 }}
+                        className="btn-ghost btn-sm"
                         disabled={p.busy}
                         title={p.busy ? "A run is using this proxy right now" : undefined}
                         onClick={() => onRotate(p)}
                     >
-                        {state?.rotating ? "Rotating…" : "Rotate now"}
+                        <Icon name="refresh" size={14} /> {state?.rotating ? "Rotating…" : "Rotate now"}
                     </button>
                 )}
-                <button className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => onEdit(p)}>
-                    Edit
+                <button className="btn-ghost btn-sm" onClick={() => onEdit(p)}>
+                    <Icon name="pencil" size={14} /> Edit
                 </button>
-                <button
-                    className="btn-ghost"
-                    style={{ padding: "6px 12px", fontSize: 12, color: "var(--danger)" }}
-                    onClick={() => onDelete(p)}
-                >
-                    Delete
+                <button className="btn-ghost btn-sm is-danger" onClick={() => onDelete(p)}>
+                    <Icon name="trash" size={14} /> Delete
                 </button>
                 {state?.msg && (
                     <span style={{ fontSize: 12, alignSelf: "center", color: state.ok ? "var(--success)" : "var(--danger)" }}>
@@ -835,36 +716,26 @@ export default function ProxiesPage() {
 
     return (
         <div className="fade-in page-compact">
-            <div
-                style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    marginBottom: 20,
-                }}
-            >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Proxy Pool</h1>
-                    <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-                        Proxies the panel egresses through. Each feature has its own switches,
-                        and each proxy chooses which features it serves.
-                    </p>
-                </div>
-                <button className="btn-ghost" onClick={() => setBulkOpen(true)}>
-                    Bulk import
-                </button>
-                <button className="btn-primary" onClick={() => setEditing(null)}>
-                    + Add proxy
-                </button>
+            <div style={{ marginBottom: 20 }}>
+                <PageHeader
+                    title="Proxy Pool"
+                    description="Proxies the panel egresses through. Each feature has its own switches, and each proxy chooses which features it serves."
+                    actions={
+                        <>
+                            <button className="btn-ghost" onClick={() => setBulkOpen(true)}>
+                                <Icon name="upload" /> Bulk import
+                            </button>
+                            <button className="btn-primary" onClick={() => setEditing(null)}>
+                                <Icon name="plus" /> Add proxy
+                            </button>
+                        </>
+                    }
+                />
             </div>
 
             {err && (
-                <div
-                    className="card"
-                    style={{ padding: "12px 16px", marginBottom: 16, color: "var(--danger)", fontSize: 13 }}
-                >
-                    {err}
+                <div style={{ marginBottom: 16 }}>
+                    <Notice tone="danger">{err}</Notice>
                 </div>
             )}
 
@@ -873,17 +744,9 @@ export default function ProxiesPage() {
                     <button
                         key={f.key}
                         type="button"
+                        className={`chip${feature === f.key ? " active" : ""}`}
+                        aria-pressed={feature === f.key}
                         onClick={() => setFeature(f.key)}
-                        style={{
-                            background: feature === f.key ? "var(--accent-dim)" : "var(--bg-input)",
-                            border: `1px solid ${feature === f.key ? "var(--accent)" : "var(--border)"}`,
-                            borderRadius: 999,
-                            padding: "5px 14px",
-                            color: "var(--text)",
-                            fontSize: 12,
-                            fontWeight: feature === f.key ? 600 : 400,
-                            cursor: "pointer",
-                        }}
                     >
                         {f.label}
                     </button>
@@ -904,15 +767,11 @@ export default function ProxiesPage() {
             {loading ? (
                 <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading…</p>
             ) : rows.length === 0 ? (
-                <div className="card" style={{ padding: 40, textAlign: "center" }}>
-                    <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)" }}>
-                        No proxies yet.
-                    </p>
-                    <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-dim)" }}>
-                        Until you add one, Auto Quest falls back to whatever is left switched on
-                        above.
-                    </p>
-                </div>
+                <EmptyState
+                    icon="proxyPool"
+                    title="No proxies yet"
+                    description="Until you add one, Auto Quest falls back to whatever is left switched on above."
+                />
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {rows.map((p) => (

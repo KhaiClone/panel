@@ -6,6 +6,8 @@ import ConfirmModal from "../components/ConfirmModal";
 import NodeModal from "../components/NodeModal";
 import RemoveNodeModal from "../components/RemoveNodeModal";
 import LogRotateSection from "../components/LogRotateSection";
+import Section from "./panel/Section";
+import { DataTable, Icon, Notice, PageHeader, StatusBadge } from "../components/ui";
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -33,11 +35,11 @@ function Ring({ percent, color, label, sub }) {
                         style={{ stroke: color, strokeDasharray: circ, strokeDashoffset: circ - (pct / 100) * circ, transition: "stroke-dashoffset 0.8s ease" }} />
                 </svg>
                 <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ fontSize: 26, fontWeight: 800, color: "var(--text)" }}>{pct}<span style={{ fontSize: 13 }}>%</span></span>
+                    <span style={{ fontSize: 26, fontWeight: 600, color: "var(--text)" }}>{pct}<span style={{ fontSize: 13 }}>%</span></span>
                 </div>
             </div>
             <div style={{ textAlign: "center" }}>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{label}</p>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{label}</p>
                 <p style={{ margin: 0, fontSize: 11, color: "var(--text-muted)" }}>{sub}</p>
             </div>
         </div>
@@ -48,12 +50,13 @@ function InfoRow({ label, value, mono = true }) {
     return (
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "9px 0", borderBottom: "1px solid var(--border-light)" }}>
             <span style={{ fontSize: 13, color: "var(--text-muted)", flexShrink: 0 }}>{label}</span>
-            <span className={mono ? "mono" : ""} style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value ?? "—"}</span>
+            <span className={mono ? "mono" : ""} style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value ?? "—"}</span>
         </div>
     );
 }
 
-const PROC_STATUS_COLOR = { online: "var(--success)", stopped: "var(--danger)", errored: "var(--orange)", launching: "var(--warning)" };
+// PM2 states, coloured as on the Bots page.
+const PROC_STATUS_COLOR = { online: "var(--success)", stopped: "var(--text-dim)", errored: "var(--danger)", launching: "var(--warning)" };
 
 export default function NodeDetailPage() {
     const { id } = useParams();
@@ -70,7 +73,7 @@ export default function NodeDetailPage() {
     const [logs, setLogs] = useState("");
     const [logLines, setLogLines] = useState(100);
     const [busy, setBusy] = useState(null);        // "restart" | "update" | null
-    const [actionMsg, setActionMsg] = useState("");
+    const [actionMsg, setActionMsg] = useState(null); // { tone: "success" | "danger", text }
     const [confirmAction, setConfirmAction] = useState(null);
     const [error, setError] = useState("");
     const [tab, setTab] = useState("Metrics");
@@ -129,13 +132,13 @@ export default function NodeDetailPage() {
     const doRestart = async () => {
         setConfirmAction(null);
         setBusy("restart");
-        setActionMsg("");
+        setActionMsg(null);
         try {
             await api.post(`/nodes/${id}/restart-agent`);
-            setActionMsg("✅ Agent is restarting — it should be back within a few seconds.");
+            setActionMsg({ tone: "success", text: "Agent is restarting — it should be back within a few seconds." });
             setTimeout(fetchAll, 5000);
         } catch (e) {
-            setActionMsg(`❌ ${e.response?.data?.error || e.message}`);
+            setActionMsg({ tone: "danger", text: e.response?.data?.error || e.message });
         } finally {
             setBusy(null);
         }
@@ -144,13 +147,13 @@ export default function NodeDetailPage() {
     const doUpdate = async () => {
         setConfirmAction(null);
         setBusy("update");
-        setActionMsg("");
+        setActionMsg(null);
         try {
             const { data } = await api.post(`/nodes/${id}/update-agent`, {}, { timeout: 420_000 });
-            setActionMsg(`✅ ${data.message}\n${data.pullOutput || ""}`);
+            setActionMsg({ tone: "success", text: `${data.message}\n${data.pullOutput || ""}` });
             setTimeout(fetchAll, 6000);
         } catch (e) {
-            setActionMsg(`❌ ${e.response?.data?.error || e.message}`);
+            setActionMsg({ tone: "danger", text: e.response?.data?.error || e.message });
         } finally {
             setBusy(null);
         }
@@ -186,54 +189,51 @@ export default function NodeDetailPage() {
         <div className="page fade-in" style={{ maxWidth: 1100, display: "flex", flexDirection: "column", gap: 20 }}>
 
             {/* Header */}
-            <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                <button onClick={() => navigate("/systems")} className="btn-ghost" style={{ padding: 10, borderRadius: 12, background: "var(--bg-input)" }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}><polyline points="15 18 9 12 15 6" /></svg>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <button onClick={() => navigate("/systems")} className="btn-ghost btn-icon" title="Back to Servers" style={{ marginTop: 1 }}>
+                    <Icon name="chevronLeft" />
                 </button>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                        <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>⬡ {node.name}</h1>
-                        <span className="status-pill" style={{
-                            background: online ? "var(--success-bg)" : "var(--danger-bg)",
-                            border: `1px solid ${online ? "var(--success-border)" : "var(--danger-border)"}`,
-                            color: online ? "var(--success)" : "var(--danger)", fontSize: 11, padding: "3px 10px",
-                        }}>
-                            <span className="status-dot" style={{ background: online ? "var(--success)" : "var(--danger)", width: 6, height: 6 }} />
-                            {online ? "Online" : "Offline"}
-                        </span>
-                    </div>
-                    <p className="mono" style={{ fontSize: 12, color: "var(--text-dim)", margin: "4px 0 0" }}>{node.host}:{node.port}</p>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-warning" disabled={!online || busy} onClick={() => setConfirmAction("restart")} style={{ padding: "8px 16px", fontSize: 13 }}>
-                        {busy === "restart" ? "Restarting…" : "Restart Agent"}
-                    </button>
-                    <button className="btn-ghost" onClick={doTest} style={{ padding: "8px 14px", fontSize: 13 }}>
-                        Test
-                    </button>
-                    <button className="btn-ghost" onClick={() => setEditOpen(true)} style={{ padding: "8px 14px", fontSize: 13 }}>
-                        Edit
-                    </button>
-                    <button className="btn-ghost" onClick={() => setRemoving(node)} style={{ padding: "8px 14px", fontSize: 13, color: "var(--danger)" }}>
-                        Remove
-                    </button>
-                    <button className="btn-primary" disabled={!online || busy} onClick={() => setConfirmAction("update")} style={{ padding: "8px 16px", fontSize: 13 }}>
-                        {busy === "update" ? "Updating…" : "Update Agent"}
-                    </button>
+                <div className="min-w-0" style={{ flex: 1 }}>
+                    <PageHeader
+                        title={node.name}
+                        description={
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <StatusBadge tone={online ? "success" : "danger"}>{online ? "Online" : "Offline"}</StatusBadge>
+                                <span className="mono" style={{ color: "var(--text-dim)" }}>{node.host}:{node.port}</span>
+                            </span>
+                        }
+                        actions={
+                            <>
+                                <button className="btn-warning" disabled={!online || busy} onClick={() => setConfirmAction("restart")}>
+                                    <Icon name="restart" /> {busy === "restart" ? "Restarting…" : "Restart agent"}
+                                </button>
+                                <button className="btn-ghost" onClick={doTest}>
+                                    <Icon name="activity" /> Test
+                                </button>
+                                <button className="btn-ghost" onClick={() => setEditOpen(true)}>
+                                    <Icon name="pencil" /> Edit
+                                </button>
+                                <button className="btn-ghost is-danger" onClick={() => setRemoving(node)}>
+                                    <Icon name="trash" /> Remove
+                                </button>
+                                <button className="btn-primary" disabled={!online || busy} onClick={() => setConfirmAction("update")}>
+                                    <Icon name="download" /> {busy === "update" ? "Updating…" : "Update agent"}
+                                </button>
+                            </>
+                        }
+                    />
                 </div>
             </div>
 
-            {error && (
-                <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)", fontSize: 13 }}>{error}</div>
-            )}
-            {testMsg && (
-                <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13 }}>{testMsg}</div>
-            )}
+            {error && <Notice tone="danger">{error}</Notice>}
+            {testMsg && <Notice tone="info">{testMsg}</Notice>}
             {actionMsg && (
-                <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13, whiteSpace: "pre-wrap" }}>{actionMsg}</div>
+                <Notice tone={actionMsg.tone}>
+                    <span style={{ whiteSpace: "pre-wrap" }}>{actionMsg.text}</span>
+                </Notice>
             )}
 
-            <div className="tab-bar" style={{ display: "inline-flex" }}>
+            <div className="tab-bar" style={{ alignSelf: "flex-start", maxWidth: "100%" }}>
                 {["Metrics", "Manage"].map((t) => (
                     <button key={t} className={`tab-item ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
                         {t}
@@ -246,23 +246,21 @@ export default function NodeDetailPage() {
             {tab === "Manage" && (
             <>
             {/* Resource rings */}
-            <div className="card" style={{ padding: "26px 28px" }}>
-                <h2 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 22px" }}>Resources</h2>
+            <Section title="Resources">
                 {stats ? (
-                    <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-around", gap: 24 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-around", gap: 24, padding: "8px 0" }}>
                         <Ring percent={cpu} color={cpuColor} label="CPU" sub={stats.cpu?.cores ? `${stats.cpu.cores} cores` : stats.cpu?.model} />
                         <Ring percent={ram} color={ramColor} label="RAM" sub={`${fmt(stats.memory?.usedBytes)} / ${fmt(stats.memory?.totalBytes)}`} />
                         <Ring percent={disk} color={diskColor} label="Disk" sub={`${fmt(stats.disk?.freeBytes)} free of ${fmt(stats.disk?.totalBytes)}`} />
                     </div>
                 ) : (
-                    <p style={{ fontSize: 13, color: "var(--text-dim)", fontStyle: "italic", textAlign: "center", margin: 0 }}>No stats — node unreachable</p>
+                    <p style={{ fontSize: 13, color: "var(--text-dim)", textAlign: "center", margin: 0 }}>No stats — node unreachable</p>
                 )}
-            </div>
+            </Section>
 
             {/* Agent info + hosted bots */}
             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                <div className="card" style={{ padding: "20px 24px" }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, margin: "0 0 8px" }}>Agent</h3>
+                <Section title="Agent">
                     <InfoRow label="Version" value={info ? `v${info.agentVersion}` : null} />
                     <InfoRow label="Status (PM2)" value={info?.live?.status} />
                     <InfoRow label="Agent uptime" value={info ? fmtUptime(info.agentUptime) : null} />
@@ -274,64 +272,71 @@ export default function NodeDetailPage() {
                     <InfoRow label="Bots dir" value={info?.config?.botsRootDir} />
                     <InfoRow label="Sites dir" value={info?.config?.sitesRootDir} />
                     <InfoRow label="Agent RAM" value={info?.live?.memory ? `${Math.round(info.live.memory / 1_048_576)} MB` : null} />
-                </div>
+                </Section>
 
-                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                    <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>PM2 Processes ({processes.length})</h3>
-                        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{nodeBots.length} managed by panel</span>
-                    </div>
+                <Section
+                    title="PM2 processes"
+                    hint={String(processes.length)}
+                    actions={<span style={{ fontSize: 12, color: "var(--text-dim)" }}>{nodeBots.length} managed by panel</span>}
+                    flush
+                >
                     <div style={{ maxHeight: 420, overflowY: "auto" }}>
-                        {processes.map((p) => {
-                            const st = p.pm2_env?.status;
-                            // `bots` is already scoped to this node, so matching on pm2Name is enough.
-                            const managed = bots.find((b) => b.pm2Name === p.name);
-                            return (
-                                <div key={p.pm_id}
-                                    onClick={managed ? () => navigate(`/${managed.projectType === "website" ? "sites" : "bots"}/${managed._id}`) : undefined}
-                                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 20px", borderBottom: "1px solid var(--border-light)", cursor: managed ? "pointer" : "default" }}
-                                    onMouseEnter={(e) => managed && (e.currentTarget.style.background = "var(--bg-hover)")}
-                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                >
-                                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: PROC_STATUS_COLOR[st] || "var(--text-dim)", flexShrink: 0 }} />
-                                    <span className="mono" style={{ flex: 1, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                                    {managed && <span className="badge" style={{ fontSize: 9, background: "var(--accent-dim)", color: "var(--accent-hover)", padding: "1px 6px" }}>PANEL</span>}
-                                    <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>{Math.round((p.monit?.memory || 0) / 1_048_576)} MB</span>
-                                    <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)", width: 42, textAlign: "right", flexShrink: 0 }}>{p.monit?.cpu ?? 0}%</span>
-                                </div>
-                            );
-                        })}
-                        {processes.length === 0 && (
-                            <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No PM2 processes</div>
-                        )}
+                        <DataTable flush columns={["Process", { label: "Memory", align: "right" }, { label: "CPU", align: "right" }]}>
+                            {processes.map((p) => {
+                                const st = p.pm2_env?.status;
+                                // `bots` is already scoped to this node, so matching on pm2Name is enough.
+                                const managed = bots.find((b) => b.pm2Name === p.name);
+                                return (
+                                    <tr key={p.pm_id}
+                                        className={managed ? "row-click" : undefined}
+                                        onClick={managed ? () => navigate(`/${managed.projectType === "website" ? "sites" : "bots"}/${managed._id}`) : undefined}
+                                    >
+                                        <td>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                                                <span className="status-dot" style={{ background: PROC_STATUS_COLOR[st] || "var(--text-dim)" }} title={st} />
+                                                <span className="mono" style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                                                {managed && (
+                                                    <span className="badge" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>panel</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="mono num" style={{ fontSize: 11, color: "var(--text-muted)" }}>{Math.round((p.monit?.memory || 0) / 1_048_576)} MB</td>
+                                        <td className="mono num" style={{ fontSize: 11, color: "var(--text-dim)" }}>{p.monit?.cpu ?? 0}%</td>
+                                    </tr>
+                                );
+                            })}
+                            {processes.length === 0 && (
+                                <tr><td colSpan={3} style={{ padding: 28, textAlign: "center", color: "var(--text-dim)" }}>No PM2 processes</td></tr>
+                            )}
+                        </DataTable>
                     </div>
-                </div>
+                </Section>
             </div>
 
             {/* pm2-logrotate — each node rotates its own PM2 logs */}
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, flex: 1 }}>Log Rotation</h3>
-                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>pm2-logrotate — keeps PM2 logs from filling the disk</span>
-                </div>
-                <div style={{ padding: "16px 20px" }}>
-                    <LogRotateSection key={id} nodeId={id} />
-                </div>
-            </div>
+            <Section title="Log rotation" hint="pm2-logrotate — keeps PM2 logs from filling the disk">
+                <LogRotateSection key={id} nodeId={id} />
+            </Section>
 
             {/* Agent logs */}
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 12 }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, flex: 1 }}>Agent Logs</h3>
-                    <select className="input" style={{ width: 110, padding: "5px 10px", fontSize: 12 }} value={logLines} onChange={(e) => setLogLines(parseInt(e.target.value))}>
-                        {[50, 100, 200, 500].map((n) => <option key={n} value={n}>{n} lines</option>)}
-                    </select>
-                    <button className="btn-ghost" style={{ padding: "6px 14px", fontSize: 12 }} onClick={fetchLogs}>Refresh</button>
-                </div>
-                <pre className="mono" style={{ margin: 0, padding: "14px 20px", fontSize: 11.5, lineHeight: 1.6, color: "var(--text-muted)", background: "var(--bg-base)", maxHeight: 380, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            <Section
+                title="Agent logs"
+                flush
+                actions={
+                    <>
+                        <select className="input" style={{ width: 110, padding: "5px 10px", fontSize: 12 }} value={logLines} onChange={(e) => setLogLines(parseInt(e.target.value))}>
+                            {[50, 100, 200, 500].map((n) => <option key={n} value={n}>{n} lines</option>)}
+                        </select>
+                        <button className="btn-ghost btn-sm" onClick={fetchLogs}>
+                            <Icon name="refresh" size={14} /> Refresh
+                        </button>
+                    </>
+                }
+            >
+                <pre className="mono" style={{ margin: 0, padding: "14px 16px", fontSize: 11.5, lineHeight: 1.6, color: "var(--text-muted)", background: "var(--bg-base)", maxHeight: 380, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                     {logs || "(empty)"}
                 </pre>
-            </div>
+            </Section>
             </>
             )}
 

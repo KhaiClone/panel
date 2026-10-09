@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import api from "../api/client";
-import { StatusBadge } from "../components/ui";
+import { EmptyState, Icon, Notice, PageHeader, StatCard, StatusBadge } from "../components/ui";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestCard from "../components/QuestCard";
 
@@ -28,19 +28,7 @@ const gridStyle = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
     gap: 14,
-    marginTop: 16,
 };
-
-function MetaItem({ label, children }) {
-    return (
-        <div>
-            <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                {label}
-            </p>
-            <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--text)", fontWeight: 600 }}>{children}</p>
-        </div>
-    );
-}
 
 export default function QuestAccountDetail() {
     const { accountId } = useParams();
@@ -84,112 +72,97 @@ export default function QuestAccountDetail() {
               ? "Monthly plan"
               : `${a?.selectedQuestIds?.length || 0} selected`;
 
-    return (
-        <div className="page fade-in" style={{ maxWidth: 1100 }}>
-            <Link to="/quests" className="btn-ghost" style={{ fontSize: 12.5, padding: "5px 12px" }}>
-                ‹ Back to accounts
-            </Link>
+    const back = (
+        <Link to="/quests" className="btn-ghost btn-icon" title="Back to accounts" style={{ marginTop: 1 }}>
+            <Icon name="chevronLeft" />
+        </Link>
+    );
 
-            {!a ? (
-                <div className="card" style={{ marginTop: 16, padding: "40px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
+    if (!a) {
+        return (
+            <div className="page fade-in" style={{ maxWidth: 1100, display: "flex", flexDirection: "column", gap: 20 }}>
+                {back}
+                <div className="card" style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
                     Loading account…
                 </div>
-            ) : (
-                <>
-                    {/* ── Header card ── */}
-                    <div className="card" style={{ marginTop: 16, padding: 20 }}>
-                        <div className="mobile-wrap" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                            <span
-                                style={{ width: 46, height: 46, borderRadius: 12, background: "var(--bg-input)", border: "1px solid var(--border)", display: "grid", placeItems: "center", fontSize: 20, flexShrink: 0 }}
-                            >
-                                🎮
+            </div>
+        );
+    }
+
+    return (
+        <div className="page fade-in" style={{ maxWidth: 1100, display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* ── Header ── */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                {back}
+                <div className="min-w-0" style={{ flex: 1 }}>
+                    <PageHeader
+                        title={a.username}
+                        description={
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <StatusBadge color={st.color}>{st.label}</StatusBadge>
+                                <span className="mono" style={{ color: "var(--text-dim)" }}>{a.accountId}</span>
                             </span>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                                <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", margin: 0, letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {a.username}
-                                </h1>
-                                <div style={{ marginTop: 6 }}>
-                                    <StatusBadge color={st.color}>{st.label}</StatusBadge>
-                                </div>
-                            </div>
-                            <div className="mobile-wrap" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        }
+                        actions={
+                            <>
                                 {/* A monthly account runs inside the shared pass — stop that from /quests. */}
                                 {a.status === "running" && a.mode !== "monthly" && (
                                     <button className="btn-warning" onClick={stop}>
-                                        ⏸ Stop
+                                        <Icon name="pause" /> Stop
                                     </button>
                                 )}
                                 {(a.mode === "monthly"
                                     ? a.status === "monthly"
                                     : ["stopped", "error", "token_dead", "done"].includes(a.status)) && (
                                     <button className="btn-success" disabled={busy} onClick={runAgain}>
-                                        {a.mode === "monthly" ? "▶ Run now" : "▶ Run again"}
+                                        <Icon name="play" /> {a.mode === "monthly" ? "Run now" : "Run again"}
                                     </button>
                                 )}
                                 <button className="btn-danger" onClick={remove}>
-                                    🗑 Remove
+                                    <Icon name="trash" /> Remove
                                 </button>
-                            </div>
-                        </div>
+                            </>
+                        }
+                    />
+                </div>
+            </div>
 
-                        <div className="divider" />
+            {msg && <Notice tone={msg.ok ? "success" : "danger"}>{msg.text}</Notice>}
+            {a.error && <Notice tone="warning">{a.error}</Notice>}
 
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 16 }}>
-                            <MetaItem label="Account ID">
-                                <code className="mono" style={{ color: "var(--text)" }}>{a.accountId}</code>
-                            </MetaItem>
-                            <MetaItem label="Mode">{modeText}</MetaItem>
-                            <MetaItem label="Completed">{a.completedCount ?? 0}</MetaItem>
-                            {a.mode === "monthly" && a.monthlyExpiresAt && (
-                                <MetaItem label="Expires">{fmtDate(a.monthlyExpiresAt)}</MetaItem>
-                            )}
-                            {a.mode !== "monthly" && a.retentionExpiresAt && (
-                                <MetaItem label="Data erased">{fmtDate(a.retentionExpiresAt)}</MetaItem>
-                            )}
-                            {a.mode === "monthly" && a.status === "expired" && a.purgeAt && (
-                                <MetaItem label="Data erased">{fmtDate(a.purgeAt)}</MetaItem>
-                            )}
-                        </div>
+            <div className="stat-grid">
+                <StatCard label="Mode" value={modeText} />
+                <StatCard label="Completed" value={a.completedCount ?? 0} />
+                {a.mode === "monthly" && a.monthlyExpiresAt && (
+                    <StatCard label="Expires" value={fmtDate(a.monthlyExpiresAt)} />
+                )}
+                {a.mode !== "monthly" && a.retentionExpiresAt && (
+                    <StatCard label="Data erased" value={fmtDate(a.retentionExpiresAt)} />
+                )}
+                {a.mode === "monthly" && a.status === "expired" && a.purgeAt && (
+                    <StatCard label="Data erased" value={fmtDate(a.purgeAt)} />
+                )}
+            </div>
 
-                        {msg && (
-                            <p style={{ margin: "12px 0 0", fontSize: 12.5, color: msg.ok ? "var(--success)" : "var(--danger)" }}>
-                                {msg.text}
-                            </p>
-                        )}
+            {/* ── Quests ── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                    <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Quests</h2>
+                    <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+                        {quests.length > 0 ? `${doneCount}/${quests.length} completed` : "none"}
+                    </span>
+                </div>
 
-                        {a.error && (
-                            <div
-                                style={{ marginTop: 14, padding: "10px 14px", borderRadius: 8, background: "var(--warning-bg)", border: "1px solid var(--warning-border)", color: "var(--warning)", fontSize: 12.5 }}
-                            >
-                                ⚠️ {a.error}
-                            </div>
-                        )}
+                {quests.length === 0 ? (
+                    <EmptyState icon="hourglass" title="No quests running yet" description="The account may still be enrolling." />
+                ) : (
+                    <div style={gridStyle}>
+                        {quests.map(([qid, q]) => (
+                            <QuestCard key={qid} q={{ ...q, id: qid }} progress={q} />
+                        ))}
                     </div>
-
-                    {/* ── Quests ── */}
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 24 }}>
-                        <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", margin: 0 }}>Quests</h2>
-                        <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
-                            {quests.length > 0 ? `${doneCount}/${quests.length} completed` : "none"}
-                        </span>
-                    </div>
-
-                    {quests.length === 0 ? (
-                        <div className="card" style={{ marginTop: 12, padding: "36px 20px", textAlign: "center" }}>
-                            <p style={{ fontSize: 24, margin: "0 0 6px" }}>⏳</p>
-                            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
-                                No quests running yet (or still enrolling).
-                            </p>
-                        </div>
-                    ) : (
-                        <div style={gridStyle}>
-                            {quests.map(([qid, q]) => (
-                                <QuestCard key={qid} q={{ ...q, id: qid }} progress={q} />
-                            ))}
-                        </div>
-                    )}
-                </>
-            )}
+                )}
+            </div>
         </div>
     );
 }

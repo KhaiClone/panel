@@ -65,7 +65,7 @@ export default function NodeVersionCard({ bot, onSaved, onMessage }) {
         <div className="card">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid var(--border-light)" }}>
                 <div>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Node.js Version</h3>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Node.js version</h3>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>Used for install, build, start and this project's terminal</p>
                 </div>
                 <span className="mono badge" style={{ background: "var(--bg-input)", color: "var(--text-dim)", border: "1px solid var(--border)", whiteSpace: "nowrap" }}>
@@ -76,7 +76,7 @@ export default function NodeVersionCard({ bot, onSaved, onMessage }) {
             {loadError ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                     <p style={{ fontSize: 13, color: "var(--danger)", margin: 0, flex: 1, minWidth: 0 }}>{loadError}</p>
-                    <button className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }} onClick={load}>Retry</button>
+                    <button className="btn-ghost btn-sm" onClick={load}>Retry</button>
                 </div>
             ) : !info ? (
                 <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Loading versions…</p>
@@ -117,7 +117,7 @@ export default function NodeVersionCard({ bot, onSaved, onMessage }) {
                     <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "12px 0 0", lineHeight: 1.55 }}>
                         A version is downloaded once per node (about 50 MB, ~200 MB unpacked) and verified against nodejs.org's checksums.
                         A running instance restarts onto it; a stopped one stays stopped. If the project uses native modules
-                        (better-sqlite3, canvas, sharp…), run <strong>Pull &amp; Update</strong> afterwards so they are rebuilt for the new version.
+                        (better-sqlite3, canvas, sharp…), run <strong>Pull &amp; update from Git</strong> afterwards so they are rebuilt for the new version.
                     </p>
                 </>
             )}
