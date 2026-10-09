@@ -65,11 +65,18 @@ const domainsCheck = ({ domains }) => {
     return { level: "ok", text: `${domains.length} domain(s), all with SSL` };
 };
 
-const logrotateCheck = (d) => {
-    if (!d.installed) return { level: "warn", text: "pm2-logrotate is not installed on the panel's node — PM2 logs grow until the disk is full" };
-    if (d.status !== "online") return { level: "warn", text: `pm2-logrotate is ${d.status} on the panel's node` };
-    const c = d.config || {};
-    return { level: "ok", text: `Running on the panel's node · rotates at ${c.max_size ?? "?"}, keeps ${c.retain ?? "?"}` };
+// Every enabled node (GET /nodes/logrotate). Only "off" is a failure: an offline
+// or silent node is "unknown" — nothing is known about its logs either way.
+const logrotateCheck = ({ nodes }) => {
+    if (!nodes.length) return { level: "off", text: "No enabled nodes" };
+    const on = nodes.filter((n) => n.state === "on");
+    const off = nodes.filter((n) => n.state === "off");
+    const unknown = nodes.filter((n) => n.state === "unknown");
+    const notes = [];
+    if (off.length) notes.push(`not on: ${off.map((n) => n.name).join(", ")}`);
+    if (unknown.length) notes.push(`unknown: ${unknown.map((n) => `${n.name} (${n.reason})`).join(", ")}`);
+    const text = `${on.length}/${nodes.length} nodes rotate PM2 logs${notes.length ? ` — ${notes.join(" · ")}` : ""}`;
+    return { level: off.length ? "warn" : "ok", text };
 };
 
 const CHECKS = [
@@ -77,7 +84,8 @@ const CHECKS = [
     { id: "gateway", label: "Panel gateway", tab: "integrations", run: () => api.get("/panel/gateway", { timeout: 60_000 }).then((r) => gatewayCheck(r.data)) },
     { id: "bus", label: "Discord bus", tab: "integrations", run: () => api.get("/panel/shared").then((r) => busCheck(r.data)) },
     { id: "domains", label: "Panel domains", tab: "config", run: () => api.get("/panel/domains").then((r) => domainsCheck(r.data)) },
-    { id: "logrotate", label: "Log rotation", tab: "config", run: () => api.get("/panel/logrotate").then((r) => logrotateCheck(r.data)) },
+    // Per node now — fixed on a node's Manage tab, reached from the Systems list.
+    { id: "logrotate", label: "Log rotation", to: "/systems", run: () => api.get("/nodes/logrotate", { timeout: 60_000 }).then((r) => logrotateCheck(r.data)) },
 ];
 
 function HealthChecklist() {
@@ -104,7 +112,7 @@ function HealthChecklist() {
                             <span style={{ flexShrink: 0 }}>{LEVEL_ICON[res.level]}</span>
                             <strong style={{ color: "var(--text)", minWidth: 110 }}>{c.label}</strong>
                             <span style={{ flex: "1 1 240px", minWidth: 0, fontSize: 12, color: LEVEL_COLOR[res.level], overflowWrap: "anywhere" }}>{res.text}</span>
-                            <Link to={`/panel-manage/${c.tab}`} className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11, textDecoration: "none", flexShrink: 0 }}>Open →</Link>
+                            <Link to={c.to || `/panel-manage/${c.tab}`} className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11, textDecoration: "none", flexShrink: 0 }}>Open →</Link>
                         </div>
                     );
                 })}

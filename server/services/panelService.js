@@ -1,4 +1,5 @@
 const nodeService = require("./nodeService");
+const nodeLogrotate = require("./nodeLogrotate");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Panel self-management — a thin client over the agent on the panel's own node.
@@ -171,10 +172,12 @@ const readEnv = async () => {
 const writeEnv = (content) => call("put", "/self/env", { data: { content }, timeout: 15_000 });
 
 // ── pm2-logrotate on the panel's node ───────────────────────────────────────
+// The same calls as any node's (nodeLogrotate) — /api/panel/logrotate stays for
+// callers that only know the panel.
 
-const logrotateStatus = () => call("get", "/logrotate", { timeout: 20_000 });
-const logrotateInstall = () => call("post", "/logrotate/install", { timeout: 200_000 });
-const logrotateSet = (settings) => call("put", "/logrotate", { data: settings, timeout: 60_000 });
+const logrotateStatus = async () => nodeLogrotate.status(await panelNode());
+const logrotateInstall = async () => nodeLogrotate.install(await panelNode());
+const logrotateSet = async (settings) => nodeLogrotate.set(await panelNode(), settings);
 
 module.exports = {
     getPanelPM2Name,

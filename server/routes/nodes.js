@@ -6,6 +6,7 @@ const nodeService = require("../services/nodeService");
 const nodeSetup = require("../services/nodeSetup");
 const nodeJoin = require("../services/nodeJoin");
 const nodeRemoval = require("../services/nodeRemoval");
+const nodeLogrotate = require("../services/nodeLogrotate");
 const history = require("../services/historyService");
 
 // Mounted behind authMiddleware (see index.js).
@@ -42,6 +43,19 @@ router.get("/", async (req, res, next) => {
 router.get("/history", (req, res, next) => {
     try {
         res.json(history.allNodesHistory(req.query.range));
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /api/nodes/logrotate
+ * pm2-logrotate on every enabled node → { nodes: [{ nodeId, name, state, ... }] },
+ * state "on" | "off" | "unknown" (offline or not answering — see nodeLogrotate).
+ */
+router.get("/logrotate", async (req, res, next) => {
+    try {
+        res.json(await nodeLogrotate.overview());
     } catch (err) {
         next(err);
     }
@@ -282,6 +296,28 @@ router.post("/:id/restart-agent", withNode(async (node, req, res) => {
 /** POST /api/nodes/:id/update-agent — git pull + npm install + restart on the node */
 router.post("/:id/update-agent", withNode(async (node, req, res) => {
     res.json(await nodeService.agentRequest(node, "post", "/self/update", { timeout: 400_000 }));
+}));
+
+/** GET /api/nodes/:id/logrotate — install state, PM2 status and settings of pm2-logrotate on the node */
+router.get("/:id/logrotate", withNode(async (node, req, res) => {
+    res.json(await nodeLogrotate.status(node));
+}));
+
+/** POST /api/nodes/:id/logrotate/install — install pm2-logrotate with the default limits (50M / keep 7 / gzip) */
+router.post("/:id/logrotate/install", withNode(async (node, req, res) => {
+    console.log(`[LogRotate] Installing pm2-logrotate on "${node.name}"…`);
+    const status = await nodeLogrotate.install(node);
+    console.log(`[LogRotate] Installed and configured on "${node.name}"`);
+    res.json(status);
+}));
+
+/**
+ * PUT /api/nodes/:id/logrotate
+ * Body: { max_size?, retain?, compress?, rotateInterval?, workerInterval?, rotateModule? }
+ * The node's agent validates them; a bad value comes back as a 400.
+ */
+router.put("/:id/logrotate", withNode(async (node, req, res) => {
+    res.json(await nodeLogrotate.set(node, req.body || {}));
 }));
 
 /**

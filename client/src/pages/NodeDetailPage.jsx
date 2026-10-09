@@ -5,6 +5,7 @@ import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import NodeModal from "../components/NodeModal";
 import RemoveNodeModal from "../components/RemoveNodeModal";
+import LogRotateSection from "../components/LogRotateSection";
 
 const fmt = (bytes) => {
     if (!bytes && bytes !== 0) return "—";
@@ -304,6 +305,17 @@ export default function NodeDetailPage() {
                             <div style={{ padding: "28px 20px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No PM2 processes</div>
                         )}
                     </div>
+                </div>
+            </div>
+
+            {/* pm2-logrotate — each node rotates its own PM2 logs */}
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, flex: 1 }}>Log Rotation</h3>
+                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>pm2-logrotate — keeps PM2 logs from filling the disk</span>
+                </div>
+                <div style={{ padding: "16px 20px" }}>
+                    <LogRotateSection key={id} nodeId={id} />
                 </div>
             </div>
 
