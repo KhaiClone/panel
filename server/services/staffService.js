@@ -102,7 +102,9 @@ const conn = () => {
             note TEXT NOT NULL DEFAULT '',
             added_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
-            last_login_at INTEGER
+            last_login_at INTEGER,
+            roles TEXT,                         -- their role ids in the server (JSON), from the last role check
+            roles_at INTEGER
         );
         CREATE TABLE IF NOT EXISTS staff_sessions (
             id TEXT PRIMARY KEY,
@@ -130,6 +132,11 @@ const conn = () => {
         );
         CREATE INDEX IF NOT EXISTS staff_audit_by_user ON staff_audit(user_id, id);
     `);
+    // Tables made before the roles were kept (the Messages page works out each
+    // person's channels from them).
+    const cols = c.pragma("table_info(staff)").map((col) => col.name);
+    if (!cols.includes("roles")) c.exec("ALTER TABLE staff ADD COLUMN roles TEXT");
+    if (!cols.includes("roles_at")) c.exec("ALTER TABLE staff ADD COLUMN roles_at INTEGER");
     made = c;
     return c;
 };
@@ -248,6 +255,23 @@ const rowToStaff = (r) =>
     };
 
 const getStaff = (userId) => rowToStaff(conn().prepare("SELECT * FROM staff WHERE user_id = ?").get(String(userId)));
+
+const keepRoles = (userId, roles) =>
+    conn().prepare("UPDATE staff SET roles = ?, roles_at = ? WHERE user_id = ?").run(JSON.stringify(roles || []), now(), String(userId));
+
+/**
+ * Their role ids in the server as of the last check (login, then every
+ * ROLE_CHECK_MS while signed in): { roles, at } — or null before the first one.
+ */
+const rolesOf = (userId) => {
+    const r = conn().prepare("SELECT roles, roles_at FROM staff WHERE user_id = ?").get(String(userId));
+    if (!r?.roles) return null;
+    try {
+        return { roles: JSON.parse(r.roles), at: r.roles_at };
+    } catch {
+        return null;
+    }
+};
 
 const activeSessionOf = (userId) =>
     conn()
@@ -527,6 +551,7 @@ const login = async ({ code, state, device, ip, ua }) => {
     conn()
         .prepare("UPDATE staff SET user_tag = ?, avatar = ?, last_login_at = ? WHERE user_id = ?")
         .run(tagOf(me) || staff.userTag, avatarOf(me), t, staff.userId);
+    keepRoles(staff.userId, member.roles);
     const ended = replaced ? `ended ${replaced} other session${replaced > 1 ? "s" : ""}` : "";
     audit({
         userId: staff.userId,
@@ -593,6 +618,7 @@ const sweep = async () => {
                 console.log(`[Staff] Session of ${r.user_id} ended: ${reason}`);
             } else {
                 conn().prepare("UPDATE staff_sessions SET role_checked_at = ? WHERE id = ?").run(now(), r.id);
+                keepRoles(r.user_id, member.roles);
             }
         }
     } finally {
@@ -617,6 +643,7 @@ module.exports = {
     isConfigured: () => isConfigured(),
     list,
     getStaff,
+    rolesOf,
     add,
     update,
     remove,

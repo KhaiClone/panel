@@ -864,7 +864,7 @@ commands:
 
 | Command | What the assistant does |
 |---------|-------------------------|
-| `message.targets` | Lists its servers, their text / announcement channels (with whether it may post, embed and ping @everyone there) and roles — the page's channel picker and role list (cached a minute; *Refresh* asks again). The bus channel itself is left out. |
+| `message.targets` | The **server map**: its servers, their text / announcement channels (whether the bot may post, embed and ping @everyone there, and each channel's permission overwrites) and roles (with their permissions). The bus channel itself is left out. |
 | `message.send` | Posts `{ content, embeds, link buttons }`. `allowedMentions` comes from the page's *Who may be pinged* (all on by default; the assistant's client default leaves roles out, so this is what makes `<@&role>` ping). Optional *Silent* (`@silent`) and, in an announcement channel, *Publish to following servers*. Answers with the message link and warnings: @everyone / @here, or a role that is not mentionable, only ping with **Mention @everyone** in that channel. |
 | `message.edit` | Edits one of its own messages — one sent from here or any other (opened by its link). Buttons and menus that run the bot's own features (custom ids) are left exactly as they are; only link buttons can be edited. An edit pings nobody. |
 | `message.delete` | Deletes one of its own messages (already gone = deleted). |
@@ -888,12 +888,21 @@ page (*View* = read Sent / Saved, *Edit* = send).
 anywhere the bot is. A staff member gets the server set under Panel Settings → Staff (ArnTo Shop by
 default) and, in it, only the channels where **their own Discord account** has *View Channel* and
 *Send Messages* — a channel that is read-only for them does not count — so two staff members see
-different lists, following their roles on Discord. The assistant works the list
-out from the member's permissions (`message.targets` with `viewer`); the panel refuses any other
-channel for send, edit, delete, *Open by link* and *Sent* (which only lists those channels), and the
-assistant checks it again, live, on every command that carries `viewer`. Access gained or lost on
-Discord shows after a minute, or at once with *Refresh*. An assistant older than this check is
-detected (it does not echo `viewer`) and staff are refused until it is updated.
+different lists, following their roles on Discord. The panel works each list out itself with
+Discord's permission formula (the same as discord.js: owner, Administrator, then the @everyone,
+role and member overwrites), from the server map and the person's roles — which it already reads
+with their Discord login, at sign-in and every 10 minutes (`staff.roles`). It refuses any other
+channel for send, edit, delete, *Open by link* and *Sent* (which only lists those channels), and
+the assistant checks it again, live, on every command that carries `viewer` — so an old map can
+hide a channel from someone, never open one. A map without permission data (an assistant older
+than this, `format` < 2) refuses staff until the assistant is updated and the map reloaded.
+
+**The server map is loaded once a day.** One copy for everyone, in `data/shared.sqlite` (kv
+`__messages.map`): the panel asks the assistant when it is older than 24 hours (a failed try waits
+an hour while the old one serves), and when someone presses **Reload** — at most once every 10
+minutes, counting the daily load, whoever pressed it (429 otherwise). Opening the page never asks
+the bot; it reads the map. So a channel, role or permission changed on Discord shows on the page
+after the next load. Sending is unchanged: one bus round trip per message.
 
 ## 👥 Staff Access
 

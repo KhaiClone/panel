@@ -11,9 +11,10 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBa
 //  Messages — write a message Discohook-style, pick a channel, and
 //  ArnTo-assistant posts it as itself, pinging roles / @everyone if you let it.
 //
-//  The bot lists its servers, channels (with what it may do there) and roles
-//  over the Discord bus; the panel checks the message against Discord's limits
-//  and asks the bot to post it. Sent keeps what went out (edit / copy / delete
+//  The channel picker and role list come from the panel's server map, which
+//  the panel loads from the bot once a day — or with Reload, at most once every
+//  10 minutes for everyone — so opening the page never asks the bot. The panel
+//  checks the message against Discord's limits and asks the bot to post it. Sent keeps what went out (edit / copy / delete
 //  later); Saved keeps messages to reuse. The logic is in
 //  server/services/botMessages.js, the bot's side in ArnTo-assistant
 //  functions/botMessage.js.
@@ -22,6 +23,13 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBa
 const STORE = "messages.compose.v1";
 const SLOW = { timeout: 45_000 }; // the bus answers within 30 s, or the server says so
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
+const ago = (ts) => {
+    const min = Math.max(0, Math.round((Date.now() - ts) / 60_000));
+    if (min < 1) return "just now";
+    if (min < 60) return `${min} min ago`;
+    const h = Math.round(min / 60);
+    return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+};
 const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—");
 const defaultOptions = () => ({ guildId: null, channelId: null, mentions: { everyone: true, roles: true, users: true }, silent: false, publish: false });
 
@@ -124,7 +132,33 @@ function pingReport({ draft, options, guild, channel, editing }) {
     return { chips, warnings, notes, pingsSomeone: chips.length > 0 && !options.silent, loud: chips.some((c) => c === "@everyone" || c === "@here") && !options.silent };
 }
 
-function SendBox({ status, targets, targetsError, loadingTargets, onRefresh, draft, options, setOptions, editing, onStopEditing, onSend, onSaveEdit, onDeleteEditing, busy, result, canEdit }) {
+/** "Loaded 3 h ago · Reload" — Reload waits 10 minutes after the last load, whoever did it. */
+function MapLine({ targets, loading, onReload, canReload }) {
+    // Re-draw now and then so the countdown and "loaded … ago" move on.
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const t = setInterval(() => setTick((n) => n + 1), 20_000);
+        return () => clearInterval(t);
+    }, []);
+    const wait = targets?.reloadAt ? Math.ceil((targets.reloadAt - Date.now()) / 60_000) : 0;
+    return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-dim)" }}>
+            <span style={{ flex: 1 }}>{targets?.loadedAt ? `Channels loaded ${ago(targets.loadedAt)} · reloaded daily` : "Channels not loaded yet"}</span>
+            {canReload && (
+                <button
+                    className="btn-ghost btn-sm"
+                    onClick={onReload}
+                    disabled={loading || wait > 0}
+                    title={wait > 0 ? "The list can be reloaded once every 10 minutes" : "Ask the bot for the servers, channels and roles now"}
+                >
+                    <Icon name="refresh" size={14} /> {loading ? "Loading…" : wait > 0 ? `Reload in ${wait} min` : "Reload"}
+                </button>
+            )}
+        </div>
+    );
+}
+
+function SendBox({ status, targets, targetsError, loadingTargets, onReload, draft, options, setOptions, editing, onStopEditing, onSend, onSaveEdit, onDeleteEditing, busy, result, canEdit }) {
     const guilds = targets?.guilds || [];
     const guildId = editing ? editing.guildId : options.guildId;
     const guild = guilds.find((g) => g.id === guildId) || null;
@@ -138,15 +172,12 @@ function SendBox({ status, targets, targetsError, loadingTargets, onRefresh, dra
         <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, flex: 1 }}>{editing ? "Editing a sent message" : "Send to"}</h2>
-                <button className="btn-ghost btn-sm" onClick={onRefresh} disabled={loadingTargets || !status?.can?.targets} title="Read the servers, channels and roles again">
-                    <Icon name="refresh" size={14} /> {loadingTargets ? "Loading…" : "Refresh"}
-                </button>
             </div>
+            <MapLine targets={targets} loading={loadingTargets || targets?.loading} onReload={onReload} canReload={canEdit && !!status?.can?.targets} />
 
             {targetsError && <Notice tone="danger">{targetsError}</Notice>}
-            {targets?.viewer && !targets.viewer.found && (
-                <Notice tone="danger">Your Discord account is not in {targets.viewer.guildName || "the shop's server"}, so you cannot post from here.</Notice>
-            )}
+            {targets?.viewer && !targets.viewer.found && <Notice tone="danger">{targets.viewer.why || "You cannot post from here."}</Notice>}
+            {targets && !targets.viewer && !targets.loadedAt && <Notice>The channel list has not been loaded yet — press Reload.</Notice>}
 
             {editing ? (
                 <div className="msg-editing">
@@ -181,7 +212,7 @@ function SendBox({ status, targets, targetsError, loadingTargets, onRefresh, dra
                     )}
                     <Field
                         label={guilds.length === 1 ? `Channel in ${guilds[0].name}` : "Channel"}
-                        hint={targets?.viewer?.found ? "Only the channels where your own Discord account can see and send messages. Got access to a new one? Press Refresh." : undefined}
+                        hint={targets?.viewer?.found ? "Only the channels where your own Discord account can see and send messages. A channel you just got shows after the next load (daily, or Reload)." : undefined}
                     >
                         <ChannelSelect guild={guild} value={options.channelId} onChange={(id) => setOptions({ ...options, channelId: id, publish: false })} disabled={!canEdit} />
                     </Field>
@@ -571,18 +602,31 @@ export default function MessagesPage() {
         }
     }, []);
 
-    const loadTargets = useCallback(async (refresh = false) => {
-        setLoadingTargets(true);
+    // The panel's copy of the server map — no round trip to the bot.
+    const loadTargets = useCallback(async () => {
         try {
-            const { data } = await api.get("/messages/targets", { params: refresh ? { refresh: 1 } : {}, ...SLOW });
+            const { data } = await api.get("/messages/targets");
             setTargets(data);
             setTargetsError("");
         } catch (err) {
-            setTargetsError(errMsg(err, "Could not read the bot's channels"));
+            setTargetsError(errMsg(err, "Could not read the channel list"));
+        }
+    }, []);
+
+    /** Reload: the panel asks the bot now (refused within 10 minutes of the last load). */
+    const reloadTargets = async () => {
+        setLoadingTargets(true);
+        try {
+            const { data } = await api.post("/messages/targets/reload", null, SLOW);
+            setTargets(data);
+            setTargetsError("");
+        } catch (err) {
+            setTargetsError(errMsg(err, "Could not reload the channel list"));
+            loadTargets();
         } finally {
             setLoadingTargets(false);
         }
-    }, []);
+    };
 
     const loadSent = useCallback(async () => {
         try {
@@ -609,7 +653,8 @@ export default function MessagesPage() {
     }, []);
 
     useEffect(() => {
-        loadStatus().then((s) => s?.can?.targets && loadTargets());
+        loadStatus();
+        loadTargets();
         loadSent();
         loadDrafts();
     }, [loadStatus, loadTargets, loadSent, loadDrafts]);
@@ -876,7 +921,7 @@ export default function MessagesPage() {
                             targets={targets}
                             targetsError={targetsError}
                             loadingTargets={loadingTargets}
-                            onRefresh={() => loadTargets(true)}
+                            onReload={reloadTargets}
                             draft={draft}
                             options={options}
                             setOptions={setOptions}

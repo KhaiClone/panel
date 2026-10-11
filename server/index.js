@@ -228,6 +228,8 @@ const startBackgroundServices = () => {
     require("./services/resellerService").start();
     // Staff access: expires sessions, re-checks the Staff role every 10 minutes.
     require("./services/staffService").start();
+    // Messages: the server map (channels, roles) from ArnTo-assistant, once a day.
+    require("./services/botMessages").start();
 };
 
 /**

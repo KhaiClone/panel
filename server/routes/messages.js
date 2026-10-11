@@ -7,7 +7,8 @@ const messages = require("../services/botMessages");
 // see and post in — every route below that names a channel checks it (checkChannel).
 //
 //   GET    /status                  which bot posts, is the bus up, Discord's limits
-//   GET    /targets?refresh=1       servers, channels (with the bot's rights) and roles
+//   GET    /targets                 servers, channels (with the bot's rights) and roles — from the map
+//   POST   /targets/reload          load the map from the bot now (once every 10 minutes)
 //   GET    /fetch?link=             a message by its link — to edit it or copy it
 //   POST   /send                    { channelId, message, mentions, silent, publish }
 //   POST   /edit                    { channelId, messageId, message, mentions }
@@ -30,7 +31,8 @@ const handle = (fn) => async (req, res, next) => {
 };
 
 router.get("/status", handle((req) => messages.status(req.auth)));
-router.get("/targets", handle((req) => messages.targets({ refresh: req.query.refresh === "1", auth: req.auth })));
+router.get("/targets", handle((req) => messages.targets({ auth: req.auth })));
+router.post("/targets/reload", handle((req) => messages.reload(req.auth)));
 router.get("/fetch", handle((req) => messages.fetchByLink(req.query.link, req.auth)));
 
 router.post("/send", handle((req) => messages.send(req.body || {}, req.auth)));

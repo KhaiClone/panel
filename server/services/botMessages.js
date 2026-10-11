@@ -2,26 +2,35 @@ const crypto = require("crypto");
 const sharedStore = require("./sharedStore");
 const discordBus = require("./discordBus");
 const panelLog = require("./panelLog");
+const lifecycle = require("./lifecycle");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Messages — compose a message Discohook-style on the panel, pick a channel,
 //  and ArnTo-assistant posts it as itself.
 //
-//    message.targets   the servers, text channels and roles the bot can see,
-//                      with what it may do in each channel (send, embeds,
-//                      @everyone) — the page's channel picker and role list
+//    message.targets   the server map: text channels (what the bot may do in
+//                      each, their permission overwrites) and roles (with their
+//                      permissions) — loaded once a day, or with Reload
 //    message.send      post { content, embeds, link buttons } in a channel
 //    message.edit      change a message the bot sent (here or anywhere)
 //    message.delete    delete one
 //    message.fetch     read a message by its link, to edit it or copy it
 //
+//  The server map is ONE copy for everyone, kept in shared.sqlite. The panel
+//  asks the bot for it once a day, and when someone presses Reload — at most
+//  once every 10 minutes for all of them (the user's rule). Opening the page
+//  never asks the bot: it reads the map.
+//
 //  Staff (not the owner) post only in the staff server — the one set under
 //  Panel Settings → Staff, ArnTo Shop by default — and only in the channels
 //  their OWN Discord account can see AND post in there (View Channel + Send
-//  Messages — a read-only channel does not count). The bot works that out from the
-//  member's permissions (message.targets with `viewer`), the panel refuses any
-//  other channel, and the bot checks it again, live, on every send / edit /
-//  delete / read that carries `viewer`. Their Sent list shows those channels only.
+//  Messages — a read-only channel does not count). The panel works that out
+//  with Discord's own formula from the map and the person's roles, which
+//  staffService reads with their Discord login (at login, then every 10
+//  minutes). It refuses any other channel, and the bot checks it again, live,
+//  on every send / edit / delete / read that carries `viewer` — so a map that
+//  is a few hours old can hide a channel, never open one. Their Sent list
+//  shows those channels only.
 //
 //  Pings: the page says per message whether @everyone / @here, roles and
 //  members may ping (allowedMentions on the bot's side — the assistant's own
@@ -65,7 +74,12 @@ const LIMIT = {
     url: 2048,
 };
 const SEND_WINDOW_MS = 10 * 60_000; // a bot seeing a command later than this refuses it
-const TARGETS_TTL_MS = 60_000;
+const MAP = "__messages.map"; // kv: { at, bot, data: { format, bot, guilds } }
+const MAP_TRIED = "__messages.mapTried"; // kv: when the bot was last asked (daily or Reload)
+const MAP_EVERY_MS = 24 * 60 * 60_000;
+const RELOAD_EVERY_MS = 10 * 60_000;
+const MAP_CHECK_MS = 10 * 60_000;
+const MAP_RETRY_MS = 60 * 60_000; // a failed daily load, while an older map still serves
 const HISTORY_KEEP = 500;
 const MAX_DRAFTS = 200;
 const MAX_DRAFT_BYTES = 64 * 1024;
@@ -387,40 +401,158 @@ const status = async (auth) => {
     };
 };
 
-const targetsCache = new Map(); // "owner" | "staff:<userId>:<guildId>" → { at, bot, data }
-const targetsInFlight = new Map();
+// ── The server map ───────────────────────────────────────────────────────────
 
-const shown = (e) => ({ ...e.data, cachedAt: e.at });
+const kvGet = (name) => {
+    const r = conn().prepare("SELECT value FROM kv WHERE name = ?").get(name);
+    return r ? JSON.parse(r.value) : null;
+};
+const kvSet = (name, value) => conn().prepare("INSERT OR REPLACE INTO kv (name, value) VALUES (?, ?)").run(name, JSON.stringify(value));
+
+const getMap = () => kvGet(MAP);
+const reloadAt = () => (kvGet(MAP_TRIED) || 0) + RELOAD_EVERY_MS;
+
+let loading = null;
 
 /**
- * The servers, channels and roles the bot sees — for staff only the staff
- * server's channels their own account can see and post in. Cached a minute per viewer
- * unless `refresh`.
+ * Ask the bot for the map. `manual` (the Reload button) waits RELOAD_EVERY_MS
+ * after the last time the bot was asked, by anyone or by the daily load.
  */
-const targets = async ({ refresh = false, auth } = {}) => {
-    const bot = handler(CMD.targets);
-    const viewer = viewerOf(auth);
-    const key = viewer ? `staff:${viewer.userId}:${viewer.guildId}` : "owner";
-    const hit = targetsCache.get(key);
-    if (!refresh && hit?.bot === bot && Date.now() - hit.at < TARGETS_TTL_MS) return shown(hit);
-    if (!targetsInFlight.has(key)) {
-        targetsInFlight.set(
-            key,
-            discordBus
-                .request(bot, CMD.targets, viewer ? { viewer } : {}, { timeoutMs: 25_000 })
-                .then((data) => {
-                    // An assistant from before this check ignores `viewer` and lists everything.
-                    if (viewer && data?.viewer?.userId !== viewer.userId) {
-                        throw httpError(503, "ArnTo-assistant does not check which channels staff can see yet — update it (Pull & Update) and restart it");
-                    }
-                    const entry = { at: Date.now(), bot, data: { bot: data?.bot || null, guilds: Array.isArray(data?.guilds) ? data.guilds : [], viewer: data?.viewer || null } };
-                    targetsCache.set(key, entry);
-                    return entry;
-                })
-                .finally(() => targetsInFlight.delete(key)),
-        );
+const loadMap = async ({ manual = false } = {}) => {
+    if (loading) return loading;
+    if (manual && Date.now() < reloadAt()) {
+        const min = Math.ceil((reloadAt() - Date.now()) / 60_000);
+        throw httpError(429, `The channel list was just loaded — it can be reloaded again in ${min} minute${min === 1 ? "" : "s"}`);
     }
-    return shown(await targetsInFlight.get(key));
+    const bot = handler(CMD.targets);
+    kvSet(MAP_TRIED, Date.now());
+    loading = discordBus
+        .request(bot, CMD.targets, {}, { timeoutMs: 25_000 })
+        .then((data) => {
+            const map = { at: Date.now(), bot, data: { format: Number(data?.format) || 1, bot: data?.bot || null, guilds: Array.isArray(data?.guilds) ? data.guilds : [] } };
+            kvSet(MAP, map);
+            return map;
+        })
+        .finally(() => {
+            loading = null;
+        });
+    return loading;
+};
+
+/** Once a day (and on the first start, when there is no map yet). A failed try waits before the next. */
+const dailyTick = async () => {
+    if (!discordBus.handlerOf(CMD.targets) || !discordBus.status().ready) return;
+    const map = getMap();
+    if (map && Date.now() - map.at < MAP_EVERY_MS) return;
+    const tried = kvGet(MAP_TRIED) || 0;
+    if (tried > (map?.at || 0) && Date.now() - tried < (map ? MAP_RETRY_MS : RELOAD_EVERY_MS)) return;
+    try {
+        await loadMap();
+        console.log("[Messages] Server map loaded from the bot");
+    } catch (err) {
+        console.warn(`[Messages] Server map not loaded: ${err.message}`);
+    }
+};
+
+const start = () => {
+    conn();
+    setTimeout(lifecycle.guard(() => dailyTick().catch(() => {})), 60_000); // the bus needs a moment after a start
+    setInterval(lifecycle.guard(() => dailyTick().catch(() => {})), MAP_CHECK_MS);
+};
+
+// Discord's permission formula — the same one the bot's discord.js applies.
+const ALL_PERMS = (1n << 64n) - 1n;
+const ADMINISTRATOR = 1n << 3n;
+const VIEW_CHANNEL = 1n << 10n;
+const SEND_MESSAGES = 1n << 11n;
+const POST = VIEW_CHANNEL | SEND_MESSAGES;
+const big = (v) => {
+    try {
+        return BigInt(v || 0);
+    } catch {
+        return 0n;
+    }
+};
+
+/**
+ * What a member may do in a channel: @everyone + their roles, Administrator
+ * or owning the server = everything; then the channel's overwrites — the
+ * @everyone one, all of their roles' together, their own last.
+ */
+const permissionsIn = (guild, channel, userId, roleIds) => {
+    if (guild.ownerId && guild.ownerId === userId) return ALL_PERMS;
+    const mine = new Set(roleIds);
+    let p = big(guild.everyone);
+    for (const r of guild.roles || []) if (mine.has(r.id)) p |= big(r.permissions);
+    if (p & ADMINISTRATOR) return ALL_PERMS;
+    const ow = channel.overwrites || [];
+    const everyone = ow.find((o) => o.id === guild.id);
+    if (everyone) p = (p & ~big(everyone.deny)) | big(everyone.allow);
+    let allow = 0n;
+    let deny = 0n;
+    for (const o of ow) {
+        if (o.type === 0 && o.id !== guild.id && mine.has(o.id)) {
+            allow |= big(o.allow);
+            deny |= big(o.deny);
+        }
+    }
+    p = (p & ~deny) | allow;
+    const own = ow.find((o) => o.type === 1 && o.id === userId);
+    if (own) p = (p & ~big(own.deny)) | big(own.allow);
+    return p;
+};
+const canPost = (p) => (p & POST) === POST;
+
+/** What the page gets of a server: no overwrites or permission numbers. */
+const publicGuild = (g, channels = g.channels) => ({
+    id: g.id,
+    name: g.name,
+    icon: g.icon || null,
+    bus: !!g.bus,
+    channels: (channels || []).map(({ overwrites, ...c }) => c),
+    roles: (g.roles || []).map(({ permissions, ...r }) => r),
+});
+
+/**
+ * The staff server's channels a staff member may use, from the map and their
+ * roles → { guild, viewer } (viewer.found false with a reason when there are none).
+ */
+const staffView = (map, viewer) => {
+    const g = map.data.guilds.find((x) => x.id === viewer.guildId);
+    if (!g) return { guild: null, viewer: { ...viewer, found: false, reason: "no_server" } };
+    const r = require("./staffService").rolesOf(viewer.userId);
+    if (!r) return { guild: null, viewer: { ...viewer, guildName: g.name, found: false, reason: "no_roles" } };
+    const channels = (g.channels || []).filter((c) => canPost(permissionsIn(g, c, viewer.userId, r.roles || [])));
+    return { guild: { ...g, channels }, viewer: { ...viewer, guildName: g.name, found: true, rolesAt: r.at } };
+};
+
+const WHY = {
+    no_map: "The channel list has not been loaded yet — press Reload",
+    no_server: "The bot is not in the shop's server",
+    no_roles: "The panel has not read your Discord roles yet — sign out and in again, or wait a few minutes",
+    old_bot: "ArnTo-assistant does not send channel permissions yet — update it (Pull & Update) and restart it, then press Reload",
+};
+
+/**
+ * The page's channel picker and role list, from the map (never from the bot):
+ * every server for the owner; for staff the staff server's channels they may
+ * use. Plus when the map was loaded and when Reload is allowed again.
+ */
+const targets = async ({ auth } = {}) => {
+    const map = getMap();
+    const meta = { loadedAt: map?.at || null, reloadAt: reloadAt(), loading: !!loading };
+    const viewer = viewerOf(auth);
+    if (!map) return { bot: null, guilds: [], ...meta, ...(viewer ? { viewer: { ...viewer, found: false, reason: "no_map", why: WHY.no_map } } : {}) };
+    if (!viewer) return { bot: map.data.bot, guilds: map.data.guilds.map((g) => publicGuild(g)), ...meta };
+    if (map.data.format < 2) return { bot: map.data.bot, guilds: [], ...meta, viewer: { ...viewer, found: false, reason: "old_bot", why: WHY.old_bot } };
+    const v = staffView(map, viewer);
+    return { bot: map.data.bot, guilds: v.guild ? [publicGuild(v.guild)] : [], ...meta, viewer: { ...v.viewer, ...(v.viewer.found ? {} : { why: WHY[v.viewer.reason] }) } };
+};
+
+/** Reload (the page's button): ask the bot now, unless it was asked less than 10 minutes ago. */
+const reload = async (auth) => {
+    await loadMap({ manual: true });
+    return targets({ auth });
 };
 
 /** Staff: the ids of the channels they may use (a Set); the owner: null (all). */
@@ -428,11 +560,11 @@ const allowedFor = async (auth) => {
     const viewer = viewerOf(auth);
     if (!viewer) return null;
     const t = await targets({ auth });
-    if (!t.viewer?.found) throw httpError(403, "Your Discord account is not in the shop's server, so you cannot post from here");
-    return new Set(t.guilds.filter((g) => g.id === viewer.guildId).flatMap((g) => (g.channels || []).map((c) => c.id)));
+    if (!t.viewer?.found) throw httpError(t.viewer?.reason === "no_map" || t.viewer?.reason === "old_bot" ? 503 : 403, t.viewer?.why || "You cannot post from here");
+    return new Set(t.guilds.flatMap((g) => g.channels.map((c) => c.id)));
 };
 
-/** Refuse a channel staff cannot see; → the viewer to hand the bot (null for the owner). */
+/** Refuse a channel staff cannot post in; → the viewer to hand the bot (null for the owner). */
 const checkChannel = async (auth, channelId) => {
     const allowed = await allowedFor(auth);
     if (allowed && !allowed.has(String(channelId))) {
@@ -441,13 +573,11 @@ const checkChannel = async (auth, channelId) => {
     return viewerOf(auth);
 };
 
-/** Channel name / server name from the cached targets, when the bot's answer has none. */
+/** Channel name / server name from the map, when the bot's answer has none. */
 const placeOf = (channelId) => {
-    for (const { data } of targetsCache.values()) {
-        for (const g of data.guilds || []) {
-            const c = (g.channels || []).find((x) => x.id === channelId);
-            if (c) return { guildId: g.id, guildName: g.name, channelName: c.name };
-        }
+    for (const g of getMap()?.data?.guilds || []) {
+        const c = (g.channels || []).find((x) => x.id === channelId);
+        if (c) return { guildId: g.id, guildName: g.name, channelName: c.name };
     }
     return {};
 };
@@ -716,8 +846,10 @@ const deleteDraft = (id) => {
 module.exports = {
     CMD,
     LIMIT,
+    start,
     status,
     targets,
+    reload,
     send,
     edit,
     remove,
@@ -729,6 +861,8 @@ module.exports = {
     updateDraft,
     deleteDraft,
     // for tests
+    dailyTick,
+    permissionsIn,
     normalizeMessage,
     normalizeOptions,
     pingsOf,

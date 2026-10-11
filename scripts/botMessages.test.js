@@ -2,7 +2,8 @@
 /**
  * Checks for the Messages page (server/services/botMessages.js): a message
  * checked against Discord's limits before it goes on the bus, the ping
- * options, sending / editing / deleting over the stubbed Discord bus, a send
+ * options, the server map (loaded once a day or with Reload, never on a page
+ * open) and Discord's permission formula, sending / editing / deleting over the stubbed Discord bus, a send
  * whose answer comes late (pending, then settled from the outbox), opening a
  * message by its link, saved messages, and staff kept to the shop server's
  * channels their own Discord account can see and post in.
@@ -50,27 +51,57 @@ panelLog.add = (kind, text) => logs.push({ kind, text });
 
 const owner = { kind: "owner", username: "khai" };
 const staff = { kind: "staff", staff: { userId: "871329074046435338", userTag: "nghiihgn" } };
-const outsider = { kind: "staff", staff: { userId: "427399742906040333", userTag: "left-the-server" } };
-const busDown = { kind: "staff", staff: { userId: "1133037157527859230", userTag: "nobody" } };
+const supporter = { kind: "staff", staff: { userId: "1133037157527859230", userTag: "hotro" } };
+const admin = { kind: "staff", staff: { userId: "1246001516893175877", userTag: "quanly" } };
+const noRoles = { kind: "staff", staff: { userId: "427399742906040333", userTag: "never-checked" } };
 
-// What the assistant answers to message.targets: everything for the owner; for
-// staff (viewer) only the shop server, only the channels that account can post in.
+// The server map the assistant answers to message.targets (format 2: with permissions).
 const BOT = { username: "ArnTo Trợ Lý" };
-const SHOP_CHANNELS = [
-    { id: CH, name: "thông-báo" },
-    { id: CH2, name: "staff-room" },
-];
-const STAFF_SEES = new Set([CH]);
-const targetsAnswer = (p) => {
-    if (!p.viewer) return { bot: BOT, guilds: [{ id: GUILD, name: "ArnTo Shop", channels: SHOP_CHANNELS, roles: [] }, { id: "1183033659838697542", name: "Kho", channels: [{ id: "1300000000000000101", name: "log" }], roles: [] }] };
-    if (p.viewer.userId === busDown.staff.userId) throw Object.assign(new Error("No answer from the bot"), { status: 504 });
-    const found = p.viewer.userId !== outsider.staff.userId;
-    return {
-        bot: BOT,
-        guilds: found ? [{ id: GUILD, name: "ArnTo Shop", channels: SHOP_CHANNELS.filter((c) => STAFF_SEES.has(c.id)), roles: [] }] : [],
-        viewer: { ...p.viewer, guildName: "ArnTo Shop", found },
-    };
+const VIEW = 1n << 10n;
+const SEND = 1n << 11n;
+const ADMIN = 1n << 3n;
+const str = (n) => String(n);
+const R_STAFF = "1134354122867482716";
+const R_SUPPORTER = "1557669714505769030";
+const R_ADMIN = "1246001516893175900";
+const CH3 = "1205054570074480712";
+const CH4 = "1205054570074480713";
+const CH5 = "1205054570074480714";
+const SHOP = {
+    id: GUILD,
+    name: "ArnTo Shop",
+    ownerId: "999999999999999999",
+    everyone: str(VIEW | SEND),
+    roles: [
+        { id: R_ADMIN, name: "Admin", color: 0, mentionable: false, permissions: str(ADMIN) },
+        { id: R_STAFF, name: "Staff", color: 0xe67e22, mentionable: true, permissions: "0" },
+        { id: R_SUPPORTER, name: "Supporter", color: 0x3498db, mentionable: false, permissions: "0" },
+    ],
+    channels: [
+        // read-only for @everyone, Staff may post
+        { id: CH, name: "thông-báo", overwrites: [{ id: GUILD, type: 0, allow: "0", deny: str(SEND) }, { id: R_STAFF, type: 0, allow: str(SEND), deny: "0" }] },
+        // hidden, Supporter sees it
+        { id: CH2, name: "staff-room", overwrites: [{ id: GUILD, type: 0, allow: "0", deny: str(VIEW) }, { id: R_SUPPORTER, type: 0, allow: str(VIEW), deny: "0" }] },
+        // read-only for everybody
+        { id: CH3, name: "rules", overwrites: [{ id: GUILD, type: 0, allow: "0", deny: str(SEND) }] },
+        { id: CH4, name: "chat", overwrites: [] },
+        // this one member is shut out
+        { id: CH5, name: "events", overwrites: [{ id: "871329074046435338", type: 1, allow: "0", deny: str(VIEW) }] },
+    ],
 };
+const KHO = { id: "1183033659838697542", name: "Kho", ownerId: "999999999999999999", everyone: str(VIEW | SEND), bus: true, roles: [], channels: [{ id: "1300000000000000101", name: "log", overwrites: [] }] };
+const targetsAnswer = () => ({ format: 2, bot: BOT, guilds: [SHOP, KHO] });
+
+// Their roles as staffService last read them from Discord (null = never checked).
+const ROLES = new Map([
+    ["871329074046435338", [R_STAFF]],
+    ["1133037157527859230", [R_SUPPORTER]],
+    ["1246001516893175877", [R_ADMIN]],
+]);
+require("../server/services/staffService").rolesOf = (id) => (ROLES.has(id) ? { roles: ROLES.get(id), at: Date.now() } : null);
+const kv = (name, value) => sharedStore.raw().prepare("INSERT OR REPLACE INTO kv (name, value) VALUES (?, ?)").run(name, JSON.stringify(value));
+const kvGet = (name) => JSON.parse(sharedStore.raw().prepare("SELECT value FROM kv WHERE name = ?").get(name)?.value || "null");
+const ids = (t) => t.guilds.flatMap((g) => g.channels.map((c) => c.id));
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -188,50 +219,99 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.deepStrictEqual(s.can, { targets: true, send: true, edit: true, remove: true, fetch: true });
     });
 
-    await test("targets: asked once, cached for a minute, refreshed on demand", async () => {
+    await test("map: loaded from the bot once a day — opening the page never asks it", async () => {
         bus.answer["message.targets"] = targetsAnswer;
+        const empty = await messages.targets({ auth: owner });
+        assert.deepStrictEqual(empty.guilds, []);
+        assert.strictEqual(empty.loadedAt, null);
+        assert.strictEqual((await messages.targets({ auth: staff })).viewer.reason, "no_map");
+        await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, staff), 503, /not been loaded/);
+
         const before = bus.requests.length;
-        const a = await messages.targets();
-        const b = await messages.targets();
+        await messages.dailyTick();
         assert.strictEqual(bus.requests.length, before + 1);
-        assert.strictEqual(a.guilds[0].channels[0].name, "thông-báo");
-        assert.strictEqual(b.cachedAt, a.cachedAt);
-        await messages.targets({ refresh: true });
+        assert.deepStrictEqual(bus.requests.at(-1).payload, {}, "one map for everyone");
+        const a = await messages.targets({ auth: owner });
+        await messages.targets({ auth: owner });
+        await messages.targets({ auth: staff });
+        assert.strictEqual(bus.requests.length, before + 1, "reading the page costs nothing");
+        assert.deepStrictEqual(a.guilds.map((g) => g.id), [GUILD, KHO.id], "the owner gets every server");
+        assert.ok(a.loadedAt > Date.now() - 5000);
+        assert.ok(!("overwrites" in a.guilds[0].channels[0]) && !("permissions" in a.guilds[0].roles[0]), "permission data stays on the panel");
+        await messages.dailyTick();
+        assert.strictEqual(bus.requests.length, before + 1, "fresh: the daily check does nothing");
+
+        // Reload: once every 10 minutes, counting the daily load.
+        await rejects(() => messages.reload(owner), 429, /reloaded again in 10 minutes/);
+        kv("__messages.mapTried", Date.now() - 11 * 60_000);
+        const r = await messages.reload(staff);
         assert.strictEqual(bus.requests.length, before + 2);
-        assert.strictEqual(a.guilds.length, 2, "the owner gets every server");
-        assert.strictEqual(bus.requests.at(-1).payload.viewer, undefined);
+        assert.ok(r.viewer.found, "answers with the caller's own view");
+        await rejects(() => messages.reload(staff), 429);
+
+        // A day later the daily check loads it again; a failed try waits an hour while the old map serves.
+        const dayAgo = () => {
+            kv("__messages.map", { ...kvGet("__messages.map"), at: Date.now() - 25 * 3600_000 });
+            kv("__messages.mapTried", Date.now() - 25 * 3600_000 - 1000);
+        };
+        dayAgo();
+        await messages.dailyTick();
+        assert.strictEqual(bus.requests.length, before + 3);
+        dayAgo();
+        bus.answer["message.targets"] = Object.assign(new Error("No answer"), { status: 504 });
+        await messages.dailyTick();
+        assert.strictEqual(bus.requests.length, before + 4);
+        await messages.dailyTick();
+        assert.strictEqual(bus.requests.length, before + 4, "no retry within the hour");
+        assert.strictEqual((await messages.targets({ auth: owner })).guilds.length, 2, "the old map still serves");
+        bus.answer["message.targets"] = targetsAnswer;
+        kv("__messages.mapTried", Date.now() - 11 * 60_000);
+        await messages.reload(owner);
     });
 
-    await test("staff: only the shop server, only the channels their own account can post in", async () => {
+    await test("permissions: Discord's formula", async () => {
+        const can = (p) => ({ view: (p & VIEW) === VIEW, send: (p & SEND) === SEND });
+        const ch = (id) => SHOP.channels.find((c) => c.id === id);
+        assert.deepStrictEqual(can(messages.permissionsIn(SHOP, ch(CH), "1", [])), { view: true, send: false }, "@everyone overwrite denies sending");
+        assert.deepStrictEqual(can(messages.permissionsIn(SHOP, ch(CH), "1", [R_STAFF])), { view: true, send: true }, "a role overwrite allows it back");
+        assert.deepStrictEqual(can(messages.permissionsIn(SHOP, ch(CH2), "1", [R_STAFF])), { view: false, send: true }, "sending without seeing is not posting");
+        assert.deepStrictEqual(can(messages.permissionsIn(SHOP, ch(CH5), "871329074046435338", [R_STAFF])), { view: false, send: true }, "their own overwrite comes last");
+        assert.deepStrictEqual(can(messages.permissionsIn(SHOP, ch(CH5), "871329074046435338", [R_ADMIN])), { view: true, send: true }, "Administrator ignores overwrites");
+        assert.deepStrictEqual(can(messages.permissionsIn(SHOP, ch(CH3), SHOP.ownerId, [])), { view: true, send: true }, "the owner can do everything");
+        const both = { ...ch(CH4), overwrites: [{ id: R_STAFF, type: 0, allow: "0", deny: str(SEND) }, { id: R_SUPPORTER, type: 0, allow: str(SEND), deny: "0" }] };
+        assert.strictEqual(can(messages.permissionsIn(SHOP, both, "1", [R_STAFF, R_SUPPORTER])).send, true, "between roles, allow wins");
+    });
+
+    await test("staff: only the shop server, only the channels their own account can see and post in", async () => {
         const t = await messages.targets({ auth: staff });
-        assert.deepStrictEqual(bus.requests.at(-1).payload, { viewer: { userId: "871329074046435338", guildId: GUILD } }, "the staff server from Panel Settings → Staff");
-        assert.deepStrictEqual(t.guilds.map((g) => g.id), [GUILD]);
-        assert.deepStrictEqual(t.guilds[0].channels.map((c) => c.id), [CH]);
+        assert.deepStrictEqual(t.guilds.map((g) => g.id), [GUILD], "not Kho");
+        assert.deepStrictEqual(ids(t), [CH, CH4], "not the hidden, read-only or shut-out ones");
         assert.strictEqual(t.viewer.found, true);
-        const owners = await messages.targets({ auth: owner });
-        assert.strictEqual(owners.guilds.length, 2, "cached apart from staff");
+        assert.deepStrictEqual(ids(await messages.targets({ auth: supporter })), [CH2, CH4, CH5], "each person their own channels");
+        assert.deepStrictEqual(ids(await messages.targets({ auth: admin })), [CH, CH2, CH3, CH4, CH5], "Administrator: all of them");
 
         const before = bus.requests.length;
-        await rejects(() => messages.send({ channelId: CH2, message: { content: "x" } }, staff), 403, /channels you can see and post in/);
-        await rejects(() => messages.send({ channelId: "1300000000000000101", message: { content: "x" } }, staff), 403, /channels you can see and post in/);
+        for (const channelId of [CH2, CH3, CH5, "1300000000000000101"]) {
+            await rejects(() => messages.send({ channelId, message: { content: "x" } }, staff), 403, /channels you can see and post in/);
+        }
         await rejects(() => messages.edit({ channelId: CH2, messageId: OTHER, message: { content: "x" } }, staff), 403);
         await rejects(() => messages.remove({ channelId: CH2, messageId: OTHER }, staff), 403);
         await rejects(() => messages.fetchByLink(`https://discord.com/channels/${GUILD}/${CH2}/${OTHER}`, staff), 403);
         assert.strictEqual(bus.requests.length, before, "nothing reached the bot");
 
-        // Not in the server at all.
-        const out = await messages.targets({ auth: outsider });
-        assert.deepStrictEqual(out.guilds, []);
-        assert.strictEqual(out.viewer.found, false);
-        await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, outsider), 403, /not in the shop's server/);
+        // Roles never read yet (signed in before this version): told to sign in again.
+        const nr = await messages.targets({ auth: noRoles });
+        assert.deepStrictEqual(nr.guilds, []);
+        assert.strictEqual(nr.viewer.reason, "no_roles");
+        await rejects(() => messages.send({ channelId: CH4, message: { content: "x" } }, noRoles), 403, /roles/);
 
-        // An assistant from before the check lists everything: staff are refused, not let through.
-        const saved = bus.answer["message.targets"];
-        bus.answer["message.targets"] = (p) => ({ bot: BOT, guilds: [{ id: GUILD, name: "ArnTo Shop", channels: SHOP_CHANNELS, roles: [] }] });
-        await rejects(() => messages.targets({ auth: staff, refresh: true }), 503, /update it/);
-        await rejects(() => messages.send({ channelId: CH2, message: { content: "x" } }, { kind: "staff", staff: { userId: "1246001516893175818" } }), 503);
-        bus.answer["message.targets"] = saved;
-        await messages.targets({ auth: staff, refresh: true });
+        // A map from an assistant without permission data: staff refused, the owner still fine.
+        const map = kvGet("__messages.map");
+        kv("__messages.map", { ...map, data: { ...map.data, format: 1 } });
+        assert.strictEqual((await messages.targets({ auth: staff })).viewer.reason, "old_bot");
+        await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, staff), 503, /update it/);
+        assert.strictEqual((await messages.targets({ auth: owner })).guilds.length, 2);
+        kv("__messages.map", map);
     });
 
     let first;
@@ -333,7 +413,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.match(logs.at(-1).text, /already gone/);
     });
 
-    await test("staff Sent list: only the channels they can post in; their own sends when the bot cannot say", async () => {
+    await test("staff Sent list: only the channels they can post in; only their own sends when that is unknown", async () => {
         bus.answer["message.send"] = (p) => ({ ...where("1300000000000000088", { channelId: p.channelId, channelName: "staff-room" }), warnings: [] });
         const hidden = await messages.send({ channelId: CH2, message: { content: "staff room only" } }, owner);
         const ownerList = await messages.listSent({ auth: owner });
@@ -342,7 +422,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.ok(!staffList.some((r) => r.id === hidden.id), "a channel they cannot see is left out");
         assert.ok(staffList.length > 0 && staffList.every((r) => r.channelId === CH));
         await rejects(() => messages.forget(hidden.id, staff), 403);
-        assert.deepStrictEqual(await messages.listSent({ auth: busDown }), [], "nothing of their own");
+        assert.deepStrictEqual(await messages.listSent({ auth: noRoles }), [], "nothing of their own");
     });
 
     await test("fetch by link: the bot reads it; its Sent row comes along", async () => {
