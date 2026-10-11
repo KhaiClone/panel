@@ -155,9 +155,9 @@ const performBackup = async ({ reason: why = "scheduled" } = {}) => {
             .map(([k, d]) => `${k} ${archive.fmtSize(d.gz)}`)
             .join(", ");
         last = { at: entry.at, ok: true, message: `${what}${built.summary.env ? " + .env" : ""}` };
+        // Not in the panel log: the backup message itself is the record, and a
+        // failure still gets there (console.error is mirrored into it).
         console.log(`[Backup] Sent ${built.files.length} file(s) — ${last.message}`);
-        const link = linkOf(entry);
-        require("./panelLog").add("system", `Backup sent (${why}) — ${last.message}${link ? ` · [open](${link})` : ""}`);
         return { ok: true, entry };
     } catch (err) {
         const message = reason(err);

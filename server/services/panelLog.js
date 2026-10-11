@@ -8,7 +8,7 @@ const axios = require("axios");
 //
 //    notice   what the bell shows: bot started / stopped, node offline, …
 //    error    every console.error of the server (warn: every console.warn)
-//    system   panel started, moving, back to active; backups; Lavalink report
+//    system   panel started, moving, back to active; rollbacks; Lavalink report
 //    staff    sign-ins and sign-outs, every change staff make (owner: what the
 //             owner changed about staff)
 //

@@ -954,7 +954,7 @@ except the customer-facing expiry / renewal alerts (`server/services/panelLog.js
 |------|------|
 | 🔔 | Every notification the bell shows: bot started / stopped / restarted, node offline / back, memory restarts, migrations… |
 | ❌ ⚠️ | Every `console.error` / `console.warn` of the server — failed backups, bus problems, route errors… |
-| 🖥️ | System: panel started (epoch, version), moving / move abandoned, backup sent (with a link), rollback staged; the Lavalink report too when `DISCORD_LAVALINK_WEBHOOK` is not set |
+| 🖥️ | System: panel started (epoch, version), moving / move abandoned, rollback staged (a backup that was sent is not logged — its message is the record); the Lavalink report too when `DISCORD_LAVALINK_WEBHOOK` is not set |
 | 👤 | Staff: sign-ins (🆕 for a new device, IP, browser), sign-outs and why, every change they make (page, request, result) |
 | 👑 | The owner's changes to staff access: added, pages changed, removed, signed out, login settings |
 
