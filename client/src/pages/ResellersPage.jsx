@@ -219,23 +219,68 @@ function SyncModal({ result, nameOf, onClose }) {
 
 // ── Orders ───────────────────────────────────────────────────────────────────
 
-function Orders({ userId, month, onClear, refreshKey }) {
-    const [rows, setRows] = useState([]);
+const PAGE_SIZES = [25, 50, 100];
+
+/** "1–25 of 340", the page size, first / previous / next / last. */
+function Pager({ page, pages, pageSize, total, onPage, onPageSize }) {
+    return (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 10, borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+            </span>
+            <select className="input" style={{ width: "auto", padding: "4px 8px", fontSize: 12 }} value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))}>
+                {PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>
+                        {n} per page
+                    </option>
+                ))}
+            </select>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+                <button className="btn-ghost btn-icon btn-sm" title="First page" disabled={page <= 1} onClick={() => onPage(1)}>
+                    <Icon name="chevronsLeft" />
+                </button>
+                <button className="btn-ghost btn-icon btn-sm" title="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+                    <Icon name="chevronLeft" />
+                </button>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 90, textAlign: "center" }}>
+                    Page {page} of {pages}
+                </span>
+                <button className="btn-ghost btn-icon btn-sm" title="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+                    <Icon name="chevronRight" />
+                </button>
+                <button className="btn-ghost btn-icon btn-sm" title="Last page" disabled={page >= pages} onClick={() => onPage(pages)}>
+                    <Icon name="chevronsRight" />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+/** The CTV orders, one page at a time from the server — never all of them at once. */
+function Orders({ userId, userLabel, month, onClear, refreshKey }) {
+    const [result, setResult] = useState(null); // { total, page, pageSize, pages, orders }
     const [allMonths, setAllMonths] = useState(false);
+    const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+    // The page belongs to one filter: another CTV, month or page size starts at page 1.
+    const filter = `${userId || ""}|${allMonths ? "all" : month}|${pageSize}`;
+    const [at, setAt] = useState({ filter, page: 1 });
+    const page = at.filter === filter ? at.page : 1;
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
     useEffect(() => {
         let alive = true;
         setLoading(true);
-        api.get("/resellers/orders", { params: { userId: userId || undefined, month: allMonths ? "all" : month } })
-            .then(({ data }) => alive && (setRows(data.orders || []), setError("")))
+        api.get("/resellers/orders", { params: { userId: userId || undefined, month: allMonths ? "all" : month, page, pageSize } })
+            .then(({ data }) => alive && (setResult(data), setError("")))
             .catch((err) => alive && setError(errMsg(err, "Could not load the orders")))
             .finally(() => alive && setLoading(false));
         return () => {
             alive = false;
         };
-    }, [userId, month, allMonths, refreshKey]);
+    }, [userId, month, allMonths, page, pageSize, refreshKey]);
+
+    const rows = result?.orders || [];
 
     return (
         <div className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -243,7 +288,7 @@ function Orders({ userId, month, onClear, refreshKey }) {
                 <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>CTV orders</h2>
                 {userId && (
                     <button className="chip active" title="Show every CTV's orders" onClick={onClear}>
-                        {rows[0]?.buyerTag || userId} <Icon name="x" size={12} />
+                        {userLabel || userId} <Icon name="x" size={12} />
                     </button>
                 )}
                 <div className="tab-bar" style={{ marginLeft: "auto" }}>
@@ -256,36 +301,47 @@ function Orders({ userId, month, onClear, refreshKey }) {
                 </div>
             </div>
             {error && <Notice tone="danger">{error}</Notice>}
-            {loading ? (
+            {!result && loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !rows.length ? (
                 <EmptyState compact icon="orders" title="No CTV orders" description={allMonths ? undefined : "Try All time, or another month."} />
             ) : (
-                <DataTable minWidth={760} columns={["When", "CTV", "Order", "Seller", { label: "Price", align: "right" }, "Status"]}>
-                    {rows.map((o) => {
-                        const s = st(o.status);
-                        return (
-                            <tr key={o.orderId}>
-                                <td className="muted top">{fmtDate(o.orderDate)}</td>
-                                <td className="nowrap top">
-                                    <Who tag={o.buyerTag} id={o.buyerId} />
-                                </td>
-                                <td className="top" style={{ maxWidth: 260 }}>
-                                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</div>
-                                    <div className="mono cell-sub">
-                                        {o.orderId}
-                                        {!o.stamped && <span title="Opened before the shop marked CTV orders — counted because it falls after “CTV since”"> · by date</span>}
-                                    </div>
-                                </td>
-                                <td className="nowrap top">{o.sellerName}</td>
-                                <td className="mono num top">{money(o.price)}</td>
-                                <td className="top">
-                                    <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </DataTable>
+                // The current page stays on screen, dimmed, while the next one loads.
+                <div style={{ opacity: loading ? 0.6 : 1, transition: "opacity 120ms" }}>
+                    <DataTable minWidth={760} columns={["When", "CTV", "Order", "Seller", { label: "Price", align: "right" }, "Status"]}>
+                        {rows.map((o) => {
+                            const s = st(o.status);
+                            return (
+                                <tr key={o.orderId}>
+                                    <td className="muted top">{fmtDate(o.orderDate)}</td>
+                                    <td className="nowrap top">
+                                        <Who tag={o.buyerTag} id={o.buyerId} />
+                                    </td>
+                                    <td className="top" style={{ maxWidth: 260 }}>
+                                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</div>
+                                        <div className="mono cell-sub">
+                                            {o.orderId}
+                                            {!o.stamped && <span title="Opened before the shop marked CTV orders — counted because it falls after “CTV since”"> · by date</span>}
+                                        </div>
+                                    </td>
+                                    <td className="nowrap top">{o.sellerName}</td>
+                                    <td className="mono num top">{money(o.price)}</td>
+                                    <td className="top">
+                                        <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </DataTable>
+                    <Pager
+                        page={result.page}
+                        pages={result.pages}
+                        pageSize={result.pageSize}
+                        total={result.total}
+                        onPage={(p) => setAt({ filter, page: p })}
+                        onPageSize={setPageSize}
+                    />
+                </div>
             )}
         </div>
     );
@@ -519,7 +575,7 @@ export default function ResellersPage() {
                 )}
             </div>
 
-            {data?.ordersOnPanel && <Orders userId={ordersOf} month={month} onClear={() => setOrdersOf(null)} refreshKey={ordersKey} />}
+            {data?.ordersOnPanel && <Orders userId={ordersOf} userLabel={ordersOf ? nameOf(ordersOf) : null} month={month} onClear={() => setOrdersOf(null)} refreshKey={ordersKey} />}
 
             {modal?.type === "new" && <ResellerModal initial={modal.reseller ? toDraft(modal.reseller) : emptyDraft} isNew onClose={() => setModal(null)} onDone={done} />}
             {modal?.type === "edit" && <ResellerModal initial={toDraft(modal.reseller)} onClose={() => setModal(null)} onDone={done} />}

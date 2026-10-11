@@ -246,34 +246,45 @@ const listPlain = ({ all = false } = {}) => rows({ all }).map((r) => toReseller(
 
 const get = (userId, { active = false } = {}) => toReseller(requireRow(userId, { active }));
 
-/** CTV orders, newest first — one CTV's or everyone's, for one month or all of them. */
-const orders = ({ userId, month, limit = 300 } = {}) => {
+const PAGE_SIZES = [25, 50, 100];
+
+/**
+ * CTV orders, newest first — one CTV's or everyone's, for one month or all of
+ * them — one page at a time, so the page never loads them all.
+ * → { month, total, page, pageSize, pages, orders }
+ */
+const orders = ({ userId, month, page = 1, pageSize = PAGE_SIZES[0] } = {}) => {
     const all = allOrders();
     if (!all) throw httpError(503, "The orders are not on the panel yet — the shop moves them here on its next start (PANEL_SHARED)");
     const m = month === "all" ? null : monthArg(month);
     const rs = userId ? [requireRow(userId, { active: false })] : rows({ all: true });
     const tags = new Map(rs.map((r) => [r.user_id, r.user_tag]));
     const grouped = ordersByReseller(rs, all);
-    const n = Math.min(Math.max(Number(limit) || 300, 1), 2000);
+    const matching = Object.values(grouped)
+        .flat()
+        .filter((o) => !m || monthOf(o.orderDate) === m)
+        .sort((a, b) => (b.orderDate || 0) - (a.orderDate || 0));
+    const size = PAGE_SIZES.includes(Number(pageSize)) ? Number(pageSize) : PAGE_SIZES[0];
+    const pages = Math.max(1, Math.ceil(matching.length / size));
+    const at = Math.min(Math.max(Math.floor(Number(page)) || 1, 1), pages); // past the end → the last page
     return {
         month: m,
-        orders: Object.values(grouped)
-            .flat()
-            .filter((o) => !m || monthOf(o.orderDate) === m)
-            .sort((a, b) => (b.orderDate || 0) - (a.orderDate || 0))
-            .slice(0, n)
-            .map((o) => ({
-                orderId: o.orderId,
-                name: o.name,
-                price: o.price,
-                status: o.status,
-                orderDate: o.orderDate,
-                sellerId: o.sellerId,
-                sellerName: orderService.SELLERS[o.sellerId] || o.sellerId,
-                buyerId: o.buyerId,
-                buyerTag: tags.get(o.buyerId) || null,
-                stamped: typeof o.reseller === "boolean",
-            })),
+        total: matching.length,
+        page: at,
+        pageSize: size,
+        pages,
+        orders: matching.slice((at - 1) * size, at * size).map((o) => ({
+            orderId: o.orderId,
+            name: o.name,
+            price: o.price,
+            status: o.status,
+            orderDate: o.orderDate,
+            sellerId: o.sellerId,
+            sellerName: orderService.SELLERS[o.sellerId] || o.sellerId,
+            buyerId: o.buyerId,
+            buyerTag: tags.get(o.buyerId) || null,
+            stamped: typeof o.reseller === "boolean",
+        })),
     };
 };
 
@@ -463,6 +474,7 @@ const start = () => {
 
 module.exports = {
     CMD,
+    PAGE_SIZES,
     TEMPLATE_VARS,
     monthOf,
     canAccess,

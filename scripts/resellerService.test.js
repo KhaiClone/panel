@@ -230,6 +230,30 @@ const order = (buyerId, price, at, status = "completed", extra = {}) => ({
         await rejects(() => resellers.orders({ userId: KHACH }), 404);
     });
 
+    await test("orders(): one page at a time; odd page / size are corrected", async () => {
+        const many = Array.from({ length: 60 }, (_, i) => order(MINH, 1_000 + i, vn(2026, 10, 10) + i * 60_000, "completed", { reseller: true }));
+        for (const o of many) sharedStore.run("orders", "create", { data: o });
+        const first = resellers.orders({ userId: MINH, month: "all" });
+        assert.deepStrictEqual([first.total, first.page, first.pageSize, first.pages, first.orders.length], [62, 1, 25, 3, 25]);
+        assert.strictEqual(first.orders[0].price, 1_059, "newest first");
+        const last = resellers.orders({ userId: MINH, month: "all", page: 3 });
+        // Orders 51–62: the ten oldest of the new ones, then Minh's two from before.
+        assert.deepStrictEqual(
+            last.orders.map((o) => o.price),
+            [1_009, 1_008, 1_007, 1_006, 1_005, 1_004, 1_003, 1_002, 1_001, 1_000, 500_000, 60_000],
+        );
+        assert.strictEqual(resellers.orders({ userId: MINH, month: "all", page: 99 }).page, 3, "past the end → the last page");
+        assert.strictEqual(resellers.orders({ userId: MINH, month: "all", page: "x" }).page, 1);
+        const big = resellers.orders({ userId: MINH, month: "all", pageSize: 100 });
+        assert.deepStrictEqual([big.pageSize, big.pages, big.orders.length], [100, 1, 62]);
+        assert.strictEqual(resellers.orders({ pageSize: 5000 }).pageSize, 25, "only 25 | 50 | 100");
+        const empty = resellers.orders({ userId: HOA, month: "all" });
+        assert.deepStrictEqual([empty.total, empty.page, empty.pages, empty.orders.length], [0, 1, 1, 0]);
+        // Back to the orders the next checks expect.
+        for (const o of many) sharedStore.run("orders", "findOneAndDelete", { query: { orderId: o.orderId } });
+        assert.strictEqual(resellers.orders({ userId: MINH, month: "all" }).total, 2);
+    });
+
     await test("removed and added again: stamped orders stay theirs, old unstamped ones follow the new date", async () => {
         bus.answer = { role: "removed", dm: "sent" };
         const out = await resellers.remove(LAN, { via: "panel" });

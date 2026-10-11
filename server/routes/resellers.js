@@ -8,7 +8,9 @@ const resellers = require("../services/resellerService");
 //     GET    /settings                 the welcome / farewell DM texts
 //     PUT    /settings                 { welcome, farewell } ("" = the default)
 //     GET    /?all=1&month=2026-10     CTVs with their orders that month and in total
-//     GET    /orders?userId=&month=    CTV orders, newest first (month=all: every month)
+//     GET    /orders?userId=&month=&page=&pageSize=
+//                                      CTV orders, newest first, one page (month=all:
+//                                      every month; pageSize 25 | 50 | 100)
 //     POST   /sync                     the shop checks the CTV role
 //     POST   /                         { userId, shop, note }
 //     GET    /:userId
@@ -42,7 +44,10 @@ panel.get("/status", handle(() => resellers.status()));
 panel.get("/settings", handle(() => resellers.getSettings()));
 panel.put("/settings", handle((req) => resellers.setSettings(req.body || {})));
 panel.get("/", handle((req) => resellers.list({ all: !!req.query.all, month: req.query.month })));
-panel.get("/orders", handle((req) => resellers.orders({ userId: req.query.userId || null, month: req.query.month })));
+panel.get(
+    "/orders",
+    handle((req) => resellers.orders({ userId: req.query.userId || null, month: req.query.month, page: req.query.page, pageSize: req.query.pageSize })),
+);
 panel.post("/sync", handle(() => resellers.syncRoles()));
 panel.post("/", handle((req) => resellers.add(req.body || {}, fromPanel)));
 panel.get("/:userId", handle((req) => resellers.get(req.params.userId)));
