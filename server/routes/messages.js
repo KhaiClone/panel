@@ -3,6 +3,8 @@ const messages = require("../services/botMessages");
 
 // Mounted at /api/messages behind pageAuth("messages") — the Messages page
 // (services/botMessages.js). ArnTo-assistant does the posting, over the bus.
+// Staff only reach the shop server's channels their own Discord account can
+// see and post in — every route below that names a channel checks it (checkChannel).
 //
 //   GET    /status                  which bot posts, is the bus up, Discord's limits
 //   GET    /targets?refresh=1       servers, channels (with the bot's rights) and roles
@@ -27,16 +29,16 @@ const handle = (fn) => async (req, res, next) => {
     }
 };
 
-router.get("/status", handle(() => messages.status()));
-router.get("/targets", handle((req) => messages.targets({ refresh: req.query.refresh === "1" })));
-router.get("/fetch", handle((req) => messages.fetchByLink(req.query.link)));
+router.get("/status", handle((req) => messages.status(req.auth)));
+router.get("/targets", handle((req) => messages.targets({ refresh: req.query.refresh === "1", auth: req.auth })));
+router.get("/fetch", handle((req) => messages.fetchByLink(req.query.link, req.auth)));
 
 router.post("/send", handle((req) => messages.send(req.body || {}, req.auth)));
 router.post("/edit", handle((req) => messages.edit(req.body || {}, req.auth)));
 router.post("/delete", handle((req) => messages.remove(req.body || {}, req.auth)));
 
-router.get("/sent", handle((req) => ({ sent: messages.listSent({ limit: req.query.limit }) })));
-router.delete("/sent/:id", handle((req) => messages.forget(req.params.id)));
+router.get("/sent", handle(async (req) => ({ sent: await messages.listSent({ limit: req.query.limit, auth: req.auth }) })));
+router.delete("/sent/:id", handle((req) => messages.forget(req.params.id, req.auth)));
 
 router.get("/drafts", handle(() => ({ drafts: messages.listDrafts() })));
 router.post("/drafts", handle((req) => messages.createDraft(req.body || {}, req.auth)));

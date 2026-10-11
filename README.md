@@ -884,6 +884,17 @@ comes. Every send, edit and delete goes to the [panel log channel](#-panel-log-c
 did it. Stored in `data/shared.sqlite`: `bot_messages`, `message_drafts`. Staff can be given the
 page (*View* = read Sent / Saved, *Edit* = send).
 
+**Staff only use the shop's server, and only the channels they can post in there.** The owner posts
+anywhere the bot is. A staff member gets the server set under Panel Settings → Staff (ArnTo Shop by
+default) and, in it, only the channels where **their own Discord account** has *View Channel* and
+*Send Messages* — a channel that is read-only for them does not count — so two staff members see
+different lists, following their roles on Discord. The assistant works the list
+out from the member's permissions (`message.targets` with `viewer`); the panel refuses any other
+channel for send, edit, delete, *Open by link* and *Sent* (which only lists those channels), and the
+assistant checks it again, live, on every command that carries `viewer`. Access gained or lost on
+Discord shows after a minute, or at once with *Refresh*. An assistant older than this check is
+detected (it does not echo `viewer`) and staff are refused until it is updated.
+
 ## 👥 Staff Access
 
 The owner (the `.env` account) can let other people into **some pages** of the panel.

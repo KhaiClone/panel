@@ -15,6 +15,14 @@ const panelLog = require("./panelLog");
 //    message.delete    delete one
 //    message.fetch     read a message by its link, to edit it or copy it
 //
+//  Staff (not the owner) post only in the staff server — the one set under
+//  Panel Settings → Staff, ArnTo Shop by default — and only in the channels
+//  their OWN Discord account can see AND post in there (View Channel + Send
+//  Messages — a read-only channel does not count). The bot works that out from the
+//  member's permissions (message.targets with `viewer`), the panel refuses any
+//  other channel, and the bot checks it again, live, on every send / edit /
+//  delete / read that carries `viewer`. Their Sent list shows those channels only.
+//
 //  Pings: the page says per message whether @everyone / @here, roles and
 //  members may ping (allowedMentions on the bot's side — the assistant's own
 //  client default leaves roles out). A role that is not mentionable, and
@@ -161,6 +169,15 @@ const actorOf = (auth) =>
         : { kind: "owner", id: null, tag: auth?.username || "owner" };
 
 const actorText = (a) => (a?.kind === "staff" ? `**${a.tag || a.id}**` : "Owner");
+
+/**
+ * Whose eyes the bot checks a channel with: staff → { userId, guildId } (the
+ * staff server from Panel Settings → Staff), the owner → null (anywhere).
+ */
+const viewerOf = (auth) => {
+    if (auth?.kind !== "staff") return null;
+    return { userId: String(auth.staff.userId), guildId: String(require("./staffService").getSettings().guildId) };
+};
 
 // ── Checking a message ───────────────────────────────────────────────────────
 
@@ -350,7 +367,7 @@ const handler = (cmd) => {
     return bot;
 };
 
-const status = async () => {
+const status = async (auth) => {
     const bot = discordBus.handlerOf(CMD.send);
     let botName = null;
     if (bot) {
@@ -366,36 +383,71 @@ const status = async () => {
         botName,
         can: Object.fromEntries(Object.entries(CMD).map(([k, cmd]) => [k, !!bot && discordBus.canHandle(bot, cmd)])),
         limits: LIMIT,
+        scope: viewerOf(auth) ? "staff" : "all",
     };
 };
 
-let targetsCache = null; // { at, bot, data }
-let targetsInFlight = null;
+const targetsCache = new Map(); // "owner" | "staff:<userId>:<guildId>" → { at, bot, data }
+const targetsInFlight = new Map();
 
-/** The servers, channels and roles the bot sees — cached for a minute unless `refresh`. */
-const targets = async ({ refresh = false } = {}) => {
+const shown = (e) => ({ ...e.data, cachedAt: e.at });
+
+/**
+ * The servers, channels and roles the bot sees — for staff only the staff
+ * server's channels their own account can see and post in. Cached a minute per viewer
+ * unless `refresh`.
+ */
+const targets = async ({ refresh = false, auth } = {}) => {
     const bot = handler(CMD.targets);
-    if (!refresh && targetsCache?.bot === bot && Date.now() - targetsCache.at < TARGETS_TTL_MS) return { ...targetsCache.data, cachedAt: targetsCache.at };
-    if (!targetsInFlight) {
-        targetsInFlight = discordBus
-            .request(bot, CMD.targets, {}, { timeoutMs: 25_000 })
-            .then((data) => {
-                targetsCache = { at: Date.now(), bot, data: { bot: data?.bot || null, guilds: Array.isArray(data?.guilds) ? data.guilds : [] } };
-                return targetsCache;
-            })
-            .finally(() => {
-                targetsInFlight = null;
-            });
+    const viewer = viewerOf(auth);
+    const key = viewer ? `staff:${viewer.userId}:${viewer.guildId}` : "owner";
+    const hit = targetsCache.get(key);
+    if (!refresh && hit?.bot === bot && Date.now() - hit.at < TARGETS_TTL_MS) return shown(hit);
+    if (!targetsInFlight.has(key)) {
+        targetsInFlight.set(
+            key,
+            discordBus
+                .request(bot, CMD.targets, viewer ? { viewer } : {}, { timeoutMs: 25_000 })
+                .then((data) => {
+                    // An assistant from before this check ignores `viewer` and lists everything.
+                    if (viewer && data?.viewer?.userId !== viewer.userId) {
+                        throw httpError(503, "ArnTo-assistant does not check which channels staff can see yet — update it (Pull & Update) and restart it");
+                    }
+                    const entry = { at: Date.now(), bot, data: { bot: data?.bot || null, guilds: Array.isArray(data?.guilds) ? data.guilds : [], viewer: data?.viewer || null } };
+                    targetsCache.set(key, entry);
+                    return entry;
+                })
+                .finally(() => targetsInFlight.delete(key)),
+        );
     }
-    const hit = await targetsInFlight;
-    return { ...hit.data, cachedAt: hit.at };
+    return shown(await targetsInFlight.get(key));
+};
+
+/** Staff: the ids of the channels they may use (a Set); the owner: null (all). */
+const allowedFor = async (auth) => {
+    const viewer = viewerOf(auth);
+    if (!viewer) return null;
+    const t = await targets({ auth });
+    if (!t.viewer?.found) throw httpError(403, "Your Discord account is not in the shop's server, so you cannot post from here");
+    return new Set(t.guilds.filter((g) => g.id === viewer.guildId).flatMap((g) => (g.channels || []).map((c) => c.id)));
+};
+
+/** Refuse a channel staff cannot see; → the viewer to hand the bot (null for the owner). */
+const checkChannel = async (auth, channelId) => {
+    const allowed = await allowedFor(auth);
+    if (allowed && !allowed.has(String(channelId))) {
+        throw httpError(403, "You can only use the channels you can see and post in yourself in the shop's server on Discord");
+    }
+    return viewerOf(auth);
 };
 
 /** Channel name / server name from the cached targets, when the bot's answer has none. */
 const placeOf = (channelId) => {
-    for (const g of targetsCache?.data?.guilds || []) {
-        const c = (g.channels || []).find((x) => x.id === channelId);
-        if (c) return { guildId: g.id, guildName: g.name, channelName: c.name };
+    for (const { data } of targetsCache.values()) {
+        for (const g of data.guilds || []) {
+            const c = (g.channels || []).find((x) => x.id === channelId);
+            if (c) return { guildId: g.id, guildName: g.name, channelName: c.name };
+        }
     }
     return {};
 };
@@ -431,17 +483,30 @@ const settle = (r) => {
     return getRow(r.id);
 };
 
-const listSent = ({ limit = 100 } = {}) => {
+/**
+ * Newest first. Staff see the channels they can post in — or, when that cannot be
+ * worked out right now (bus down), only what they sent themselves.
+ */
+const listSent = async ({ limit = 100, auth } = {}) => {
     const n = Math.min(Math.max(parseInt(limit) || 100, 1), HISTORY_KEEP);
-    return conn()
-        .prepare("SELECT * FROM bot_messages ORDER BY sent_at DESC LIMIT ?")
-        .all(n)
-        .map((r) => rowToSent(settle(r)));
+    let rows = conn().prepare("SELECT * FROM bot_messages ORDER BY sent_at DESC").all();
+    const viewer = viewerOf(auth);
+    if (viewer) {
+        let allowed = null;
+        try {
+            allowed = await allowedFor(auth);
+        } catch {
+            /* fall back to their own sends */
+        }
+        rows = rows.filter((r) => (allowed ? allowed.has(r.channel_id) : parse(r.sent_by)?.id === viewer.userId));
+    }
+    return rows.slice(0, n).map((r) => rowToSent(settle(r)));
 };
 
-const forget = (id) => {
+const forget = async (id, auth) => {
     const r = getRow(id);
     if (!r) throw httpError(404, "Not in the list");
+    await checkChannel(auth, r.channel_id);
     conn().prepare("DELETE FROM bot_messages WHERE id = ?").run(r.id);
     return { forgotten: r.id };
 };
@@ -471,6 +536,7 @@ const send = async ({ channelId, message, ...rest } = {}, auth) => {
     const msg = normalizeMessage(message);
     const opts = normalizeOptions(rest);
     const bot = handler(CMD.send);
+    const viewer = await checkChannel(auth, ch);
     const actor = actorOf(auth);
     const id = crypto.randomUUID();
     const place = placeOf(ch);
@@ -487,7 +553,7 @@ const send = async ({ channelId, message, ...rest } = {}, auth) => {
         res = await discordBus.request(
             bot,
             CMD.send,
-            { channelId: ch, message: msg, ...opts, notAfter: now + SEND_WINDOW_MS },
+            { channelId: ch, message: msg, ...opts, ...(viewer ? { viewer } : {}), notAfter: now + SEND_WINDOW_MS },
             { timeoutMs: 30_000, onQueued: (busId) => conn().prepare("UPDATE bot_messages SET bus_id = ? WHERE id = ?").run(busId, id) },
         );
     } catch (err) {
@@ -525,8 +591,14 @@ const edit = async ({ channelId, messageId, message, ...rest } = {}, auth) => {
     const msg = normalizeMessage(message, { edit: true });
     const opts = normalizeOptions(rest);
     const bot = handler(CMD.edit);
+    const viewer = await checkChannel(auth, ref.channelId);
     const actor = actorOf(auth);
-    const res = await discordBus.request(bot, CMD.edit, { ...ref, message: msg, mentions: opts.mentions, notAfter: Date.now() + SEND_WINDOW_MS }, { timeoutMs: 30_000 });
+    const res = await discordBus.request(
+        bot,
+        CMD.edit,
+        { ...ref, message: msg, mentions: opts.mentions, ...(viewer ? { viewer } : {}), notAfter: Date.now() + SEND_WINDOW_MS },
+        { timeoutMs: 30_000 },
+    );
     const now = Date.now();
     // What Discord now holds: the buttons left alone come back from the bot.
     const stored = msg.components === null ? { ...msg, components: res?.components || [] } : msg;
@@ -554,8 +626,9 @@ const edit = async ({ channelId, messageId, message, ...rest } = {}, auth) => {
 const remove = async (input = {}, auth) => {
     const ref = refOf(input);
     const bot = handler(CMD.remove);
+    const viewer = await checkChannel(auth, ref.channelId);
     const actor = actorOf(auth);
-    const res = await discordBus.request(bot, CMD.remove, { ...ref, notAfter: Date.now() + SEND_WINDOW_MS }, { timeoutMs: 30_000 });
+    const res = await discordBus.request(bot, CMD.remove, { ...ref, ...(viewer ? { viewer } : {}), notAfter: Date.now() + SEND_WINDOW_MS }, { timeoutMs: 30_000 });
     const cur = byMessage(ref.messageId);
     if (cur) conn().prepare("UPDATE bot_messages SET status = 'deleted', deleted_by = ?, deleted_at = ? WHERE id = ?").run(json(actor), Date.now(), cur.id);
     const row = cur ? rowToSent(getRow(cur.id)) : { ...ref, ...placeOf(ref.channelId) };
@@ -575,10 +648,11 @@ const parseLink = (link) => {
  * Read a message by its link: → { message (the editor's shape), own, editable,
  * keepsComponents, place…, sent (its Sent row, if any) }.
  */
-const fetchByLink = async (link) => {
+const fetchByLink = async (link, auth) => {
     const ref = parseLink(link);
     const bot = handler(CMD.fetch);
-    const res = await discordBus.request(bot, CMD.fetch, { channelId: ref.channelId, messageId: ref.messageId }, { timeoutMs: 25_000 });
+    const viewer = await checkChannel(auth, ref.channelId);
+    const res = await discordBus.request(bot, CMD.fetch, { channelId: ref.channelId, messageId: ref.messageId, ...(viewer ? { viewer } : {}) }, { timeoutMs: 25_000 });
     const sent = byMessage(ref.messageId);
     return { ...res, sent: sent ? rowToSent(settle(sent)) : null };
 };

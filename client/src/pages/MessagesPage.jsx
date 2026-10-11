@@ -69,7 +69,7 @@ function ChannelSelect({ guild, value, onChange, disabled }) {
         return out;
     }, [guild]);
     return (
-        <select className="input" value={value || ""} disabled={disabled || !guild} onChange={(e) => onChange(e.target.value || null)}>
+        <select className="input" value={guild?.channels?.some((c) => c.id === value) ? value : ""} disabled={disabled || !guild} onChange={(e) => onChange(e.target.value || null)}>
             <option value="">Pick a channel…</option>
             {groups.map((g) => (
                 <optgroup key={g.key} label={g.name}>
@@ -144,6 +144,9 @@ function SendBox({ status, targets, targetsError, loadingTargets, onRefresh, dra
             </div>
 
             {targetsError && <Notice tone="danger">{targetsError}</Notice>}
+            {targets?.viewer && !targets.viewer.found && (
+                <Notice tone="danger">Your Discord account is not in {targets.viewer.guildName || "the shop's server"}, so you cannot post from here.</Notice>
+            )}
 
             {editing ? (
                 <div className="msg-editing">
@@ -176,7 +179,10 @@ function SendBox({ status, targets, targetsError, loadingTargets, onRefresh, dra
                             </select>
                         </Field>
                     )}
-                    <Field label={guilds.length === 1 ? `Channel in ${guilds[0].name}` : "Channel"}>
+                    <Field
+                        label={guilds.length === 1 ? `Channel in ${guilds[0].name}` : "Channel"}
+                        hint={targets?.viewer?.found ? "Only the channels where your own Discord account can see and send messages. Got access to a new one? Press Refresh." : undefined}
+                    >
                         <ChannelSelect guild={guild} value={options.channelId} onChange={(id) => setOptions({ ...options, channelId: id, publish: false })} disabled={!canEdit} />
                     </Field>
                 </>

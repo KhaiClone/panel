@@ -4,7 +4,8 @@
  * checked against Discord's limits before it goes on the bus, the ping
  * options, sending / editing / deleting over the stubbed Discord bus, a send
  * whose answer comes late (pending, then settled from the outbox), opening a
- * message by its link, and saved messages.
+ * message by its link, saved messages, and staff kept to the shop server's
+ * channels their own Discord account can see and post in.
  * Run:  node scripts/botMessages.test.js
  */
 
@@ -49,6 +50,27 @@ panelLog.add = (kind, text) => logs.push({ kind, text });
 
 const owner = { kind: "owner", username: "khai" };
 const staff = { kind: "staff", staff: { userId: "871329074046435338", userTag: "nghiihgn" } };
+const outsider = { kind: "staff", staff: { userId: "427399742906040333", userTag: "left-the-server" } };
+const busDown = { kind: "staff", staff: { userId: "1133037157527859230", userTag: "nobody" } };
+
+// What the assistant answers to message.targets: everything for the owner; for
+// staff (viewer) only the shop server, only the channels that account can post in.
+const BOT = { username: "ArnTo Trợ Lý" };
+const SHOP_CHANNELS = [
+    { id: CH, name: "thông-báo" },
+    { id: CH2, name: "staff-room" },
+];
+const STAFF_SEES = new Set([CH]);
+const targetsAnswer = (p) => {
+    if (!p.viewer) return { bot: BOT, guilds: [{ id: GUILD, name: "ArnTo Shop", channels: SHOP_CHANNELS, roles: [] }, { id: "1183033659838697542", name: "Kho", channels: [{ id: "1300000000000000101", name: "log" }], roles: [] }] };
+    if (p.viewer.userId === busDown.staff.userId) throw Object.assign(new Error("No answer from the bot"), { status: 504 });
+    const found = p.viewer.userId !== outsider.staff.userId;
+    return {
+        bot: BOT,
+        guilds: found ? [{ id: GUILD, name: "ArnTo Shop", channels: SHOP_CHANNELS.filter((c) => STAFF_SEES.has(c.id)), roles: [] }] : [],
+        viewer: { ...p.viewer, guildName: "ArnTo Shop", found },
+    };
+};
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -167,7 +189,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
     });
 
     await test("targets: asked once, cached for a minute, refreshed on demand", async () => {
-        bus.answer["message.targets"] = { bot: { username: "ArnTo Trợ Lý" }, guilds: [{ id: GUILD, name: "ArnTo Shop", channels: [{ id: CH, name: "thông-báo" }], roles: [] }] };
+        bus.answer["message.targets"] = targetsAnswer;
         const before = bus.requests.length;
         const a = await messages.targets();
         const b = await messages.targets();
@@ -176,6 +198,40 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.strictEqual(b.cachedAt, a.cachedAt);
         await messages.targets({ refresh: true });
         assert.strictEqual(bus.requests.length, before + 2);
+        assert.strictEqual(a.guilds.length, 2, "the owner gets every server");
+        assert.strictEqual(bus.requests.at(-1).payload.viewer, undefined);
+    });
+
+    await test("staff: only the shop server, only the channels their own account can post in", async () => {
+        const t = await messages.targets({ auth: staff });
+        assert.deepStrictEqual(bus.requests.at(-1).payload, { viewer: { userId: "871329074046435338", guildId: GUILD } }, "the staff server from Panel Settings → Staff");
+        assert.deepStrictEqual(t.guilds.map((g) => g.id), [GUILD]);
+        assert.deepStrictEqual(t.guilds[0].channels.map((c) => c.id), [CH]);
+        assert.strictEqual(t.viewer.found, true);
+        const owners = await messages.targets({ auth: owner });
+        assert.strictEqual(owners.guilds.length, 2, "cached apart from staff");
+
+        const before = bus.requests.length;
+        await rejects(() => messages.send({ channelId: CH2, message: { content: "x" } }, staff), 403, /channels you can see and post in/);
+        await rejects(() => messages.send({ channelId: "1300000000000000101", message: { content: "x" } }, staff), 403, /channels you can see and post in/);
+        await rejects(() => messages.edit({ channelId: CH2, messageId: OTHER, message: { content: "x" } }, staff), 403);
+        await rejects(() => messages.remove({ channelId: CH2, messageId: OTHER }, staff), 403);
+        await rejects(() => messages.fetchByLink(`https://discord.com/channels/${GUILD}/${CH2}/${OTHER}`, staff), 403);
+        assert.strictEqual(bus.requests.length, before, "nothing reached the bot");
+
+        // Not in the server at all.
+        const out = await messages.targets({ auth: outsider });
+        assert.deepStrictEqual(out.guilds, []);
+        assert.strictEqual(out.viewer.found, false);
+        await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, outsider), 403, /not in the shop's server/);
+
+        // An assistant from before the check lists everything: staff are refused, not let through.
+        const saved = bus.answer["message.targets"];
+        bus.answer["message.targets"] = (p) => ({ bot: BOT, guilds: [{ id: GUILD, name: "ArnTo Shop", channels: SHOP_CHANNELS, roles: [] }] });
+        await rejects(() => messages.targets({ auth: staff, refresh: true }), 503, /update it/);
+        await rejects(() => messages.send({ channelId: CH2, message: { content: "x" } }, { kind: "staff", staff: { userId: "1246001516893175818" } }), 503);
+        bus.answer["message.targets"] = saved;
+        await messages.targets({ auth: staff, refresh: true });
     });
 
     let first;
@@ -188,6 +244,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.strictEqual(req.payload.channelId, CH);
         assert.deepStrictEqual(req.payload.mentions, { everyone: true, roles: true, users: false });
         assert.ok(req.payload.notAfter >= t0 + 9 * 60_000, "a late bot refuses it");
+        assert.deepStrictEqual(req.payload.viewer, { userId: "871329074046435338", guildId: GUILD }, "the bot checks the channel again");
         assert.strictEqual(first.status, "sent");
         assert.strictEqual(first.messageId, MSG);
         assert.strictEqual(first.url, `https://discord.com/channels/${GUILD}/${CH}/${MSG}`);
@@ -204,7 +261,8 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
     await test("send: the bot's refusal fails the row; no bot or no bus is a 503", async () => {
         bus.answer["message.send"] = Object.assign(new Error("The bot cannot send messages in #rules"), { status: 502 });
         await rejects(() => messages.send({ channelId: CH2, message: { content: "x" } }, owner), 502, /cannot send/);
-        const row = messages.listSent().find((r) => r.channelId === CH2);
+        assert.strictEqual(bus.requests.at(-1).payload.viewer, undefined, "the owner posts anywhere");
+        const row = (await messages.listSent()).find((r) => r.channelId === CH2);
         assert.strictEqual(row.status, "failed");
         assert.match(row.error, /cannot send/);
         bus.ready = false;
@@ -213,20 +271,20 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         bus.handler = null;
         await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, owner), 503, /update ArnTo-assistant/);
         bus.handler = "assistant";
-        messages.forget(row.id);
-        assert.ok(!messages.listSent().some((r) => r.id === row.id));
+        await messages.forget(row.id, owner);
+        assert.ok(!(await messages.listSent()).some((r) => r.id === row.id));
     });
 
     await test("send: a late answer leaves it pending, and it settles from the outbox", async () => {
         bus.answer["message.send"] = Object.assign(new Error("No answer from the bot within 30s"), { status: 504 });
         const err = await rejects(() => messages.send({ channelId: CH, message: { content: "late" } }, owner), 504, /listed under Sent as waiting/);
-        let row = messages.listSent().find((r) => r.id === err.id);
+        let row = (await messages.listSent()).find((r) => r.id === err.id);
         assert.strictEqual(row.status, "pending");
         const busId = bus.requests.at(-1).busId;
         bus.rows.set(busId, { id: busId, status: "sent" });
-        assert.strictEqual(messages.listSent().find((r) => r.id === err.id).status, "pending", "still on its way");
+        assert.strictEqual((await messages.listSent()).find((r) => r.id === err.id).status, "pending", "still on its way");
         bus.rows.set(busId, { id: busId, status: "done", result: where("1300000000000000009") });
-        row = messages.listSent().find((r) => r.id === err.id);
+        row = (await messages.listSent()).find((r) => r.id === err.id);
         assert.strictEqual(row.status, "sent");
         assert.strictEqual(row.messageId, "1300000000000000009");
         assert.strictEqual(row.guildName, "ArnTo Shop");
@@ -235,7 +293,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         const err2 = await rejects(() => messages.send({ channelId: CH, message: { content: "late again" } }, owner), 504);
         const busId2 = bus.requests.at(-1).busId;
         bus.rows.set(busId2, { id: busId2, status: "failed", error: "The command reached the bot too late and was dropped" });
-        const row2 = messages.listSent().find((r) => r.id === err2.id);
+        const row2 = (await messages.listSent()).find((r) => r.id === err2.id);
         assert.strictEqual(row2.status, "failed");
         assert.match(row2.error, /too late/);
     });
@@ -250,6 +308,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.deepStrictEqual(e.sentBy, first.sentBy, "the sender stays");
         assert.strictEqual(e.options.mentions.everyone, false);
         assert.strictEqual(bus.requests.at(-1).payload.messageId, MSG);
+        assert.strictEqual(bus.requests.at(-1).payload.viewer, undefined);
         assert.match(logs.at(-1).text, /Owner edited a message/);
 
         // A message the bot posted elsewhere, whose buttons run the bot's features: kept (components: null).
@@ -274,10 +333,24 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.match(logs.at(-1).text, /already gone/);
     });
 
+    await test("staff Sent list: only the channels they can post in; their own sends when the bot cannot say", async () => {
+        bus.answer["message.send"] = (p) => ({ ...where("1300000000000000088", { channelId: p.channelId, channelName: "staff-room" }), warnings: [] });
+        const hidden = await messages.send({ channelId: CH2, message: { content: "staff room only" } }, owner);
+        const ownerList = await messages.listSent({ auth: owner });
+        const staffList = await messages.listSent({ auth: staff });
+        assert.ok(ownerList.some((r) => r.id === hidden.id));
+        assert.ok(!staffList.some((r) => r.id === hidden.id), "a channel they cannot see is left out");
+        assert.ok(staffList.length > 0 && staffList.every((r) => r.channelId === CH));
+        await rejects(() => messages.forget(hidden.id, staff), 403);
+        assert.deepStrictEqual(await messages.listSent({ auth: busDown }), [], "nothing of their own");
+    });
+
     await test("fetch by link: the bot reads it; its Sent row comes along", async () => {
         bus.answer["message.fetch"] = (p) => ({ ...where(p.messageId), own: true, v2: false, keepsComponents: false, message: { content: "hi", embeds: [], components: [] } });
         const r = await messages.fetchByLink(`https://discord.com/channels/${GUILD}/${CH}/${OTHER}`);
         assert.deepStrictEqual(bus.requests.at(-1).payload, { channelId: CH, messageId: OTHER });
+        await messages.fetchByLink(`https://discord.com/channels/${GUILD}/${CH}/${OTHER}`, staff);
+        assert.deepStrictEqual(bus.requests.at(-1).payload.viewer, { userId: "871329074046435338", guildId: GUILD });
         assert.strictEqual(r.own, true);
         assert.strictEqual(r.sent.messageId, OTHER);
         const none = await messages.fetchByLink(`${CH}/1300000000000000555`);
