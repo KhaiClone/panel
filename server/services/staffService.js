@@ -63,6 +63,7 @@ const PAGES = [
     { key: "ticketMenus", label: "Ticket Menus", section: "Shop" },
     { key: "supporters", label: "Supporters", section: "Shop" },
     { key: "resellers", label: "CTV", section: "Shop" },
+    { key: "messages", label: "Messages", section: "Shop" },
     { key: "quests", label: "Auto Quest", section: "Auto Services" },
     { key: "badges", label: "Auto Badge", section: "Auto Services" },
     { key: "decors", label: "Decors", section: "Auto Services" },

@@ -166,6 +166,8 @@ app.use("/api/vouchers", pageAuth("vouchers"), require("./routes/vouchers"));
 app.use("/api/ticket-menus", pageAuth("ticketMenus"), require("./routes/ticketMenus").panel);
 app.use("/api/supporters", pageAuth("supporters"), require("./routes/supporters").panel);
 app.use("/api/resellers", pageAuth("resellers"), require("./routes/resellers").panel);
+// Compose a message and have ArnTo-assistant post it (services/botMessages.js).
+app.use("/api/messages", pageAuth("messages"), require("./routes/messages"));
 // Who else may use the panel, and which pages (owner only).
 app.use("/api/staff", authMiddleware, require("./routes/staff"));
 

@@ -21,6 +21,7 @@ const I = {
     supporters: <Icon name="supporters" />,
     resellers:  <Icon name="resellers" />,
     menus:      <Icon name="menus" />,
+    message:    <Icon name="message" />,
     decors:     <Icon name="decors" />,
     quests:     <Icon name="quests" />,
     pricing:    <Icon name="pricing" />,
@@ -49,6 +50,7 @@ const NAV_SECTIONS = [
             { to: "/ticket-menus", label: "Ticket Menus", icon: I.menus },
             { to: "/supporters",   label: "Supporters",   icon: I.supporters },
             { to: "/resellers",    label: "CTV",          icon: I.resellers },
+            { to: "/messages",     label: "Messages",     icon: I.message },
         ],
     },
     {

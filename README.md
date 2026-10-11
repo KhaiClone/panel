@@ -857,6 +857,33 @@ being one. One sealed bus command, `reseller.event` (role, DM). Stored in `data/
 | `POST` | `/api/external/resellers` | `{ userId, userTag, shop?, note?, byId, byTag }` → `{ reseller, event }`; 409 if already a CTV |
 | `DELETE` | `/api/external/resellers/:userId` | `{ byId, byTag }` → `{ reseller, event }` |
 
+**Messages.** Write a message Discohook-style on the Messages page, pick a channel, and
+ArnTo-assistant posts it as itself (`server/services/botMessages.js`, the bot's side in
+ArnTo-assistant `functions/botMessage.js`). Nothing goes over HTTP to the bot — five bus
+commands:
+
+| Command | What the assistant does |
+|---------|-------------------------|
+| `message.targets` | Lists its servers, their text / announcement channels (with whether it may post, embed and ping @everyone there) and roles — the page's channel picker and role list (cached a minute; *Refresh* asks again). The bus channel itself is left out. |
+| `message.send` | Posts `{ content, embeds, link buttons }`. `allowedMentions` comes from the page's *Who may be pinged* (all on by default; the assistant's client default leaves roles out, so this is what makes `<@&role>` ping). Optional *Silent* (`@silent`) and, in an announcement channel, *Publish to following servers*. Answers with the message link and warnings: @everyone / @here, or a role that is not mentionable, only ping with **Mention @everyone** in that channel. |
+| `message.edit` | Edits one of its own messages — one sent from here or any other (opened by its link). Buttons and menus that run the bot's own features (custom ids) are left exactly as they are; only link buttons can be edited. An edit pings nobody. |
+| `message.delete` | Deletes one of its own messages (already gone = deleted). |
+| `message.fetch` | Reads a message by its link, to edit it (its own) or copy it into the editor (anyone's). Components V2 messages cannot be opened. |
+
+The page checks every message against Discord's limits before anything goes on the bus
+(2000-character content, 10 embeds / 6000 characters, 25 fields, 5 rows × 5 link buttons…).
+It also asks before posting a message that pings, and shows which pings will not work in the
+chosen channel. **JSON** imports and exports Discord's own format (Discohook's JSON editor and
+backups paste straight in). **Saved** keeps named messages with their channel and ping settings;
+**Sent** keeps the last 500 sent or edited here — open, edit, copy, delete.
+
+`send` / `edit` / `delete` carry a 10-minute `notAfter`: a bot that sees the command later (it
+was down) drops it instead of posting an announcement hours late. A send the bot has not
+answered within 30 s stays *Waiting* under Sent and settles from the bus outbox when the answer
+comes. Every send, edit and delete goes to the [panel log channel](#-panel-log-channel) with who
+did it. Stored in `data/shared.sqlite`: `bot_messages`, `message_drafts`. Staff can be given the
+page (*View* = read Sent / Saved, *Edit* = send).
+
 ## 👥 Staff Access
 
 The owner (the `.env` account) can let other people into **some pages** of the panel.
@@ -867,7 +894,7 @@ is nothing to hand to a friend short of the whole Discord account
 | | |
 |---|---|
 | **Who** | The owner adds each person by Discord user ID under **Panel Settings → Staff**. Holding the **Staff role** in the shop's server is *required but not enough*; the panel never gives or takes that role, it only checks it — at login and every 10 minutes. Losing it ends the session (the entry stays: getting the role back is enough to sign in again). |
-| **What** | Per person, per page: *None / View / Edit*. View = GET, Edit = everything. The pages that can be given: Orders, Stock, Vouchers, Ticket Menus, Supporters, CTV, Auto Quest, Auto Badge, Decors, Pricing. **Everything else is owner-only**: Servers, Bots, Sites, Terminal, Git Keys, Lavalink, the network pages, Panel Settings, bot logs, notifications. |
+| **What** | Per person, per page: *None / View / Edit*. View = GET, Edit = everything. The pages that can be given: Orders, Stock, Vouchers, Ticket Menus, Supporters, CTV, Messages, Auto Quest, Auto Badge, Decors, Pricing. **Everything else is owner-only**: Servers, Bots, Sites, Terminal, Git Keys, Lavalink, the network pages, Panel Settings, bot logs, notifications. |
 | **One at a time** | A new login ends the person's other sessions, so two people sharing one account keep throwing each other out (the login page says why). Every sign-in (🆕 for a device the person never used), sign-out and change goes to the [panel log channel](#-panel-log-channel). Sessions last 12 hours. |
 | **Audit** | Every staff sign-in and every change they make (method, path, result, IP) is in the Staff tab's Activity log. The owner can sign any session out, or remove the person. |
 

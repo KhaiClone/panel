@@ -9,6 +9,7 @@ export const STAFF_PAGES = [
     { key: "ticketMenus", path: "/ticket-menus" },
     { key: "supporters", path: "/supporters" },
     { key: "resellers", path: "/resellers" },
+    { key: "messages", path: "/messages" },
     { key: "quests", path: "/quests" },
     { key: "badges", path: "/badges" },
     { key: "decors", path: "/decors" },
