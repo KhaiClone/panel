@@ -129,4 +129,4 @@ const cancelOrder = async (orderId) => {
     return act("order.cancel", "Order cancelled", orderId);
 };
 
-module.exports = { onPanel, statsFor, listOrders, getStats, completeOrder, cancelOrder };
+module.exports = { SELLERS, onPanel, statsFor, listOrders, getStats, completeOrder, cancelOrder };

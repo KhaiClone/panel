@@ -18,6 +18,7 @@ const I = {
     stock:      <Icon name="stock" />,
     voucher:    <Icon name="voucher" />,
     supporters: <Icon name="supporters" />,
+    resellers:  <Icon name="resellers" />,
     menus:      <Icon name="menus" />,
     decors:     <Icon name="decors" />,
     quests:     <Icon name="quests" />,
@@ -44,6 +45,7 @@ const NAV_SECTIONS = [
             { to: "/vouchers",     label: "Vouchers",     icon: I.voucher },
             { to: "/ticket-menus", label: "Ticket Menus", icon: I.menus },
             { to: "/supporters",   label: "Supporters",   icon: I.supporters },
+            { to: "/resellers",    label: "CTV",          icon: I.resellers },
         ],
     },
     {

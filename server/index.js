@@ -140,6 +140,8 @@ app.use("/api/external/vouchers", apiKeyMiddleware, require("./routes/vouchersEx
 app.use("/api/external/ticket-menus", apiKeyMiddleware, require("./routes/ticketMenus").external);
 // ArnTo-Shop's supporters: /staff-*, salary from /done (services/supporterService.js).
 app.use("/api/external/supporters", apiKeyMiddleware, require("./routes/supporters").external);
+// ArnTo-Shop's CTVs (resellers): /ctv-new, /ctv-remove (services/resellerService.js).
+app.use("/api/external/resellers", apiKeyMiddleware, require("./routes/resellers").external);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -160,6 +162,7 @@ app.use("/api/stock", authMiddleware, require("./routes/stock"));
 app.use("/api/vouchers", authMiddleware, require("./routes/vouchers"));
 app.use("/api/ticket-menus", authMiddleware, require("./routes/ticketMenus").panel);
 app.use("/api/supporters", authMiddleware, require("./routes/supporters").panel);
+app.use("/api/resellers", authMiddleware, require("./routes/resellers").panel);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -214,6 +217,8 @@ const startBackgroundServices = () => {
     require("./services/voucherService").start();
     // Supporters: the tables (the shop seeds them on its first start).
     require("./services/supporterService").start();
+    // CTVs: the table (the shop seeds it from the CTV role on its first start).
+    require("./services/resellerService").start();
 };
 
 /**

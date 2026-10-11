@@ -17,6 +17,7 @@ import OrdersPage from "./pages/OrdersPage";
 import StockPage from "./pages/StockPage";
 import VouchersPage from "./pages/VouchersPage";
 import SupportersPage from "./pages/SupportersPage";
+import ResellersPage from "./pages/ResellersPage";
 import TicketMenusPage from "./pages/TicketMenusPage";
 import DecorsPage from "./pages/DecorsPage";
 import QuestsPage from "./pages/QuestsPage";
@@ -84,6 +85,7 @@ export default function App() {
                             <Route path="stock"         element={<StockPage />} />
                             <Route path="vouchers"      element={<VouchersPage />} />
                             <Route path="supporters"    element={<SupportersPage />} />
+                            <Route path="resellers"     element={<ResellersPage />} />
                             <Route path="ticket-menus"  element={<TicketMenusPage />} />
                             <Route path="decors"        element={<DecorsPage />} />
                             <Route path="quests"        element={<QuestsPage />} />

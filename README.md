@@ -825,6 +825,36 @@ local `supporters` (balances split by `balanceReceivedFromArnTo` / `…FromKhaiD
 | `POST` | `/api/external/supporters/:userId/credit` | `{ kind: salary\|add\|deduct, amount, sellerId?, orderId?, note?, byId, byTag }` → `{ supporter, entry, event }` |
 | `POST` | `/api/external/supporters/:userId/payout` | `{ note?, byId, byTag }` → `{ supporter, entry, event }`; 409 when the balance is 0 |
 
+**CTV (resellers).** ArnTo-Shop's cộng tác viên: they buy at the CTV price and sell on in
+their own shops, paying order by order like any buyer. Managed on the CTV page and with
+`/ctv-new`, `/ctv-remove` on ArnTo-Shop (`server/services/resellerService.js`). The CTV
+prices are not here — they are the owner's price channel on Discord.
+
+1. **Add** — Discord ID, their shop (name or link), a note. The shop gives the CTV role and
+   DMs the welcome text (DM texts button; `{user}` `{id}` `{tag}`).
+2. **Orders** — nothing is stored here: the page reads the shop's shared `orders`. The shop
+   stamps every new order `reseller: true | false` (did the buyer hold the CTV role), and
+   `/new` reminds staff to charge the CTV price. An older order without the stamp counts when
+   it falls between "CTV since" and their removal. The page shows each CTV's month (picker,
+   Vietnam time) and all-time figures, the CTVs' share of the month's shop revenue, and the
+   CTV orders; the Orders page marks stamped CTV orders.
+3. **Remove** — the role is taken back and the farewell DMed; their orders stay counted and
+   they can be added again ("CTV since" restarts).
+
+On its first start with this version the shop copies the members holding the CTV role here
+(`POST /import`, once; nobody is DMed) and becomes the owner. Discord does not say when a role
+was given, so an imported CTV's "CTV since" is the day they joined the server — edit it on the
+page. **Check roles** gives the role to every CTV who lacks it and lists who holds it without
+being one. One sealed bus command, `reseller.event` (role, DM). Stored in `data/shared.sqlite`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/external/resellers` | `{ imported, resellers }` — the active ones, no figures |
+| `POST` | `/api/external/resellers/import` | `{ resellers: [{ userId, userTag, joinedAt }] }` → `{ imported, resellers }` (once) |
+| `GET` | `/api/external/resellers/:userId` | One CTV (`active: false` once removed) |
+| `POST` | `/api/external/resellers` | `{ userId, userTag, shop?, note?, byId, byTag }` → `{ reseller, event }`; 409 if already a CTV |
+| `DELETE` | `/api/external/resellers/:userId` | `{ byId, byTag }` → `{ reseller, event }` |
+
 ---
 
 ## 💾 Backup & Rollback

@@ -183,6 +183,11 @@ export default function OrdersPage() {
                                     <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</td>
                                     <td className="nowrap">
                                         {o.buyerTag || <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11 }}>{o.buyerId}</span>}
+                                        {o.reseller === true && (
+                                            <span style={{ marginLeft: 6 }}>
+                                                <StatusBadge tone="accent" title="Bought by a CTV (reseller)">CTV</StatusBadge>
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="nowrap">{o.sellerName}</td>
                                     <td className="mono num">{money(o.price)}</td>
