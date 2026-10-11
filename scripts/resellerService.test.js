@@ -263,7 +263,8 @@ const order = (buyerId, price, at, status = "completed", extra = {}) => ({
         const all = resellers.list({ month: "2026-10", all: true });
         assert.strictEqual(byId(all, LAN).active, false);
         assert.deepStrictEqual(byId(all, LAN).stats.total, { orders: 2, revenue: 500_000, pending: 1 }, "still counted after removal");
-        await rejects(() => resellers.update(LAN, { joinedAt: Date.now() }), 400); // after they were removed
+        // After they were removed. Not Date.now(): that can be the very millisecond of the removal, which is allowed.
+        await rejects(() => resellers.update(LAN, { joinedAt: byId(all, LAN).leftAt + 1 }), 400);
         bus.answer = { role: "added", dm: "sent" };
         const back = await resellers.add({ userId: LAN }, { via: "panel" });
         bus.requests.pop();
