@@ -203,4 +203,85 @@ const cancelOrder = async (orderId) => {
     return { cancelled: true };
 };
 
-module.exports = { SOURCE, MAX_ITEMS, GIFT_LINK, catalog, createOrder, completeOrder, deliver, cancelOrder, imageOf, thumbOf };
+// ── Orders made on the panel ─────────────────────────────────────────────────
+// A buyer who paid in a ticket instead of by QR: staff pick the decors on the
+// Orders page and ArnTo-Auto records the order as paid — bus "decor.gift.create".
+// From there it is an ordinary Deco Gift order: the shop's arnto_N, the staff
+// card, an admin approves with the links. Priced from the catalog, never by hand.
+
+const MANUAL_REF = /^[a-z0-9]{8,20}$/;
+// Auto asks the panel for the shop's order (≤ BUS_TIMEOUT) before it answers.
+const CREATE_TIMEOUT = 75_000;
+
+const auto = () => {
+    const botId = discordBus.handlerOf("decor.gift.create");
+    if (!botId) throw httpError(503, 'ArnTo-Auto has not announced "decor.gift.create" on the Discord bus — update and restart it');
+    return botId;
+};
+
+/** A Discord user id → { known: true, tag } | { known: false } | { known: null } (the bus is down). */
+const buyerInfo = async (id) => {
+    if (!SNOWFLAKE.test(String(id || ""))) throw httpError(400, "Not a Discord user ID");
+    try {
+        const tag = await discordBus.userTag(id);
+        return tag === undefined ? { known: null, tag: null } : { known: true, tag };
+    } catch (err) {
+        if (err.code === 10013) return { known: false, tag: null }; // unknown user
+        throw err;
+    }
+};
+
+/**
+ * `ref` is the form's own id: sending the same form again (after a timeout)
+ * returns the order the first send made instead of a second one.
+ * → { id, existed, status, shopOrderId, waitingUrl, shopError, staffUrl }
+ */
+const createByHand = async ({ ref, buyerId, skus, note } = {}, auth = {}) => {
+    if (!MANUAL_REF.test(String(ref || ""))) throw httpError(400, "ref is required");
+    const buyer = String(buyerId || "").trim();
+    if (!SNOWFLAKE.test(buyer)) throw httpError(400, "The buyer's Discord user ID is required");
+    if (!Array.isArray(skus) || !skus.length) throw httpError(400, "Pick at least one decor");
+    if (skus.length > MAX_ITEMS) throw httpError(400, `At most ${MAX_ITEMS} decors per order`);
+    const wanted = skus.map(String);
+    if (new Set(wanted).size !== wanted.length) throw httpError(400, "The same decor is picked twice");
+
+    const target = auto();
+    const index = new Map((await catalog()).decors.map((d) => [String(d.sku_id), d]));
+    const items = wanted.map((sku) => {
+        const d = index.get(sku);
+        if (!d) throw httpError(409, "A picked decor is no longer sold as a Gift — reopen the form");
+        return { sku_id: d.sku_id, name: d.name, type: d.type, typeLabel: d.typeLabel, price: d.price, thumb: d.thumb || null, image: d.image || null };
+    });
+    const by =
+        auth.kind === "staff"
+            ? { name: auth.staff.userTag || auth.staff.userId, discordId: auth.staff.userId }
+            : { name: auth.username || "owner", discordId: null };
+    return discordBus.request(
+        target,
+        "decor.gift.create",
+        {
+            id: `DGP-${ref}`,
+            buyerId: buyer,
+            items,
+            total: items.reduce((s, i) => s + i.price, 0),
+            note: String(note || "").trim().slice(0, 300),
+            by,
+        },
+        { timeoutMs: CREATE_TIMEOUT },
+    );
+};
+
+module.exports = {
+    SOURCE,
+    MAX_ITEMS,
+    GIFT_LINK,
+    catalog,
+    createOrder,
+    completeOrder,
+    deliver,
+    cancelOrder,
+    buyerInfo,
+    createByHand,
+    imageOf,
+    thumbOf,
+};

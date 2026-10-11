@@ -643,7 +643,7 @@ page is a harmless round trip.
 |-----|-------------------------------|--------------|
 | ArnTo-Shop | `orders`, `nextOrderId` | `order.create`, `order.complete`, `order.cancel` |
 | ArnTo-assistant | `decors`, `importedDecors`, `prices`, `decorCategories` | `decor.preview`, `decor.import`, `decor.gift.deliver` |
-| ArnTo-Auto | — | `quest.event`, `badge.event`, `dm.send` |
+| ArnTo-Auto | — | `quest.event`, `badge.event`, `dm.send`, `decor.gift.create` |
 
 **Sealed commands.** A payload only the target may read (gift links) goes out as
 `{ sealed }` — AES-256-GCM under a key derived from the target project's own API key,
@@ -698,8 +698,17 @@ pay by QR there; the panel connects the three bots (`server/services/decorGiftSe
    `{ delivered: false, reason: "dm_blocked" }` and nothing is completed.
 4. Hủy → `POST …/orders/:orderId/cancel` → the shop's `order.cancel`.
 
+A buyer who paid in a ticket instead: **New Deco Gift order** on the Orders page (Orders
+edit). The panel prices the picked decors from the same catalog (never by hand) and sends
+Auto `decor.gift.create` → Auto records it as paid (`DGP-<ref>`, `manual: { by, byId, note }`)
+and goes on from step 2 — the staff card says it was made on the panel. `ref` is the
+form's own id, so sending the same form again after a timeout returns the first order.
+
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/shop/deco-gift/catalog` | The catalog below, for the Orders page's picker |
+| `GET` | `/api/shop/deco-gift/buyer/:id` | `{ known, tag }` — `known: null` when the panel's bot is away |
+| `POST` | `/api/shop/deco-gift/orders` | `{ ref, buyerId, skus, note }` → `{ id, existed, status, shopOrderId, waitingUrl, shopError, staffUrl }` |
 | `GET` | `/api/external/decor-gift/catalog` | `{ categories: [{ sku_id, name, count }], decors: [{ sku_id, name, type, typeLabel, category, price, thumb, image, members? }] }` |
 | `POST` | `/api/external/decor-gift/orders` | `{ paymentId, buyerId, sellerId, items, total }` → `{ orderId, messageId, waitingUrl }` |
 | `POST` | `/api/external/decor-gift/orders/:orderId/deliver` | `{ buyerId, items: [{ name, type, link }] }` → `{ delivered, completed, reason?, error? }` |

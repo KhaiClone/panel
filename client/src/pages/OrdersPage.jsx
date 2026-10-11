@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
+import DecoGiftOrderModal from "../components/DecoGiftOrderModal";
 import { DataTable, EmptyState, Icon, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
 const money = (n) => (typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—");
@@ -62,6 +63,7 @@ export default function OrdersPage() {
     const [search, setSearch] = useState("");
     const [confirm, setConfirm] = useState(null); // { order, action }
     const [busy, setBusy] = useState(null); // orderId being acted on
+    const [newDecoGift, setNewDecoGift] = useState(false);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
 
@@ -122,7 +124,17 @@ export default function OrdersPage() {
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 20 }}>
-            <PageHeader title="Orders" description="Orders placed through the ArnTo-Shop bot. Complete or cancel the pending ones here or on Discord." />
+            <PageHeader
+                title="Orders"
+                description="Orders placed through the ArnTo-Shop bot. Complete or cancel the pending ones here or on Discord."
+                actions={
+                    canEdit && (
+                        <button type="button" className="btn-primary" title="For a buyer who paid in a ticket — no QR" onClick={() => setNewDecoGift(true)}>
+                            <Icon name="gift" /> New Deco Gift order
+                        </button>
+                    )
+                }
+            />
 
             {error && <Notice tone="danger">{error}</Notice>}
 
@@ -253,6 +265,8 @@ export default function OrdersPage() {
                     onCancel={() => setConfirm(null)}
                 />
             )}
+
+            {newDecoGift && <DecoGiftOrderModal onClose={() => setNewDecoGift(false)} onCreated={fetchData} />}
         </div>
     );
 }
