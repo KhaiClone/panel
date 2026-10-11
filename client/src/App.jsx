@@ -1,7 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { pageForPath, homeFor } from "./context/access";
 import { DataProvider } from "./context/DataContext";
 import Login from "./pages/Login";
+import DiscordCallback from "./pages/DiscordCallback";
+import NoAccess from "./pages/NoAccess";
 import SystemsPage from "./pages/SystemsPage";
 import Dashboard from "./pages/Dashboard";
 import SitesPage from "./pages/SitesPage";
@@ -37,13 +40,30 @@ function Spinner() {
 }
 
 /**
- * The panel has one account, so there is exactly one gate: logged in or not.
- * No roles, no per-route guards, no separate landing page — home is the fleet view.
+ * Logged in, and allowed here. The owner goes everywhere. Staff only reach the
+ * pages they were given (context/access.js): any other URL — Servers, Bots,
+ * Terminal, Settings… — sends them to their first page. The server enforces
+ * the same thing on every request; this only keeps them off dead ends.
  */
 function PrivateRoute({ children }) {
     const { user, loading } = useAuth();
+    const { pathname } = useLocation();
     if (loading) return <Spinner />;
-    return user ? children : <Navigate to="/login" replace />;
+    if (!user) return <Navigate to="/login" replace />;
+    if (user.kind === "staff") {
+        const page = pageForPath(pathname);
+        if (!page || !user.perms[page]) return <Navigate to={homeFor(user)} replace />;
+    }
+    return children;
+}
+
+/** Signed in, but no page given yet (staff). */
+function SignedIn({ children }) {
+    const { user, loading } = useAuth();
+    if (loading) return <Spinner />;
+    if (!user) return <Navigate to="/login" replace />;
+    if (user.kind === "owner" || homeFor(user) !== "/no-access") return <Navigate to={homeFor(user)} replace />;
+    return children;
 }
 
 export default function App() {
@@ -53,6 +73,9 @@ export default function App() {
                 <BrowserRouter>
                     <Routes>
                         <Route path="/login" element={<Login />} />
+                        {/* Discord → the launcher → here, with ?code&state (staff sign-in). */}
+                        <Route path="/auth/discord/callback" element={<DiscordCallback />} />
+                        <Route path="/no-access" element={<SignedIn><NoAccess /></SignedIn>} />
                         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
                             <Route index element={<Navigate to="/systems" replace />} />
                             <Route path="bots"          element={<Dashboard />} />
@@ -94,7 +117,8 @@ export default function App() {
                             <Route path="lavalink"      element={<LavalinkPage />} />
                             <Route path="quests/:accountId" element={<QuestAccountDetail />} />
                             {/* Legacy redirects — /overview and /admin/users are gone
-                                along with the multi-user panel. */}
+                                along with the old multi-user panel (staff are Panel
+                                Settings → Staff now). */}
                             <Route path="dashboard"     element={<Navigate to="/bots" replace />} />
                             <Route path="overview"      element={<Navigate to="/systems" replace />} />
                             <Route path="admin/users"   element={<Navigate to="/systems" replace />} />

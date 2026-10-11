@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "./ConfirmModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ const parseAmount = (raw) => {
  * still removes it too).
  */
 function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = true }) {
+    const { canEdit } = usePageAccess("decors");
     const [draft, setDraft] = useState(value === null ? "" : String(value));
     const [state, setState] = useState(null); // "saving" | "saved" | "error"
 
@@ -102,7 +104,7 @@ function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = 
                 inputMode="numeric"
                 placeholder={needed ? "not set" : "not needed"}
                 value={draft}
-                disabled={state === "saving"}
+                disabled={!canEdit || state === "saving"}
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={commit}
                 onKeyDown={(e) => {
@@ -118,7 +120,7 @@ function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = 
                     borderColor: border,
                 }}
             />
-            {value !== null && onRemove && (
+            {canEdit && value !== null && onRemove && (
                 <button
                     type="button"
                     className="btn-ghost"
@@ -304,6 +306,7 @@ function AddTierForm({ onSave }) {
 }
 
 export default function DecorPrices({ onChange }) {
+    const { canEdit } = usePageAccess("decors");
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
@@ -611,7 +614,7 @@ export default function DecorPrices({ onChange }) {
                         </tbody>
                     </table>
                 </div>
-                <AddTierForm onSave={save} />
+                {canEdit && <AddTierForm onSave={save} />}
             </div>
 
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>

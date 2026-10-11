@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  Panel Settings — the panel's own process, config and plumbing, in four tabs
+//  Panel Settings — the panel's own process, config and plumbing, in five tabs
 //  (one URL each: /panel-manage/<tab>). The header — status, Restart, Rebuild —
 //  stays on every tab, so a change anywhere can be applied right there.
 //  Each tab lives in pages/panel/.
@@ -14,12 +14,14 @@ import OverviewTab from "./panel/OverviewTab";
 import ConfigTab from "./panel/ConfigTab";
 import IntegrationsTab from "./panel/IntegrationsTab";
 import RecoveryTab from "./panel/RecoveryTab";
+import StaffTab from "./panel/StaffTab";
 import { fmtUptime } from "./panel/format";
 
 const TABS = [
     { id: "overview", label: "Overview" },
     { id: "config", label: "Config" },
     { id: "integrations", label: "Integrations" },
+    { id: "staff", label: "Staff" },
     { id: "recovery", label: "Recovery" },
 ];
 
@@ -206,6 +208,7 @@ export default function PanelManage() {
             {tab === "overview" && <OverviewTab status={status} />}
             {tab === "config" && <ConfigTab onRestart={handleRestart} />}
             {tab === "integrations" && <IntegrationsTab />}
+            {tab === "staff" && <StaffTab />}
             {tab === "recovery" && <RecoveryTab onRestart={handleRestart} onRestarting={onRestarting} />}
         </div>
     );

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import DecorPrices from "../components/DecorPrices";
 import DecorPreview from "../components/decor/DecorPreview";
@@ -116,6 +117,7 @@ function CardPrice({ decor }) {
 
 /** The three ways as chips on a card: green = sold, struck = off, red = sold without a price. */
 function WayChips({ decor, saving, onToggle }) {
+    const { canEdit } = usePageAccess("decors");
     return (
         <div className="dc-ways">
             {WAYS.map((w) => {
@@ -126,8 +128,8 @@ function WayChips({ decor, saving, onToggle }) {
                         key={w.key}
                         type="button"
                         className={`dc-way${on ? "" : " off"}${nopr ? " nopr" : ""}`}
-                        disabled={saving}
-                        title={`${wayLabel(decor, w)}: ${on ? (nopr ? "on sale but no price tier" : `on sale at ${money(tierPrice(decor, w))}`) : "off"} — click to turn ${on ? "off" : "on"}`}
+                        disabled={saving || !canEdit}
+                        title={`${wayLabel(decor, w)}: ${on ? (nopr ? "on sale but no price tier" : `on sale at ${money(tierPrice(decor, w))}`) : "off"}${canEdit ? ` — click to turn ${on ? "off" : "on"}` : ""}`}
                         onClick={(e) => {
                             e.stopPropagation();
                             onToggle(decor, w);
@@ -207,6 +209,7 @@ function Pagination({ page, pages, onPage }) {
 // ── Detail window ────────────────────────────────────────────────────────────
 
 function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onDelete, onOpen }) {
+    const { canEdit } = usePageAccess("decors");
     const [replay, setReplay] = useState(0);
     const [copied, setCopied] = useState("");
     const imported = decor.decorFrom === "importedDecors";
@@ -261,7 +264,7 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                                         <button
                                             type="button"
                                             className={`dc-switch${on ? " on" : ""}`}
-                                            disabled={saving}
+                                            disabled={saving || !canEdit}
                                             onClick={() => onToggle(decor, w)}
                                             aria-pressed={on}
                                             title={on ? "On sale — click to turn off" : "Off — click to turn on"}
@@ -309,13 +312,13 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                                         style={{ flex: "1 1 200px", minWidth: 0, padding: "6px 10px", fontSize: 12 }}
                                         title="Theme (the section it shows under on the site)"
                                         value={decor.category_sku_id ?? ""}
-                                        disabled={saving}
+                                        disabled={saving || !canEdit}
                                         onChange={(e) => onTheme(decor, e.target.value || null)}
                                     >
                                         <option value="">— Other —</option>
                                         {categories.map((c) => <option key={c.sku_id} value={c.sku_id}>{c.name}</option>)}
                                     </select>
-                                    <button type="button" className="btn-ghost btn-sm is-danger" onClick={() => onDelete(decor)}><Icon name="trash" size={12} /> Delete</button>
+                                    {canEdit && <button type="button" className="btn-ghost btn-sm is-danger" onClick={() => onDelete(decor)}><Icon name="trash" size={12} /> Delete</button>}
                                 </div>
                             </>
                         )}
@@ -426,6 +429,7 @@ function ImportModal({ onClose, onImported }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DecorsPage() {
+    const { canEdit } = usePageAccess("decors");
     const [tab, setTab] = useState("decors");
     const [decors, setDecors] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -620,7 +624,7 @@ export default function DecorsPage() {
             <PageHeader
                 title="Decors"
                 description="Like the decor site, with a sale switch per way: Login with Nitro, Login without Nitro, Gift."
-                actions={<button type="button" className="btn-primary" onClick={() => setImporting(true)}><Icon name="plus" /> Import decor</button>}
+                actions={canEdit && <button type="button" className="btn-primary" onClick={() => setImporting(true)}><Icon name="plus" /> Import decor</button>}
             />
 
             <div className="tab-bar" style={{ display: "inline-flex", alignSelf: "flex-start" }}>
@@ -664,7 +668,7 @@ export default function DecorsPage() {
                                     <button type="button" className="dc-stat" onClick={() => { setSearch(""); setType("all"); setSource("all"); setSale("all"); }}><Icon name="x" size={12} /> Clear filters</button>
                                 )}
                             </div>
-                            <BulkSelect items={filtered} label={`Bulk for the ${filtered.length} filtered decor…`} onRun={runBulk} />
+                            {canEdit && <BulkSelect items={filtered} label={`Bulk for the ${filtered.length} filtered decor…`} onRun={runBulk} />}
                         </div>
                     </div>
 
@@ -697,7 +701,7 @@ export default function DecorsPage() {
                                             const n = items.filter((d) => sells(d, w)).length;
                                             return <span key={w.key} style={{ color: n === items.length ? "var(--text-dim)" : "var(--warning)" }}>· {w.short} {n}/{items.length}</span>;
                                         })}
-                                        <BulkSelect items={items} label="Bulk for this section…" onRun={runBulk} />
+                                        {canEdit && <BulkSelect items={items} label="Bulk for this section…" onRun={runBulk} />}
                                     </div>
                                     <div className="dc-grid">{items.map(card)}</div>
                                 </section>

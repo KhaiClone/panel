@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, Toggle } from "../components/ui";
 
@@ -235,18 +236,21 @@ const emptyProduct = (services = []) => ({ name: "", description: "", emoji: "",
 // ── Products of one service (or all of them) ─────────────────────────────────
 
 function ProductRows({ rows, all, services, sellers, scope, onEdit, onToggle, onMove, onDelete }) {
+    const { canEdit } = usePageAccess("ticketMenus");
     const sellerName = (id) => sellers.find((s) => s.id === id)?.name || id;
     const label = (key) => services.find((s) => s.key === key)?.label || key;
     if (!rows.length) return <EmptyState compact icon="menus" title="No products here yet" />;
     return (
-        <DataTable columns={["", "Product", "Seller", "Channel", ...(scope === ALL ? ["Menus"] : []), "Shown", ""]}>
+        <DataTable columns={[...(canEdit ? [""] : []), "Product", "Seller", "Channel", ...(scope === ALL ? ["Menus"] : []), "Shown", ...(canEdit ? [""] : [])]}>
             {rows.map((p, i) => (
                 <tr key={p.id} style={{ opacity: p.enabled ? 1 : 0.55 }}>
-                    <td className="nowrap" style={{ padding: "6px 6px 6px 10px" }}>
-                        {/* Up/down swap with the neighbour shown here; the order is shared by every menu. */}
-                        <IconButton title="Move up" icon="arrowUp" disabled={!i} onClick={() => onMove(p, all.indexOf(rows[i - 1]))} />
-                        <IconButton title="Move down" icon="arrowDown" disabled={i === rows.length - 1} onClick={() => onMove(p, all.indexOf(rows[i + 1]))} />
-                    </td>
+                    {canEdit && (
+                        <td className="nowrap" style={{ padding: "6px 6px 6px 10px" }}>
+                            {/* Up/down swap with the neighbour shown here; the order is shared by every menu. */}
+                            <IconButton title="Move up" icon="arrowUp" disabled={!i} onClick={() => onMove(p, all.indexOf(rows[i - 1]))} />
+                            <IconButton title="Move down" icon="arrowDown" disabled={i === rows.length - 1} onClick={() => onMove(p, all.indexOf(rows[i + 1]))} />
+                        </td>
+                    )}
                     <td style={{ minWidth: 180 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <Emoji value={p.emoji} />
@@ -266,12 +270,14 @@ function ProductRows({ rows, all, services, sellers, scope, onEdit, onToggle, on
                         </td>
                     )}
                     <td>
-                        <Toggle checked={p.enabled} onChange={(v) => onToggle(p, v)} />
+                        <Toggle checked={p.enabled} disabled={!canEdit} onChange={(v) => onToggle(p, v)} />
                     </td>
-                    <td className="actions">
-                        <IconButton title="Edit" icon="pencil" onClick={() => onEdit(p)} />
-                        <IconButton title={scope === ALL ? "Delete" : "Delete, or take it out of this menu"} icon="trash" danger onClick={() => onDelete(p)} />
-                    </td>
+                    {canEdit && (
+                        <td className="actions">
+                            <IconButton title="Edit" icon="pencil" onClick={() => onEdit(p)} />
+                            <IconButton title={scope === ALL ? "Delete" : "Delete, or take it out of this menu"} icon="trash" danger onClick={() => onDelete(p)} />
+                        </td>
+                    )}
                 </tr>
             ))}
         </DataTable>
@@ -281,6 +287,7 @@ function ProductRows({ rows, all, services, sellers, scope, onEdit, onToggle, on
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TicketMenusPage() {
+    const { canEdit } = usePageAccess("ticketMenus");
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
     const [selected, setSelected] = useState(null); // service key | ALL
@@ -377,7 +384,7 @@ export default function TicketMenusPage() {
             <PageHeader
                 title="Ticket Menus"
                 description={<>A new ArnTo-Shop ticket asks for a service, then a product. <code className="mono">/menu</code> edits the same menus.</>}
-                actions={
+                actions={canEdit && (
                     <>
                         <button className="btn-ghost" disabled={!data} onClick={() => setModal({ kind: "settings" })}>
                             <Icon name="settings" /> Khác &amp; sellers
@@ -389,7 +396,7 @@ export default function TicketMenusPage() {
                             <Icon name="plus" /> New service
                         </button>
                     </>
-                }
+                )}
             />
 
             {error && <Notice tone="danger">{error}</Notice>}
@@ -420,12 +427,15 @@ export default function TicketMenusPage() {
                                             <span className="mono">{s.key}</span> · {s.products} product{s.products === 1 ? "" : "s"}
                                         </div>
                                     </div>
-                                    <div style={{ display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
-                                        <IconButton title="Move up" icon="chevronUp" disabled={!i} onClick={() => moveService(s, i - 1)} />
-                                        <IconButton title="Move down" icon="chevronDown" disabled={i === services.length - 1} onClick={() => moveService(s, i + 1)} />
-                                    </div>
+                                    {canEdit && (
+                                        <div style={{ display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+                                            <IconButton title="Move up" icon="chevronUp" disabled={!i} onClick={() => moveService(s, i - 1)} />
+                                            <IconButton title="Move down" icon="chevronDown" disabled={i === services.length - 1} onClick={() => moveService(s, i + 1)} />
+                                        </div>
+                                    )}
                                     <Toggle
                                         checked={s.enabled}
+                                        disabled={!canEdit}
                                         title={s.enabled ? "Shown — turn off to hide it" : "Hidden"}
                                         onChange={(v) => run(() => api.put(`/ticket-menus/services/${s.key}`, { enabled: v }), { close: false })}
                                     />
@@ -472,10 +482,10 @@ export default function TicketMenusPage() {
                                             </button>
                                         ))}
                                     </div>
-                                    <button className="btn-ghost" onClick={() => setModal({ kind: "service", item: service })}>
+                                    {canEdit && <button className="btn-ghost" onClick={() => setModal({ kind: "service", item: service })}>
                                         <Icon name="pencil" /> Edit service
-                                    </button>
-                                    <button
+                                    </button>}
+                                    {canEdit && <button
                                         className="btn-danger"
                                         onClick={() =>
                                             setConfirm({
@@ -487,7 +497,7 @@ export default function TicketMenusPage() {
                                         }
                                     >
                                         Delete
-                                    </button>
+                                    </button>}
                                 </div>
                                 <div style={{ fontSize: 12, color: "var(--text-dim)", display: "flex", gap: 14, flexWrap: "wrap" }}>
                                     <span>
@@ -511,7 +521,7 @@ export default function TicketMenusPage() {
                                             onMove={moveProduct}
                                             onDelete={askDeleteProduct}
                                         />
-                                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                                        {canEdit && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                                             <button className="btn-primary" onClick={() => setModal({ kind: "product", preset: [selected] })}>
                                                 <Icon name="plus" /> New product here
                                             </button>
@@ -527,7 +537,7 @@ export default function TicketMenusPage() {
                                                         ))}
                                                 </select>
                                             )}
-                                        </div>
+                                        </div>}
                                     </>
                                 ) : (
                                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
@@ -551,7 +561,7 @@ export default function TicketMenusPage() {
                                 icon="menus"
                                 title="No service yet"
                                 description="A service is the first menu a customer sees in a new ticket."
-                                action={<button className="btn-primary" onClick={() => setModal({ kind: "service" })}><Icon name="plus" /> New service</button>}
+                                action={canEdit && <button className="btn-primary" onClick={() => setModal({ kind: "service" })}><Icon name="plus" /> New service</button>}
                             />
                         )}
                     </div>

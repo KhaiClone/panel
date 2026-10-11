@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
+import { useAuth, usePageAccess } from "../context/AuthContext";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestControl from "../components/QuestControl";
 import { EmptyState, Icon, PageHeader, StatCard, StatusBadge, Toggle } from "../components/ui";
@@ -247,6 +248,8 @@ function AccountRow({ a, live, onOpen }) {
 export default function QuestsPage() {
     const { accounts, live, reload } = useQuestStream();
     const navigate = useNavigate();
+    const { isOwner } = useAuth();
+    const { canEdit } = usePageAccess("quests");
 
     // Admin manual add — paste a token and assign its owner, bypassing arnto-auto.
     const [showAdd, setShowAdd] = useState(false);
@@ -312,8 +315,8 @@ export default function QuestsPage() {
                 onChanged={reload}
             />
 
-            {/* ── Egress (which IPs quest traffic uses) ── */}
-            <EgressMenu />
+            {/* ── Egress (which IPs quest traffic uses) — the proxy pool is the owner's ── */}
+            {isOwner && <EgressMenu />}
 
             {/* ── Stat row ── */}
             <div className="stat-grid" style={{ marginBottom: 24 }}>
@@ -335,7 +338,7 @@ export default function QuestsPage() {
             )}
 
             {/* ── Manual add (admin) ── */}
-            <div style={{ marginTop: 28 }}>
+            {canEdit && <div style={{ marginTop: 28 }}>
                 <button
                     onClick={() => setShowAdd((s) => !s)}
                     aria-expanded={showAdd}
@@ -408,7 +411,7 @@ export default function QuestsPage() {
                         </div>
                     </div>
                 )}
-            </div>
+            </div>}
         </div>
     );
 }

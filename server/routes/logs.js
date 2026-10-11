@@ -2,11 +2,11 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const executor = require("../services/executor");
-const { AUTH_REQUIRED } = require("../middleware/auth");
+const { AUTH_REQUIRED, isOwnerToken, tokenOf } = require("../middleware/auth");
 
 // Auth lives per-route here rather than on the mount, because SSE and downloads
-// carry the token as a query param. A valid token is full access — the panel has
-// a single account.
+// carry the token as a query param. Bot logs are the owner's alone: a staff
+// token (middleware/auth.js) is refused like a bad one.
 
 /**
  * GET /api/logs/:botId?lines=100
@@ -14,14 +14,7 @@ const { AUTH_REQUIRED } = require("../middleware/auth");
  */
 router.get("/:botId", async (req, res, next) => {
     try {
-        const jwt = require("jsonwebtoken");
-        const authHeader = req.headers["authorization"];
-        let token = authHeader && authHeader.split(" ")[1];
-        if (!token && req.query.token) token = req.query.token;
-        if (!token) return res.status(401).json({ error: "No token", code: AUTH_REQUIRED });
-
-        try { jwt.verify(token, process.env.JWT_SECRET); }
-        catch { return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED }); }
+        if (!isOwnerToken(tokenOf(req))) return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED });
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -42,12 +35,7 @@ router.get("/:botId", async (req, res, next) => {
  */
 router.get("/:botId/stream", async (req, res, next) => {
     try {
-        const jwt = require("jsonwebtoken");
-        const token = req.query.token;
-        if (!token) return res.status(401).end();
-
-        try { jwt.verify(token, process.env.JWT_SECRET); }
-        catch { return res.status(401).end(); }
+        if (!isOwnerToken(req.query.token)) return res.status(401).end();
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).end();
@@ -88,14 +76,7 @@ router.get("/:botId/stream", async (req, res, next) => {
  */
 router.delete("/:botId", async (req, res, next) => {
     try {
-        const jwt = require("jsonwebtoken");
-        const authHeader = req.headers["authorization"];
-        let token = authHeader && authHeader.split(" ")[1];
-        if (!token && req.query.token) token = req.query.token;
-        if (!token) return res.status(401).json({ error: "No token", code: AUTH_REQUIRED });
-
-        try { jwt.verify(token, process.env.JWT_SECRET); }
-        catch { return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED }); }
+        if (!isOwnerToken(tokenOf(req))) return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED });
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });

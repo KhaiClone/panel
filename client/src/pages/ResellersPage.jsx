@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
@@ -353,6 +354,7 @@ const emptyDraft = { userId: "", userTag: "", shop: "", note: "", since: "" };
 const toDraft = (r) => ({ userId: r.userId, userTag: r.userTag || "", shop: r.shop || "", note: r.note || "", since: toDay(r.joinedAt) });
 
 export default function ResellersPage() {
+    const { canEdit } = usePageAccess("resellers");
     const [status, setStatus] = useState(null);
     const [data, setData] = useState(null); // { month, months, ordersOnPanel, totals, resellers }
     const [month, setMonth] = useState(thisMonth);
@@ -470,10 +472,10 @@ export default function ResellersPage() {
                             <button className="btn-ghost btn-sm" onClick={() => setOrdersOf(r.userId)}>
                                 Orders
                             </button>
-                            <button className="btn-ghost btn-sm" onClick={() => setModal({ type: "edit", reseller: r })}>
+                            {canEdit && <button className="btn-ghost btn-sm" onClick={() => setModal({ type: "edit", reseller: r })}>
                                 Edit
-                            </button>
-                            {r.active ? (
+                            </button>}
+                            {!canEdit ? null : r.active ? (
                                 <button className="btn-ghost btn-sm is-danger" title="Remove — the CTV role is taken back" onClick={() => setConfirmRemove(r)}>
                                     Remove
                                 </button>
@@ -494,7 +496,7 @@ export default function ResellersPage() {
             <PageHeader
                 title="CTV"
                 description="Resellers (cộng tác viên): they buy at the CTV price and sell on in their own shops. Adding one gives the CTV role."
-                actions={
+                actions={canEdit && (
                     <>
                         <button className="btn-ghost" disabled={syncing || !status?.handler} onClick={sync} title="Give the role to every CTV who lacks it; list who holds it without being one">
                             <Icon name="shieldCheck" /> {syncing ? "Checking…" : "Check roles"}
@@ -506,7 +508,7 @@ export default function ResellersPage() {
                             <Icon name="plus" /> New CTV
                         </button>
                     </>
-                }
+                )}
             />
 
             {error && <Notice tone="danger">{error}</Notice>}

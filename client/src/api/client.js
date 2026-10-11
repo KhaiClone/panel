@@ -37,9 +37,23 @@ api.interceptors.response.use(
     (error) => {
         const res = error.response;
         if (res?.status === 401 && res.data?.code === "AUTH_REQUIRED") {
+            // The answer to a request made with an older token (a new login
+            // already replaced it — e.g. on the Discord callback page) must not
+            // throw the new session away.
+            const sent = String(error.config?.headers?.Authorization || "").replace(/^Bearer /, "");
+            const current = localStorage.getItem("token");
+            if (sent && current && sent !== current) return Promise.reject(error);
             localStorage.removeItem("token");
-            if (window.location.pathname !== "/login") {
-                window.location.href = "/login";
+            if (!["/login", "/auth/discord/callback"].includes(window.location.pathname)) {
+                // A staff session that was ended says why (signed in elsewhere,
+                // Staff role taken away, …) — the login page shows it. Kept in
+                // sessionStorage too: on a page load the router's own redirect
+                // to /login can win over this one and drop the query.
+                const reason = res.data.reason;
+                if (reason) {
+                    try { sessionStorage.setItem("bp_ended", reason); } catch { /* storage disabled */ }
+                }
+                window.location.href = reason ? `/login?ended=${encodeURIComponent(reason)}` : "/login";
             }
         }
         // NODE_GONE / NODE_DISABLED are left for the caller to handle: only a

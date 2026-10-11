@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import { Icon, StatusBadge } from "./ui";
 import ConfirmModal from "./ConfirmModal";
 
@@ -68,7 +69,7 @@ function Progress({ label, cur, accounts, onStop, busy }) {
                     {cur.completed != null && ` · ${cur.completed} quest(s) done`}
                     {` · ${cur.trigger === "manual" ? "started manually" : "scheduled"} ${fmtClock(cur.startedAt)}`}
                 </span>
-                {!cur.stopping && (
+                {!cur.stopping && onStop && (
                     <button className="btn-ghost btn-sm" disabled={busy} onClick={onStop}>
                         <Icon name="stop" size={12} /> Stop
                     </button>
@@ -105,6 +106,8 @@ function Check({ checked, onChange, children }) {
 }
 
 export default function QuestControl({ runningCount = 0, waitingCount = 0, onChanged }) {
+    // View-only staff see the scheduler's state, not its buttons.
+    const { canEdit } = usePageAccess("quests");
     const [data, setData] = useState(null); // { settings, status }
     const [draft, setDraft] = useState(null);
     const [open, setOpen] = useState(false);
@@ -250,7 +253,7 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
                         {paused && waitingCount > 0 && ` · ${waitingCount} single account(s) waiting`}
                     </p>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {canEdit && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                         className="btn-primary"
                         disabled={busy || paused || !!st.run.current || !st.subscribers}
@@ -275,7 +278,7 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
                             <Icon name="pause" size={14} /> Pause all
                         </button>
                     )}
-                </div>
+                </div>}
             </div>
 
             {/* ── What is running now ── */}
@@ -285,7 +288,7 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
                     cur={st.run.current}
                     accounts={st.run.accounts}
                     busy={busy}
-                    onStop={() => act(() => api.post("/quests/control/stop", { what: "run" }), "Stopping the pass…")}
+                    onStop={canEdit ? () => act(() => api.post("/quests/control/stop", { what: "run" }), "Stopping the pass…") : null}
                 />
             )}
             {st.enroll.current && (
@@ -293,7 +296,7 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
                     label="Enroll scan"
                     cur={{ ...st.enroll.current, completed: null }}
                     busy={busy}
-                    onStop={() => act(() => api.post("/quests/control/stop", { what: "enroll" }), "Stopping the scan…")}
+                    onStop={canEdit ? () => act(() => api.post("/quests/control/stop", { what: "enroll" }), "Stopping the scan…") : null}
                 />
             )}
 
@@ -302,13 +305,13 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
             )}
 
             {/* ── Schedule settings ── */}
-            <button
+            {canEdit && <button
                 onClick={() => setOpen((o) => !o)}
                 aria-expanded={open}
                 style={{ marginTop: 14, background: "none", border: "none", color: "var(--text-dim)", fontSize: 12, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}
             >
                 <Icon name={open ? "chevronDown" : "chevronRight"} size={14} /> Schedule settings{dirty && !open ? " (unsaved)" : ""}
-            </button>
+            </button>}
 
             {open && (
                 <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-light)" }}>

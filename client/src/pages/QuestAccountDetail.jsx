@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import { EmptyState, Icon, Notice, PageHeader, StatCard, StatusBadge } from "../components/ui";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestCard from "../components/QuestCard";
@@ -34,6 +35,7 @@ export default function QuestAccountDetail() {
     const { accountId } = useParams();
     const navigate = useNavigate();
     const { accounts, live, reload } = useQuestStream();
+    const { canEdit } = usePageAccess("quests");
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState(null);
 
@@ -103,7 +105,7 @@ export default function QuestAccountDetail() {
                                 <span className="mono" style={{ color: "var(--text-dim)" }}>{a.accountId}</span>
                             </span>
                         }
-                        actions={
+                        actions={canEdit && (
                             <>
                                 {/* A monthly account runs inside the shared pass — stop that from /quests. */}
                                 {a.status === "running" && a.mode !== "monthly" && (
@@ -122,7 +124,7 @@ export default function QuestAccountDetail() {
                                     <Icon name="trash" /> Remove
                                 </button>
                             </>
-                        }
+                        )}
                     />
                 </div>
             </div>

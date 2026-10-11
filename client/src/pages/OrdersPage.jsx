@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Icon, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
@@ -51,6 +52,7 @@ function SellerCard({ data }) {
 }
 
 export default function OrdersPage() {
+    const { canEdit } = usePageAccess("orders");
     const [orders, setOrders] = useState([]);
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -202,7 +204,7 @@ export default function OrdersPage() {
                                                 <Icon name="gift" size={14} /> Deco Gift · Discord
                                             </span>
                                         )}
-                                        {o.status === "pending" && o.source !== "decoGift" && (
+                                        {canEdit && o.status === "pending" && o.source !== "decoGift" && (
                                             <div className="row-actions">
                                                 <button className="btn-success btn-sm" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
                                                     {busy === o.orderId ? "Working…" : "Complete"}

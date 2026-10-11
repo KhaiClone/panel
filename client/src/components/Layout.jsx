@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Outlet, NavLink, Link, useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, usePageAccess } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
+import { pageForPath } from "../context/access";
 import Icon from "./ui/Icon";
 
 // ── Icons ── (the shared set in components/ui/Icon.jsx)
@@ -33,7 +34,9 @@ const I = {
     close:      <Icon name="x" size={14} strokeWidth={2.5} />,
 };
 
-// One account, one nav. Everything here is reachable to whoever is logged in.
+// The owner sees all of it. Staff see only the pages they were given
+// (context/access.js) — the sections they have nothing in disappear, and so do
+// Settings, the notifications and the panel host's CPU / RAM.
 // The shop comes first: it is what the admin opens every day.
 const NAV_SECTIONS = [
     {
@@ -134,7 +137,8 @@ function NavItem({ to, icon, label, expanded }) {
 }
 
 export default function Layout() {
-    const { user, logout } = useAuth();
+    const { user, isOwner, can, logout } = useAuth();
+    const { readOnly } = usePageAccess();
     const { stats } = useData();
     const navigate = useNavigate();
     const location = useLocation();
@@ -145,6 +149,7 @@ export default function Layout() {
     const notifRef = useRef(null);
 
     useEffect(() => {
+        if (!isOwner) return; // bot alerts are the owner's
         const fetchNotifs = () => {
             import("../api/client").then(({ default: api }) => {
                 api.get("/notifications").then(r => setNotifs(r.data)).catch(() => {});
@@ -153,7 +158,7 @@ export default function Layout() {
         fetchNotifs();
         const int = setInterval(fetchNotifs, 15000);
         return () => clearInterval(int);
-    }, []);
+    }, [isOwner]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -185,6 +190,14 @@ export default function Layout() {
     const ramColor = ramPct == null ? "var(--text-dim)" : ramPct > 85 ? "var(--danger)" : ramPct > 60 ? "var(--warning)" : "var(--info)";
 
     const heading = useMemo(() => getPageHeading(location.pathname), [location.pathname]);
+
+    const sections = useMemo(
+        () =>
+            isOwner
+                ? NAV_SECTIONS
+                : NAV_SECTIONS.map((s) => ({ ...s, items: s.items.filter((it) => can(pageForPath(it.to))) })).filter((s) => s.items.length),
+        [isOwner, can],
+    );
 
     const SIDEBAR_W = expanded ? 220 : 56;
 
@@ -249,7 +262,7 @@ export default function Layout() {
 
                 {/* Nav sections */}
                 <nav style={{ flex: 1, padding: "8px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 0 }} className="no-scrollbar">
-                    {NAV_SECTIONS.map((section, si) => (
+                    {sections.map((section, si) => (
                         <div key={section.id} style={{ marginBottom: 4 }}>
                             {/* Section label */}
                             {expanded ? (
@@ -270,20 +283,24 @@ export default function Layout() {
                 </nav>
 
                 {/* Settings, pinned under the scrolling sections */}
-                <div style={{ padding: "8px", borderTop: "1px solid var(--border)" }}>
-                    <NavItem {...SETTINGS_ITEM} expanded={expanded} />
-                </div>
+                {isOwner && (
+                    <div style={{ padding: "8px", borderTop: "1px solid var(--border)" }}>
+                        <NavItem {...SETTINGS_ITEM} expanded={expanded} />
+                    </div>
+                )}
 
                 {/* User footer */}
                 <div style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: expanded ? "flex-start" : "center", gap: 10 }}>
-                    <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: "var(--bg-active)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
-                        {user?.username?.[0]?.toUpperCase()}
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: "var(--bg-active)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden" }}>
+                        {user?.avatar
+                            ? <img src={`https://cdn.discordapp.com/avatars/${user.userId}/${user.avatar}.png?size=64`} alt="" style={{ width: "100%", height: "100%" }} />
+                            : user?.username?.[0]?.toUpperCase()}
                     </div>
                     {expanded && (
                         <>
                             <div style={{ flex: 1, overflow: "hidden", lineHeight: 1.3 }}>
                                 <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", margin: 0 }}>{user?.username}</p>
-                                <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>Admin</p>
+                                <p style={{ fontSize: 11, color: "var(--text-dim)", margin: 0 }}>{isOwner ? "Admin" : "Staff"}</p>
                             </div>
                             <button onClick={handleLogout} title="Log out" className="btn-ghost" style={{ padding: 6, border: "none", color: "var(--text-dim)" }}>
                                 {I.logout}
@@ -333,13 +350,13 @@ export default function Layout() {
                         )}
 
                         {/* Notification bell */}
-                        <button className="btn-ghost" title="Notifications" style={{ padding: 6, border: "none", position: "relative" }}
+                        {isOwner && <button className="btn-ghost" title="Notifications" style={{ padding: 6, border: "none", position: "relative" }}
                             onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs && unreadCount > 0) handleMarkRead(); }}>
                             {I.bell}
                             {unreadCount > 0 && (
                                 <span style={{ position: "absolute", top: 4, right: 4, width: 7, height: 7, borderRadius: "50%", background: "var(--danger)", border: "2px solid var(--bg-base)" }} />
                             )}
-                        </button>
+                        </button>}
 
                         {/* Notification dropdown */}
                         {showNotifs && (
@@ -379,6 +396,11 @@ export default function Layout() {
                 </header>
 
                 <PanelStateBanner />
+                {readOnly && (
+                    <div style={{ padding: "8px 16px", fontSize: 13, background: "var(--bg-hover)", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+                        You can view this page, but not change anything on it.
+                    </div>
+                )}
                 <main style={{ flex: 1, overflowY: "auto", position: "relative" }} className="fade-in">
                     <Outlet />
                 </main>

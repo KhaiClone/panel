@@ -77,11 +77,11 @@ root/
     │   │   ├── index.js             ← Shared QuickDB singleton
     │   │   └── QuickDB.js           ← Extended QuickDB class
     │   ├── middleware/
-    │   │   ├── auth.js              ← JWT verification middleware
+    │   │   ├── auth.js              ← owner vs staff tokens, page gates (owner-only by default)
     │   │   ├── apiKey.js            ← API key middleware (external routes)
     │   │   └── errorHandler.js      ← Global Express error handler
     │   ├── routes/
-    │   │   ├── auth.js              ← POST /api/auth/login, GET /api/auth/verify
+    │   │   ├── auth.js              ← owner login, staff Discord login, verify, logout
     │   │   ├── bots.js              ← Full bot CRUD + start/stop/restart/update/env/fs/websites
     │   │   ├── groups.js            ← Group CRUD (name + color)
     │   │   ├── tags.js              ← Tag CRUD
@@ -121,7 +121,7 @@ root/
     │   └── src/
     │       ├── api/client.js        ← Axios instance with JWT interceptor
     │       ├── context/
-    │       │   ├── AuthContext.jsx  ← Global auth state
+    │       │   ├── AuthContext.jsx  ← Global auth state (owner / staff and their pages)
     │       │   └── DataContext.jsx  ← Shared bot/group/tag data + polling
     │       ├── pages/
     │       │   ├── Login.jsx        ← Admin login page
@@ -196,7 +196,7 @@ nano .env
 |--------------------------|----------|---------------------------------------------------------------|
 | `PORT`                   | Yes      | Express server port (default: `3000`)                         |
 | `NODE_ENV`               | Yes      | `production` or `development`                                 |
-| `ADMIN_USERNAME`         | Yes      | Panel login username — the panel's ONLY account               |
+| `ADMIN_USERNAME`         | Yes      | Panel login username — the owner (staff sign in with Discord) |
 | `ADMIN_PASSWORD_HASH`    | Yes      | bcrypt hash of that account's password (see below)            |
 | `JWT_SECRET`             | Yes      | Long random string for signing JWTs                           |
 | `PANEL_NODE_ID`          | Yes      | `_id` of the node record this panel runs on                   |
@@ -219,9 +219,10 @@ node -e "const b=require('bcryptjs'); console.log(b.hashSync('YOUR_PASSWORD_HERE
 
 Paste the output into `ADMIN_PASSWORD_HASH` in your `.env`, then restart the panel.
 
-> **The panel is single-account.** `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` *are* the
-> account — there is no users table, no roles and no way to create a second login.
-> Changing the password means regenerating the hash and restarting.
+> **One password account: the owner.** `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` *are* the
+> owner's account, with full access. Changing the password means regenerating the hash and
+> restarting. Other people get in only as **staff** — Discord login, chosen pages only
+> (see [Staff Access](#-staff-access)).
 
 ### 4. Create the Bots Root Directory
 
@@ -855,6 +856,47 @@ being one. One sealed bus command, `reseller.event` (role, DM). Stored in `data/
 | `POST` | `/api/external/resellers` | `{ userId, userTag, shop?, note?, byId, byTag }` → `{ reseller, event }`; 409 if already a CTV |
 | `DELETE` | `/api/external/resellers/:userId` | `{ byId, byTag }` → `{ reseller, event }` |
 
+## 👥 Staff Access
+
+The owner (the `.env` account) can let other people into **some pages** of the panel.
+Staff have **no panel password** — they sign in with their own Discord account, so there
+is nothing to hand to a friend short of the whole Discord account
+(`server/services/staffService.js`, `server/middleware/auth.js`).
+
+| | |
+|---|---|
+| **Who** | The owner adds each person by Discord user ID under **Panel Settings → Staff**. Holding the **Staff role** in the shop's server is *required but not enough*; the panel never gives or takes that role, it only checks it — at login and every 10 minutes. Losing it ends the session (the entry stays: getting the role back is enough to sign in again). |
+| **What** | Per person, per page: *None / View / Edit*. View = GET, Edit = everything. The pages that can be given: Orders, Stock, Vouchers, Ticket Menus, Supporters, CTV, Auto Quest, Auto Badge, Decors, Pricing. **Everything else is owner-only**: Servers, Bots, Sites, Terminal, Git Keys, Lavalink, the network pages, Panel Settings, bot logs, notifications. |
+| **One at a time** | A new login ends the person's other sessions, so two people sharing one account keep throwing each other out (the login page says why). A login from a device the person never used is posted on `DISCORD_ALERT_WEBHOOK`. Sessions last 12 hours. |
+| **Audit** | Every staff sign-in and every change they make (method, path, result, IP) is in the Staff tab's Activity log. The owner can sign any session out, or remove the person. |
+
+**Deny by default.** `authMiddleware` lets only the owner through. A mount opens to staff
+only when it names a page — `pageAuth("stock")` in `server/index.js` — so a route nobody
+classified stays owner-only. The terminal WebSocket and `/api/logs` read the token
+themselves and use `isOwnerToken()`. The client mirrors this (`client/src/context/access.js`):
+staff only see their pages in the menu, any other URL sends them to their first page, and
+View-only pages hide their buttons — but the server is what enforces it.
+
+**Discord login goes through the launcher.** Discord sends people back to ONE fixed address,
+`https://<launcher>/auth/discord/callback`; the launcher (`panel-launcher` on Vercel) already
+forwards any path and query to whichever panel is active. So moving the panel needs no change
+in the Discord Developer Portal. The client secret stays on the panel (AES-GCM under
+`JWT_SECRET`, in `shared.sqlite`); the launcher only sees the one-time code, worthless without it.
+
+**Setting it up**
+
+1. Discord Developer Portal → the application (the panel's own bot is fine) → **OAuth2**:
+   copy the Client ID, reset/copy the Client Secret, and under **Redirects** add
+   `https://<launcher>/auth/discord/callback` (e.g. `https://panel.thunderbolt.io.vn/auth/discord/callback`).
+2. Panel Settings → **Staff** → Discord login: paste the Client ID, Client Secret and that same
+   redirect URL; check the server and Staff role IDs (ArnTo Shop's by default). Save.
+3. **Add** a person by Discord user ID and pick their pages. The login page now shows
+   *Sign in with Discord*.
+
+Stored in `data/shared.sqlite` (travels with a panel move): `staff`, `staff_sessions`
+(Discord access token sealed, dropped when the session ends; ended rows kept 90 days),
+`staff_audit` (last 5,000 rows), kv `__staff.settings`.
+
 ---
 
 ## 💾 Backup & Rollback
@@ -1021,10 +1063,11 @@ SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 
 ## 🔒 Security Notes
 
-- The panel has a **single account**, defined entirely by `ADMIN_USERNAME` and
-  `ADMIN_PASSWORD_HASH` in `.env`. There are no user records, no roles and no
-  registration — a valid JWT is full access
-- The JWT expires after **24 hours** — you must re-login after that
+- The **owner** is defined entirely by `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH` in
+  `.env`; an owner JWT is full access. **Staff** tokens (`kind: "staff"`) only pass the
+  routes mounted with `pageAuth(page)` for pages they hold, and only while their session
+  row is live — see [Staff Access](#-staff-access)
+- The owner JWT expires after **24 hours**, a staff session after **12** — re-login after that
 - The `.env` file is in `.gitignore` — **never commit it**
 - All API routes are JWT-protected except `/api/auth/login`
 - External API routes (`/api/external/*`) take an `x-api-key`: a project's own key (stored as sha256 + an AES-GCM copy under `JWT_SECRET`; revocable one by one), or the legacy shared `PANEL_API_KEY` if set (never for shared data)
@@ -1126,8 +1169,16 @@ All routes require `Authorization: Bearer <token>` unless noted.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/auth/login` | Login — returns JWT (no auth required) |
-| `GET` | `/api/auth/verify` | Verify token validity |
+| `POST` | `/api/auth/login` | Owner login — returns JWT (no auth required) |
+| `GET` | `/api/auth/verify` | Who the token is: `{ kind: "owner" }` or `{ kind: "staff", perms, … }` |
+| `GET` | `/api/auth/discord` | `{ enabled }` — is staff (Discord) login set up (no auth) |
+| `POST` | `/api/auth/discord/start` | `{ url, state }` for Discord's authorize page (no auth) |
+| `POST` | `/api/auth/discord` | `{ code, state, device }` from the callback → staff JWT (no auth) |
+| `POST` | `/api/auth/logout` | Ends the caller's staff session |
+| `GET` / `PUT` | `/api/staff`, `/api/staff/settings` | Staff list, pages, Discord login settings (owner) |
+| `POST` / `PUT` / `DELETE` | `/api/staff[/:userId]` | Add / change pages / remove a staff member (owner) |
+| `GET` / `DELETE` | `/api/staff/sessions[/:id]` | Sessions; sign one out (owner) |
+| `GET` | `/api/staff/audit?userId=&before=` | What staff did, newest first (owner) |
 | `GET` | `/api/bots` | List all bots |
 | `POST` | `/api/bots` | Create bot (git clone or local import) |
 | `GET` | `/api/bots/:id` | Get single bot |

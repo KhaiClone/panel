@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
@@ -433,6 +434,7 @@ const emptyDraft = { userId: "", userTag: "", bankCode: "", bankBin: "", account
 const toDraft = (s) => ({ userId: s.userId, userTag: s.userTag || "", bankCode: s.bank.code, bankBin: s.bank.bin, accountNumber: s.accountNumber, accountName: s.accountName || "", note: s.note || "" });
 
 export default function SupportersPage() {
+    const { canEdit } = usePageAccess("supporters");
     const [status, setStatus] = useState(null);
     const [rows, setRows] = useState([]);
     const [banks, setBanks] = useState([]);
@@ -548,7 +550,7 @@ export default function SupportersPage() {
                     </td>
                     <td className="actions top">
                         <div className="row-actions">
-                            {s.active ? (
+                            {!canEdit ? null : s.active ? (
                                 <>
                                     <button className="btn-primary btn-sm" disabled={s.balance <= 0} title={s.balance > 0 ? "Pay the whole balance" : "Nothing to pay"} onClick={() => setModal({ type: "pay", supporter: s })}>
                                         Pay
@@ -568,7 +570,7 @@ export default function SupportersPage() {
                             <button className="btn-ghost btn-sm" onClick={() => setHistoryOf(s.userId)}>
                                 History
                             </button>
-                            {s.active && (
+                            {canEdit && s.active && (
                                 <button
                                     className="btn-ghost btn-sm is-danger"
                                     disabled={s.balance > 0}
@@ -590,7 +592,7 @@ export default function SupportersPage() {
             <PageHeader
                 title="Supporters"
                 description={<>ArnTo-Shop's paid helpers: adding one gives the Supporter role, <code className="mono">/done</code> adds to their salary.</>}
-                actions={
+                actions={canEdit && (
                     <>
                         <button className="btn-ghost" disabled={syncing || !status?.handler} onClick={sync} title="Give the role to every supporter who lacks it; list who holds it without being one">
                             <Icon name="shieldCheck" /> {syncing ? "Checking…" : "Check roles"}
@@ -602,7 +604,7 @@ export default function SupportersPage() {
                             <Icon name="plus" /> New supporter
                         </button>
                     </>
-                }
+                )}
             />
 
             {error && <Notice tone="danger">{error}</Notice>}

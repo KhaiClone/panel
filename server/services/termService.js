@@ -1,6 +1,6 @@
 const url = require("url");
-const jwt = require("jsonwebtoken");
 const WebSocket = require("ws");
+const { isOwnerToken } = require("../middleware/auth");
 const db = require("../db");
 const nodeService = require("./nodeService");
 const executor = require("./executor");
@@ -23,7 +23,7 @@ const executor = require("./executor");
 //
 //  The JWT is verified in the upgrade handshake (browsers can't send auth
 //  headers on a WebSocket), matching the ?token= pattern the panel already uses
-//  for log streaming and downloads.
+//  for log streaming and downloads. Only the owner's token opens a shell.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PING_INTERVAL_MS = 30 * 1000;
@@ -38,10 +38,8 @@ const attachTermServer = (httpServer) => {
         const { pathname, query } = url.parse(req.url, true);
         if (pathname !== "/api/term") return; // not ours — leave it alone
 
-        // A valid token is the only gate — the panel has a single account.
-        try {
-            jwt.verify(query.token || "", process.env.JWT_SECRET);
-        } catch {
+        // A shell on a VPS: the owner's token only — never a staff one.
+        if (!isOwnerToken(query.token || "")) {
             socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
             return socket.destroy();
         }

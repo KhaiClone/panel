@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatusBadge, Toggle } from "../components/ui";
 
@@ -197,6 +198,7 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
 // ── Stock tab ────────────────────────────────────────────────────────────────
 
 function StockTab({ product, onChanged }) {
+    const { canEdit } = usePageAccess("stock");
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [text, setText] = useState("");
@@ -274,7 +276,7 @@ function StockTab({ product, onChanged }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {canEdit && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Field
                     label="Add stock"
                     hint={product.multiline ? "An item may span several lines — separate items with a blank line." : "One item per line."}
@@ -299,7 +301,7 @@ function StockTab({ product, onChanged }) {
                     </button>
                 </div>
                 {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-            </div>
+            </div>}
 
             <div className="toolbar">
                 <SearchInput value={search} onChange={setSearch} placeholder="Search the stock…" style={{ flex: "1 1 200px", maxWidth: 300 }} />
@@ -309,15 +311,17 @@ function StockTab({ product, onChanged }) {
                 <span className="toolbar-count">
                     {visible.length} / {items.length} items
                 </span>
-                <button className="btn-ghost btn-sm is-danger" disabled={!product.counts.available} onClick={() => setConfirm({ kind: "all" })}>
-                    <Icon name="trash" size={14} /> Delete all
-                </button>
+                {canEdit && (
+                    <button className="btn-ghost btn-sm is-danger" disabled={!product.counts.available} onClick={() => setConfirm({ kind: "all" })}>
+                        <Icon name="trash" size={14} /> Delete all
+                    </button>
+                )}
             </div>
 
             {loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !items.length ? (
-                <EmptyState compact icon="stock" title="The stock is empty" description="Paste items in the box above." />
+                <EmptyState compact icon="stock" title="The stock is empty" description={canEdit ? "Paste items in the box above." : undefined} />
             ) : (
                 <>
                     <DataTable minWidth={520} columns={["#", "Content", "Added", "Status", ""]}>
@@ -332,7 +336,7 @@ function StockTab({ product, onChanged }) {
                                     {i.status === "reserved" ? <StatusBadge tone="warning">Delivering</StatusBadge> : <StatusBadge tone="success">Available</StatusBadge>}
                                 </td>
                                 <td className="actions top">
-                                    {i.status === "available" && (
+                                    {canEdit && i.status === "available" && (
                                         <button className="btn-ghost btn-sm is-danger" onClick={() => setConfirm({ kind: "one", item: i })}>
                                             Delete
                                         </button>
@@ -371,6 +375,7 @@ function StockTab({ product, onChanged }) {
 // ── History tab ──────────────────────────────────────────────────────────────
 
 function HistoryTab({ product, refreshKey }) {
+    const { canEdit } = usePageAccess("stock");
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -481,14 +486,14 @@ function HistoryTab({ product, refreshKey }) {
                                     {r.expiresAt && r.status === "delivered" && (
                                         <Toggle
                                             checked={r.reminders}
-                                            disabled={busy === r.id || !(r.ownExpiry || product.reminders.enabled)}
+                                            disabled={!canEdit || busy === r.id || !(r.ownExpiry || product.reminders.enabled)}
                                             title={r.ownExpiry || product.reminders.enabled ? "Expiry reminders for this delivery" : "Expiry reminders are off for this product"}
                                             onChange={(v) => act(r.id, () => api.post(`/stock/deliveries/${r.id}/reminders`, { enabled: v }))}
                                         />
                                     )}
                                 </td>
                                 <td className="actions top">
-                                    {r.status === "delivered" && (
+                                    {canEdit && r.status === "delivered" && (
                                         <button
                                             className="btn-ghost btn-sm"
                                             disabled={busy === r.id}
@@ -624,6 +629,7 @@ function DeliverModal({ products, initialId, onClose, onDone }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StockPage() {
+    const { canEdit } = usePageAccess("stock");
     const [products, setProducts] = useState([]);
     const [defaultMessage, setDefaultMessage] = useState("");
     const [status, setStatus] = useState(null);
@@ -721,7 +727,7 @@ export default function StockPage() {
             <PageHeader
                 title="Stock"
                 description={<>Goods ArnTo-assistant DMs to buyers with <code className="mono">/giao</code>; <code className="mono">/kho</code> manages them on Discord.</>}
-                actions={
+                actions={canEdit && (
                     <>
                         <button className="btn-ghost" disabled={!products.length} onClick={() => setDeliverFor(selectedId || "")}>
                             <Icon name="send" /> Deliver
@@ -730,7 +736,7 @@ export default function StockPage() {
                             <Icon name="plus" /> New product
                         </button>
                     </>
-                }
+                )}
             />
 
             {error && <Notice tone="danger">{error}</Notice>}
@@ -752,7 +758,7 @@ export default function StockPage() {
                     icon="stock"
                     title="No products yet"
                     description="A product holds the items ArnTo-assistant delivers, and how its DM looks."
-                    action={<button className="btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New product</button>}
+                    action={canEdit && <button className="btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New product</button>}
                 />
             ) : (
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "minmax(240px, 300px) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
@@ -773,7 +779,7 @@ export default function StockPage() {
                                             <div style={{ fontWeight: 500, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                                             <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{p.code}</div>
                                         </div>
-                                        <Toggle checked={p.enabled} title={p.enabled ? "On — turn off to hide it from /giao" : "Off"} onChange={(v) => toggleEnabled(p, v)} />
+                                        <Toggle checked={p.enabled} disabled={!canEdit} title={p.enabled ? "On — turn off to hide it from /giao" : "Off"} onChange={(v) => toggleEnabled(p, v)} />
                                     </div>
                                     <div className="meta-row">
                                         <StatusBadge tone={p.counts.available ? "success" : "danger"}>{p.counts.available} in stock</StatusBadge>
@@ -797,21 +803,23 @@ export default function StockPage() {
                                     {[
                                         ["stock", `Stock (${selected.counts.available})`],
                                         ["history", `History (${selected.counts.delivered})`],
-                                        ["settings", "Settings"],
+                                        ...(canEdit ? [["settings", "Settings"]] : []),
                                     ].map(([id, label]) => (
                                         <button key={id} className={`tab-item ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
                                             {label}
                                         </button>
                                     ))}
                                 </div>
-                                <button className="btn-primary" disabled={!selected.enabled || !selected.counts.available} onClick={() => setDeliverFor(selected.id)}>
-                                    <Icon name="send" /> Deliver
-                                </button>
+                                {canEdit && (
+                                    <button className="btn-primary" disabled={!selected.enabled || !selected.counts.available} onClick={() => setDeliverFor(selected.id)}>
+                                        <Icon name="send" /> Deliver
+                                    </button>
+                                )}
                             </div>
 
                             {tab === "stock" && <StockTab product={selected} onChanged={load} />}
                             {tab === "history" && <HistoryTab product={selected} refreshKey={`${historyKey}-${selected.counts.delivered}`} />}
-                            {tab === "settings" && (
+                            {canEdit && tab === "settings" && (
                                 <>
                                     <ProductForm initial={selectedDraft} defaultMessage={defaultMessage} onSave={save} saving={saving} />
                                     {saveMsg && <Notice tone={saveMsg.tone}>{saveMsg.text}</Notice>}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import { EmptyState, Notice, PageHeader, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ function Btn({ children, onClick, tone = "default", disabled }) {
 }
 
 function OrderRow({ order, onAction, busy }) {
+    const { canEdit } = usePageAccess("badges");
     const st = STATUS[order.status] ?? { label: order.status, tone: "neutral" };
     const pct = order.total ? Math.round((order.sent / order.total) * 100) : 0;
 
@@ -118,7 +120,7 @@ function OrderRow({ order, onAction, busy }) {
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    {order.status === "manual_review" && (
+                    {canEdit && order.status === "manual_review" && (
                         <>
                             <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
                                 Retry
@@ -147,6 +149,7 @@ const READER_STATUS = {
 };
 
 function ReaderPool({ pool, onAdd, onAction, busy }) {
+    const { canEdit } = usePageAccess("badges");
     const [token, setToken] = useState("");
     const [label, setLabel] = useState("");
     const [open, setOpen] = useState(false);
@@ -178,14 +181,16 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                         {pool && !pool.ok ? ` — ${pool.reason}` : ""}
                     </span>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                    <Btn disabled={busy || !readers.length} onClick={() => onAction(null, "verify-all")}>
-                        Check all
-                    </Btn>
-                    <Btn tone="primary" onClick={() => setOpen((v) => !v)}>
-                        {open ? "Close" : "Add reader"}
-                    </Btn>
-                </div>
+                {canEdit && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                        <Btn disabled={busy || !readers.length} onClick={() => onAction(null, "verify-all")}>
+                            Check all
+                        </Btn>
+                        <Btn tone="primary" onClick={() => setOpen((v) => !v)}>
+                            {open ? "Close" : "Add reader"}
+                        </Btn>
+                    </div>
+                )}
             </div>
 
             {!pool?.ok && (
@@ -274,7 +279,7 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                                 <div style={{ fontSize: 11, color: "var(--text-dim)" }}>disabled</div>
                             )}
                         </div>
-                        <div style={{ display: "flex", gap: 6 }}>
+                        {canEdit && <div style={{ display: "flex", gap: 6 }}>
                             <Btn disabled={busy} onClick={() => onAction(r.id, "verify")}>
                                 Check
                             </Btn>
@@ -287,7 +292,7 @@ function ReaderPool({ pool, onAdd, onAction, busy }) {
                             <Btn tone="danger" disabled={busy} onClick={() => onAction(r.id, "remove")}>
                                 Remove
                             </Btn>
-                        </div>
+                        </div>}
                     </div>
                 );
             })}

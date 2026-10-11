@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import { DataTable, Field, Notice, PageHeader, StatusBadge, Toggle } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ const capitalize = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // ── Badge pricing table ──────────────────────────────────────────────────────
 
 function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
+    const { canEdit } = usePageAccess("pricing");
     const dirty = useMemo(
         () =>
             badge.tiers.some((t) => {
@@ -82,14 +84,16 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                         </div>
                     )}
                 </div>
-                <button
-                    type="button"
-                    disabled={!dirty || saving || !badge.supported}
-                    onClick={() => onSave(badgeKey)}
-                    className={dirty && badge.supported ? "btn-primary" : "btn-ghost"}
-                >
-                    {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
-                </button>
+                {canEdit && (
+                    <button
+                        type="button"
+                        disabled={!dirty || saving || !badge.supported}
+                        onClick={() => onSave(badgeKey)}
+                        className={dirty && badge.supported ? "btn-primary" : "btn-ghost"}
+                    >
+                        {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
+                    </button>
+                )}
             </div>
 
             <DataTable
@@ -149,6 +153,7 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PricingPage() {
+    const { canEdit } = usePageAccess("pricing");
     const [pricing, setPricing] = useState(null);
     const [drafts, setDrafts] = useState({}); // { [badgeKey]: { [tierKey]: {price, enabled} } }
     const [settings, setSettings] = useState(null);
@@ -304,6 +309,8 @@ export default function PricingPage() {
                 </div>
             )}
 
+            {/* View-only staff: every field and switch below is read-only. */}
+            <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             {/* ── General settings ── */}
             <Card style={{ marginBottom: 20 }}>
                 <div
@@ -378,14 +385,16 @@ export default function PricingPage() {
                     </Field>
                 </div>
 
-                <button
-                    type="button"
-                    onClick={saveSettings}
-                    disabled={saving === "settings"}
-                    className="btn-primary"
-                >
-                    {saving === "settings" ? "Saving…" : "Save settings"}
-                </button>
+                {canEdit && (
+                    <button
+                        type="button"
+                        onClick={saveSettings}
+                        disabled={saving === "settings"}
+                        className="btn-primary"
+                    >
+                        {saving === "settings" ? "Saving…" : "Save settings"}
+                    </button>
+                )}
             </Card>
 
             {/* ── Price table per badge ── */}
@@ -443,15 +452,18 @@ export default function PricingPage() {
                     </Field>
                 </div>
 
-                <button
-                    type="button"
-                    onClick={saveOthers}
-                    disabled={saving === "others"}
-                    className="btn-primary"
-                >
-                    {saving === "others" ? "Saving…" : "Save prices"}
-                </button>
+                {canEdit && (
+                    <button
+                        type="button"
+                        onClick={saveOthers}
+                        disabled={saving === "others"}
+                        className="btn-primary"
+                    >
+                        {saving === "others" ? "Saving…" : "Save prices"}
+                    </button>
+                )}
             </Card>
+            </fieldset>
         </div>
     );
 }

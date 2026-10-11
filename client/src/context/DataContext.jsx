@@ -4,8 +4,11 @@ import { useAuth } from "./AuthContext";
 
 const DataContext = createContext(null);
 
+// Bots, groups, tags and the panel host's stats — the owner's pages only.
+// Staff can't read any of it (owner-only routes), so nothing is fetched for them.
 export function DataProvider({ children }) {
     const { user } = useAuth();
+    const owner = user?.kind === "owner";
     const [bots, setBots] = useState([]);
     const [groups, setGroups] = useState([]);
     const [tags, setTags] = useState([]);
@@ -13,7 +16,7 @@ export function DataProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     const fetchBots = useCallback(async () => {
-        if (!user) return;
+        if (!owner) return;
         try {
             const [botsRes, groupsRes, tagsRes] = await Promise.allSettled([
                 api.get("/bots"),
@@ -28,20 +31,20 @@ export function DataProvider({ children }) {
         } finally {
             setLoading(false);
         }
-    }, [user]);
+    }, [owner]);
 
     // Stats of the machine the panel runs on — the server defaults to
     // PANEL_NODE_ID when no node is named. Per-node figures live on /systems.
     const fetchStats = useCallback(async () => {
-        if (!user) return;
+        if (!owner) return;
         try {
             const res = await api.get("/system/stats");
             setStats(res.data);
         } catch {}
-    }, [user]);
+    }, [owner]);
 
     useEffect(() => {
-        if (user) {
+        if (owner) {
             setLoading(true);
             fetchBots();
             fetchStats();
@@ -58,7 +61,7 @@ export function DataProvider({ children }) {
             setStats(null);
             setLoading(true);
         }
-    }, [user, fetchBots, fetchStats]);
+    }, [owner, fetchBots, fetchStats]);
 
     return (
         <DataContext.Provider value={{ bots, groups, tags, stats, loading, refresh: fetchBots }}>

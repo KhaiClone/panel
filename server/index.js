@@ -31,7 +31,7 @@ const pricingExternalRoutes = require("./routes/pricingExternal");
 const badgeRoutes = require("./routes/badges");
 const badgeExternalRoutes = require("./routes/badgesExternal");
 const lavalinkRoutes = require("./routes/lavalink");
-const { authMiddleware } = require("./middleware/auth");
+const { authMiddleware, pageAuth } = require("./middleware/auth");
 const { apiKeyMiddleware } = require("./middleware/apiKey");
 const nodeContext = require("./middleware/nodeContext");
 const errorHandler = require("./middleware/errorHandler");
@@ -54,9 +54,10 @@ const lavalinkUpdater = require("./services/lavalinkUpdater");
 // ─────────────────────────────────────────────────────────────────────────────
 //  Validate critical env vars on startup
 // ─────────────────────────────────────────────────────────────────────────────
-// The panel is single-account: ADMIN_USERNAME + ADMIN_PASSWORD_HASH ARE the
-// account. There is no users table and no roles — routes/auth.js checks the env
-// directly, and any valid token is full access.
+// ADMIN_USERNAME + ADMIN_PASSWORD_HASH are the OWNER's account — full access.
+// Staff sign in with Discord (services/staffService.js) and reach only the
+// pages the owner gave them: a mount with pageAuth("<page>") below. Every
+// other mount uses authMiddleware, which is owner-only.
 //
 // NOTE: bots with no nodeId (or the legacy "local") are resolved at read time by
 // nodeService.resolveNodeId → PANEL_NODE_ID, never rewritten in the DB.
@@ -150,19 +151,21 @@ app.use("/api/nodes", authMiddleware, nodeRoutes);
 app.use("/api/join", require("./routes/join"));
 // Public: a removed node's uninstall reporting back (token-guarded, see routes/nodeRemoval.js).
 app.use("/api/node-removal", require("./routes/nodeRemoval"));
-app.use("/api/shop", authMiddleware, shopOrderRoutes);
-app.use("/api/decors", authMiddleware, decorRoutes);
+app.use("/api/shop", pageAuth("orders"), shopOrderRoutes);
+app.use("/api/decors", pageAuth("decors"), decorRoutes);
 // Public, read-only: the decor site's live data (routes/decorsPublic.js).
 app.use("/api/public/decors", require("./routes/decorsPublic"));
-app.use("/api/quests", authMiddleware, questRoutes);
-app.use("/api/pricing", authMiddleware, pricingRoutes);
-app.use("/api/badges", authMiddleware, badgeRoutes);
+app.use("/api/quests", pageAuth("quests"), questRoutes);
+app.use("/api/pricing", pageAuth("pricing"), pricingRoutes);
+app.use("/api/badges", pageAuth("badges"), badgeRoutes);
 app.use("/api/lavalink", authMiddleware, lavalinkRoutes);
-app.use("/api/stock", authMiddleware, require("./routes/stock"));
-app.use("/api/vouchers", authMiddleware, require("./routes/vouchers"));
-app.use("/api/ticket-menus", authMiddleware, require("./routes/ticketMenus").panel);
-app.use("/api/supporters", authMiddleware, require("./routes/supporters").panel);
-app.use("/api/resellers", authMiddleware, require("./routes/resellers").panel);
+app.use("/api/stock", pageAuth("stock"), require("./routes/stock"));
+app.use("/api/vouchers", pageAuth("vouchers"), require("./routes/vouchers"));
+app.use("/api/ticket-menus", pageAuth("ticketMenus"), require("./routes/ticketMenus").panel);
+app.use("/api/supporters", pageAuth("supporters"), require("./routes/supporters").panel);
+app.use("/api/resellers", pageAuth("resellers"), require("./routes/resellers").panel);
+// Who else may use the panel, and which pages (owner only).
+app.use("/api/staff", authMiddleware, require("./routes/staff"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -219,6 +222,8 @@ const startBackgroundServices = () => {
     require("./services/supporterService").start();
     // CTVs: the table (the shop seeds it from the CTV role on its first start).
     require("./services/resellerService").start();
+    // Staff access: expires sessions, re-checks the Staff role every 10 minutes.
+    require("./services/staffService").start();
 };
 
 /**

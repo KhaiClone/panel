@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatusBadge, Toggle } from "../components/ui";
 
@@ -128,6 +129,7 @@ function VoucherForm({ initial, isNew, onSave, saving }) {
 // ── Uses ─────────────────────────────────────────────────────────────────────
 
 function UsesTable({ rows, showVoucher, busy, onClaim, onReject }) {
+    const { canEdit } = usePageAccess("vouchers");
     return (
         <DataTable minWidth={showVoucher ? 860 : 760} columns={["ID", "Member", ...(showVoucher ? ["Voucher"] : []), "Note", "Requested", "Status", ""]}>
             {rows.map((r) => {
@@ -156,7 +158,7 @@ function UsesTable({ rows, showVoucher, busy, onClaim, onReject }) {
                             {r.reason && <div className="cell-sub" style={{ color: "var(--text-muted)" }}>{r.reason}</div>}
                         </td>
                         <td className="actions top">
-                            {r.status === "pending" && (
+                            {canEdit && r.status === "pending" && (
                                 <div className="row-actions">
                                     <button className="btn-primary btn-sm" disabled={busy === r.id} onClick={() => onClaim(r)}>
                                         Claim
@@ -238,6 +240,7 @@ function UsesTab({ voucher, refreshKey, actions }) {
 // ── Members (grants) ─────────────────────────────────────────────────────────
 
 function MembersTab({ voucher, status, refreshKey, onChanged }) {
+    const { canEdit } = usePageAccess("vouchers");
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [ids, setIds] = useState("");
@@ -325,7 +328,7 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {canEdit && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <Field label="Give to members" hint="Discord IDs or mentions — one per line, or separated by commas / spaces. Up to 200 at a time.">
                     <textarea
                         className="input mono"
@@ -362,7 +365,7 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
                 </div>
                 {notify && status && !status.dmSender && <Notice>ArnTo-assistant has not announced <code className="mono">voucher.granted</code> — members will not be DM'd.</Notice>}
                 {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-            </div>
+            </div>}
 
             <div className="toolbar">
                 <SearchInput value={search} onChange={setSearch} placeholder="Search member…" style={{ flex: "1 1 200px", maxWidth: 300 }} />
@@ -391,7 +394,7 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
                                     <Member tag={g.userTag} id={g.userId} />
                                 </td>
                                 <td className="nowrap top">
-                                    {editing?.userId === g.userId ? (
+                                    {canEdit && editing?.userId === g.userId ? (
                                         <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                                             <input
                                                 className="input"
@@ -411,9 +414,9 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
                                         </span>
                                     ) : (
                                         <span
-                                            style={{ cursor: "pointer", color: limit && g.used >= limit ? "var(--danger)" : undefined }}
-                                            title="Click to set this member's own limit (empty = the voucher's)"
-                                            onClick={() => setEditing({ userId: g.userId, uses: g.uses ?? "" })}
+                                            style={{ cursor: canEdit ? "pointer" : undefined, color: limit && g.used >= limit ? "var(--danger)" : undefined }}
+                                            title={canEdit ? "Click to set this member's own limit (empty = the voucher's)" : undefined}
+                                            onClick={() => canEdit && setEditing({ userId: g.userId, uses: g.uses ?? "" })}
                                         >
                                             <b>{g.used}</b> / {limitText(limit)}
                                             {g.uses !== null && <span style={{ fontSize: 11, color: "var(--text-dim)" }}> (own)</span>}
@@ -423,7 +426,7 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
                                 <td className="top"><StatusBadge tone={dm.tone}>{dm.text}</StatusBadge></td>
                                 <td className="muted top">{fmtDate(g.grantedAt)}</td>
                                 <td className="actions top">
-                                    <div className="row-actions">
+                                    {canEdit && <div className="row-actions">
                                         <button
                                             className="btn-ghost btn-sm"
                                             disabled={busy === g.userId || g.dm === "pending" || !status?.dmSender}
@@ -434,7 +437,7 @@ function MembersTab({ voucher, status, refreshKey, onChanged }) {
                                         <button className="btn-ghost btn-sm is-danger" disabled={busy === g.userId} onClick={() => setConfirm(g)}>
                                             Remove
                                         </button>
-                                    </div>
+                                    </div>}
                                 </td>
                             </tr>
                         );
@@ -514,6 +517,7 @@ function SettingsModal({ settings, onClose, onSaved }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function VouchersPage() {
+    const { canEdit } = usePageAccess("vouchers");
     const [vouchers, setVouchers] = useState([]);
     const [pending, setPending] = useState([]);
     const [status, setStatus] = useState(null);
@@ -635,7 +639,7 @@ export default function VouchersPage() {
             <PageHeader
                 title="Vouchers"
                 description={<>Members use them with <code className="mono">/voucher dung</code> on ArnTo-assistant; an admin claims each use and hands the reward over.</>}
-                actions={
+                actions={canEdit && (
                     <>
                         <button className="btn-ghost" disabled={!status} onClick={() => setShowSettings(true)}>
                             <Icon name="settings" /> Claim settings
@@ -644,7 +648,7 @@ export default function VouchersPage() {
                             <Icon name="plus" /> New voucher
                         </button>
                     </>
-                }
+                )}
             />
 
             {error && <Notice tone="danger">{error}</Notice>}
@@ -677,7 +681,7 @@ export default function VouchersPage() {
                     icon="voucher"
                     title="No vouchers yet"
                     description="A voucher is a reward members claim with a code."
-                    action={<button className="btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New voucher</button>}
+                    action={canEdit && <button className="btn-primary" onClick={() => setCreating(true)}><Icon name="plus" /> New voucher</button>}
                 />
             ) : (
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "minmax(240px, 300px) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
@@ -698,7 +702,7 @@ export default function VouchersPage() {
                                             <div style={{ fontWeight: 500, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</div>
                                             <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{v.code}</div>
                                         </div>
-                                        <Toggle checked={v.enabled} title={v.enabled ? "On — turn off to refuse new uses" : "Off"} onChange={(on) => toggleEnabled(v, on)} />
+                                        <Toggle checked={v.enabled} disabled={!canEdit} title={v.enabled ? "On — turn off to refuse new uses" : "Off"} onChange={(on) => toggleEnabled(v, on)} />
                                     </div>
                                     <div className="meta-row">
                                         {v.audience === "public" ? (
@@ -734,7 +738,7 @@ export default function VouchersPage() {
                                     {[
                                         ["uses", `Uses (${selected.counts.used + selected.counts.rejected})`],
                                         ["members", `Members (${selected.counts.granted})`],
-                                        ["settings", "Settings"],
+                                        ...(canEdit ? [["settings", "Settings"]] : []),
                                     ].map(([id, label]) => (
                                         <button key={id} className={`tab-item ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
                                             {label}
@@ -745,7 +749,7 @@ export default function VouchersPage() {
 
                             {tab === "uses" && <UsesTab voucher={selected} refreshKey={`${usesKey}-${countsKey(selected)}`} actions={actions} />}
                             {tab === "members" && <MembersTab voucher={selected} status={status} refreshKey={`${usesKey}-${countsKey(selected)}`} onChanged={load} />}
-                            {tab === "settings" && (
+                            {canEdit && tab === "settings" && (
                                 <>
                                     <VoucherForm initial={selectedDraft} onSave={save} saving={saving} />
                                     {saveMsg && <Notice tone={saveMsg.tone}>{saveMsg.text}</Notice>}
