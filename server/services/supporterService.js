@@ -5,14 +5,14 @@ const discordBus = require("./discordBus");
 // ─────────────────────────────────────────────────────────────────────────────
 //  Supporters — ArnTo-Shop's paid helpers (hỗ trợ viên) and their salary.
 //
-//    add / remove   on the Supporters page or with /staff-new, /staff-remove.
+//    add / remove   on the Supporters page or with /supporter-new, /supporter-remove.
 //                   The shop gives / takes the Supporter role and DMs them the
 //                   welcome / farewell text kept here. The Staff role is never
 //                   touched: the owner hands it out by hand.
 //    credit         salary for an order (/done on the shop), or an adjustment
-//                   (+ / −) from the page, /staff-add or /staff-deduct.
+//                   (+ / −) from the page, /supporter-add or /supporter-deduct.
 //    payout         the whole balance is paid by bank transfer (VietQR on the
-//                   page, or /staff-pay on Discord) and goes back to 0.
+//                   page, or /supporter-pay on Discord) and goes back to 0.
 //
 //  Every change is a row in the ledger, so the history is the panel's, not a
 //  Discord log channel's. `owed` splits the unpaid balance by who owes it (the

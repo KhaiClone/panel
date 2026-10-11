@@ -138,7 +138,7 @@ app.use("/api/external/stock", apiKeyMiddleware, require("./routes/stockExternal
 app.use("/api/external/vouchers", apiKeyMiddleware, require("./routes/vouchersExternal"));
 // ArnTo-Shop's ticket menus and /menu (services/ticketMenuService.js).
 app.use("/api/external/ticket-menus", apiKeyMiddleware, require("./routes/ticketMenus").external);
-// ArnTo-Shop's supporters: /staff-*, salary from /done (services/supporterService.js).
+// ArnTo-Shop's supporters: /supporter-*, salary from /done (services/supporterService.js).
 app.use("/api/external/supporters", apiKeyMiddleware, require("./routes/supporters").external);
 // ArnTo-Shop's CTVs (resellers): /ctv-new, /ctv-remove (services/resellerService.js).
 app.use("/api/external/resellers", apiKeyMiddleware, require("./routes/resellers").external);

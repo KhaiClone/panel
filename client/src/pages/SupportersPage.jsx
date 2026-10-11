@@ -9,7 +9,7 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchIn
 //  Adding one here has ArnTo-Shop give them the Supporter role and DM them the
 //  welcome text; removing takes the role back. The Staff role is the owner's,
 //  handed out by hand — nothing here touches it. Salary comes from /done on the
-//  shop; adjustments and payouts are made here or with /staff-* on Discord.
+//  shop; adjustments and payouts are made here or with /supporter-* on Discord.
 //  Every change is in the history. The logic lives in
 //  server/services/supporterService.js.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -642,7 +642,7 @@ export default function SupportersPage() {
                         compact
                         icon="supporters"
                         title="No supporters yet"
-                        description={<>Add one here, or run <code className="mono">/staff-new</code> on ArnTo-Shop.</>}
+                        description={<>Add one here, or run <code className="mono">/supporter-new</code> on ArnTo-Shop.</>}
                     />
                 ) : (
                     <>

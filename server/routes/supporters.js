@@ -52,7 +52,7 @@ const bankList = async () => {
         if (!Array.isArray(json?.data)) throw new Error("unexpected answer");
         banks = {
             at: Date.now(),
-            // All of them, like /staff-new's autocomplete on the shop.
+            // All of them, like /supporter-new's autocomplete on the shop.
             list: json.data.map((b) => ({ code: b.shortName, bin: String(b.bin), name: b.name, logo: b.logo || null })),
         };
         return banks.list;

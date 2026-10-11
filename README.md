@@ -792,7 +792,7 @@ menus. Stored as one document in `data/shared.sqlite` (kv `__ticketMenu`).
 | | `…/services[/:key[/move]]`, `…/products[/:id[/move]]`, `…/settings` | Same as the page's `/api/ticket-menus` routes — see `server/routes/ticketMenus.js` |
 
 **Supporters.** ArnTo-Shop's paid helpers (hỗ trợ viên) and their salary, managed on the
-Supporters page and with `/staff-*` on ArnTo-Shop (`server/services/supporterService.js`).
+Supporters page and with `/supporter-*` on ArnTo-Shop (`server/services/supporterService.js`).
 Two roles, deliberately separate: **Supporter** is the bot's — given when someone is added,
 taken back when they are removed; **Staff** is the owner's, handed out by hand for extra
 command rights, and nothing here touches it.
@@ -801,8 +801,8 @@ command rights, and nothing here touches it.
    role and DMs the welcome text (DM texts button; `{user}` `{id}` `{tag}`).
 2. **Salary** — `/done` on the shop books the order's pay to the supporter, owed by the
    order's seller; the order is not completed when the panel cannot record it. The page (or
-   `/staff-add`, `/staff-deduct`) adds or deducts with a reason; the balance never goes below 0.
-3. **Pay** — the page shows a VietQR for the whole balance (or `/staff-pay`, Administrators
+   `/supporter-add`, `/supporter-deduct`) adds or deducts with a reason; the balance never goes below 0.
+3. **Pay** — the page shows a VietQR for the whole balance (or `/supporter-pay`, Administrators
    only on its button); confirming sets the balance to 0. "Owed by" restarts at each payout.
 4. **Remove** — only with a balance of 0. The role is taken back and the farewell DMed; the
    history stays and they can be added again.
