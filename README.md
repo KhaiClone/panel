@@ -202,7 +202,8 @@ nano .env
 | `PANEL_NODE_ID`          | Yes      | `_id` of the node record this panel runs on                   |
 | `PANEL_DISCORD_TOKEN`    | No       | The panel's own Discord bot — posts commands on the bus       |
 | `PANEL_BUS_CHANNEL_ID`   | No       | Private channel of the Discord bus (see Shared Data below)    |
-| `DISCORD_ALERT_WEBHOOK`  | No       | Webhook URL for expiry warnings and removal alerts            |
+| `DISCORD_ALERT_WEBHOOK`  | No       | Expiry warnings, removals and Stock renewal reminders (pings buyers) |
+| `DISCORD_PANEL_LOG_WEBHOOK` | No    | The panel's private log channel: notifications, errors, system, staff (see [Panel Log](#-panel-log-channel)) |
 | `DISCORD_BACKUP_WEBHOOK` | No       | Webhook URL for the hourly backup (DBs + `.env` — keep it private) |
 | `QUEST_ENC_SECRET`       | Auto Quest | Encrypts stored Discord tokens (64 hex chars)               |
 | `DECOR_SITE_GITHUB_TOKEN`| No       | Publishes the decor site's data snapshot (fine-grained, Contents r/w) |
@@ -867,7 +868,7 @@ is nothing to hand to a friend short of the whole Discord account
 |---|---|
 | **Who** | The owner adds each person by Discord user ID under **Panel Settings → Staff**. Holding the **Staff role** in the shop's server is *required but not enough*; the panel never gives or takes that role, it only checks it — at login and every 10 minutes. Losing it ends the session (the entry stays: getting the role back is enough to sign in again). |
 | **What** | Per person, per page: *None / View / Edit*. View = GET, Edit = everything. The pages that can be given: Orders, Stock, Vouchers, Ticket Menus, Supporters, CTV, Auto Quest, Auto Badge, Decors, Pricing. **Everything else is owner-only**: Servers, Bots, Sites, Terminal, Git Keys, Lavalink, the network pages, Panel Settings, bot logs, notifications. |
-| **One at a time** | A new login ends the person's other sessions, so two people sharing one account keep throwing each other out (the login page says why). A login from a device the person never used is posted on `DISCORD_ALERT_WEBHOOK`. Sessions last 12 hours. |
+| **One at a time** | A new login ends the person's other sessions, so two people sharing one account keep throwing each other out (the login page says why). Every sign-in (🆕 for a device the person never used), sign-out and change goes to the [panel log channel](#-panel-log-channel). Sessions last 12 hours. |
 | **Audit** | Every staff sign-in and every change they make (method, path, result, IP) is in the Staff tab's Activity log. The owner can sign any session out, or remove the person. |
 
 **Deny by default.** `authMiddleware` lets only the owner through. A mount opens to staff
@@ -896,6 +897,28 @@ in the Discord Developer Portal. The client secret stays on the panel (AES-GCM u
 Stored in `data/shared.sqlite` (travels with a panel move): `staff`, `staff_sessions`
 (Discord access token sealed, dropped when the session ends; ended rows kept 90 days),
 `staff_audit` (last 5,000 rows), kv `__staff.settings`.
+
+## 📜 Panel Log Channel
+
+`DISCORD_PANEL_LOG_WEBHOOK` is the panel's own log channel — everything it has to say
+except the customer-facing expiry / renewal alerts (`server/services/panelLog.js`):
+
+| Icon | What |
+|------|------|
+| 🔔 | Every notification the bell shows: bot started / stopped / restarted, node offline / back, memory restarts, migrations… |
+| ❌ ⚠️ | Every `console.error` / `console.warn` of the server — failed backups, bus problems, route errors… |
+| 🖥️ | System: panel started (epoch, version), moving / move abandoned, backup sent (with a link), rollback staged; the Lavalink report too when `DISCORD_LAVALINK_WEBHOOK` is not set |
+| 👤 | Staff: sign-ins (🆕 for a new device, IP, browser), sign-outs and why, every change they make (page, request, result) |
+| 👑 | The owner's changes to staff access: added, pages changed, removed, signed out, login settings |
+
+**Stays on `DISCORD_ALERT_WEBHOOK`:** bot expiry warnings, suspensions and removals, and the
+Stock renewal reminders — they ping buyers, so that channel may be one buyers can see. The log
+channel carries IPs and error text: keep it private to the admins.
+
+Lines are batched into one message every few seconds (Discord takes about 30 webhook posts a
+minute); the same warning repeated within 10 minutes is counted instead of re-sent; webhook
+URLs, JWTs and Discord tokens are masked. Best effort: a line Discord refuses is dropped (the
+server's own log still has it). Unset = nothing is sent.
 
 ---
 
@@ -999,8 +1022,8 @@ another VPS.
   previous jar — so a bad release costs one node's restart, never the fleet.
   Turn it off with the **auto-update** switch and the job only reports.
 - **Discord report** to `DISCORD_LAVALINK_WEBHOOK` (falls back to
-  `DISCORD_ALERT_WEBHOOK`). Quiet by design: nothing is sent when every node is
-  already up to date.
+  `DISCORD_PANEL_LOG_WEBHOOK`, then `DISCORD_ALERT_WEBHOOK`). Quiet by design: nothing
+  is sent when every node is already up to date.
 - **Java is not installed for you.** Lavalink v4 needs Java 17+. The agent
   reports a missing or too-old runtime and the page shows the `apt` command —
   installing system packages from an HTTP call is outside the agent's job.

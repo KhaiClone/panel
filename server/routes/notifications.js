@@ -44,10 +44,15 @@ router.delete("/:id", async (req, res, next) => {
     }
 });
 
+// The bell's types that read as trouble in the panel log (services/panelLog.js).
+const LOG_KIND = { error: "error", warning: "warn", expired: "warn" };
+
 /**
- * Helper to create a notification directly from backend services.
+ * Helper to create a notification directly from backend services. It also
+ * goes to the panel log channel, when one is set.
  */
 router.createNotification = async (message, type) => {
+    require("../services/panelLog").add(LOG_KIND[type] || "notice", message);
     try {
         await db.create("notifications", {
             message,

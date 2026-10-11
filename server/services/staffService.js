@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const sharedStore = require("./sharedStore");
 const agentCrypto = require("./agentCrypto");
 const lifecycle = require("./lifecycle");
+const panelLog = require("./panelLog");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Staff access — people the owner lets into some pages of the panel.
@@ -23,10 +24,11 @@ const lifecycle = require("./lifecycle");
 //                   whole list; every other route is the owner's alone
 //                   (middleware/auth.js — deny by default).
 //    one at a time  a new login ends the user's other sessions, so two people
-//                   sharing one account keep throwing each other out. A login
-//                   from a device the user never used before is reported on
-//                   DISCORD_ALERT_WEBHOOK, and every change they make is in
-//                   the audit log.
+//                   sharing one account keep throwing each other out. Every
+//                   sign-in (flagged when the device is new), sign-out and
+//                   change they make is in the audit log AND in the panel log
+//                   channel (services/panelLog.js), as are the owner's changes
+//                   to who has access.
 //
 //  Discord sends people back to ONE fixed address: the launcher
 //  (panel-launcher on Vercel), which forwards /auth/discord/callback?code=…
@@ -201,6 +203,7 @@ const setSettings = (patch = {}) => {
         next[k] = v;
     }
     kvSet(SETTINGS, next);
+    panelLog.add("owner", "Owner changed the staff Discord login settings");
     return getSettings();
 };
 
@@ -223,6 +226,13 @@ const cleanPerms = (perms) => {
     }
     return out;
 };
+
+const PAGE_LABEL = Object.fromEntries(PAGES.map((p) => [p.key, p.label]));
+const describePerms = (perms) =>
+    Object.entries(perms)
+        .map(([k, v]) => `${PAGE_LABEL[k] || k} (${v})`)
+        .join(", ") || "no pages";
+const who = (s) => `**${s?.userTag || s?.userId}**`;
 
 const rowToStaff = (r) =>
     r && {
@@ -264,7 +274,9 @@ const add = async ({ userId, perms, note }) => {
     conn()
         .prepare("INSERT INTO staff (user_id, user_tag, perms, note, added_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
         .run(id, tag, JSON.stringify(p), String(note || "").slice(0, 300), t, t);
-    return getStaff(id);
+    const added = getStaff(id);
+    panelLog.add("owner", `Owner gave ${who(added)} (\`${id}\`) panel access — ${describePerms(p)}`);
+    return added;
 };
 
 const update = (userId, { perms, note } = {}) => {
@@ -273,6 +285,9 @@ const update = (userId, { perms, note } = {}) => {
     const p = perms !== undefined ? cleanPerms(perms) : cur.perms;
     const n = note !== undefined ? String(note).slice(0, 300) : cur.note;
     conn().prepare("UPDATE staff SET perms = ?, note = ?, updated_at = ? WHERE user_id = ?").run(JSON.stringify(p), n, now(), cur.userId);
+    if (JSON.stringify(p) !== JSON.stringify(cur.perms)) {
+        panelLog.add("owner", `Owner changed the pages of ${who(cur)}: ${describePerms(cur.perms)} → ${describePerms(p)}`);
+    }
     return getStaff(cur.userId);
 };
 
@@ -281,6 +296,7 @@ const remove = (userId) => {
     if (!cur) throw httpError(404, "Not a staff member");
     endSessionsOf(cur.userId, "removed");
     conn().prepare("DELETE FROM staff WHERE user_id = ?").run(cur.userId);
+    panelLog.add("owner", `Owner removed the panel access of ${who(cur)}`);
     return { removed: cur.userId };
 };
 
@@ -321,7 +337,7 @@ const kick = (sessionId) => {
     const r = conn().prepare("SELECT * FROM staff_sessions WHERE id = ?").get(String(sessionId));
     if (!r) throw httpError(404, "No such session");
     if (!endSession(r.id, "kicked")) throw httpError(409, "That session has already ended");
-    audit({ userId: r.user_id, sessionId: r.id, action: "kicked by owner" });
+    audit({ userId: r.user_id, sessionId: r.id, action: "kicked by owner", log: { kind: "owner", text: `Owner signed ${who(getStaff(r.user_id) || { userId: r.user_id })} out` } });
     return sessionToPublic(conn().prepare("SELECT * FROM staff_sessions WHERE id = ?").get(r.id));
 };
 
@@ -359,13 +375,23 @@ const can = (staff, page, method = "GET") => {
 // ── Audit ────────────────────────────────────────────────────────────────────
 
 let auditCount = 0;
-const audit = ({ userId, sessionId = null, action, status = null, ip = null }) => {
+/**
+ * One row of the audit log, and its line in the panel log channel. `page`
+ * names the page of a staff write; `log` replaces the default line
+ * ({ kind, text }, or false for none).
+ */
+const audit = ({ userId, sessionId = null, action, status = null, ip = null, page = null, log = null }) => {
     conn()
         .prepare("INSERT INTO staff_audit (user_id, session_id, action, status, ip, created_at) VALUES (?, ?, ?, ?, ?, ?)")
         .run(String(userId), sessionId, String(action).slice(0, 300), status, ip, now());
     if (++auditCount % 100 === 0) {
         conn().prepare("DELETE FROM staff_audit WHERE id <= (SELECT MAX(id) FROM staff_audit) - ?").run(AUDIT_KEEP);
     }
+    if (log === false) return;
+    if (log) return panelLog.add(log.kind, log.text);
+    const name = who(getStaff(userId) || { userId });
+    const result = status == null ? "" : ` → ${status < 400 ? "✅" : "❌"} ${status}`;
+    panelLog.add("staff", `${name}${page ? ` · ${PAGE_LABEL[page] || page}` : ""} · \`${String(action).slice(0, 200)}\`${result}`);
 };
 
 const auditLog = ({ userId, limit = 100, before } = {}) => {
@@ -500,11 +526,25 @@ const login = async ({ code, state, device, ip, ua }) => {
     conn()
         .prepare("UPDATE staff SET user_tag = ?, avatar = ?, last_login_at = ? WHERE user_id = ?")
         .run(tagOf(me) || staff.userTag, avatarOf(me), t, staff.userId);
-    audit({ userId: staff.userId, sessionId: id, action: replaced ? `login (ended ${replaced} other session${replaced > 1 ? "s" : ""})` : "login", ip });
-
-    if (!seenDevice) {
-        notifyNewDevice({ staff: { ...staff, userTag: tagOf(me) || staff.userTag }, ip, ua, replaced }).catch(() => {});
-    }
+    const ended = replaced ? `ended ${replaced} other session${replaced > 1 ? "s" : ""}` : "";
+    audit({
+        userId: staff.userId,
+        sessionId: id,
+        action: ended ? `login (${ended})` : "login",
+        ip,
+        log: {
+            kind: "staff",
+            text: [
+                `**${tagOf(me) || staff.userTag || staff.userId}** signed in`,
+                !seenDevice && "🆕 **new device**",
+                ip && `IP ${ip}`,
+                ended,
+                ua && `\`${String(ua).slice(0, 120)}\``,
+            ]
+                .filter(Boolean)
+                .join(" · "),
+        },
+    });
 
     const token = jwt.sign({ kind: "staff", sub: staff.userId, sid: id }, secret(), { expiresIn: Math.floor(SESSION_TTL_MS / 1000) });
     return { token, staff: getStaff(staff.userId), expiresAt };
@@ -512,22 +552,9 @@ const login = async ({ code, state, device, ip, ua }) => {
 
 const logout = (sessionId) => {
     const r = conn().prepare("SELECT user_id FROM staff_sessions WHERE id = ?").get(String(sessionId || ""));
-    if (r && endSession(sessionId, "logout")) audit({ userId: r.user_id, sessionId, action: "logout" });
-};
-
-const notifyNewDevice = async ({ staff, ip, ua, replaced }) => {
-    const url = process.env.DISCORD_ALERT_WEBHOOK;
-    if (!url) return;
-    const fields = [
-        { name: "Staff", value: `<@${staff.userId}> (${staff.userTag || staff.userId})`, inline: true },
-        { name: "IP", value: ip || "?", inline: true },
-        { name: "Browser", value: String(ua || "?").slice(0, 200), inline: false },
-    ];
-    if (replaced) fields.push({ name: "Other sessions", value: `${replaced} ended by this login`, inline: false });
-    await require("./discordService").sendWebhook(url, {
-        embeds: [{ title: "🔐 Staff signed in from a new device", color: 0xf0b232, fields, timestamp: new Date().toISOString() }],
-        allowed_mentions: { parse: [] },
-    });
+    if (r && endSession(sessionId, "logout")) {
+        audit({ userId: r.user_id, sessionId, action: "logout", log: { kind: "staff", text: `${who(getStaff(r.user_id) || { userId: r.user_id })} signed out` } });
+    }
 };
 
 // ── Role re-check ────────────────────────────────────────────────────────────
@@ -556,7 +583,12 @@ const sweep = async () => {
             const reason = member.gone || (member.roles.includes(s.roleId) ? null : "role_lost");
             if (reason) {
                 endSession(r.id, reason);
-                audit({ userId: r.user_id, sessionId: r.id, action: `signed out: ${reason}` });
+                audit({
+                    userId: r.user_id,
+                    sessionId: r.id,
+                    action: `signed out: ${reason}`,
+                    log: { kind: "staff", text: `${who(getStaff(r.user_id) || { userId: r.user_id })} signed out — ${END_REASONS[reason]}` },
+                });
                 console.log(`[Staff] Session of ${r.user_id} ended: ${reason}`);
             } else {
                 conn().prepare("UPDATE staff_sessions SET role_checked_at = ? WHERE id = ?").run(now(), r.id);

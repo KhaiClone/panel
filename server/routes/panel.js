@@ -447,6 +447,11 @@ router.get("/backups", (req, res) => {
     res.json(backupService.overview());
 });
 
+/** GET /api/panel/log — the panel log channel (DISCORD_PANEL_LOG_WEBHOOK): set, last post. */
+router.get("/log", (req, res) => {
+    res.json(require("../services/panelLog").status());
+});
+
 /** POST /api/panel/backups/run — send a backup now. */
 router.post("/backups/run", async (req, res) => {
     const result = await backupService.performBackup({ reason: "manual" });

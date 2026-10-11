@@ -73,11 +73,24 @@ const logrotateCheck = ({ nodes }) => {
     return { level: off.length ? "warn" : "ok", text };
 };
 
+const panelLogCheck = (d) => {
+    if (!d.configured) {
+        return d.set
+            ? { level: "warn", text: "DISCORD_PANEL_LOG_WEBHOOK is not a Discord webhook URL" }
+            : { level: "off", text: "Off — set DISCORD_PANEL_LOG_WEBHOOK in .env for notifications, errors and staff activity on Discord" };
+    }
+    if (d.lastError && (!d.lastSentAt || d.lastError.at > d.lastSentAt)) {
+        return { level: "error", text: `The last post failed: ${d.lastError.message}` };
+    }
+    return { level: "ok", text: d.lastSentAt ? `Last post ${ago(d.lastSentAt)} ago` : "Set — nothing posted since the panel started" };
+};
+
 const CHECKS = [
     { id: "backups", label: "Backups", tab: "recovery", run: () => api.get("/panel/backups").then((r) => backupCheck(r.data)) },
     { id: "gateway", label: "Panel gateway", tab: "integrations", run: () => api.get("/panel/gateway", { timeout: 60_000 }).then((r) => gatewayCheck(r.data)) },
     { id: "bus", label: "Discord bus", tab: "integrations", run: () => api.get("/panel/shared").then((r) => busCheck(r.data)) },
     { id: "domains", label: "Panel domains", tab: "config", run: () => api.get("/panel/domains").then((r) => domainsCheck(r.data)) },
+    { id: "log", label: "Panel log", tab: "config", run: () => api.get("/panel/log").then((r) => panelLogCheck(r.data)) },
     // Per node now — fixed on a node's Manage tab, reached from the Systems list.
     { id: "logrotate", label: "Log rotation", to: "/systems", run: () => api.get("/nodes/logrotate", { timeout: 60_000 }).then((r) => logrotateCheck(r.data)) },
 ];

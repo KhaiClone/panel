@@ -214,8 +214,9 @@ const sendStockExpired = async ({ product, delivery }) => {
 /**
  * Report the outcome of a Lavalink release check to the log channel.
  *
- * Goes to DISCORD_LAVALINK_WEBHOOK, falling back to DISCORD_ALERT_WEBHOOK so
- * the feature still reports on a panel that never configured a separate one.
+ * Goes to DISCORD_LAVALINK_WEBHOOK, falling back to the panel log channel
+ * (DISCORD_PANEL_LOG_WEBHOOK), then to DISCORD_ALERT_WEBHOOK for a panel that
+ * set neither.
  *
  * @param {Object} report
  * @param {string} report.title
@@ -227,7 +228,7 @@ const sendStockExpired = async ({ product, delivery }) => {
  * @param {Array}  [report.skipped]    - [{ nodeName, state }] nodes that could not take it
  */
 const sendLavalinkReport = async ({ title, color, version, url, description, results = [], skipped = [] }) => {
-    const webhookUrl = process.env.DISCORD_LAVALINK_WEBHOOK || process.env.DISCORD_ALERT_WEBHOOK;
+    const webhookUrl = process.env.DISCORD_LAVALINK_WEBHOOK || process.env.DISCORD_PANEL_LOG_WEBHOOK || process.env.DISCORD_ALERT_WEBHOOK;
     if (!webhookUrl) return;
 
     const line = (r) => {

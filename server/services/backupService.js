@@ -156,6 +156,8 @@ const performBackup = async ({ reason: why = "scheduled" } = {}) => {
             .join(", ");
         last = { at: entry.at, ok: true, message: `${what}${built.summary.env ? " + .env" : ""}` };
         console.log(`[Backup] Sent ${built.files.length} file(s) — ${last.message}`);
+        const link = linkOf(entry);
+        require("./panelLog").add("system", `Backup sent (${why}) — ${last.message}${link ? ` · [open](${link})` : ""}`);
         return { ok: true, entry };
     } catch (err) {
         const message = reason(err);
@@ -450,6 +452,8 @@ const rollback = async (source, parts = {}) => {
         throw err;
     }
     console.log(`[Backup] Rollback to ${planned.ts} staged: ${chosen.map((f) => f.name).join(", ")}`);
+    require("./panelLog").add("system", `Rollback to the backup of **${planned.ts}** staged — the panel restarts to apply it`);
+    await require("./panelLog").flush(); // before the restart below cuts it off
 
     let restartError = null;
     try {

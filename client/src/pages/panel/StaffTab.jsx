@@ -4,8 +4,9 @@
 //  Staff sign in with their own Discord account — there is no password to hand
 //  to someone else. Holding the Staff role in the server is required (checked
 //  at login and every 10 minutes); the panel never gives or takes that role.
-//  One session per person at a time; a login from a new device is posted to
-//  the alert webhook. Everything is enforced by the server
+//  One session per person at a time; sign-ins (a new device flagged) and every
+//  change they make also go to the panel log channel (DISCORD_PANEL_LOG_WEBHOOK).
+//  Everything is enforced by the server
 //  (server/services/staffService.js, middleware/auth.js).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useMemo } from "react";

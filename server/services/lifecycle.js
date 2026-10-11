@@ -62,6 +62,7 @@ const enterMaintenance = async (details = null) => {
     }
     state = "maintenance";
     info = details;
+    require("./panelLog").add("system", `Panel moving${details?.to ? ` to **${details.to}**` : ""} — changes are paused`);
     return suspendWork();
 };
 
@@ -70,6 +71,7 @@ const exitMaintenance = async () => {
     if (state !== "maintenance") return;
     state = "active";
     info = null;
+    require("./panelLog").add("system", "Panel move abandoned — back to active here");
     await require("./questService").restore().catch((e) => console.warn("[Panel] quest restore:", e.message));
     await require("./badgeService").restoreOrders().catch(() => {});
 };

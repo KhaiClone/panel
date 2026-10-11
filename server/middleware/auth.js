@@ -113,7 +113,7 @@ const pageAuth = (page) => (req, res, next) => {
         const ip = clientIp(req);
         res.on("finish", () => {
             try {
-                staffService.audit({ userId: who.staff.userId, sessionId: who.session.id, action, status: res.statusCode, ip });
+                staffService.audit({ userId: who.staff.userId, sessionId: who.session.id, action, status: res.statusCode, ip, page });
             } catch (err) {
                 console.error(`[Staff] Audit write failed: ${err.message}`);
             }

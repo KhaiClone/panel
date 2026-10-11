@@ -4,7 +4,8 @@
  * settings, adding staff and their page permissions, the Discord login against a
  * stubbed Discord (identity, Staff role, one session at a time, new-device notice),
  * the owner-only default, page gates (view = GET, edit = everything), the audit
- * log, the role re-check sweep, and every way a session ends.
+ * log and its lines in the panel log channel, the role re-check sweep, and
+ * every way a session ends.
  * Run:  node scripts/staffAccess.test.js
  */
 
@@ -16,7 +17,6 @@ const assert = require("assert");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "staff-test-"));
 process.env.SHARED_DB_PATH = path.join(TMP, "shared.sqlite");
 process.env.JWT_SECRET = "test-secret-for-staff-access";
-process.env.DISCORD_ALERT_WEBHOOK = "https://discord.test/webhook";
 
 // Stand-in for server/db (discordBus loads it; nothing here reads bots).
 const dbPath = require.resolve(path.join(__dirname, "..", "server", "db"));
@@ -26,7 +26,7 @@ const axios = require("axios");
 const jwt = require("jsonwebtoken");
 const sharedStore = require("../server/services/sharedStore");
 const discordBus = require("../server/services/discordBus");
-const discordService = require("../server/services/discordService");
+const panelLog = require("../server/services/panelLog");
 const staff = require("../server/services/staffService");
 const { authMiddleware, pageAuth, isOwnerToken, identify } = require("../server/middleware/auth");
 
@@ -38,7 +38,7 @@ const MINH = "612880338590498816"; // staff
 const KHACH = "700000000000000001"; // has the role, never added
 
 // access token → { user, member: { roles } | 404 | 401 | "down" }
-const discord = { tokens: new Map(), codes: new Map(), used: new Set(), lastScope: "identify guilds.members.read", posts: [] };
+const discord = { tokens: new Map(), codes: new Map(), used: new Set(), lastScope: "identify guilds.members.read" };
 let issued = 0;
 /** Pretend the person went through Discord: returns the code the callback would carry. */
 const discordCode = (userId, member = { roles: [STAFF_ROLE] }) => {
@@ -72,7 +72,10 @@ axios.get = async (url, opts) => {
     if (t.member === "down") throw fail(502, {});
     return { data: { roles: t.member.roles } };
 };
-discordService.sendWebhook = async (url, payload) => discord.posts.push({ url, payload });
+// What goes to the panel log channel.
+const logged = [];
+panelLog.add = (kind, text) => logged.push({ kind, text });
+const lastLog = () => logged.at(-1) || {};
 discordBus.userTag = async (id) => (id === LAN ? "lan" : undefined);
 
 // ── Express stand-ins ────────────────────────────────────────────────────────
@@ -234,7 +237,7 @@ const login = (userId, member, extra = {}) => {
     });
 
     await test("a good login gives a staff token with their pages", async () => {
-        discord.posts.length = 0;
+        logged.length = 0;
         const out = await login(LAN, undefined, { device: "deviceBBBB2222" });
         lanToken = out.token;
         const who = identify(lanToken);
@@ -246,12 +249,12 @@ const login = (userId, member, extra = {}) => {
         assert.ok(decoded.exp - decoded.iat <= 12 * 3600);
     });
 
-    await test("a new device is reported, a known one is not", async () => {
-        assert.strictEqual(discord.posts.length, 1);
-        assert.match(discord.posts[0].payload.embeds[0].title, /new device/);
-        assert.deepStrictEqual(discord.posts[0].payload.allowed_mentions, { parse: [] });
+    await test("sign-ins go to the panel log, a new device flagged", async () => {
+        assert.strictEqual(logged.length, 1);
+        assert.strictEqual(logged[0].kind, "staff");
+        assert.match(logged[0].text, /\*\*u914\*\* signed in · 🆕 \*\*new device\*\* · IP 203\.0\.113\.7/);
         const again = await login(LAN, undefined, { device: "deviceBBBB2222" });
-        assert.strictEqual(discord.posts.length, 1);
+        assert.doesNotMatch(lastLog().text, /new device/);
         lanToken = again.token;
     });
 
@@ -260,7 +263,7 @@ const login = (userId, member, extra = {}) => {
         const fresh = await login(LAN, undefined, { device: "deviceCCCC3333" });
         assert.throws(() => identify(old), (e) => e.status === 401 && e.reason === "replaced");
         assert.strictEqual(identify(fresh.token).staff.userId, LAN);
-        assert.match(discord.posts.at(-1).payload.embeds[0].fields.at(-1).value, /1 ended/);
+        assert.match(lastLog().text, /new device.*ended 1 other session/);
         lanToken = fresh.token;
         const active = staff.sessions({ userId: LAN }).filter((s) => s.active);
         assert.strictEqual(active.length, 1);
@@ -319,6 +322,7 @@ const login = (userId, member, extra = {}) => {
         assert.strictEqual(last.action, "POST /api/shop/orders/2612/done");
         assert.strictEqual(last.status, 200);
         assert.strictEqual(last.ip, "203.0.113.7");
+        assert.deepStrictEqual(lastLog(), { kind: "staff", text: "**u914** · Orders · `POST /api/shop/orders/2612/done` → ✅ 200" });
     });
 
     await test("permission changes apply to the very next request", () => {

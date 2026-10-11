@@ -3,6 +3,8 @@
 // reads them — so this must stay ahead of dotenv. See services/backupArchive.js.
 require("./services/backupArchive").restore();
 require("dotenv").config();
+// Every console.error / console.warn also goes to DISCORD_PANEL_LOG_WEBHOOK (services/panelLog.js).
+require("./services/panelLog").captureConsole();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -263,6 +265,10 @@ const bootstrap = async () => {
         return;
     }
     console.log(`[Panel] Active at epoch ${panelLease.current()}`);
+    require("./services/panelLog").add(
+        "system",
+        `Panel started — active at epoch **${panelLease.current()}** (v${require("../package.json").version}, node \`${process.env.PANEL_NODE_ID}\`)`,
+    );
     startBackgroundServices();
 
     if (incoming) {
