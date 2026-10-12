@@ -2,9 +2,9 @@
 /**
  * Checks for the Discord bus envelopes (server/services/discordBus.js and
  * bot-lib/PanelBus.js): a command or a reply carrying emoji, Vietnamese or a
- * custom emoji goes into the message text as ASCII only, so Discord rewriting
- * an emoji cannot break the signature, and both sides read back the exact
- * same body. A big envelope still travels as an attached file.
+ * custom emoji goes into the message text as ASCII with no `<` `>`, so
+ * Discord rewriting an emoji cannot break the signature, and both sides read
+ * back the exact same body. A big envelope still travels as an attached file.
  * Run:  node scripts/discordBus.test.js
  */
 
@@ -32,14 +32,21 @@ const BOT = "1100000000000000002";
 const bot = new PanelBus({ user: { id: BOT, tag: "assistant#0001" } });
 bot.panelBotId = PANEL_BOT;
 
-const ASCII = /^[\x00-\x7f]*$/;
-// What Discord might do to an emoji in a message's text.
-const rewrite = (s) => s.replace(/️/g, "").replace(/👍🏽/g, "👍");
+// The JSON in a message's text: ASCII, and no `<` `>` (so no emoji or mention syntax).
+const SAFE = /^[^<>\u0080-￿]*$/;
+// What Discord does to a message's text: a custom emoji the posting bot cannot
+// use becomes :name: (seen in #api on 2026-10-12 — the panel's bot is only in
+// the bus server). Plus what it might do to a Unicode emoji.
+const rewrite = (s) =>
+    s
+        .replace(/<a?:(\w{1,32}):\d{17,20}>/g, ":$1:")
+        .replace(/️/g, "")
+        .replace(/👍🏽/g, "👍");
 
 const BODY = {
     channelId: "1205054570074480710",
     message: {
-        content: "Chào mọi người ❤️ 👍🏽 🇻🇳 👨‍👩‍👧 <:pepe:1205054570074480799> - sale 50%",
+        content: "Chào mọi người ❤️ 👍🏽 🇻🇳 👨‍👩‍👧 <:pepe:1205054570074480799> <a:6347bonk:1205054570074480800> - sale 50% <@&1205054570074480801>",
         embeds: [{ title: "🔥 Ưu đãi", description: "✅ Còn hàng\n⚠️ Số lượng có hạn" }],
         components: [{ type: 1, components: [{ type: 2, style: 5, url: "https://example.com", label: "Mua", emoji: { name: "🛒" } }] }],
     },
@@ -49,32 +56,43 @@ const BODY = {
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
-test("a command with emoji: ASCII text, the bot verifies it and reads the same body", async () => {
+test("a command with emoji: safe text, the bot verifies it and reads the same body", async () => {
     const env = { v: 1, id: "cmd-1", ts: Date.now(), kind: "cmd", cmd: "message.send", body: BODY };
     env.sig = discordBus.sign(KEY, env);
     const out = discordBus.toMessage(BOT, "message.send · cmd-1", env);
     assert.ok(!out.files, "small enough to be inline");
     const block = /```json\n([\s\S]+?)\n```/.exec(out.content)[1];
-    assert.match(block, ASCII);
+    assert.match(block, SAFE);
     const got = await bot.parse({ content: rewrite(out.content) });
     assert.ok(bot.verify(got), "signature still matches");
     assert.deepStrictEqual(bot.open(got.body), BODY);
 });
 
-test("the same command as raw JSON would not survive an emoji rewrite (why the text is ASCII)", () => {
+test("the same command as raw JSON would not survive an emoji rewrite (why the text is escaped)", () => {
     const env = { v: 1, id: "cmd-2", ts: Date.now(), kind: "cmd", cmd: "message.send", body: BODY };
     env.sig = discordBus.sign(KEY, env);
     const raw = JSON.parse(rewrite(JSON.stringify(env)));
     assert.ok(!bot.verify(raw));
 });
 
-test("a reply with emoji: ASCII text, the panel verifies it and reads the same result", async () => {
+test("a custom emoji alone, ASCII only (the send that failed on 2026-10-12): the bot still verifies it", async () => {
+    const body = { channelId: "1409868808327528528", message: { content: "<:6347bonk:1205054570074480802>", embeds: [], components: [] }, mentions: BODY.mentions };
+    const env = { v: 1, id: "cmd-5", ts: Date.now(), kind: "cmd", cmd: "message.send", body };
+    env.sig = discordBus.sign(KEY, env);
+    const out = discordBus.toMessage(BOT, "message.send · cmd-5", env);
+    assert.match(out.content, /\\u003c:6347bonk:1205054570074480802\\u003e/);
+    const got = await bot.parse({ content: rewrite(out.content) });
+    assert.ok(bot.verify(got), "signature still matches");
+    assert.strictEqual(bot.open(got.body).message.content, "<:6347bonk:1205054570074480802>");
+});
+
+test("a reply with emoji: safe text, the panel verifies it and reads the same result", async () => {
     const result = { messageId: "1300000000000000001", channelName: "📢・thông-báo", guildName: "ArnTo Shop 🛍️", message: BODY.message };
     const reply = { v: 1, id: "cmd-3", ts: Date.now(), kind: "reply", cmd: "message.fetch", body: { ok: true, result } };
     reply.sig = bot.sign(reply);
     const out = bot.toMessage("✅ message.fetch · cmd-3", reply);
     assert.ok(!out.files, "small enough to be inline");
-    assert.match(/```json\n([\s\S]+?)\n```/.exec(out.content)[1], ASCII);
+    assert.match(/```json\n([\s\S]+?)\n```/.exec(out.content)[1], SAFE);
     const got = await discordBus.fromMessage({ content: rewrite(out.content) });
     assert.ok(discordBus.verify(KEY, got), "signature still matches");
     assert.deepStrictEqual(got.body.result, result);

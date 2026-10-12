@@ -100,16 +100,18 @@ const verify = (key, e) => {
 };
 
 /**
- * JSON with every non-ASCII character as \uXXXX. Discord may rewrite some
- * characters of a message's text (emoji), and a single changed character
- * breaks the signature — the bot then ignores the command. JSON.parse gives
- * back the exact same strings, so the signature still matches.
+ * JSON that Discord keeps exactly as posted: `<`, `>` and every non-ASCII
+ * character as \uXXXX. Discord rewrites a custom emoji `<:name:id>` the posting
+ * bot cannot use (it is not in that emoji's server — the panel's bot is only
+ * in the bus server) to `:name:`, and a single changed character breaks the
+ * signature — the bot then ignores the command. Escaped, the text holds no
+ * emoji for Discord to touch, and JSON.parse gives back the exact same strings.
  */
-const asciiJson = (value) => JSON.stringify(value).replace(/[\u007f-￿]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+const busJson = (value) => JSON.stringify(value).replace(/[<>\u007f-￿]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
 
 /** Envelope ↔ message: a code block when small, an attached JSON file otherwise. */
 const toMessage = (mentionId, label, envelope) => {
-    const json = asciiJson(envelope);
+    const json = busJson(envelope);
     const head = `<@${mentionId}> \`${TAG}\` ${label}`;
     if (json.length <= INLINE_MAX) return { content: `${head}\n\`\`\`json\n${json}\n\`\`\``, allowedMentions: { users: [mentionId] } };
     return {
