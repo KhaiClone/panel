@@ -99,9 +99,17 @@ const verify = (key, e) => {
     return want.length === got.length && crypto.timingSafeEqual(want, got);
 };
 
+/**
+ * JSON with every non-ASCII character as \uXXXX. Discord may rewrite some
+ * characters of a message's text (emoji), and a single changed character
+ * breaks the signature — the bot then ignores the command. JSON.parse gives
+ * back the exact same strings, so the signature still matches.
+ */
+const asciiJson = (value) => JSON.stringify(value).replace(/[\u007f-￿]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+
 /** Envelope ↔ message: a code block when small, an attached JSON file otherwise. */
 const toMessage = (mentionId, label, envelope) => {
-    const json = JSON.stringify(envelope);
+    const json = asciiJson(envelope);
     const head = `<@${mentionId}> \`${TAG}\` ${label}`;
     if (json.length <= INLINE_MAX) return { content: `${head}\n\`\`\`json\n${json}\n\`\`\``, allowedMentions: { users: [mentionId] } };
     return {
@@ -445,6 +453,8 @@ module.exports = {
     sign,
     verify,
     canonical,
+    toMessage,
+    fromMessage,
     seal,
     unseal,
     VERSION,
