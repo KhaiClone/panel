@@ -455,8 +455,9 @@ function SentTab({ rows, loading, error, canEdit, busy, onEdit, onCopy, onDelete
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {error && <Notice tone="danger">{error}</Notice>}
+            {rows.length > 0 && <p style={{ color: "var(--text-muted)", fontSize: 12, margin: 0 }}>Kept for 3 days after a message was last sent, edited or deleted — it stays on Discord.</p>}
             {!rows.length ? (
-                <EmptyState icon="send" title="Nothing sent yet" description="Messages sent from this page, and messages edited here by their link, are listed here." />
+                <EmptyState icon="send" title="Nothing sent yet" description="Messages sent from this page, and messages edited here by their link, are listed here for 3 days." />
             ) : (
                 <DataTable minWidth={860} columns={["Sent", "Where", "Message", "By", "Status", ""]}>
                     {rows.map((r) => {

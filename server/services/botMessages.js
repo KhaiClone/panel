@@ -45,8 +45,8 @@ const lifecycle = require("./lifecycle");
 //
 //  The panel checks every message against Discord's limits before anything
 //  goes on the bus, so a mistake is reported at once, not after a round trip.
-//  Storage: data/shared.sqlite — bot_messages (what was sent, last 500) and
-//  message_drafts (saved messages).
+//  Storage: data/shared.sqlite — bot_messages (what was sent, kept 3 days
+//  after it was last sent / edited / deleted) and message_drafts (saved messages).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CMD = {
@@ -80,7 +80,8 @@ const MAP_EVERY_MS = 24 * 60 * 60_000;
 const RELOAD_EVERY_MS = 10 * 60_000;
 const MAP_CHECK_MS = 10 * 60_000;
 const MAP_RETRY_MS = 60 * 60_000; // a failed daily load, while an older map still serves
-const HISTORY_KEEP = 500;
+const SENT_KEEP_MS = 3 * 86_400_000; // Sent keeps 3 days (the user's rule)
+const SENT_LIST_MAX = 500;
 const MAX_DRAFTS = 200;
 const MAX_DRAFT_BYTES = 64 * 1024;
 const SUPPRESS_NOTIFICATIONS = 1 << 12;
@@ -454,10 +455,19 @@ const dailyTick = async () => {
     }
 };
 
+const tick = () => {
+    try {
+        prune();
+    } catch (err) {
+        console.warn(`[Messages] Old Sent rows not removed: ${err.message}`);
+    }
+    return dailyTick().catch(() => {});
+};
+
 const start = () => {
     conn();
-    setTimeout(lifecycle.guard(() => dailyTick().catch(() => {})), 60_000); // the bus needs a moment after a start
-    setInterval(lifecycle.guard(() => dailyTick().catch(() => {})), MAP_CHECK_MS);
+    setTimeout(lifecycle.guard(tick), 60_000); // the bus needs a moment after a start
+    setInterval(lifecycle.guard(tick), MAP_CHECK_MS);
 };
 
 // Discord's permission formula — the same one the bot's discord.js applies.
@@ -587,10 +597,14 @@ const placeOf = (channelId) => {
 const getRow = (id) => conn().prepare("SELECT * FROM bot_messages WHERE id = ?").get(String(id));
 const byMessage = (messageId) => conn().prepare("SELECT * FROM bot_messages WHERE message_id = ?").get(String(messageId));
 
+/**
+ * Sent keeps 3 days: a row goes once it was last sent, edited or deleted longer
+ * ago than that — so an old message opened by its link and edited today stays.
+ */
 const prune = () =>
     conn()
-        .prepare("DELETE FROM bot_messages WHERE id NOT IN (SELECT id FROM bot_messages ORDER BY sent_at DESC LIMIT ?)")
-        .run(HISTORY_KEEP);
+        .prepare("DELETE FROM bot_messages WHERE MAX(sent_at, COALESCE(edited_at, 0), COALESCE(deleted_at, 0)) < ?")
+        .run(Date.now() - SENT_KEEP_MS);
 
 /** A send that was still waiting for the bot: take its answer from the bus outbox once there is one. */
 const settle = (r) => {
@@ -618,7 +632,8 @@ const settle = (r) => {
  * worked out right now (bus down), only what they sent themselves.
  */
 const listSent = async ({ limit = 100, auth } = {}) => {
-    const n = Math.min(Math.max(parseInt(limit) || 100, 1), HISTORY_KEEP);
+    const n = Math.min(Math.max(parseInt(limit) || 100, 1), SENT_LIST_MAX);
+    prune();
     let rows = conn().prepare("SELECT * FROM bot_messages ORDER BY sent_at DESC").all();
     const viewer = viewerOf(auth);
     if (viewer) {
@@ -862,6 +877,8 @@ module.exports = {
     deleteDraft,
     // for tests
     dailyTick,
+    prune,
+    SENT_KEEP_MS,
     permissionsIn,
     normalizeMessage,
     normalizeOptions,

@@ -437,6 +437,34 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.strictEqual(none.sent, null);
     });
 
+    await test("Sent keeps 3 days from a message's last send, edit or delete", async () => {
+        const sendOne = async (messageId, content) => {
+            bus.answer["message.send"] = (p) => ({ ...where(messageId, { channelId: p.channelId }), warnings: [] });
+            return messages.send({ channelId: CH, message: { content } }, owner);
+        };
+        const old = await sendOne("1300000000000000101", "old");
+        const edited = await sendOne("1300000000000000102", "edited lately");
+        const deleted = await sendOne("1300000000000000103", "deleted lately");
+        const fresh = await sendOne("1300000000000000104", "today");
+        const db = sharedStore.raw();
+        const ago = (days) => Date.now() - days * 86_400_000;
+        const has = (id) => db.prepare("SELECT COUNT(*) n FROM bot_messages WHERE id = ?").get(id).n === 1;
+        db.prepare("UPDATE bot_messages SET sent_at = ? WHERE id = ?").run(ago(3) - 60_000, old.id);
+        db.prepare("UPDATE bot_messages SET sent_at = ?, edited_at = ? WHERE id = ?").run(ago(5), ago(1), edited.id);
+        db.prepare("UPDATE bot_messages SET sent_at = ?, deleted_at = ? WHERE id = ?").run(ago(5), ago(2), deleted.id);
+        const ids = (await messages.listSent()).map((r) => r.id);
+        assert.ok(!ids.includes(old.id) && !has(old.id), "sent over 3 days ago: removed, not just hidden");
+        assert.ok(ids.includes(edited.id), "edited within 3 days: kept");
+        assert.ok(ids.includes(deleted.id), "deleted within 3 days: kept");
+        assert.ok(ids.includes(fresh.id));
+        // The 10-minute tick removes them too, with nobody opening the page.
+        db.prepare("UPDATE bot_messages SET edited_at = ? WHERE id = ?").run(ago(3) - 1000, edited.id);
+        messages.prune();
+        assert.ok(!has(edited.id));
+        assert.ok(has(deleted.id) && has(fresh.id));
+        assert.strictEqual(messages.SENT_KEEP_MS, 3 * 86_400_000);
+    });
+
     await test("saved messages: create, update, list, delete", async () => {
         const d = messages.createDraft({ name: " Weekly ", message: { content: "x", embeds: [{}] }, options: { channelId: CH, guildId: "nope", mentions: { roles: false } } }, staff);
         assert.strictEqual(d.name, "Weekly");

@@ -884,7 +884,8 @@ The page checks every message against Discord's limits before anything goes on t
 It also asks before posting a message that pings, and shows which pings will not work in the
 chosen channel. **JSON** imports and exports Discord's own format (Discohook's JSON editor and
 backups paste straight in). **Saved** keeps named messages with their channel and ping settings;
-**Sent** keeps the last 500 sent or edited here — open, edit, copy, delete.
+**Sent** keeps what was sent or edited here for 3 days after it was last sent, edited or
+deleted — open, edit, copy, delete. Older rows are removed (the messages stay on Discord).
 
 `send` / `edit` / `delete` carry a 10-minute `notAfter`: a bot that sees the command later (it
 was down) drops it instead of posting an announcement hours late. A send the bot has not
