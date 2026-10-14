@@ -1,0 +1,133 @@
+/* Discohook look for the Messages and Webhooks composers (the user's choice,
+   2026-10-14): Discord's greys and blurple instead of the panel's tokens, so
+   these literals are on purpose. Everything is scoped under .dh. */
+
+.dh {
+    --dh-bg: #2e2e33;
+    --dh-head: #1e1f22;
+    --dh-strip: #292b2f;
+    --dh-card: #2f3136;
+    --dh-card-in: #36393f;
+    --dh-card-border: #3a3d44;
+    --dh-input: #333338;
+    --dh-input-border: #4a4a51;
+    --dh-text: #dbdee1;
+    --dh-strong: #f2f3f5;
+    --dh-label: #d4d7dc;
+    --dh-muted: #949ba4;
+    --dh-blurple: #5865f2;
+    --dh-blurple-hover: #4752c4;
+    --dh-grey: rgba(151, 151, 159, 0.12);
+    --dh-grey-hover: rgba(151, 151, 159, 0.2);
+    --dh-red: #da373c;
+    --dh-green: #23a55a;
+    --dh-yellow: #f0b232;
+    font-family: "gg sans", "Noto Sans", Whitney, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--dh-text);
+    font-size: 15px;
+}
+
+/* ── Page: the split fills what is left of the screen ── */
+.dh-page { height: calc(100vh - 52px); display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding-bottom: 16px !important; }
+.dh-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: var(--dh-bg); border: 1px solid var(--dh-head); border-radius: 10px; overflow: hidden; }
+.dh-pane { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #1a1b1e transparent; }
+.dh-editor { padding: 16px 0 24px; display: flex; flex-direction: column; gap: 10px; }
+.dh-preview { background: #313338; border-left: 1px solid var(--dh-head); padding: 16px 0; }
+.dh-preview .dp-root { background: transparent; border-radius: 0; padding: 2px 16px; }
+.dh-preview-item { cursor: pointer; transition: background 0.1s; }
+.dh-preview-item:hover, .dh-preview-item.active { background: rgba(2, 2, 2, 0.06); }
+.dh-preview-item + .dh-preview-item { margin-top: 14px; }
+.dh-pad { padding: 0 16px; }
+@media (max-width: 1100px) {
+    .dh-page { height: auto; overflow: visible; }
+    .dh-split { display: flex; flex-direction: column; }
+    .dh-pane { overflow: visible; }
+    .dh-preview { border-left: none; border-top: 1px solid var(--dh-head); }
+}
+
+/* ── Buttons ── */
+.dh-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 16px; min-width: 60px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); font-family: inherit; font-size: 15px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background 0.15s; }
+.dh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.dh-btn.primary { background: var(--dh-blurple); color: #fff; }
+.dh-btn.primary:not(:disabled):hover { background: var(--dh-blurple-hover); }
+.dh-btn.secondary { background: var(--dh-grey); color: #ebebed; border-color: rgba(151, 151, 159, 0.04); }
+.dh-btn.secondary:not(:disabled):hover { background: var(--dh-grey-hover); }
+.dh-btn.danger { background: var(--dh-red); color: #fff; }
+.dh-btn.block { width: 100%; }
+.dh-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dh-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; border: none; background: transparent; color: var(--dh-muted); cursor: pointer; flex-shrink: 0; }
+.dh-icon-btn:not(:disabled):hover { color: var(--dh-strong); background: rgba(255, 255, 255, 0.06); }
+.dh-icon-btn.danger:not(:disabled):hover { color: var(--dh-red); }
+.dh-icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Inputs ── */
+.dh-input { width: 100%; min-width: 0; background: var(--dh-input); color: var(--dh-text); border: 1px solid var(--dh-input-border); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 15px; line-height: 1.4; outline: none; transition: border-color 0.15s; }
+.dh-input:focus { border-color: var(--dh-blurple); }
+.dh-input::placeholder { color: #6d6f78; }
+.dh-input:disabled { opacity: 0.6; }
+textarea.dh-input { resize: vertical; padding: 8px 10px; }
+select.dh-input { height: 36px; padding: 0 10px; cursor: pointer; }
+.dh-input.mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; }
+.dh-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dh-label { font-size: 14px; font-weight: 600; color: var(--dh-label); display: flex; align-items: baseline; gap: 6px; }
+.dh-count { font-size: 12px; font-weight: 400; font-style: italic; color: var(--dh-muted); font-variant-numeric: tabular-nums; }
+.dh-count.near { color: var(--dh-yellow); }
+.dh-count.over { color: var(--dh-red); font-style: normal; font-weight: 600; }
+.dh-hint { font-size: 12px; color: var(--dh-muted); line-height: 1.45; }
+.dh-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.dh-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--dh-text); cursor: pointer; user-select: none; }
+.dh-check input { accent-color: var(--dh-blurple); width: 16px; height: 16px; }
+.dh-color { width: 36px; height: 36px; flex-shrink: 0; padding: 0; border: none; border-radius: 8px; background: none; cursor: pointer; }
+
+/* ── Folds (Thread, Profile, Author, Body…) ── */
+.dh-fold-head { display: flex; align-items: center; gap: 6px; min-height: 30px; cursor: pointer; user-select: none; color: var(--dh-label); }
+.dh-fold-head > svg { flex-shrink: 0; color: var(--dh-muted); }
+.dh-fold-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dh-fold.big > .dh-fold-head .dh-fold-title { font-size: 17px; }
+.dh-sum { font-size: 13px; color: var(--dh-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.dh-fold-right { display: flex; align-items: center; gap: 2px; margin-left: auto; flex-shrink: 0; }
+.dh-fold-body { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 8px 22px; }
+
+/* ── A message: a full-width strip ── */
+.dh-message { background: var(--dh-strip); border-top: 1px solid var(--dh-head); border-bottom: 1px solid var(--dh-head); padding: 8px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.dh-message-head { display: flex; align-items: center; gap: 6px; min-height: 32px; cursor: pointer; user-select: none; }
+.dh-message-head > svg { color: var(--dh-muted); flex-shrink: 0; }
+.dh-message-title { font-size: 18px; font-weight: 600; color: var(--dh-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.dh-message-body { display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Cards: an embed (its colour on the left), a row of buttons ── */
+.dh-card { position: relative; border-radius: 8px; background: var(--dh-card); border: 1px solid var(--dh-card-border); padding: 8px 8px 8px 12px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); }
+.dh-embed { box-shadow: inset 4px 0 0 var(--c, #202225), 0 1px 2px rgba(0, 0, 0, 0.2); padding-left: 16px; }
+.dh-card .dh-card { background: var(--dh-card-in); border-color: #40444b; box-shadow: none; }
+.dh-card .dh-fold-body { padding-left: 4px; }
+
+/* ── The "Add" menu ── */
+.dh-menu-wrap { position: relative; display: inline-flex; }
+.dh-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 230px; white-space: nowrap; padding: 6px; border-radius: 8px; background: #111214; border: 1px solid #2b2d31; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 2px; }
+.dh-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; border-radius: 4px; background: transparent; color: #b5bac1; font-family: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.dh-menu button:not(:disabled):hover { background: var(--dh-blurple); color: #fff; }
+.dh-menu button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Mentions bar, notes ── */
+.dh-insert { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dh-insert .dh-btn { height: 26px; padding: 0 9px; min-width: 0; font-size: 13px; border-radius: 6px; }
+.dh-insert select.dh-input { width: auto; max-width: 190px; height: 26px; padding: 0 8px; font-size: 13px; border-radius: 6px; }
+.dh-note { border-radius: 8px; padding: 8px 12px; font-size: 14px; line-height: 1.45; background: rgba(88, 101, 242, 0.12); border: 1px solid rgba(88, 101, 242, 0.35); color: var(--dh-text); }
+.dh-note.warn { background: rgba(240, 178, 50, 0.1); border-color: rgba(240, 178, 50, 0.35); }
+.dh-note.danger { background: rgba(218, 55, 60, 0.12); border-color: rgba(218, 55, 60, 0.4); }
+.dh-note.ok { background: rgba(35, 165, 90, 0.12); border-color: rgba(35, 165, 90, 0.4); }
+.dh-note a { color: inherit; text-decoration: underline; }
+.dh-chip { display: inline-flex; align-items: center; font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--dh-grey); color: var(--dh-text); }
+.dh-meta { font-size: 13px; color: var(--dh-muted); }
+.dh-meta button { background: none; border: none; padding: 0; font: inherit; color: #00a8fc; cursor: pointer; }
+.dh-meta button:disabled { color: var(--dh-muted); cursor: default; }
+
+/* ── The webhook a send goes through ── */
+.dh-target { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--dh-strip); border: 1px solid var(--dh-head); }
+.dh-target img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.dh-target-name { font-size: 15px; font-weight: 600; color: var(--dh-strong); }
+
+/* ── Files ── */
+.dh-file { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--dh-input); border: 1px solid var(--dh-input-border); font-size: 14px; min-width: 0; }
+.dh-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dh-text); text-decoration: none; }
+a.dh-file-name:hover { text-decoration: underline; }

@@ -71,51 +71,9 @@ ol.dp-list { list-style: decimal; }
 .dp-ext { font-size: 12px; opacity: 0.8; }
 .dp-select { display: flex; justify-content: space-between; align-items: center; max-width: 400px; width: 100%; height: 40px; padding: 0 12px; background: #1e1f22; border: 1px solid #1e1f22; border-radius: 4px; color: #949ba4; font-size: 14px; }
 
-/* Editor — components/messages/MessageEditor.jsx */
-.msg-section { border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: rgba(255, 255, 255, 0.015); }
-.msg-section.closed { padding: 9px 12px; }
-.msg-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.msg-section-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 12px; font-weight: 600; color: var(--text); }
-.msg-sum { font-size: 11px; font-weight: 400; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.msg-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
-.msg-caret { width: 10px; flex-shrink: 0; display: inline-block; color: var(--text-dim); font-size: 10px; }
-.msg-sub { border-top: 1px dashed var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 8px; }
-.msg-sub-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; user-select: none; min-width: 0; background: none; border: none; padding: 0; text-align: left; }
-.msg-sub-head:hover { color: var(--text); }
-.msg-field { border: 1px solid var(--border); border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 6px; background: rgba(0, 0, 0, 0.12); }
-.msg-field-n { font-size: 10px; font-weight: 700; color: var(--text-dim); min-width: 14px; text-align: center; }
-.msg-check { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); white-space: nowrap; cursor: pointer; }
-.msg-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
-.msg-mini { padding: 3px 8px !important; font-size: 11px !important; }
-.msg-label { font-size: 11px; font-weight: 600; color: var(--text-muted); display: flex; justify-content: space-between; gap: 6px; }
-.msg-count { font-size: 10px; font-weight: 500; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.msg-count.over { color: var(--danger); }
-.msg-count.near { color: var(--warning); }
-.msg-insert { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.msg-insert select.input { width: auto; max-width: 200px; padding: 3px 8px; font-size: 12px; height: auto; }
-.msg-button-row { display: flex; flex-direction: column; gap: 6px; border-left: 2px solid var(--border); padding-left: 8px; }
+/* Webhooks page — the webhook picker (pages/WebhooksPage.jsx) */
+.wh-pick { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; font-size: 13px; cursor: pointer; }
+.wh-pick:not(:disabled):hover { background: var(--bg-hover); border-color: var(--border); }
+.wh-pick:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Page — pages/MessagesPage.jsx and WebhooksPage.jsx: the editor on the left,
-   sending + the preview on the right, half the page each so the preview has
-   room for a Discord-sized message. The right side stays in view and scrolls
-   on its own (52px header + the page's padding). */
-.msg-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-.msg-side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 52px - 32px); overflow-y: auto; scrollbar-width: thin; }
-@media (max-width: 1100px) {
-    .msg-layout { grid-template-columns: minmax(0, 1fr); }
-    .msg-side { position: static; max-height: none; overflow: visible; }
-}
-.msg-pings { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-.msg-pings label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.msg-ping-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-muted); }
-/* Webhooks page — pages/WebhooksPage.jsx */
-.wh-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.wh-tab { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 500; cursor: pointer; }
-.wh-tab:not(:disabled):hover { color: var(--text); background: var(--bg-hover); }
-.wh-tab.active { color: var(--text); background: var(--accent-dim); border-color: var(--accent-border); }
-.wh-tab:disabled { opacity: 0.5; cursor: default; }
-.wh-file { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0, 0, 0, 0.12); font-size: 12px; color: var(--text-muted); min-width: 0; }
-.wh-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-a.wh-file-name:hover { color: var(--accent-hover); }
 
-.msg-editing { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--accent-border); background: var(--accent-dim); font-size: 13px; }

@@ -538,7 +538,7 @@ const placeOf = (channel, input = {}) => {
 const fileName = (name, i) => {
     const s = String(name || "")
         .normalize("NFD")
-        .replace(/[̀-ͯ]/g, "")
+        .replace(/[\u0300-\u036f]/g, "")
         .replace(/đ/g, "d")
         .replace(/Đ/g, "D")
         .replace(/[^\w.-]+/g, "_")

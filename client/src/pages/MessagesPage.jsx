@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
-import MessageEditor from "../components/messages/MessageEditor";
+import MessageEditor, { Fold, IconBtn } from "../components/messages/MessageEditor";
 import { MessagePreview } from "../components/messages/DiscordPreview";
 import { emptyDraft, fromJson, isEmptyDraft, onlyLinkButtons, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBadge } from "../components/ui";
@@ -10,6 +10,7 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBa
 // ─────────────────────────────────────────────────────────────────────────────
 //  Messages — write a message Discohook-style, pick a channel, and
 //  ArnTo-assistant posts it as itself, pinging roles / @everyone if you let it.
+//  Laid out like discohook.app: the editor on the left, the preview on the right.
 //
 //  The channel picker and role list come from the panel's server map, which
 //  the panel loads from the bot once a day — or with Reload, at most once every
@@ -62,6 +63,8 @@ const linkRowsOnly = (rows) =>
     (rows || [])
         .map((r) => ({ type: 1, components: (r.components || []).filter((c) => c.type === 2 && c.style === 5 && c.url) }))
         .filter((r) => r.components.length);
+/** The same, as the editor holds buttons (for a message that stops being an edit). */
+const editorLinkRows = (rows) => toEditor({ components: linkRowsOnly(rows) }).components;
 
 // ── Send box ─────────────────────────────────────────────────────────────────
 
@@ -77,7 +80,7 @@ function ChannelSelect({ guild, value, onChange, disabled }) {
         return out;
     }, [guild]);
     return (
-        <select className="input" value={guild?.channels?.some((c) => c.id === value) ? value : ""} disabled={disabled || !guild} onChange={(e) => onChange(e.target.value || null)}>
+        <select className="dh-input" value={guild?.channels?.some((c) => c.id === value) ? value : ""} disabled={disabled || !guild} onChange={(e) => onChange(e.target.value || null)}>
             <option value="">Pick a channel…</option>
             {groups.map((g) => (
                 <optgroup key={g.key} label={g.name}>
@@ -132,7 +135,7 @@ function pingReport({ draft, options, guild, channel, editing }) {
     return { chips, warnings, notes, pingsSomeone: chips.length > 0 && !options.silent, loud: chips.some((c) => c === "@everyone" || c === "@here") && !options.silent };
 }
 
-/** "Loaded 3 h ago · Reload" — Reload waits 10 minutes after the last load, whoever did it. */
+/** "Channels loaded 3 h ago · Reload" — Reload waits 10 minutes after the last load, whoever did it. */
 function MapLine({ targets, loading, onReload, canReload }) {
     // Re-draw now and then so the countdown and "loaded … ago" move on.
     const [, setTick] = useState(0);
@@ -142,23 +145,22 @@ function MapLine({ targets, loading, onReload, canReload }) {
     }, []);
     const wait = targets?.reloadAt ? Math.ceil((targets.reloadAt - Date.now()) / 60_000) : 0;
     return (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-dim)" }}>
-            <span style={{ flex: 1 }}>{targets?.loadedAt ? `Channels loaded ${ago(targets.loadedAt)} · reloaded daily` : "Channels not loaded yet"}</span>
+        <div className="dh-meta">
+            {targets?.loadedAt ? `Channels loaded ${ago(targets.loadedAt)}, reloaded daily` : "Channels not loaded yet"}
             {canReload && (
-                <button
-                    className="btn-ghost btn-sm"
-                    onClick={onReload}
-                    disabled={loading || wait > 0}
-                    title={wait > 0 ? "The list can be reloaded once every 10 minutes" : "Ask the bot for the servers, channels and roles now"}
-                >
-                    <Icon name="refresh" size={14} /> {loading ? "Loading…" : wait > 0 ? `Reload in ${wait} min` : "Reload"}
-                </button>
+                <>
+                    {" · "}
+                    <button onClick={onReload} disabled={loading || wait > 0} title={wait > 0 ? "The list can be reloaded once every 10 minutes" : "Ask the bot for the servers, channels and roles now"}>
+                        {loading ? "Loading…" : wait > 0 ? `Reload in ${wait} min` : "Reload"}
+                    </button>
+                </>
             )}
         </div>
     );
 }
 
-function SendBox({ status, targets, targetsError, loadingTargets, onReload, draft, options, setOptions, editing, onStopEditing, onSend, onSaveEdit, onDeleteEditing, busy, result, canEdit }) {
+/** The top of the editor, Discohook-style: the tools, where to send, Send, the options. */
+function SendBar({ status, targets, targetsError, loadingTargets, onReload, draft, options, setOptions, editing, onSend, onSaveEdit, onLink, onJson, onSave, savedRef, onClear, busy, result, canEdit }) {
     const guilds = targets?.guilds || [];
     const guildId = editing ? editing.guildId : options.guildId;
     const guild = guilds.find((g) => g.id === guildId) || null;
@@ -167,40 +169,37 @@ function SendBox({ status, targets, targetsError, loadingTargets, onReload, draf
     const report = pingReport({ draft, options, guild, channel, editing: !!editing });
     const setMention = (k, v) => setOptions({ ...options, mentions: { ...options.mentions, [k]: v } });
     const empty = isEmptyDraft(draft);
+    const pingSummary = [options.mentions.everyone && "@everyone", options.mentions.roles && "roles", options.mentions.users && "members"].filter(Boolean).join(", ") || "nobody";
 
     return (
-        <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, flex: 1 }}>{editing ? "Editing a sent message" : "Send to"}</h2>
+        <div className="dh-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="dh-row">
+                <button className="dh-btn secondary" onClick={onLink} disabled={!status?.can?.fetch} title="Open a message by its link — to edit it or copy it">
+                    Open by link
+                </button>
+                <button className="dh-btn secondary" onClick={onJson} title="Discord's own format, like Discohook's JSON editor">
+                    JSON
+                </button>
+                {canEdit && (
+                    <button className="dh-btn secondary" onClick={onSave} disabled={empty} title={savedRef ? `Saved as "${savedRef.name}"` : "Keep this message under Saved"}>
+                        {savedRef ? "Save…" : "Save"}
+                    </button>
+                )}
+                <button className="dh-btn secondary" onClick={onClear} title="Start a new, empty message">
+                    Clear All
+                </button>
             </div>
-            <MapLine targets={targets} loading={loadingTargets || targets?.loading} onReload={onReload} canReload={canEdit && !!status?.can?.targets} />
 
-            {targetsError && <Notice tone="danger">{targetsError}</Notice>}
-            {targets?.viewer && !targets.viewer.found && <Notice tone="danger">{targets.viewer.why || "You cannot post from here."}</Notice>}
-            {targets && !targets.viewer && !targets.loadedAt && <Notice>The channel list has not been loaded yet — press Reload.</Notice>}
+            {targetsError && <div className="dh-note danger">{targetsError}</div>}
+            {targets?.viewer && !targets.viewer.found && <div className="dh-note danger">{targets.viewer.why || "You cannot post from here."}</div>}
+            {targets && !targets.viewer && !targets.loadedAt && <div className="dh-note warn">The channel list has not been loaded yet — press Reload.</div>}
 
-            {editing ? (
-                <div className="msg-editing">
-                    <Icon name="pencil" size={14} />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                        #{editing.channelName || editing.channelId}
-                        {editing.guildName ? ` · ${editing.guildName}` : ""}
-                        {editing.url && (
-                            <>
-                                {" · "}
-                                <a href={editing.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent-hover)" }}>
-                                    open ↗
-                                </a>
-                            </>
-                        )}
-                    </span>
-                    <button className="btn-ghost btn-sm" onClick={onStopEditing}>Stop editing</button>
-                </div>
-            ) : (
+            {!editing && (
                 <>
                     {guilds.length > 1 && (
-                        <Field label="Server">
-                            <select className="input" value={options.guildId || ""} onChange={(e) => setOptions({ ...options, guildId: e.target.value || null, channelId: null })}>
+                        <label className="dh-field">
+                            <span className="dh-label">Server</span>
+                            <select className="dh-input" value={options.guildId || ""} onChange={(e) => setOptions({ ...options, guildId: e.target.value || null, channelId: null })}>
                                 {guilds.map((g) => (
                                     <option key={g.id} value={g.id}>
                                         {g.name}
@@ -208,82 +207,78 @@ function SendBox({ status, targets, targetsError, loadingTargets, onReload, draf
                                     </option>
                                 ))}
                             </select>
-                        </Field>
+                        </label>
                     )}
-                    <Field
-                        label={guilds.length === 1 ? `Channel in ${guilds[0].name}` : "Channel"}
-                        hint={targets?.viewer?.found ? "Only the channels where your own Discord account can see and send messages. A channel you just got shows after the next load (daily, or Reload)." : undefined}
-                    >
-                        <ChannelSelect guild={guild} value={options.channelId} onChange={(id) => setOptions({ ...options, channelId: id, publish: false })} disabled={!canEdit} />
-                    </Field>
+                    <div className="dh-row" style={{ flexWrap: "nowrap", alignItems: "flex-end" }}>
+                        <label className="dh-field" style={{ flex: 1 }}>
+                            <span className="dh-label">{guilds.length === 1 ? `Channel in ${guilds[0].name}` : "Channel"}</span>
+                            <ChannelSelect guild={guild} value={options.channelId} onChange={(id) => setOptions({ ...options, channelId: id, publish: false })} disabled={!canEdit} />
+                        </label>
+                        {canEdit && (
+                            <button className="dh-btn primary" style={{ height: 36 }} disabled={!!busy || empty || !channel || !channel.perms?.send || !status?.can?.send} onClick={() => onSend(report, channel)}>
+                                <Icon name="send" size={15} /> {busy === "send" ? "Sending…" : "Send"}
+                            </button>
+                        )}
+                    </div>
+                    {targets?.viewer?.found && <span className="dh-hint">Only the channels where your own Discord account can see and send messages. A channel you just got shows after the next load (daily, or Reload).</span>}
                 </>
             )}
+            {editing && canEdit && (
+                <div className="dh-row">
+                    <button className="dh-btn primary" disabled={!!busy || empty} onClick={onSaveEdit}>
+                        <Icon name="check" size={15} /> {busy === "edit" ? "Saving…" : "Save changes"}
+                    </button>
+                </div>
+            )}
+            <MapLine targets={targets} loading={loadingTargets || targets?.loading} onReload={onReload} canReload={canEdit && !!status?.can?.targets} />
 
             {editing ? (
-                <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
-                    Saving an edit pings nobody — Discord only notifies when a message is first posted. To ping again, send it as a new message (Stop editing).
-                </div>
+                <div className="dh-meta">Saving an edit pings nobody — Discord only notifies when a message is first posted. To ping again, send it as a new message (Unlink).</div>
             ) : (
-                <div className="msg-pings">
-                    <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>Who may be pinged</span>
-                    <label>
+                <Fold title="Options" summary={`pings: ${pingSummary}${options.silent ? " · silent" : ""}${options.publish ? " · publish" : ""}`}>
+                    <span className="dh-label">Who may be pinged</span>
+                    <label className="dh-check">
                         <input type="checkbox" checked={options.mentions.everyone} onChange={(e) => setMention("everyone", e.target.checked)} /> @everyone and @here
                     </label>
-                    <label>
+                    <label className="dh-check">
                         <input type="checkbox" checked={options.mentions.roles} onChange={(e) => setMention("roles", e.target.checked)} /> Roles
                     </label>
-                    <label>
+                    <label className="dh-check">
                         <input type="checkbox" checked={options.mentions.users} onChange={(e) => setMention("users", e.target.checked)} /> Members
                     </label>
-                    <label title="The message arrives without a notification sound or badge (Discord's @silent)">
+                    <label className="dh-check" title="The message arrives without a notification sound or badge (Discord's @silent)">
                         <input type="checkbox" checked={options.silent} onChange={(e) => setOptions({ ...options, silent: e.target.checked })} /> Silent — no notifications
                     </label>
                     {channel?.type === "announcement" && (
-                        <label title="Also send it to the servers that follow this announcement channel">
+                        <label className="dh-check" title="Also send it to the servers that follow this announcement channel">
                             <input type="checkbox" checked={options.publish} onChange={(e) => setOptions({ ...options, publish: e.target.checked })} /> Publish to following servers
                         </label>
                     )}
-                </div>
+                </Fold>
             )}
 
             {report.chips.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
+                <div className="dh-row dh-meta">
                     {editing ? "Mentions:" : options.silent ? "Mentions (silent):" : "Pings:"}
                     {report.chips.map((c) => (
-                        <span key={c} className="msg-ping-chip">{c}</span>
+                        <span key={c} className="dh-chip">{c}</span>
                     ))}
                 </div>
             )}
             {report.warnings.map((w) => (
-                <Notice key={w}>{w}</Notice>
+                <div key={w} className="dh-note warn">{w}</div>
             ))}
             {report.notes.map((n) => (
-                <div key={n} style={{ fontSize: 12, color: "var(--text-dim)" }}>{n}</div>
+                <div key={n} className="dh-meta">{n}</div>
             ))}
 
-            {canEdit &&
-                (editing ? (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button className="btn-primary" style={{ flex: 1 }} disabled={busy || empty} onClick={onSaveEdit}>
-                            <Icon name="check" /> {busy === "edit" ? "Saving…" : "Save changes"}
-                        </button>
-                        <button className="btn-ghost is-danger" disabled={busy} onClick={onDeleteEditing} title="Delete this message on Discord">
-                            <Icon name="trash" />
-                        </button>
-                    </div>
-                ) : (
-                    <button className="btn-primary" disabled={busy || empty || !channel || !channel.perms?.send || !status?.can?.send} onClick={() => onSend(report, channel)}>
-                        <Icon name="send" /> {busy === "send" ? "Sending…" : channel ? `Send to #${channel.name}` : "Send"}
-                    </button>
-                ))}
-
             {result && (
-                <Notice tone={result.tone}>
+                <div className={`dh-note ${result.tone === "success" ? "ok" : result.tone === "danger" ? "danger" : result.tone === "warning" ? "warn" : ""}`}>
                     {result.text}
                     {result.url && (
                         <>
                             {" "}
-                            <a href={result.url} target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>
+                            <a href={result.url} target="_blank" rel="noreferrer">
                                 Open in Discord
                             </a>
                         </>
@@ -296,13 +291,13 @@ function SendBox({ status, targets, targetsError, loadingTargets, onReload, draf
                         </ul>
                     )}
                     {result.onEdit && (
-                        <div style={{ marginTop: 6 }}>
-                            <button className="btn-ghost btn-sm" onClick={result.onEdit}>
-                                <Icon name="pencil" size={13} /> Edit it
+                        <div style={{ marginTop: 8 }}>
+                            <button className="dh-btn secondary" onClick={result.onEdit}>
+                                <Icon name="pencil" size={14} /> Edit it
                             </button>
                         </div>
                     )}
-                </Notice>
+                </div>
             )}
         </div>
     );
@@ -575,6 +570,7 @@ export default function MessagesPage() {
     const [editing, setEditing] = useState(() => stored?.editing || null);
     const [savedRef, setSavedRef] = useState(() => stored?.savedRef || null); // { id, name } of the saved message in the editor
     const [editorKey, setEditorKey] = useState(0);
+    const [folded, setFolded] = useState(false); // the message strip, closed
     const [busy, setBusy] = useState(null);
     const [result, setResult] = useState(null);
 
@@ -858,30 +854,19 @@ export default function MessagesPage() {
     }, [draft, editing]);
 
     const notReady = status && (!status.bot || !status.can.send);
+    const compose = tab === "compose";
+    const stopEditing = () => {
+        setEditing(null);
+        if (draft.components === null) setDraft({ ...draft, components: editorLinkRows(editing?.lockedComponents) });
+        setResult(null);
+    };
+    const head = snippet(toApi(draft), 60);
 
     return (
-        <div className="fade-in page" style={{ maxWidth: 1500, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className={`fade-in page${compose ? " dh-page" : ""}`} style={compose ? undefined : { maxWidth: 1500, display: "flex", flexDirection: "column", gap: 16 }}>
             <PageHeader
                 title="Messages"
                 description={<>Write a message like on Discohook — content, embeds, link buttons — pick a channel, and {status?.botName || "ArnTo-assistant"} posts it, pinging roles or @everyone if you allow it.</>}
-                actions={
-                    <>
-                        <button className="btn-ghost" onClick={() => setModal("link")} disabled={!status?.can?.fetch}>
-                            <Icon name="externalLink" /> Open by link
-                        </button>
-                        <button className="btn-ghost" onClick={() => setModal("json")}>
-                            <Icon name="fileText" /> JSON
-                        </button>
-                        {canEdit && (
-                            <button className="btn-ghost" onClick={() => setModal("save")} disabled={isEmptyDraft(draft)}>
-                                <Icon name="archive" /> {savedRef ? "Save…" : "Save"}
-                            </button>
-                        )}
-                        <button className="btn-ghost" onClick={clearAll} title="Start a new, empty message">
-                            <Icon name="plus" /> New
-                        </button>
-                    </>
-                }
             />
 
             {statusError && <Notice tone="danger">{statusError}</Notice>}
@@ -904,20 +889,17 @@ export default function MessagesPage() {
                         </button>
                     ))}
                 </div>
-                {tab === "compose" && savedRef && (
+                {compose && savedRef && (
                     <span className="toolbar-count">
                         Saved message: <strong style={{ color: "var(--text-muted)" }}>{savedRef.name}</strong>
                     </span>
                 )}
             </div>
 
-            {tab === "compose" && (
-                <div className="msg-layout">
-                    <div style={{ minWidth: 0 }}>
-                        <MessageEditor key={editorKey} value={draft} onChange={setDraft} roles={guild?.roles || []} channels={guild?.channels || []} />
-                    </div>
-                    <div className="msg-side">
-                        <SendBox
+            {compose && (
+                <div className="dh dh-split">
+                    <div className="dh-pane dh-editor">
+                        <SendBar
                             status={status}
                             targets={targets}
                             targetsError={targetsError}
@@ -927,27 +909,83 @@ export default function MessagesPage() {
                             options={options}
                             setOptions={setOptions}
                             editing={editing}
-                            onStopEditing={() => {
-                                setEditing(null);
-                                if (draft.components === null) setDraft({ ...draft, components: [] });
-                                setResult(null);
-                            }}
                             onSend={onSend}
                             onSaveEdit={onSaveEdit}
-                            onDeleteEditing={() =>
-                                deleteMessage(editing, () => {
-                                    setEditing(null);
-                                    setResult({ tone: "success", text: "Deleted on Discord. The text is still in the editor." });
-                                })
-                            }
+                            onLink={() => setModal("link")}
+                            onJson={() => setModal("json")}
+                            onSave={() => setModal("save")}
+                            savedRef={savedRef}
+                            onClear={clearAll}
                             busy={busy}
                             result={result}
                             canEdit={canEdit}
                         />
-                        <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", margin: "0 0 6px 2px" }}>Preview</div>
-                            <MessagePreview msg={preview} bot={targets?.bot} roles={guild?.roles || []} channels={guild?.channels || []} edited={!!editing} />
+                        <div className="dh-message">
+                            <div className="dh-message-head" onClick={() => setFolded(!folded)}>
+                                <Icon name={folded ? "chevronRight" : "chevronDown"} size={18} />
+                                <span className="dh-message-title">
+                                    Message{head && !isEmptyDraft(draft) ? ` - ${head}` : ""}
+                                </span>
+                                <span className="dh-fold-right" onClick={(e) => e.stopPropagation()}>
+                                    {editing && <Icon name="pencil" size={15} style={{ color: "#949ba4", margin: "0 4px" }} />}
+                                    <IconBtn icon="trash" danger title="Clear the message" onClick={clearAll} />
+                                </span>
+                            </div>
+                            {!folded && (
+                                <>
+                                    {editing && (
+                                        <div className="dh-note" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                            <span style={{ flex: 1, minWidth: 0 }}>
+                                                Editing a message in #{editing.channelName || editing.channelId}
+                                                {editing.guildName ? ` · ${editing.guildName}` : ""}
+                                                {editing.url && (
+                                                    <>
+                                                        {" · "}
+                                                        <a href={editing.url} target="_blank" rel="noreferrer">
+                                                            open
+                                                        </a>
+                                                    </>
+                                                )}
+                                            </span>
+                                            {canEdit && (
+                                                <IconBtn
+                                                    icon="trash"
+                                                    danger
+                                                    title="Delete this message on Discord"
+                                                    onClick={() =>
+                                                        deleteMessage(editing, () => {
+                                                            setEditing(null);
+                                                            setResult({ tone: "success", text: "Deleted on Discord. The text is still in the editor." });
+                                                        })
+                                                    }
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+                                    <MessageEditor
+                                        key={editorKey}
+                                        value={draft}
+                                        onChange={setDraft}
+                                        roles={guild?.roles || []}
+                                        channels={guild?.channels || []}
+                                        footer={
+                                            editing ? (
+                                                <button type="button" className="dh-btn secondary" onClick={stopEditing} title="Keep the text as a new message">
+                                                    Unlink
+                                                </button>
+                                            ) : (
+                                                <button type="button" className="dh-btn secondary" onClick={() => setModal("link")} disabled={!status?.can?.fetch} title="Paste the link of one of the bot's messages to edit it">
+                                                    Set Link
+                                                </button>
+                                            )
+                                        }
+                                    />
+                                </>
+                            )}
                         </div>
+                    </div>
+                    <div className="dh-pane dh-preview">
+                        <MessagePreview msg={preview} bot={targets?.bot} roles={guild?.roles || []} channels={guild?.channels || []} edited={!!editing} />
                     </div>
                 </div>
             )}
