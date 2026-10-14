@@ -650,6 +650,9 @@ page is a harmless round trip.
 applied before the outbox row is written (`discordBus.request(…, { sealed: true })`).
 The channel, `shared.sqlite` and its backups see ciphertext; `bot-lib/PanelBus.js`
 opens it before the handler runs. Bots need the current `PanelBus.js` to receive one.
+The other way round, a handler that answers with a secret (a webhook's token) returns
+`bus.seal(result)`; `discordBus.request()` opens it with the same key, so the reply in the
+channel and the outbox row hold ciphertext only.
 
 A bot's `.env`: `PANEL_API_URL=http://127.0.0.1:4201`, `PANEL_API_KEY=<its own key>`,
 `PANEL_SHARED=…`, optionally `PANEL_SHARED_TTL_MS` (read cache) and `PANEL_BUS_GUILD_ID`.
@@ -914,6 +917,35 @@ minutes, counting the daily load, whoever pressed it (429 otherwise). Opening th
 the bot; it reads the map. So a channel, role or permission changed on Discord shows on the page
 after the next load. Sending is unchanged: one bus round trip per message.
 
+**Webhooks.** Discohook on the panel, without pasting webhook URLs
+(`server/services/webhookMessages.js`, the bots' side in ArnTo-assistant `functions/webhooks.js`
+and ArnTo-selfbot's `$wh` command). Only the shop's server is used — the one set under Panel
+Settings → Staff. One or more messages (up to 10, sent in order), each with its own name and
+avatar, content, embeds, link buttons and files (up to 10, 25 MB together; a picture can sit
+inside an embed as `attachment://name.png`), into a channel, a thread, or a forum post (a new post
+by title, or a reply in one). The panel posts, edits, deletes and reads through **Discord's
+webhook API itself** — the bots are only asked for these:
+
+| Command | Bot | What it does |
+|---------|-----|--------------|
+| `webhook.list` | ArnTo-assistant | Every webhook of the shop's server **with its token**, the server's channels (with their permission overwrites) and roles. Sealed. Loaded once a day, or with **Reload** — at most once every 10 minutes for everyone, the same rule as the Messages map (kv `__webhooks.scan`). |
+| `webhook.fetch` | ArnTo-assistant | Reads a message by its link and fetches **the webhook that sent it** (its `webhook_id`), token included. Sealed. So *Open by link* is all it takes to edit a message — nothing to pick. |
+| `webhook.create` | ArnTo-assistant → ArnTo-selfbot | A new webhook made with the selfbot's own account, so it is an ordinary webhook (Integrations shows it like one made by hand). The selfbot is not in the bus server: the assistant posts `$wh <channel> <nonce> <avatar> <name>` **in that channel** (silent; a forum or media channel takes no plain messages, so there it is the first message of a short-lived post), waits up to 20 s for the new webhook, then deletes the command (the post) — nothing stays on the server. The selfbot only takes `$wh` from the ArnTo bots and only for the channel it was posted in; it answers a failure with a reaction (🔒 no *Manage Webhooks*, 🔢 15 webhooks already, ❌ anything else). Sealed, with a 2-minute `notAfter`. It joins the list at once. |
+
+Tokens are never sent to the browser; the panel keeps them AES-GCM-encrypted with `JWT_SECRET`.
+A webhook made by **another app** (another bot, Discohook's bot) is listed but cannot be used —
+Discord does not give its token to the bot. One deleted on Discord leaves the list the first time
+a call meets *Unknown Webhook*. An edit keeps the name and avatar the message was posted with
+(Discord's rule), can keep or drop each of its files and add new ones, and pings nobody. *Sent*
+(3 days, like Messages) reopens a message through its own webhook, without the bot. *JSON* is
+Discohook's backup format (`{ messages: [{ data, reference }] }`): a `reference` (message link)
+opens that message for editing. Every send, edit, delete and new webhook goes to the panel log.
+Stored in `data/shared.sqlite`: `webhook_messages`, `webhook_drafts`. Staff follow the Messages
+rule — page key `webhooks`, and only the channels their own Discord account can see and post in
+(worked out from the webhook list's overwrites; the assistant checks it again when reading a link
+or making a webhook). *New webhook* needs the selfbot's account to see the channel and hold
+*Manage Webhooks* there.
+
 ## 👥 Staff Access
 
 The owner (the `.env` account) can let other people into **some pages** of the panel.
@@ -924,7 +956,7 @@ is nothing to hand to a friend short of the whole Discord account
 | | |
 |---|---|
 | **Who** | The owner adds each person by Discord user ID under **Panel Settings → Staff**. Holding the **Staff role** in the shop's server is *required but not enough*; the panel never gives or takes that role, it only checks it — at login and every 10 minutes. Losing it ends the session (the entry stays: getting the role back is enough to sign in again). |
-| **What** | Per person, per page: *None / View / Edit*. View = GET, Edit = everything. The pages that can be given: Orders, Stock, Vouchers, Ticket Menus, Supporters, CTV, Messages, Auto Quest, Auto Badge, Decors, Pricing. **Everything else is owner-only**: Servers, Bots, Sites, Terminal, Git Keys, Lavalink, the network pages, Panel Settings, bot logs, notifications. |
+| **What** | Per person, per page: *None / View / Edit*. View = GET, Edit = everything. The pages that can be given: Orders, Stock, Vouchers, Ticket Menus, Supporters, CTV, Messages, Webhooks, Auto Quest, Auto Badge, Decors, Pricing. **Everything else is owner-only**: Servers, Bots, Sites, Terminal, Git Keys, Lavalink, the network pages, Panel Settings, bot logs, notifications. |
 | **One at a time** | A new login ends the person's other sessions, so two people sharing one account keep throwing each other out (the login page says why). Every sign-in (🆕 for a device the person never used), sign-out and change goes to the [panel log channel](#-panel-log-channel). Sessions last 12 hours. |
 | **Audit** | Every staff sign-in and every change they make (method, path, result, IP) is in the Staff tab's Activity log. The owner can sign any session out, or remove the person. |
 

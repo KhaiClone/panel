@@ -253,9 +253,14 @@ const emoji = (v, what) => {
     return { name: s };
 };
 
-const embedOf = (e, n) => {
+// An embed's pictures may also name a file sent with the message (webhooks: attachment://name.png).
+const PICTURE = { schemes: ["http", "https"] };
+const PICTURE_OR_FILE = { schemes: ["http", "https", "attachment"] };
+
+const embedOf = (e, n, { attachments = false } = {}) => {
     if (!e || typeof e !== "object") throw bad(`Embed ${n} is not an embed`);
     const what = (x) => `Embed ${n} · ${x}`;
+    const pic = attachments ? PICTURE_OR_FILE : PICTURE;
     const out = {
         title: text(e.title, LIMIT.title, what("title")),
         description: text(e.description, LIMIT.description, what("description")),
@@ -264,14 +269,14 @@ const embedOf = (e, n) => {
         timestamp: timestamp(e.timestamp, what("time")),
     };
     const authorName = text(e.author?.name, LIMIT.author, what("author"));
-    if (authorName) out.author = { name: authorName, url: url(e.author.url, what("author link")), icon_url: url(e.author.icon_url, what("author icon")) };
+    if (authorName) out.author = { name: authorName, url: url(e.author.url, what("author link")), icon_url: url(e.author.icon_url, what("author icon"), pic) };
     else if (has(e.author?.url) || has(e.author?.icon_url)) throw bad(`${what("author")}: a link or icon needs the author's name too`);
     const footerText = text(e.footer?.text, LIMIT.footer, what("footer"));
-    if (footerText) out.footer = { text: footerText, icon_url: url(e.footer.icon_url, what("footer icon")) };
+    if (footerText) out.footer = { text: footerText, icon_url: url(e.footer.icon_url, what("footer icon"), pic) };
     else if (has(e.footer?.icon_url)) throw bad(`${what("footer")}: an icon needs footer text too`);
-    const image = url(e.image?.url ?? (typeof e.image === "string" ? e.image : undefined), what("image"));
+    const image = url(e.image?.url ?? (typeof e.image === "string" ? e.image : undefined), what("image"), pic);
     if (image) out.image = { url: image };
-    const thumb = url(e.thumbnail?.url ?? (typeof e.thumbnail === "string" ? e.thumbnail : undefined), what("thumbnail"));
+    const thumb = url(e.thumbnail?.url ?? (typeof e.thumbnail === "string" ? e.thumbnail : undefined), what("thumbnail"), pic);
     if (thumb) out.thumbnail = { url: thumb };
 
     const fields = Array.isArray(e.fields) ? e.fields : [];
@@ -336,19 +341,21 @@ const componentsOf = (rows) => {
  * Throws 400 with the first thing Discord would refuse. `components: null` (an
  * edit only) means "leave the message's buttons as they are" — used for a
  * message whose buttons run the bot's own features.
+ * Webhooks: `attachments` lets embed pictures name a sent file (attachment://…),
+ * and a message with `files` may have no text or embed at all.
  */
-const normalizeMessage = (input, { edit = false } = {}) => {
+const normalizeMessage = (input, { edit = false, attachments = false, files = 0 } = {}) => {
     if (!input || typeof input !== "object") throw bad("No message");
     const content = text(input.content, LIMIT.content, "The content");
     const embedsIn = input.embeds == null ? [] : input.embeds;
     if (!Array.isArray(embedsIn)) throw bad("Embeds must be a list");
     if (embedsIn.length > LIMIT.embeds) throw bad(`${embedsIn.length} embeds — Discord allows ${LIMIT.embeds}`);
-    const embeds = embedsIn.map((e, i) => embedOf(e, i + 1));
+    const embeds = embedsIn.map((e, i) => embedOf(e, i + 1, { attachments }));
     const total = embeds.reduce((n, e) => n + embedChars(e), 0);
     if (total > LIMIT.embedTotal) throw bad(`The embeds hold ${total} characters together — Discord allows ${LIMIT.embedTotal}`);
     const keep = edit && input.components === null;
     const components = keep ? null : componentsOf(input.components == null ? [] : input.components);
-    if (!content && !embeds.length) throw bad("The message is empty — write some content or add an embed");
+    if (!content && !embeds.length && !files) throw bad("The message is empty — write some content or add an embed");
     return { ...(content ? { content } : {}), embeds, components };
 };
 
@@ -861,6 +868,7 @@ const deleteDraft = (id) => {
 module.exports = {
     CMD,
     LIMIT,
+    SNOWFLAKE,
     start,
     status,
     targets,
@@ -875,6 +883,11 @@ module.exports = {
     createDraft,
     updateDraft,
     deleteDraft,
+    // for the Webhooks page (services/webhookMessages.js)
+    actorOf,
+    actorText,
+    viewerOf,
+    canPost,
     // for tests
     dailyTick,
     prune,

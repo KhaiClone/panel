@@ -168,6 +168,8 @@ app.use("/api/supporters", pageAuth("supporters"), require("./routes/supporters"
 app.use("/api/resellers", pageAuth("resellers"), require("./routes/resellers").panel);
 // Compose a message and have ArnTo-assistant post it (services/botMessages.js).
 app.use("/api/messages", pageAuth("messages"), require("./routes/messages"));
+// Discohook-style messages through the shop server's webhooks (services/webhookMessages.js).
+app.use("/api/webhooks", pageAuth("webhooks"), require("./routes/webhooks"));
 // Who else may use the panel, and which pages (owner only).
 app.use("/api/staff", authMiddleware, require("./routes/staff"));
 
@@ -230,6 +232,8 @@ const startBackgroundServices = () => {
     require("./services/staffService").start();
     // Messages: the server map (channels, roles) from ArnTo-assistant, once a day.
     require("./services/botMessages").start();
+    // Webhooks: the shop server's webhooks from ArnTo-assistant, once a day.
+    require("./services/webhookMessages").start();
 };
 
 /**

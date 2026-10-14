@@ -65,14 +65,29 @@ class PanelBus {
         return crypto.timingSafeEqual(Buffer.from(this.sign(e), "hex"), Buffer.from(e.sig, "hex"));
     }
 
+    sealKey() {
+        return crypto.createHash("sha256").update(`panel-bus-seal\n${this.key}`).digest();
+    }
+
     /** A sealed body ({ sealed }) is readable only with this project's key — the panel's discordBus.seal(). */
     open(body) {
         if (!body || typeof body !== "object" || typeof body.sealed !== "string") return body;
         const buf = Buffer.from(body.sealed, "base64");
-        const key = crypto.createHash("sha256").update(`panel-bus-seal\n${this.key}`).digest();
-        const decipher = crypto.createDecipheriv("aes-256-gcm", key, buf.subarray(0, 12));
+        const decipher = crypto.createDecipheriv("aes-256-gcm", this.sealKey(), buf.subarray(0, 12));
         decipher.setAuthTag(buf.subarray(12, 28));
         return JSON.parse(Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString("utf8"));
+    }
+
+    /**
+     * A result only the panel may read (a webhook's token): a handler returns
+     * bus.seal(result). The channel and the panel's outbox then hold ciphertext
+     * only; the panel's discordBus.request() opens it with the same key.
+     */
+    seal(value) {
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv("aes-256-gcm", this.sealKey(), iv);
+        const data = Buffer.concat([cipher.update(JSON.stringify(value ?? null), "utf8"), cipher.final()]);
+        return { sealed: Buffer.concat([iv, cipher.getAuthTag(), data]).toString("base64") };
     }
 
     /** Tell the panel what this bot handles; learn the channel and the panel's bot id. */

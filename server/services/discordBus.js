@@ -140,6 +140,8 @@ const fromMessage = async (msg) => {
 // target project's own API key BEFORE it reaches the outbox, so the channel,
 // shared.sqlite and its backups hold ciphertext only. bot-lib/PanelBus.js
 // opens `{ sealed }` before the handler runs; the signature covers the sealed form.
+// The other way round, a bot seals a result only the panel may read (a
+// webhook's token) with bus.seal(); request() opens it (openResult).
 
 const sealKey = (projectKey) => crypto.createHash("sha256").update(`panel-bus-seal\n${projectKey}`).digest();
 const seal = (projectKey, value) => {
@@ -153,6 +155,13 @@ const unseal = (projectKey, sealed) => {
     const decipher = crypto.createDecipheriv("aes-256-gcm", sealKey(projectKey), buf.subarray(0, 12));
     decipher.setAuthTag(buf.subarray(12, 28));
     return JSON.parse(Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString("utf8"));
+};
+
+/** A bot's result as sent: a sealed one ({ sealed }, PanelBus.seal) opened with that project's key. */
+const openResult = async (botId, result) => {
+    if (!result || typeof result !== "object" || typeof result.sealed !== "string") return result;
+    const { key } = await targetOf(botId);
+    return unseal(key, result.sealed);
 };
 
 // ── Targets ──────────────────────────────────────────────────────────────────
@@ -202,8 +211,10 @@ const request = async (botId, cmd, payload, { timeoutMs = 30_000, sealed = false
             if (r.id !== row.id) return;
             clearTimeout(timer);
             events.off("done", onDone);
-            if (r.status === "done") resolve(r.result);
-            else reject(Object.assign(new Error(r.error || "The bot reported a failure"), { status: 502 }));
+            if (r.status !== "done") return reject(Object.assign(new Error(r.error || "The bot reported a failure"), { status: 502 }));
+            openResult(botId, r.result).then(resolve, (err) =>
+                reject(Object.assign(new Error(`The bot's sealed answer could not be opened: ${err.message}`), { status: 502 })),
+            );
         };
         const timer = setTimeout(() => {
             events.off("done", onDone);
@@ -459,6 +470,7 @@ module.exports = {
     fromMessage,
     seal,
     unseal,
+    openResult,
     VERSION,
     TAG,
 };

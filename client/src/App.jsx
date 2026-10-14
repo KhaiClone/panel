@@ -23,6 +23,7 @@ import SupportersPage from "./pages/SupportersPage";
 import ResellersPage from "./pages/ResellersPage";
 import TicketMenusPage from "./pages/TicketMenusPage";
 import MessagesPage from "./pages/MessagesPage";
+import WebhooksPage from "./pages/WebhooksPage";
 import DecorsPage from "./pages/DecorsPage";
 import QuestsPage from "./pages/QuestsPage";
 import PricingPage from "./pages/PricingPage";
@@ -112,6 +113,7 @@ export default function App() {
                             <Route path="resellers"     element={<ResellersPage />} />
                             <Route path="ticket-menus"  element={<TicketMenusPage />} />
                             <Route path="messages"      element={<MessagesPage />} />
+                            <Route path="webhooks"      element={<WebhooksPage />} />
                             <Route path="decors"        element={<DecorsPage />} />
                             <Route path="quests"        element={<QuestsPage />} />
                             <Route path="pricing"       element={<PricingPage />} />

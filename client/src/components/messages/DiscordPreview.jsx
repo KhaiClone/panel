@@ -1,5 +1,6 @@
 import { Fragment, createContext, useContext } from "react";
 import { emojiObject, hex } from "./format";
+import Icon from "../ui/Icon";
 import "./messages.css";
 
 // How the message will look on Discord (dark theme): content, embeds and link
@@ -337,15 +338,39 @@ function Header({ bot, edited }) {
     );
 }
 
+const size = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/** Files sent with the message: pictures drawn, anything else as a file card. */
+function Files({ files }) {
+    return (
+        <div className="dp-files">
+            {files.map((f, i) =>
+                f.image ? (
+                    <img key={i} className="dp-file-image" src={f.url} alt={f.name} title={f.name} />
+                ) : (
+                    <div key={i} className="dp-file">
+                        <Icon name="fileText" size={30} strokeWidth={1.5} />
+                        <div style={{ minWidth: 0 }}>
+                            <div className="dp-file-name">{f.name}</div>
+                            {f.size != null && <div className="dp-file-size">{size(f.size)}</div>}
+                        </div>
+                    </div>
+                ),
+            )}
+        </div>
+    );
+}
+
 /**
  * msg: API shape { content, embeds, components } — components as rows
  * ([{ type: 1, components }]) or the editor's plain rows of buttons.
  * roles / channels: the server's, to draw mentions by name.
+ * files: [{ name, url, image, size }] sent with it (webhooks).
  */
-export function MessagePreview({ msg, bot, roles = [], channels = [], edited = false }) {
+export function MessagePreview({ msg, bot, roles = [], channels = [], edited = false, files = [] }) {
     const rows = (msg.components || []).map((r) => (Array.isArray(r) ? r : r.components || [])).filter((r) => r.length);
     const lookup = { roles: new Map(roles.map((r) => [r.id, r])), channels: new Map(channels.map((c) => [c.id, c])) };
-    const empty = !msg.content && !(msg.embeds || []).length && !rows.length;
+    const empty = !msg.content && !(msg.embeds || []).length && !rows.length && !files.length;
     return (
         <Lookup.Provider value={lookup}>
             <div className="dp-root">
@@ -353,6 +378,7 @@ export function MessagePreview({ msg, bot, roles = [], channels = [], edited = f
                     <Header bot={bot} edited={edited} />
                     <div className="dp-body">
                         {msg.content && <div className="dp-content"><Markdown text={msg.content} /></div>}
+                        {files.length > 0 && <Files files={files} />}
                         {(msg.embeds || []).map((e, i) => <Embed key={i} e={e} />)}
                         {rows.map((row, i) => (
                             <div key={i} className="dp-row">

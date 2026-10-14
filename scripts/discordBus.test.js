@@ -111,6 +111,19 @@ test("an envelope over the inline limit once escaped goes as a file and reads ba
     assert.ok(out.content.length < 200);
 });
 
+test("a result the bot seals (a webhook's token) travels as ciphertext and the panel opens it", async () => {
+    const result = { webhooks: [{ id: "1300000000000000009", name: "Thông báo 📢", token: "secret-token-abc" }] };
+    const reply = { v: 1, id: "cmd-6", ts: Date.now(), kind: "reply", cmd: "webhook.list", body: { ok: true, result: bot.seal(result) } };
+    reply.sig = bot.sign(reply);
+    const out = bot.toMessage("✅ webhook.list · cmd-6", reply);
+    const text = out.files ? out.files[0].attachment.toString("utf8") : out.content;
+    assert.ok(!text.includes("secret-token-abc"), "no token in the channel");
+    const got = out.files ? JSON.parse(text) : await discordBus.fromMessage({ content: out.content });
+    assert.ok(discordBus.verify(KEY, got));
+    assert.deepStrictEqual(discordBus.unseal(KEY, got.body.result.sealed), result);
+    assert.strictEqual(await discordBus.openResult("any", { plain: true }).then((r) => r.plain), true, "an unsealed result passes through");
+});
+
 (async () => {
     let failed = 0;
     for (const t of tests) {

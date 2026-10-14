@@ -1,0 +1,1622 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import api from "../api/client";
+import { usePageAccess } from "../context/AuthContext";
+import ConfirmModal from "../components/ConfirmModal";
+import MessageEditor from "../components/messages/MessageEditor";
+import { MessagePreview } from "../components/messages/DiscordPreview";
+import { emptyDraft, fromJson, isEmptyDraft, onlyLinkButtons, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
+import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBadge } from "../components/ui";
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Webhooks — Discohook on the panel: write one or more messages, give them a
+//  name and a picture, attach files, pick one of the shop server's webhooks
+//  (no URL to paste) and send. A message's link is enough to edit it: the
+//  panel finds the webhook that sent it.
+//
+//  The webhook list comes from ArnTo-assistant once a day, or with Reload (at
+//  most once every 10 minutes for everyone); ArnTo-selfbot makes new webhooks,
+//  asked by ArnTo-assistant with a command in that channel (deleted right after).
+//  The panel posts through Discord's webhook API itself and never hands a
+//  token to this page. Logic: server/services/webhookMessages.js.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STORE = "webhooks.compose.v1";
+const SLOW = { timeout: 45_000 };
+const UPLOAD = { timeout: 120_000 };
+const MAX_MESSAGES = 10;
+const MAX_FILES = 10;
+const MAX_BYTES = 25 * 1024 * 1024;
+const SNOWFLAKE = /^\d{17,20}$/;
+
+const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
+const ago = (ts) => {
+    const min = Math.max(0, Math.round((Date.now() - ts) / 60_000));
+    if (min < 1) return "just now";
+    if (min < 60) return `${min} min ago`;
+    const h = Math.round(min / 60);
+    return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+};
+const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—");
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const byText = (a) => (a ? (a.kind === "staff" ? a.tag || a.id : "Owner") : "—");
+
+let seq = 0;
+const newKey = () => `m${Date.now().toString(36)}${(seq++).toString(36)}`;
+const newMessage = (over = {}) => ({ key: newKey(), draft: emptyDraft(), username: "", avatarUrl: "", ref: null, ...over });
+const defaultOptions = () => ({ mentions: { everyone: true, roles: true, users: true }, silent: false, suppressEmbeds: false });
+const defaultDoc = () => ({ messages: [newMessage()], target: { webhookId: null, mode: "new", thread: "", threadName: "" }, options: defaultOptions() });
+
+const readStore = () => {
+    try {
+        const v = JSON.parse(localStorage.getItem(STORE) || "null");
+        return v?.messages?.length ? v : null;
+    } catch {
+        return null;
+    }
+};
+const writeStore = (v) => {
+    try {
+        localStorage.setItem(STORE, JSON.stringify(v));
+    } catch {
+        /* private window, full storage — the draft just is not kept */
+    }
+};
+
+/** A thread's link (…/channels/<server>/<thread>[/<message>]) or id → its id; "" → null; anything else → undefined. */
+const threadIdOf = (s) => {
+    const t = String(s || "").trim();
+    if (!t) return null;
+    const m = /channels\/\d{17,20}\/(\d{17,20})/.exec(t);
+    if (m) return m[1];
+    return SNOWFLAKE.test(t) ? t : undefined;
+};
+
+/** The same rule as the server: what attachment:// can name (ASCII letters, digits, _ - .). */
+const fileName = (name, i) => {
+    const s = String(name || "")
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D")
+        .replace(/[^\w.-]+/g, "_")
+        .replace(/^[._]+/, "")
+        .slice(-100);
+    return s || `file-${i + 1}`;
+};
+const isImage = (name, type) => (type ? type.startsWith("image/") : /\.(png|jpe?g|gif|webp|avif)$/i.test(name || ""));
+
+/** Only the link buttons of a message's rows (the rest belong to a bot). */
+const linkRowsOnly = (rows) =>
+    (rows || [])
+        .map((r) => ({ type: 1, components: (r.components || []).filter((c) => c.type === 2 && c.style === 5 && c.url) }))
+        .filter((r) => r.components.length);
+
+const emptyMessage = (m, files) => isEmptyDraft(m.draft) && !(files[m.key] || []).length && !(m.ref?.keep || []).length;
+
+/** A message opened by link / from Sent → what an edit needs to know about it. */
+const refOf = (res) => ({
+    webhookId: res.webhook?.id || res.webhookId,
+    webhookName: res.webhook?.name || res.webhookName || null,
+    channelId: res.channelId,
+    channelName: res.channelName || null,
+    threadId: res.threadId || null,
+    threadName: res.threadName || null,
+    messageId: res.messageId,
+    url: res.url,
+    attachments: res.attachments || [],
+    keep: (res.attachments || []).map((a) => a.id),
+    lockedComponents: res.keepsComponents ? res.message?.components || [] : null,
+    author: res.author || null,
+});
+
+// ── Small parts ──────────────────────────────────────────────────────────────
+
+function Section({ title, right, children }) {
+    return (
+        <div className="msg-section">
+            <div className="msg-section-head">
+                <span className="msg-section-title">{title}</span>
+                {right}
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function Avatar({ src, size = 28 }) {
+    return <img src={src || "https://cdn.discordapp.com/embed/avatars/0.png"} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />;
+}
+
+const channelLabel = (c) => `${c.type === "forum" || c.type === "media" ? "💬" : c.type === "announcement" ? "📢" : c.type === "voice" || c.type === "stage" ? "🔊" : "#"} ${c.name}`;
+
+/** "Loaded 3 h ago · Reload" — Reload waits 10 minutes after the last load, whoever did it. */
+function ScanLine({ targets, loading, onReload, canReload }) {
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const t = setInterval(() => setTick((n) => n + 1), 20_000);
+        return () => clearInterval(t);
+    }, []);
+    const wait = targets?.reloadAt ? Math.ceil((targets.reloadAt - Date.now()) / 60_000) : 0;
+    return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-dim)" }}>
+            <span style={{ flex: 1 }}>{targets?.loadedAt ? `Webhooks loaded ${ago(targets.loadedAt)} · reloaded daily` : "Webhooks not loaded yet"}</span>
+            {canReload && (
+                <button className="btn-ghost btn-sm" onClick={onReload} disabled={loading || wait > 0} title={wait > 0 ? "The list can be reloaded once every 10 minutes" : "Ask the bot for the server's webhooks now"}>
+                    <Icon name="refresh" size={14} /> {loading ? "Loading…" : wait > 0 ? `Reload in ${wait} min` : "Reload"}
+                </button>
+            )}
+        </div>
+    );
+}
+
+function WebhookSelect({ channels, value, onChange, disabled }) {
+    const groups = channels.filter((c) => c.webhooks.length);
+    return (
+        <select className="input" value={groups.some((c) => c.webhooks.some((w) => w.id === value)) ? value : ""} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
+            <option value="">{groups.length ? "Pick a webhook…" : "No webhooks — make one"}</option>
+            {groups.map((c) => (
+                <optgroup key={c.id} label={`${c.parent ? `${c.parent} › ` : ""}${channelLabel(c)}`}>
+                    {c.webhooks.map((w) => (
+                        <option key={w.id} value={w.id} disabled={!w.usable}>
+                            {w.name}
+                            {w.usable ? "" : " — cannot be used"}
+                        </option>
+                    ))}
+                </optgroup>
+            ))}
+        </select>
+    );
+}
+
+// ── Send box ─────────────────────────────────────────────────────────────────
+
+function SendBox({ status, targets, targetsError, loadingTargets, onReload, doc, setTarget, setOptions, files, onSend, onNewWebhook, busy, results, onEditSent, canEdit }) {
+    const channels = targets?.channels || [];
+    const { target, options, messages } = doc;
+    const channel = channels.find((c) => c.webhooks.some((w) => w.id === target.webhookId)) || null;
+    const webhook = channel?.webhooks.find((w) => w.id === target.webhookId) || null;
+    const posts = channel && (channel.type === "forum" || channel.type === "media");
+    const setMention = (k, v) => setOptions({ ...options, mentions: { ...options.mentions, [k]: v } });
+
+    const live = messages.filter((m) => !emptyMessage(m, files));
+    const edits = live.filter((m) => m.ref).length;
+    const fresh = live.length - edits;
+    const pings = live
+        .filter((m) => !m.ref)
+        .map((m) => pingsOf(m.draft.content))
+        .reduce((a, p) => ({ everyone: a.everyone || p.everyone, here: a.here || p.here, roles: a.roles + p.roles.length, users: a.users + p.users.length }), { everyone: false, here: false, roles: 0, users: 0 });
+    const chips = [
+        ...(pings.everyone && options.mentions.everyone ? ["@everyone"] : []),
+        ...(pings.here && options.mentions.everyone ? ["@here"] : []),
+        ...(pings.roles && options.mentions.roles ? [`${pings.roles} role${pings.roles === 1 ? "" : "s"}`] : []),
+        ...(pings.users && options.mentions.users ? [`${pings.users} member${pings.users === 1 ? "" : "s"}`] : []),
+    ];
+    const threadBad = !posts && threadIdOf(target.thread) === undefined;
+    const postBad = posts && (target.mode === "existing" ? !threadIdOf(target.thread) : !target.threadName.trim());
+    const needsTarget = fresh > 0;
+    const ready = live.length > 0 && (!needsTarget || (webhook?.usable && !threadBad && !postBad));
+    const label = !live.length ? "Nothing to send" : fresh && edits ? `Send ${fresh} · save ${edits} edit${edits === 1 ? "" : "s"}` : edits ? `Save ${edits === 1 ? "the edit" : `${edits} edits`}` : `Send ${fresh === 1 ? "" : `${fresh} messages`}`.trim();
+
+    return (
+        <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, flex: 1 }}>Send with</h2>
+                {canEdit && status?.can?.create && (
+                    <button className="btn-ghost btn-sm" onClick={onNewWebhook} disabled={!channels.length} title="ArnTo-selfbot makes a new webhook in a channel">
+                        <Icon name="plus" size={13} /> New webhook
+                    </button>
+                )}
+            </div>
+            <ScanLine targets={targets} loading={loadingTargets || targets?.loading} onReload={onReload} canReload={canEdit && !!status?.can?.list} />
+
+            {targetsError && <Notice tone="danger">{targetsError}</Notice>}
+            {targets?.viewer && !targets.viewer.found && <Notice tone="danger">{targets.viewer.why || "You cannot use webhooks here."}</Notice>}
+            {targets && !targets.viewer && !targets.loadedAt && <Notice>The webhook list has not been loaded yet — press Reload.</Notice>}
+
+            <Field label={targets?.guild ? `Webhook in ${targets.guild.name}` : "Webhook"} hint={targets?.viewer?.found ? "Only the webhooks of channels your own Discord account can see and post in." : undefined}>
+                <WebhookSelect channels={channels} value={target.webhookId} onChange={(id) => setTarget({ ...target, webhookId: id })} disabled={!canEdit} />
+            </Field>
+            {webhook && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-muted)" }}>
+                    <Avatar src={webhook.avatar} />
+                    <span style={{ minWidth: 0 }}>
+                        <strong style={{ color: "var(--text)" }}>{webhook.name}</strong> posts in {channelLabel(channel)}
+                        {webhook.creator?.tag && <span style={{ color: "var(--text-dim)" }}> · made by {webhook.creator.tag}</span>}
+                    </span>
+                </div>
+            )}
+
+            {channel &&
+                (posts ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div className="tab-bar" style={{ alignSelf: "flex-start" }}>
+                            {[
+                                ["new", "New post"],
+                                ["existing", "Reply in a post"],
+                            ].map(([id, text]) => (
+                                <button key={id} className={`tab-item ${target.mode === id ? "active" : ""}`} onClick={() => setTarget({ ...target, mode: id })}>
+                                    {text}
+                                </button>
+                            ))}
+                        </div>
+                        {target.mode === "existing" ? (
+                            <Field label="Post" hint="The post's link (right-click it → Copy Link) or its id.">
+                                <input className="input mono" value={target.thread} onChange={(e) => setTarget({ ...target, thread: e.target.value })} placeholder="https://discord.com/channels/…/…" />
+                            </Field>
+                        ) : (
+                            <Field label="Post title" hint="Every new message of this send goes into the one new post.">
+                                <input className="input" value={target.threadName} maxLength={100} onChange={(e) => setTarget({ ...target, threadName: e.target.value })} placeholder="Weekly sale" />
+                            </Field>
+                        )}
+                    </div>
+                ) : (
+                    <Field label="Inside a thread (optional)" hint={threadBad ? "That is not a thread's link or id." : "A thread of this channel — its link or id. Empty: the channel itself."}>
+                        <input className="input mono" value={target.thread} onChange={(e) => setTarget({ ...target, thread: e.target.value })} placeholder="https://discord.com/channels/…/…" />
+                    </Field>
+                ))}
+
+            <div className="msg-pings">
+                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>Who may be pinged</span>
+                <label>
+                    <input type="checkbox" checked={options.mentions.everyone} onChange={(e) => setMention("everyone", e.target.checked)} /> @everyone and @here
+                </label>
+                <label>
+                    <input type="checkbox" checked={options.mentions.roles} onChange={(e) => setMention("roles", e.target.checked)} /> Roles
+                </label>
+                <label>
+                    <input type="checkbox" checked={options.mentions.users} onChange={(e) => setMention("users", e.target.checked)} /> Members
+                </label>
+                <label title="The messages arrive without a notification sound or badge (Discord's @silent)">
+                    <input type="checkbox" checked={options.silent} onChange={(e) => setOptions({ ...options, silent: e.target.checked })} /> Silent — no notifications
+                </label>
+                <label title="Links in the text get no preview card">
+                    <input type="checkbox" checked={options.suppressEmbeds} onChange={(e) => setOptions({ ...options, suppressEmbeds: e.target.checked })} /> No link previews
+                </label>
+            </div>
+            {chips.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
+                    {options.silent ? "Mentions (silent):" : "Pings:"}
+                    {chips.map((c) => (
+                        <span key={c} className="msg-ping-chip">{c}</span>
+                    ))}
+                </div>
+            )}
+            {edits > 0 && <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>Edits go through the webhook that sent each message, keep its name and picture, and ping nobody.</div>}
+
+            {canEdit && (
+                <button className="btn-primary" disabled={!!busy || !ready} onClick={onSend}>
+                    <Icon name="send" /> {busy === "send" ? "Sending…" : label}
+                </button>
+            )}
+
+            {results && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {results.map((r) => (
+                        <Notice key={r.n} tone={r.tone}>
+                            <strong>Message {r.n}</strong> — {r.text}
+                            {r.url && (
+                                <>
+                                    {" "}
+                                    <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>
+                                        Open in Discord
+                                    </a>
+                                </>
+                            )}
+                        </Notice>
+                    ))}
+                    {canEdit && results.some((r) => r.row) && (
+                        <button className="btn-ghost btn-sm" style={{ alignSelf: "flex-start" }} onClick={onEditSent}>
+                            <Icon name="pencil" size={13} /> Edit what was sent
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Editor column ────────────────────────────────────────────────────────────
+
+function MessageTabs({ messages, active, files, onPick, onAdd, onDuplicate, onMove, onRemove }) {
+    return (
+        <div className="wh-tabs">
+            {messages.map((m, i) => (
+                <button key={m.key} className={`wh-tab ${i === active ? "active" : ""}`} onClick={() => onPick(i)} title={m.ref ? "Edits a message on Discord" : snippet(toApi(m.draft), 60)}>
+                    {m.ref && <Icon name="pencil" size={12} />}
+                    Message {i + 1}
+                    {emptyMessage(m, files) && <span style={{ color: "var(--text-dim)" }}> · empty</span>}
+                </button>
+            ))}
+            <button className="wh-tab" onClick={onAdd} disabled={messages.length >= MAX_MESSAGES} title={`Up to ${MAX_MESSAGES} messages, sent in this order`}>
+                <Icon name="plus" size={12} /> Add
+            </button>
+            <span style={{ flex: 1 }} />
+            <span style={{ display: "flex", gap: 4 }}>
+                <button className="btn-ghost btn-sm" onClick={() => onMove(-1)} disabled={active === 0} title="Move left">
+                    <Icon name="chevronLeft" size={13} />
+                </button>
+                <button className="btn-ghost btn-sm" onClick={() => onMove(1)} disabled={active === messages.length - 1} title="Move right">
+                    <Icon name="chevronRight" size={13} />
+                </button>
+                <button className="btn-ghost btn-sm" onClick={onDuplicate} disabled={messages.length >= MAX_MESSAGES} title="Duplicate this message">
+                    <Icon name="copy" size={13} />
+                </button>
+                <button className="btn-ghost btn-sm is-danger" onClick={onRemove} title={messages.length === 1 ? "Clear this message" : "Remove this message"}>
+                    <Icon name="trash" size={13} />
+                </button>
+            </span>
+        </div>
+    );
+}
+
+function ProfileSection({ m, webhook, onChange }) {
+    if (m.ref) {
+        return (
+            <Section title="Profile">
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-muted)" }}>
+                    <Avatar src={m.ref.author?.avatar} />
+                    <span>
+                        Posted as <strong style={{ color: "var(--text)" }}>{m.ref.author?.username || m.ref.webhookName || "the webhook"}</strong> — Discord keeps the name and picture a message was sent with.
+                    </span>
+                </div>
+            </Section>
+        );
+    }
+    return (
+        <Section title="Profile" right={<span className="msg-sum">empty = the webhook's own</span>}>
+            <div className="msg-grid2">
+                <Field label="Name">
+                    <input className="input" value={m.username} maxLength={80} placeholder={webhook?.name || "Webhook's name"} onChange={(e) => onChange({ username: e.target.value })} />
+                </Field>
+                <Field label="Avatar link">
+                    <input className="input" value={m.avatarUrl} placeholder="https://…/picture.png" onChange={(e) => onChange({ avatarUrl: e.target.value })} />
+                </Field>
+            </div>
+        </Section>
+    );
+}
+
+function FilesSection({ m, own, onAdd, onRemove, onToggleKeep }) {
+    const input = useRef(null);
+    const kept = (m.ref?.attachments || []).filter((a) => m.ref.keep.includes(a.id));
+    const count = kept.length + own.length;
+    const bytes = own.reduce((n, f) => n + f.size, 0);
+    const copy = (name) => navigator.clipboard?.writeText(`attachment://${name}`);
+    return (
+        <Section
+            title={
+                <>
+                    <Icon name="paperclip" size={13} /> Files
+                </>
+            }
+            right={<span className="msg-count">{count}/{MAX_FILES}{bytes ? ` · ${fmtSize(bytes)}` : ""}</span>}
+        >
+            {(m.ref?.attachments || []).map((a) => {
+                const on = m.ref.keep.includes(a.id);
+                return (
+                    <div key={a.id} className="wh-file" style={on ? undefined : { opacity: 0.5 }}>
+                        <Icon name={isImage(a.filename, a.contentType) ? "eye" : "fileText"} size={14} />
+                        <a href={a.url} target="_blank" rel="noreferrer" className="wh-file-name" style={{ textDecoration: on ? "none" : "line-through" }}>
+                            {a.filename}
+                        </a>
+                        <span className="msg-count">{a.size ? fmtSize(a.size) : ""}</span>
+                        <button className="btn-ghost btn-sm" onClick={() => onToggleKeep(a.id)} title={on ? "Remove it from the message when saving" : "Keep it"}>
+                            {on ? <Icon name="x" size={13} /> : "Keep"}
+                        </button>
+                    </div>
+                );
+            })}
+            {own.map((f) => (
+                <div key={f.id} className="wh-file">
+                    {f.image ? <img src={f.url} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} /> : <Icon name="fileText" size={14} />}
+                    <span className="wh-file-name mono" title={f.file.name}>{f.name}</span>
+                    <span className="msg-count">{fmtSize(f.size)}</span>
+                    {f.image && (
+                        <button className="btn-ghost btn-sm" onClick={() => copy(f.name)} title={`Copy attachment://${f.name} — paste it as an embed's image to show the file inside the embed`}>
+                            <Icon name="copy" size={13} />
+                        </button>
+                    )}
+                    <button className="btn-ghost btn-sm is-danger" onClick={() => onRemove(f.id)} title="Remove">
+                        <Icon name="x" size={13} />
+                    </button>
+                </div>
+            ))}
+            <input
+                ref={input}
+                type="file"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                    onAdd([...e.target.files]);
+                    e.target.value = "";
+                }}
+            />
+            <button type="button" className="btn-ghost" disabled={count >= MAX_FILES} onClick={() => input.current?.click()}>
+                <Icon name="upload" /> Add files
+            </button>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+                Up to {MAX_FILES} files, {MAX_BYTES / 1048576} MB together (Discord itself takes 10 MB on a server without boosts). A picture can go inside an embed: copy its attachment:// name into the embed's image. Files are not kept when the page reloads.
+            </div>
+        </Section>
+    );
+}
+
+// ── Modals ───────────────────────────────────────────────────────────────────
+
+const KIND = { webhook: "a webhook", gone: "a deleted webhook", hidden: "a webhook", interaction: "a bot command", bot: "a bot", user: "a member" };
+
+function LinkModal({ onClose, onEdit, onCopy, onUseWebhook, canEdit }) {
+    const [link, setLink] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const [res, setRes] = useState(null);
+    const look = async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError("");
+        setRes(null);
+        try {
+            const { data } = await api.get("/webhooks/fetch", { params: { link }, ...SLOW });
+            setRes(data);
+        } catch (err) {
+            setError(errMsg(err, "Could not read that message"));
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <Modal title="Open a message by its link" onClose={onClose} width={540}>
+            <form onSubmit={look} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Field label="Message link" hint="On Discord: right-click the message (or ⋯) → Copy Message Link. The panel finds the webhook that sent it — nothing to pick.">
+                    <input className="input mono" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://discord.com/channels/…/…/…" autoFocus />
+                </Field>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button type="submit" className="btn-primary" disabled={busy || !link.trim()}>
+                        {busy ? "Reading…" : "Read message"}
+                    </button>
+                </div>
+            </form>
+            {error && (
+                <div style={{ marginTop: 12 }}>
+                    <Notice tone="danger">{error}</Notice>
+                </div>
+            )}
+            {res && (
+                <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
+                        <Avatar src={res.author?.avatar} size={32} />
+                        <span>
+                            <strong style={{ color: "var(--text)" }}>{res.author?.username || "?"}</strong> in {res.threadName ? <strong>{res.threadName}</strong> : <strong>#{res.channelName}</strong>}
+                            {res.threadName && ` (#${res.channelName})`}, {fmtDate(res.createdAt)}
+                            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                                Sent by {KIND[res.kind] || res.kind}
+                                {res.webhook && <> — webhook <strong>{res.webhook.name}</strong></>}
+                                {res.sent && " · listed under Sent"}
+                            </div>
+                        </span>
+                    </div>
+                    {res.why && <Notice tone={res.v2 ? "danger" : undefined}>{res.why}</Notice>}
+                    {res.editable && res.keepsComponents && <Notice>Its buttons or menus belong to a bot: editing keeps them as they are. A copy leaves them out.</Notice>}
+                    {!res.v2 && (
+                        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                            {res.webhook?.usable && canEdit && (
+                                <button className="btn-ghost" onClick={() => onUseWebhook(res)} title="Send new messages with this webhook">
+                                    <Icon name="webhook" /> Use this webhook
+                                </button>
+                            )}
+                            <button className="btn-ghost" onClick={() => onCopy(res)}>
+                                <Icon name="copy" /> Copy into the editor
+                            </button>
+                            {res.editable && canEdit && (
+                                <button className="btn-primary" onClick={() => onEdit(res)}>
+                                    <Icon name="pencil" /> Edit this message
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+        </Modal>
+    );
+}
+
+/** Discohook's backup: { messages: [{ data: { content, embeds, components, username, avatar_url }, reference }] }. */
+const toBackup = (messages) => ({
+    messages: messages.map((m) => {
+        const data = toApi(m.draft);
+        if (data.components === null) delete data.components;
+        if (m.username) data.username = m.username;
+        if (m.avatarUrl) data.avatar_url = m.avatarUrl;
+        return { data, ...(m.ref?.url ? { reference: m.ref.url } : {}) };
+    }),
+});
+
+/** Pasted JSON → [{ msg, username, avatarUrl, reference }]: a backup, Discohook's share data, or one message. */
+const fromBackup = (text) => {
+    const v = JSON.parse(text);
+    const list = Array.isArray(v?.messages) ? v.messages : v?.data?.messages || null;
+    if (!list) {
+        const one = fromJson(text);
+        const raw = v?.data || v;
+        return [{ msg: one, username: raw?.username || "", avatarUrl: raw?.avatar_url || "", reference: null }];
+    }
+    if (!list.length) throw new Error("The backup has no messages");
+    if (list.length > MAX_MESSAGES) throw new Error(`${list.length} messages — at most ${MAX_MESSAGES}`);
+    return list.map((x) => {
+        const d = x?.data || x || {};
+        return { msg: { content: d.content || "", embeds: d.embeds || [], components: d.components || [] }, username: d.username || "", avatarUrl: d.avatar_url || "", reference: typeof x?.reference === "string" ? x.reference : null };
+    });
+};
+
+function JsonModal({ messages, onClose, onApply }) {
+    const [text, setText] = useState(() => JSON.stringify(toBackup(messages), null, 2));
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const apply = async () => {
+        setBusy(true);
+        try {
+            await onApply(fromBackup(text));
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <Modal title="Messages JSON" onClose={onClose} width={700}>
+            <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+                Discohook's backup format — every message with its name, avatar and (for an edit) its link. Paste one here (a backup, a single message or an embed) and press Apply, or copy this one out. A message's link (reference) opens it for editing.
+            </p>
+            <textarea
+                className="input mono"
+                value={text}
+                onChange={(e) => {
+                    setText(e.target.value);
+                    setError("");
+                }}
+                spellCheck={false}
+                style={{ width: "100%", minHeight: 360, fontSize: 12, lineHeight: 1.5, resize: "vertical" }}
+            />
+            {error && (
+                <div style={{ marginTop: 10 }}>
+                    <Notice tone="danger">{error}</Notice>
+                </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+                <button
+                    className="btn-ghost"
+                    onClick={() => {
+                        navigator.clipboard?.writeText(text).then(() => {
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1500);
+                        });
+                    }}
+                >
+                    <Icon name="copy" /> {copied ? "Copied" : "Copy"}
+                </button>
+                <button className="btn-primary" onClick={apply} disabled={busy}>
+                    {busy ? "Opening links…" : "Apply"}
+                </button>
+            </div>
+        </Modal>
+    );
+}
+
+function SaveModal({ current, onClose, onSave, busy }) {
+    const [name, setName] = useState(current?.name || "");
+    return (
+        <Modal title={current ? "Save messages" : "Save as new"} onClose={onClose} width={420}>
+            <form
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    onSave(name.trim(), false);
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+                <Field label="Name" hint="The messages, the webhook and the options are saved together. Files are not, and messages being edited are saved as new ones.">
+                    <input className="input" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="Weekly sale" autoFocus />
+                </Field>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    {current && (
+                        <button type="button" className="btn-ghost" disabled={busy || !name.trim()} onClick={() => onSave(name.trim(), true)}>
+                            Save as new
+                        </button>
+                    )}
+                    <button type="submit" className="btn-primary" disabled={busy || !name.trim()}>
+                        {busy ? "Saving…" : current ? `Update "${current.name}"` : "Save"}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+function CreateWebhookModal({ channels, onClose, onCreated }) {
+    const [channelId, setChannelId] = useState("");
+    const [name, setName] = useState("");
+    const [avatarUrl, setAvatarUrl] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const groups = useMemo(() => {
+        const out = [];
+        for (const c of channels.filter((x) => x.type !== "voice" && x.type !== "stage")) {
+            const key = c.parentId || "";
+            let g = out.find((x) => x.key === key);
+            if (!g) out.push((g = { key, name: c.parent || "No category", list: [] }));
+            g.list.push(c);
+        }
+        return out;
+    }, [channels]);
+    const submit = async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError("");
+        try {
+            // The bus, then up to 20 s for the selfbot: the server gives up after 45 s.
+            const { data } = await api.post("/webhooks/webhooks", { channelId, name, avatarUrl }, { timeout: 60_000 });
+            onCreated(data);
+        } catch (err) {
+            setError(errMsg(err, "Could not make the webhook"));
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <Modal title="New webhook" onClose={onClose} width={460}>
+            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0, lineHeight: 1.5 }}>
+                    ArnTo-selfbot makes it with its own account, so it is an ordinary webhook (Server Settings → Integrations shows it) and is ready to use here at once. ArnTo-assistant asks it with a silent command in that channel and deletes the command right after (in a forum: a short-lived post). It can take up to 20 seconds.
+                </p>
+                <Field label="Channel">
+                    <select className="input" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+                        <option value="">Pick a channel…</option>
+                        {groups.map((g) => (
+                            <optgroup key={g.key} label={g.name}>
+                                {g.list.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {channelLabel(c)}
+                                        {c.webhooks.length ? ` (${c.webhooks.length} webhook${c.webhooks.length === 1 ? "" : "s"})` : ""}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                </Field>
+                <Field label="Name" hint="Its default name — each message can still use another.">
+                    <input className="input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder="ArnTo Shop" />
+                </Field>
+                <Field label="Avatar link (optional)">
+                    <input className="input" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://…/logo.png" />
+                </Field>
+                {error && <Notice tone="danger">{error}</Notice>}
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button type="submit" className="btn-primary" disabled={busy || !channelId || !name.trim()}>
+                        {busy ? "Making…" : "Make webhook"}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+// ── Sent / Saved / Webhooks ──────────────────────────────────────────────────
+
+const STATUS = { sent: { text: "Sent", tone: "success" }, deleted: { text: "Deleted", tone: "neutral" } };
+
+function SentTab({ rows, loading, error, canEdit, busy, onEdit, onCopy, onDelete, onForget }) {
+    if (loading) return <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>;
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {error && <Notice tone="danger">{error}</Notice>}
+            {rows.length > 0 && <p style={{ color: "var(--text-muted)", fontSize: 12, margin: 0 }}>Kept for 3 days after a message was last sent, edited or deleted — it stays on Discord.</p>}
+            {!rows.length ? (
+                <EmptyState icon="send" title="Nothing sent yet" description="Messages sent from this page, and messages edited here by their link, are listed here for 3 days." />
+            ) : (
+                <DataTable minWidth={900} columns={["Sent", "Where", "Message", "As", "By", "Status", ""]}>
+                    {rows.map((r) => {
+                        const s = STATUS[r.status] || STATUS.sent;
+                        return (
+                            <tr key={r.id}>
+                                <td className="nowrap top muted">
+                                    {fmtDate(r.sentAt)}
+                                    {r.editedAt && <div className="cell-sub">edited {fmtDate(r.editedAt)}</div>}
+                                </td>
+                                <td className="nowrap top">
+                                    <div>#{r.channelName || r.channelId}</div>
+                                    {r.threadName && <div className="cell-sub">› {r.threadName}</div>}
+                                </td>
+                                <td className="top" style={{ maxWidth: 320, fontSize: 12, wordBreak: "break-word" }}>
+                                    {snippet(r.message, 120)}
+                                    {r.attachments?.length > 0 && <div className="cell-sub">{r.attachments.length} file{r.attachments.length === 1 ? "" : "s"}</div>}
+                                </td>
+                                <td className="nowrap top">
+                                    {r.username || r.webhookName}
+                                    {r.username && <div className="cell-sub">{r.webhookName}</div>}
+                                </td>
+                                <td className="nowrap top">
+                                    {byText(r.sentBy)}
+                                    {r.editedBy && <div className="cell-sub">edit: {byText(r.editedBy)}</div>}
+                                </td>
+                                <td className="top">
+                                    <StatusBadge tone={s.tone}>{s.text}</StatusBadge>
+                                    {r.status === "deleted" && <div className="cell-sub">by {byText(r.deletedBy)}</div>}
+                                </td>
+                                <td className="actions top">
+                                    <div className="row-actions">
+                                        {r.url && r.status === "sent" && (
+                                            <a className="btn-ghost btn-sm" href={r.url} target="_blank" rel="noreferrer" title="Open in Discord">
+                                                <Icon name="externalLink" size={13} />
+                                            </a>
+                                        )}
+                                        {canEdit && r.status === "sent" && (
+                                            <button className="btn-ghost btn-sm" disabled={busy === r.id} onClick={() => onEdit(r)} title="Edit this message on Discord">
+                                                <Icon name="pencil" size={13} /> Edit
+                                            </button>
+                                        )}
+                                        <button className="btn-ghost btn-sm" onClick={() => onCopy(r)} title="Copy into the editor as a new message">
+                                            <Icon name="copy" size={13} />
+                                        </button>
+                                        {canEdit && r.status === "sent" && (
+                                            <button className="btn-ghost btn-sm is-danger" disabled={busy === r.id} onClick={() => onDelete(r)} title="Delete on Discord">
+                                                <Icon name="trash" size={13} />
+                                            </button>
+                                        )}
+                                        {canEdit && r.status !== "sent" && (
+                                            <button className="btn-ghost btn-sm" onClick={() => onForget(r)} title="Remove from this list">
+                                                <Icon name="x" size={13} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </DataTable>
+            )}
+        </div>
+    );
+}
+
+function SavedTab({ drafts, loading, error, canEdit, currentId, onLoad, onDelete }) {
+    if (loading) return <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>;
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {error && <Notice tone="danger">{error}</Notice>}
+            {!drafts.length ? (
+                <EmptyState icon="archive" title="No saved messages" description="Save the messages in the editor to reuse them later — a weekly announcement, a price list…" />
+            ) : (
+                <DataTable minWidth={720} columns={["Name", "Messages", "Updated", ""]}>
+                    {drafts.map((d) => (
+                        <tr key={d.id}>
+                            <td className="top" style={{ fontWeight: 500 }}>
+                                {d.name}
+                                {d.id === currentId && <div className="cell-sub">open in the editor</div>}
+                            </td>
+                            <td className="top" style={{ maxWidth: 380, fontSize: 12, wordBreak: "break-word" }}>
+                                {snippet(toApi(d.messages?.[0]?.draft || {}), 110)}
+                                {d.messages?.length > 1 && <div className="cell-sub">{d.messages.length} messages</div>}
+                            </td>
+                            <td className="nowrap top muted">
+                                {fmtDate(d.updatedAt)}
+                                <div className="cell-sub">{byText(d.updatedBy)}</div>
+                            </td>
+                            <td className="actions top">
+                                <div className="row-actions">
+                                    <button className="btn-ghost btn-sm" onClick={() => onLoad(d)}>
+                                        Open
+                                    </button>
+                                    {canEdit && (
+                                        <button className="btn-ghost btn-sm is-danger" onClick={() => onDelete(d)} title="Delete">
+                                            <Icon name="trash" size={13} />
+                                        </button>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
+                </DataTable>
+            )}
+        </div>
+    );
+}
+
+function WebhooksTab({ targets, current, canEdit, canCreate, onUse, onNew }) {
+    const channels = (targets?.channels || []).filter((c) => c.webhooks.length);
+    const total = channels.reduce((n, c) => n + c.webhooks.length, 0);
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <p style={{ color: "var(--text-muted)", fontSize: 12, margin: 0, flex: 1 }}>
+                    {total} webhook{total === 1 ? "" : "s"} in {targets?.guild?.name || "the shop's server"}
+                    {targets?.loadedAt ? ` · loaded ${ago(targets.loadedAt)}` : ""}. One made by another app (another bot, Discohook's bot) cannot be used: Discord does not give its token to the bot.
+                </p>
+                {canEdit && canCreate && (
+                    <button className="btn-ghost btn-sm" onClick={onNew}>
+                        <Icon name="plus" size={13} /> New webhook
+                    </button>
+                )}
+            </div>
+            {!total ? (
+                <EmptyState icon="webhook" title="No webhooks" description={targets?.loadedAt ? "This server has no webhooks yet — make one." : "The list has not been loaded yet — press Reload on the Compose tab."} />
+            ) : (
+                <DataTable minWidth={780} columns={["Webhook", "Channel", "Made by", "Use", ""]}>
+                    {channels.flatMap((c) =>
+                        c.webhooks.map((w) => (
+                            <tr key={w.id}>
+                                <td className="top">
+                                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                        <Avatar src={w.avatar} />
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontWeight: 500 }}>{w.name}</div>
+                                            <div className="cell-sub mono">{w.id}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="nowrap top">
+                                    {channelLabel(c)}
+                                    {c.parent && <div className="cell-sub">{c.parent}</div>}
+                                </td>
+                                <td className="nowrap top">
+                                    {w.creator?.tag || "—"}
+                                    {w.createdAt && <div className="cell-sub">{fmtDate(w.createdAt)}</div>}
+                                </td>
+                                <td className="top" style={{ maxWidth: 260, whiteSpace: "normal" }}>
+                                    {w.usable ? <StatusBadge tone="success">Usable</StatusBadge> : <StatusBadge tone="neutral">Cannot be used</StatusBadge>}
+                                    {w.why && <div className="cell-sub" style={{ whiteSpace: "normal" }}>{w.why}</div>}
+                                </td>
+                                <td className="actions top">
+                                    {canEdit && w.usable && (
+                                        <button className="btn-ghost btn-sm" disabled={current === w.id} onClick={() => onUse(w.id)}>
+                                            {current === w.id ? "In use" : "Use"}
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        )),
+                    )}
+                </DataTable>
+            )}
+        </div>
+    );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
+export default function WebhooksPage() {
+    const { canEdit } = usePageAccess("webhooks");
+    const stored = useMemo(readStore, []);
+    const [tab, setTab] = useState("compose");
+    const [status, setStatus] = useState(null);
+    const [statusError, setStatusError] = useState("");
+    const [targets, setTargets] = useState(null);
+    const [targetsError, setTargetsError] = useState("");
+    const [loadingTargets, setLoadingTargets] = useState(false);
+
+    const [doc, setDoc] = useState(() => (stored ? { ...defaultDoc(), ...stored, options: { ...defaultOptions(), ...stored.options } } : defaultDoc()));
+    const [active, setActive] = useState(0);
+    const [files, setFiles] = useState({}); // message key → [{ id, file, name, url, image, size }] — never stored
+    const [savedRef, setSavedRef] = useState(() => stored?.savedRef || null);
+    const [editorKey, setEditorKey] = useState(0);
+    const [busy, setBusy] = useState(null);
+    const [results, setResults] = useState(null);
+
+    const [sent, setSent] = useState([]);
+    const [sentLoading, setSentLoading] = useState(true);
+    const [sentError, setSentError] = useState("");
+    const [drafts, setDrafts] = useState([]);
+    const [draftsLoading, setDraftsLoading] = useState(true);
+    const [draftsError, setDraftsError] = useState("");
+
+    const [modal, setModal] = useState(null); // "link" | "json" | "save" | "create"
+    const [confirm, setConfirm] = useState(null);
+
+    const index = Math.min(active, doc.messages.length - 1);
+    const current = doc.messages[index];
+
+    useEffect(() => writeStore({ ...doc, savedRef }), [doc, savedRef]);
+
+    // Picture previews live as object URLs: let them go with the page.
+    const filesRef = useRef(files);
+    filesRef.current = files;
+    useEffect(() => () => Object.values(filesRef.current).flat().forEach((f) => URL.revokeObjectURL(f.url)), []);
+
+    // ── Loading ──
+    const loadStatus = useCallback(async () => {
+        try {
+            const { data } = await api.get("/webhooks/status");
+            setStatus(data);
+            setStatusError("");
+        } catch (err) {
+            setStatusError(errMsg(err, "Could not load the page"));
+        }
+    }, []);
+
+    const loadTargets = useCallback(async () => {
+        try {
+            const { data } = await api.get("/webhooks/targets");
+            setTargets(data);
+            setTargetsError("");
+        } catch (err) {
+            setTargetsError(errMsg(err, "Could not read the webhook list"));
+        }
+    }, []);
+
+    const reloadTargets = async () => {
+        setLoadingTargets(true);
+        try {
+            const { data } = await api.post("/webhooks/targets/reload", null, SLOW);
+            setTargets(data);
+            setTargetsError("");
+        } catch (err) {
+            setTargetsError(errMsg(err, "Could not reload the webhook list"));
+            loadTargets();
+        } finally {
+            setLoadingTargets(false);
+        }
+    };
+
+    const loadSent = useCallback(async () => {
+        try {
+            const { data } = await api.get("/webhooks/sent");
+            setSent(data.sent || []);
+            setSentError("");
+        } catch (err) {
+            setSentError(errMsg(err, "Could not load what was sent"));
+        } finally {
+            setSentLoading(false);
+        }
+    }, []);
+
+    const loadDrafts = useCallback(async () => {
+        try {
+            const { data } = await api.get("/webhooks/drafts");
+            setDrafts(data.drafts || []);
+            setDraftsError("");
+        } catch (err) {
+            setDraftsError(errMsg(err, "Could not load the saved messages"));
+        } finally {
+            setDraftsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadStatus();
+        loadTargets();
+        loadSent();
+        loadDrafts();
+    }, [loadStatus, loadTargets, loadSent, loadDrafts]);
+
+    const channels = targets?.channels || [];
+    const webhookOf = (id) => {
+        for (const c of channels) {
+            const w = c.webhooks.find((x) => x.id === id);
+            if (w) return w;
+        }
+        return null;
+    };
+    const targetWebhook = webhookOf(doc.target.webhookId);
+
+    // ── Editing the document ──
+    const setMessages = (fn) => setDoc((d) => ({ ...d, messages: fn(d.messages) }));
+    const patchMessage = (key, patch) => setMessages((list) => list.map((m) => (m.key === key ? { ...m, ...patch } : m)));
+    const setTarget = (target) => setDoc((d) => ({ ...d, target }));
+    const setOptions = (options) => setDoc((d) => ({ ...d, options }));
+
+    const dropFiles = (key) =>
+        setFiles((f) => {
+            (f[key] || []).forEach((x) => URL.revokeObjectURL(x.url));
+            const { [key]: _gone, ...rest } = f;
+            return rest;
+        });
+
+    const replaceMessages = (list, { pick = 0 } = {}) => {
+        doc.messages.forEach((m) => dropFiles(m.key));
+        setMessages(() => list);
+        setActive(pick);
+        setEditorKey((k) => k + 1);
+        setResults(null);
+        setTab("compose");
+    };
+
+    /** Put a message in the editor: in the open one when it is empty, else as a new one. */
+    const placeMessage = (m) => {
+        const cur = doc.messages[index];
+        if (cur && emptyMessage(cur, files) && !cur.ref) {
+            dropFiles(cur.key);
+            setMessages((list) => list.map((x) => (x.key === cur.key ? m : x)));
+        } else if (doc.messages.length >= MAX_MESSAGES) {
+            throw new Error(`At most ${MAX_MESSAGES} messages — remove one first`);
+        } else {
+            setMessages((list) => [...list, m]);
+            setActive(doc.messages.length);
+        }
+        setEditorKey((k) => k + 1);
+        setResults(null);
+        setTab("compose");
+    };
+
+    const addFiles = (key, list) => {
+        const m = doc.messages.find((x) => x.key === key);
+        const own = files[key] || [];
+        const kept = m?.ref ? m.ref.keep.length : 0;
+        const room = MAX_FILES - kept - own.length;
+        if (list.length > room) alert(`At most ${MAX_FILES} files per message — ${list.length - Math.max(room, 0)} left out.`);
+        const taken = new Set([...own.map((f) => f.name), ...(m?.ref?.attachments || []).map((a) => a.filename)]);
+        const add = [];
+        let bytes = own.reduce((n, f) => n + f.size, 0);
+        for (const file of list.slice(0, Math.max(room, 0))) {
+            if (bytes + file.size > MAX_BYTES) {
+                alert(`${file.name} does not fit — at most ${MAX_BYTES / 1048576} MB of files per message.`);
+                continue;
+            }
+            let name = fileName(file.name, own.length + add.length);
+            for (let n = 2; taken.has(name); n++) name = fileName(file.name, 0).replace(/(\.[^.]*)?$/, `-${n}$1`);
+            taken.add(name);
+            bytes += file.size;
+            add.push({ id: newKey(), file, name, url: URL.createObjectURL(file), image: isImage(name, file.type), size: file.size });
+        }
+        if (add.length) setFiles((f) => ({ ...f, [key]: [...(f[key] || []), ...add] }));
+    };
+
+    const removeFile = (key, id) =>
+        setFiles((f) => {
+            const gone = (f[key] || []).find((x) => x.id === id);
+            if (gone) URL.revokeObjectURL(gone.url);
+            return { ...f, [key]: (f[key] || []).filter((x) => x.id !== id) };
+        });
+
+    // ── Messages bar ──
+    const addMessage = () => {
+        setMessages((list) => [...list, newMessage()]);
+        setActive(doc.messages.length);
+    };
+    const duplicateMessage = () => {
+        const copy = newMessage({ draft: JSON.parse(JSON.stringify(current.draft)), username: current.username, avatarUrl: current.avatarUrl });
+        if (copy.draft.components === null) copy.draft.components = linkRowsOnly(current.ref?.lockedComponents);
+        setMessages((list) => [...list.slice(0, index + 1), copy, ...list.slice(index + 1)]);
+        setActive(index + 1);
+    };
+    const moveMessage = (d) => {
+        const j = index + d;
+        if (j < 0 || j >= doc.messages.length) return;
+        setMessages((list) => {
+            const next = [...list];
+            [next[index], next[j]] = [next[j], next[index]];
+            return next;
+        });
+        setActive(j);
+    };
+    const removeMessage = () => {
+        dropFiles(current.key);
+        if (doc.messages.length === 1) {
+            setMessages(() => [newMessage()]);
+            setEditorKey((k) => k + 1);
+            return;
+        }
+        setMessages((list) => list.filter((m) => m.key !== current.key));
+        setActive(Math.max(0, index - 1));
+    };
+
+    const clearAll = () => {
+        replaceMessages([newMessage()]);
+        setSavedRef(null);
+    };
+
+    // ── Opening messages ──
+    const editMessageFrom = (res) => {
+        const m = newMessage({ draft: toEditor({ ...res.message, components: res.keepsComponents ? null : res.message.components }), ref: refOf(res) });
+        placeMessage(m);
+        setModal(null);
+    };
+
+    const copyMessageFrom = (msg, { username = "", avatarUrl = "", webhookId } = {}) => {
+        const rows = msg.components === null ? [] : msg.components || [];
+        placeMessage(newMessage({ draft: toEditor({ ...msg, components: onlyLinkButtons(rows) ? rows : linkRowsOnly(rows) }), username, avatarUrl }));
+        if (webhookId && webhookOf(webhookId)?.usable) setTarget({ ...doc.target, webhookId });
+        setModal(null);
+    };
+
+    const editSentRow = async (row) => {
+        setBusy(row.id);
+        try {
+            const { data } = await api.get("/webhooks/message", { params: { webhookId: row.webhookId, messageId: row.messageId, threadId: row.threadId || undefined }, ...SLOW });
+            if (!data.editable) throw new Error(data.why || "It cannot be edited here");
+            editMessageFrom(data);
+        } catch (err) {
+            alert(errMsg(err, "Could not open the message"));
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const applyJson = async (list) => {
+        const out = [];
+        const failed = [];
+        for (const x of list) {
+            if (!x.reference) {
+                if (!onlyLinkButtons(x.msg.components || [])) throw new Error("Only link buttons can be sent through a webhook — remove the other buttons and menus from the JSON.");
+                out.push(newMessage({ draft: toEditor(x.msg), username: x.username, avatarUrl: x.avatarUrl }));
+                continue;
+            }
+            try {
+                const { data } = await api.get("/webhooks/fetch", { params: { link: x.reference }, ...SLOW });
+                if (!data.editable) throw new Error(data.why);
+                const ref = refOf(data);
+                out.push(newMessage({ draft: toEditor({ ...x.msg, components: data.keepsComponents ? null : x.msg.components }), ref }));
+            } catch (err) {
+                failed.push(`${x.reference}: ${errMsg(err, "cannot be opened")}`);
+                out.push(newMessage({ draft: toEditor({ ...x.msg, components: linkRowsOnly(x.msg.components) }), username: x.username, avatarUrl: x.avatarUrl }));
+            }
+        }
+        replaceMessages(out);
+        setModal(null);
+        if (failed.length) alert(`These links were not opened for editing — their messages are in the editor as new ones:\n\n${failed.join("\n")}`);
+    };
+
+    // ── Sending ──
+    const doSend = async () => {
+        setBusy("send");
+        setResults(null);
+        const { target, options } = doc;
+        const channel = channels.find((c) => c.webhooks.some((w) => w.id === target.webhookId));
+        const posts = channel && (channel.type === "forum" || channel.type === "media");
+        let threadId = posts ? (target.mode === "existing" ? threadIdOf(target.thread) : null) : threadIdOf(target.thread);
+        let threadName = posts && target.mode !== "existing" ? target.threadName.trim() : null;
+        const out = [];
+        const updates = {};
+        let stopped = false;
+        for (let i = 0; i < doc.messages.length; i++) {
+            const m = doc.messages[i];
+            const n = i + 1;
+            if (stopped) {
+                out.push({ n, tone: "neutral", text: "not sent (an earlier message failed)" });
+                continue;
+            }
+            if (emptyMessage(m, files)) {
+                out.push({ n, tone: "neutral", text: "empty — skipped" });
+                continue;
+            }
+            const own = files[m.key] || [];
+            const form = new FormData();
+            own.forEach((f) => form.append("files", f.file, f.name));
+            try {
+                if (m.ref) {
+                    form.append(
+                        "payload",
+                        JSON.stringify({
+                            webhookId: m.ref.webhookId,
+                            messageId: m.ref.messageId,
+                            threadId: m.ref.threadId,
+                            threadLabel: m.ref.threadName,
+                            message: toApi(m.draft),
+                            mentions: options.mentions,
+                            keepAttachments: m.ref.keep,
+                            files: own.map((f) => ({ name: f.name })),
+                        }),
+                    );
+                    const { data } = await api.post("/webhooks/edit", form, UPLOAD);
+                    updates[m.key] = { ref: { ...m.ref, attachments: data.attachments || [], keep: (data.attachments || []).map((a) => a.id) }, clearFiles: true };
+                    out.push({ n, tone: "success", text: "saved.", url: data.url });
+                } else {
+                    form.append(
+                        "payload",
+                        JSON.stringify({
+                            webhookId: target.webhookId,
+                            threadId,
+                            threadName,
+                            message: toApi(m.draft),
+                            username: m.username,
+                            avatarUrl: m.avatarUrl,
+                            mentions: options.mentions,
+                            silent: options.silent,
+                            suppressEmbeds: options.suppressEmbeds,
+                            files: own.map((f) => ({ name: f.name })),
+                        }),
+                    );
+                    const { data } = await api.post("/webhooks/send", form, UPLOAD);
+                    // The rest of this send goes into the post the first message opened.
+                    if (threadName && data.threadId) {
+                        threadId = data.threadId;
+                        threadName = null;
+                    }
+                    out.push({ n, tone: "success", text: `sent${data.threadName ? ` in ${data.threadName}` : ""}.`, url: data.url, row: data, key: m.key });
+                }
+            } catch (err) {
+                out.push({ n, tone: "danger", text: errMsg(err, "failed") });
+                stopped = true;
+            }
+        }
+        setMessages((list) =>
+            list.map((m) => {
+                const u = updates[m.key];
+                return u ? { ...m, ref: u.ref } : m;
+            }),
+        );
+        Object.entries(updates).forEach(([key, u]) => u.clearFiles && dropFiles(key));
+        setResults(out);
+        setBusy(null);
+        loadSent();
+    };
+
+    const onSend = () => {
+        const pinged = doc.messages.filter((m) => !m.ref && !emptyMessage(m, files)).some((m) => {
+            const p = pingsOf(m.draft.content);
+            return (doc.options.mentions.everyone && (p.everyone || p.here)) || (doc.options.mentions.roles && p.roles.length);
+        });
+        if (pinged && !doc.options.silent) {
+            setConfirm({
+                title: "Send and ping?",
+                message: `These messages ping @everyone, @here or roles${targets?.guild ? ` in ${targets.guild.name}` : ""}.`,
+                confirmText: "Send",
+                danger: true,
+                run: doSend,
+            });
+        } else doSend();
+    };
+
+    /** After a send: the messages it posted become edits of themselves. */
+    const editWhatWasSent = () => {
+        const rows = new Map((results || []).filter((r) => r.row).map((r) => [r.key, r.row]));
+        setMessages((list) =>
+            list.map((m) => {
+                const row = rows.get(m.key);
+                if (!row) return m;
+                const w = webhookOf(row.webhookId);
+                return { ...m, ref: refOf({ ...row, webhook: { id: row.webhookId, name: row.webhookName }, author: { username: row.username || row.webhookName, avatar: row.avatarUrl || w?.avatar || null } }) };
+            }),
+        );
+        rows.forEach((_, key) => dropFiles(key));
+        setResults(null);
+    };
+
+    const deleteSent = (row) =>
+        setConfirm({
+            title: "Delete this message on Discord?",
+            message: `It is removed from #${row.channelName || row.channelId}${row.threadName ? ` › ${row.threadName}` : ""} for everyone. This cannot be undone.`,
+            confirmText: "Delete",
+            danger: true,
+            run: async () => {
+                setBusy(row.id);
+                try {
+                    await api.post("/webhooks/delete", { webhookId: row.webhookId, messageId: row.messageId, threadId: row.threadId }, SLOW);
+                    setMessages((list) => list.map((m) => (m.ref?.messageId === row.messageId ? { ...m, ref: null } : m)));
+                } catch (err) {
+                    alert(errMsg(err, "Could not delete"));
+                } finally {
+                    setBusy(null);
+                    loadSent();
+                }
+            },
+        });
+
+    const forget = async (r) => {
+        try {
+            await api.delete(`/webhooks/sent/${r.id}`);
+            loadSent();
+        } catch (err) {
+            alert(errMsg(err, "Could not remove it"));
+        }
+    };
+
+    // ── Saved ──
+    const saveDraft = async (name, asNew) => {
+        setBusy("save");
+        const payload = {
+            name,
+            messages: doc.messages.map((m) => ({ draft: m.draft.components === null ? { ...m.draft, components: linkRowsOnly(m.ref?.lockedComponents) } : m.draft, username: m.username, avatarUrl: m.avatarUrl })),
+            target: { webhookId: doc.target.webhookId, threadId: doc.target.thread || null, threadName: doc.target.threadName || null },
+            options: doc.options,
+        };
+        try {
+            const { data } = savedRef && !asNew ? await api.put(`/webhooks/drafts/${savedRef.id}`, payload) : await api.post("/webhooks/drafts", payload);
+            setSavedRef({ id: data.id, name: data.name });
+            setModal(null);
+            loadDrafts();
+        } catch (err) {
+            alert(errMsg(err, "Could not save"));
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const openDraft = (d) => {
+        replaceMessages((d.messages || []).map((m) => newMessage({ draft: m.draft || emptyDraft(), username: m.username || "", avatarUrl: m.avatarUrl || "" })));
+        const t = d.target || {};
+        setDoc((x) => ({
+            ...x,
+            target: { webhookId: t.webhookId || x.target.webhookId, mode: t.threadName ? "new" : t.threadId ? "existing" : x.target.mode, thread: t.threadId || "", threadName: t.threadName || "" },
+            options: { ...defaultOptions(), ...d.options },
+        }));
+        setSavedRef({ id: d.id, name: d.name });
+    };
+
+    const removeDraft = (d) =>
+        setConfirm({
+            title: `Delete "${d.name}"?`,
+            message: "Only the saved copy is deleted — nothing on Discord changes.",
+            confirmText: "Delete",
+            danger: true,
+            run: async () => {
+                try {
+                    await api.delete(`/webhooks/drafts/${d.id}`);
+                    if (savedRef?.id === d.id) setSavedRef(null);
+                    loadDrafts();
+                } catch (err) {
+                    alert(errMsg(err, "Could not delete"));
+                }
+            },
+        });
+
+    // ── Preview ──
+    const previews = useMemo(
+        () =>
+            doc.messages.map((m) => {
+                const msg = toApi(m.draft);
+                if (m.draft.components === null) msg.components = m.ref?.lockedComponents || [];
+                const list = [
+                    ...(m.ref?.attachments || []).filter((a) => m.ref.keep.includes(a.id)).map((a) => ({ name: a.filename, url: a.url, image: isImage(a.filename, a.contentType), size: a.size })),
+                    ...(files[m.key] || []).map((f) => ({ name: f.name, url: f.url, image: f.image, size: f.size })),
+                ];
+                const byName = new Map(list.map((f) => [f.name, f.url]));
+                const used = new Set();
+                const fix = (u) => {
+                    if (typeof u !== "string" || !u.startsWith("attachment://")) return u;
+                    const name = u.slice(13);
+                    used.add(name);
+                    return byName.get(name) || u;
+                };
+                msg.embeds = (msg.embeds || []).map((e) => ({
+                    ...e,
+                    ...(e.image ? { image: { url: fix(e.image.url) } } : {}),
+                    ...(e.thumbnail ? { thumbnail: { url: fix(e.thumbnail.url) } } : {}),
+                    ...(e.author ? { author: { ...e.author, icon_url: fix(e.author.icon_url) } } : {}),
+                    ...(e.footer ? { footer: { ...e.footer, icon_url: fix(e.footer.icon_url) } } : {}),
+                }));
+                const bot = m.ref
+                    ? { username: m.ref.author?.username || m.ref.webhookName || "Webhook", avatar: m.ref.author?.avatar || null }
+                    : { username: m.username.trim() || targetWebhook?.name || "Webhook", avatar: m.avatarUrl.trim() || targetWebhook?.avatar || null };
+                return { key: m.key, msg, bot, files: list.filter((f) => !used.has(f.name)), edited: !!m.ref };
+            }),
+        [doc.messages, files, targetWebhook],
+    );
+
+    const notReady = status && !status.can?.list;
+    const guildRoles = targets?.guild?.roles || [];
+
+    return (
+        <div className="fade-in page" style={{ maxWidth: 1500, display: "flex", flexDirection: "column", gap: 16 }}>
+            <PageHeader
+                title="Webhooks"
+                description="Like Discohook — messages with any name and picture, embeds, link buttons and files — sent through the shop server's webhooks. No URL to paste: pick a webhook, or paste a message's link to edit it."
+                actions={
+                    <>
+                        <button className="btn-ghost" onClick={() => setModal("link")} disabled={!status?.can?.fetch}>
+                            <Icon name="externalLink" /> Open by link
+                        </button>
+                        <button className="btn-ghost" onClick={() => setModal("json")}>
+                            <Icon name="fileText" /> JSON
+                        </button>
+                        {canEdit && (
+                            <button className="btn-ghost" onClick={() => setModal("save")} disabled={doc.messages.every((m) => isEmptyDraft(m.draft))}>
+                                <Icon name="archive" /> {savedRef ? "Save…" : "Save"}
+                            </button>
+                        )}
+                        <button className="btn-ghost" onClick={clearAll} title="Start over with one empty message">
+                            <Icon name="plus" /> New
+                        </button>
+                    </>
+                }
+            />
+
+            {statusError && <Notice tone="danger">{statusError}</Notice>}
+            {notReady && (
+                <Notice>
+                    ArnTo-assistant has not announced <code className="mono">webhook.list</code> yet — update it (Pull &amp; Update) and restart it. Until then the webhook list cannot load.
+                </Notice>
+            )}
+            {status && status.can?.list && !status.busReady && <Notice>The panel's Discord bus is not ready — the list and links wait until it is. Sending still works.</Notice>}
+
+            <div className="toolbar">
+                <div className="tab-bar">
+                    {[
+                        ["compose", "Compose"],
+                        ["sent", `Sent (${sent.length})`],
+                        ["saved", `Saved (${drafts.length})`],
+                        ["webhooks", `Webhooks (${channels.reduce((n, c) => n + c.webhooks.length, 0)})`],
+                    ].map(([id, label]) => (
+                        <button key={id} className={`tab-item ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
+                            {label}
+                        </button>
+                    ))}
+                </div>
+                {tab === "compose" && savedRef && (
+                    <span className="toolbar-count">
+                        Saved: <strong style={{ color: "var(--text-muted)" }}>{savedRef.name}</strong>
+                    </span>
+                )}
+            </div>
+
+            {tab === "compose" && current && (
+                <div className="msg-layout">
+                    <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+                        <MessageTabs
+                            messages={doc.messages}
+                            active={index}
+                            files={files}
+                            onPick={setActive}
+                            onAdd={addMessage}
+                            onDuplicate={duplicateMessage}
+                            onMove={moveMessage}
+                            onRemove={removeMessage}
+                        />
+                        {current.ref && (
+                            <div className="msg-editing">
+                                <Icon name="pencil" size={14} />
+                                <span style={{ flex: 1, minWidth: 0 }}>
+                                    Editing a message of <strong>{current.ref.webhookName || "a webhook"}</strong> in #{current.ref.channelName || current.ref.channelId}
+                                    {current.ref.threadName ? ` › ${current.ref.threadName}` : ""}
+                                    {current.ref.url && (
+                                        <>
+                                            {" · "}
+                                            <a href={current.ref.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent-hover)" }}>
+                                                open ↗
+                                            </a>
+                                        </>
+                                    )}
+                                </span>
+                                <button
+                                    className="btn-ghost btn-sm"
+                                    onClick={() =>
+                                        patchMessage(current.key, {
+                                            ref: null,
+                                            draft: current.draft.components === null ? { ...current.draft, components: linkRowsOnly(current.ref.lockedComponents) } : current.draft,
+                                        })
+                                    }
+                                    title="Keep the text as a new message"
+                                >
+                                    Stop editing
+                                </button>
+                                {canEdit && (
+                                    <button className="btn-ghost btn-sm is-danger" onClick={() => deleteSent({ ...current.ref, id: current.key })} title="Delete this message on Discord">
+                                        <Icon name="trash" size={13} />
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                        <ProfileSection m={current} webhook={targetWebhook} onChange={(patch) => patchMessage(current.key, patch)} />
+                        <MessageEditor key={`${current.key}:${editorKey}`} value={current.draft} onChange={(draft) => patchMessage(current.key, { draft })} roles={guildRoles} channels={channels} />
+                        <FilesSection
+                            m={current}
+                            own={files[current.key] || []}
+                            onAdd={(list) => addFiles(current.key, list)}
+                            onRemove={(id) => removeFile(current.key, id)}
+                            onToggleKeep={(id) =>
+                                patchMessage(current.key, { ref: { ...current.ref, keep: current.ref.keep.includes(id) ? current.ref.keep.filter((x) => x !== id) : [...current.ref.keep, id] } })
+                            }
+                        />
+                    </div>
+                    <div className="msg-side">
+                        <SendBox
+                            status={status}
+                            targets={targets}
+                            targetsError={targetsError}
+                            loadingTargets={loadingTargets}
+                            onReload={reloadTargets}
+                            doc={doc}
+                            setTarget={setTarget}
+                            setOptions={setOptions}
+                            files={files}
+                            onSend={onSend}
+                            onNewWebhook={() => setModal("create")}
+                            busy={busy}
+                            results={results}
+                            onEditSent={editWhatWasSent}
+                            canEdit={canEdit}
+                        />
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", margin: "0 0 6px 2px" }}>Preview</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                {previews.map((p, i) => (
+                                    <div key={p.key} onClick={() => setActive(i)} style={{ cursor: "pointer", borderRadius: 12, outline: i === index && previews.length > 1 ? "1px solid var(--accent-border)" : "none" }}>
+                                        <MessagePreview msg={p.msg} bot={p.bot} files={p.files} roles={guildRoles} channels={channels} edited={p.edited} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {tab === "sent" && (
+                <SentTab
+                    rows={sent}
+                    loading={sentLoading}
+                    error={sentError}
+                    canEdit={canEdit}
+                    busy={busy}
+                    onEdit={editSentRow}
+                    onCopy={(r) => {
+                        try {
+                            copyMessageFrom(r.message || {}, { username: r.username || "", avatarUrl: r.avatarUrl || "", webhookId: r.webhookId });
+                        } catch (err) {
+                            alert(err.message);
+                        }
+                    }}
+                    onDelete={deleteSent}
+                    onForget={forget}
+                />
+            )}
+
+            {tab === "saved" && <SavedTab drafts={drafts} loading={draftsLoading} error={draftsError} canEdit={canEdit} currentId={savedRef?.id} onLoad={openDraft} onDelete={removeDraft} />}
+
+            {tab === "webhooks" && (
+                <WebhooksTab
+                    targets={targets}
+                    current={doc.target.webhookId}
+                    canEdit={canEdit}
+                    canCreate={!!status?.can?.create}
+                    onUse={(id) => {
+                        setTarget({ ...doc.target, webhookId: id });
+                        setTab("compose");
+                    }}
+                    onNew={() => setModal("create")}
+                />
+            )}
+
+            {modal === "link" && (
+                <LinkModal
+                    onClose={() => setModal(null)}
+                    canEdit={canEdit}
+                    onEdit={(res) => {
+                        try {
+                            editMessageFrom(res);
+                        } catch (err) {
+                            alert(err.message);
+                        }
+                    }}
+                    onCopy={(res) => {
+                        try {
+                            copyMessageFrom(res.message, res.kind === "webhook" || res.kind === "gone" ? { username: res.author?.username || "", avatarUrl: res.author?.avatar || "" } : {});
+                        } catch (err) {
+                            alert(err.message);
+                        }
+                    }}
+                    onUseWebhook={(res) => {
+                        setTarget({ ...doc.target, webhookId: res.webhook.id });
+                        loadTargets();
+                        setModal(null);
+                    }}
+                />
+            )}
+            {modal === "json" && <JsonModal messages={doc.messages} onClose={() => setModal(null)} onApply={applyJson} />}
+            {modal === "save" && <SaveModal current={savedRef} busy={busy === "save"} onClose={() => setModal(null)} onSave={saveDraft} />}
+            {modal === "create" && (
+                <CreateWebhookModal
+                    channels={channels}
+                    onClose={() => setModal(null)}
+                    onCreated={(w) => {
+                        setModal(null);
+                        setTarget({ ...doc.target, webhookId: w.id });
+                        loadTargets();
+                    }}
+                />
+            )}
+
+            {confirm && (
+                <ConfirmModal
+                    title={confirm.title}
+                    message={confirm.message}
+                    confirmText={confirm.confirmText}
+                    danger={confirm.danger}
+                    onConfirm={() => {
+                        const run = confirm.run;
+                        setConfirm(null);
+                        run();
+                    }}
+                    onCancel={() => setConfirm(null)}
+                />
+            )}
+        </div>
+    );
+}

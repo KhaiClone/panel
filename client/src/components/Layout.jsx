@@ -22,6 +22,7 @@ const I = {
     resellers:  <Icon name="resellers" />,
     menus:      <Icon name="menus" />,
     message:    <Icon name="message" />,
+    webhook:    <Icon name="webhook" />,
     decors:     <Icon name="decors" />,
     quests:     <Icon name="quests" />,
     pricing:    <Icon name="pricing" />,
@@ -51,6 +52,7 @@ const NAV_SECTIONS = [
             { to: "/supporters",   label: "Supporters",   icon: I.supporters },
             { to: "/resellers",    label: "CTV",          icon: I.resellers },
             { to: "/messages",     label: "Messages",     icon: I.message },
+            { to: "/webhooks",     label: "Webhooks",     icon: I.webhook },
         ],
     },
     {

@@ -46,6 +46,8 @@ const nodeGlobals = {
     AbortController: "readonly",
     AbortSignal: "readonly",
     fetch: "readonly",
+    FormData: "readonly",
+    Blob: "readonly",
     structuredClone: "readonly",
     queueMicrotask: "readonly",
 };

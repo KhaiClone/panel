@@ -10,6 +10,7 @@ export const STAFF_PAGES = [
     { key: "supporters", path: "/supporters" },
     { key: "resellers", path: "/resellers" },
     { key: "messages", path: "/messages" },
+    { key: "webhooks", path: "/webhooks" },
     { key: "quests", path: "/quests" },
     { key: "badges", path: "/badges" },
     { key: "decors", path: "/decors" },
