@@ -95,12 +95,15 @@ ol.dp-list { list-style: decimal; }
 .msg-insert select.input { width: auto; max-width: 200px; padding: 3px 8px; font-size: 12px; height: auto; }
 .msg-button-row { display: flex; flex-direction: column; gap: 6px; border-left: 2px solid var(--border); padding-left: 8px; }
 
-/* Page — pages/MessagesPage.jsx */
-.msg-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 480px); gap: 16px; align-items: start; }
-.msg-side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; }
+/* Page — pages/MessagesPage.jsx and WebhooksPage.jsx: the editor on the left,
+   sending + the preview on the right, half the page each so the preview has
+   room for a Discord-sized message. The right side stays in view and scrolls
+   on its own (52px header + the page's padding). */
+.msg-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.msg-side { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 52px - 32px); overflow-y: auto; scrollbar-width: thin; }
 @media (max-width: 1100px) {
     .msg-layout { grid-template-columns: minmax(0, 1fr); }
-    .msg-side { position: static; }
+    .msg-side { position: static; max-height: none; overflow: visible; }
 }
 .msg-pings { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .msg-pings label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
