@@ -21,7 +21,6 @@ const discordBus = require("./discordBus");
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NAMES = ["decors", "importedDecors", "prices", "decorCategories"];
-const FRAME_API = () => process.env.DECOR_FRAME_API || "https://khaidevapi.onrender.com";
 const PRICE_TYPES = ["login", "gift", "gift-bundle"];
 
 /** Way of selling → the record flag that switches it off. `gift` is the bundle's gift-bundle too. */
@@ -38,20 +37,6 @@ const requirePanel = () => {
 const owner = () => sharedStore.nameRow("importedDecors")?.owner || null;
 const read = (name, op = "get", query) => sharedStore.run(name, op, { query });
 const write = (name, op, args) => sharedStore.run(name, op, args);
-
-// Frame (type 3): Discord's /preview image while it lives, else layers composed by KhaiDevApi.
-const frameImageURL = (decor) => {
-    if (decor.type !== 3) return decor.staticURL || null;
-    if (decor.previewValid !== false && decor.staticURL) return decor.staticURL;
-    const f = decor.frame;
-    if (!f?.layers?.length) return decor.staticURL || null;
-    const enc = f.layers.map((l) => `${l.id},${l.anchor},${l.order}`).join(";");
-    return (
-        `${FRAME_API()}/discord/frame?sku=${decor.sku_id}` +
-        `&iw=${f.inner_width}&ot=${f.overflow_top}&ob=${f.overflow_bottom}&oh=${f.overflow_horizontal}` +
-        `&layers=${encodeURIComponent(enc)}`
-    );
-};
 
 const priceLookup = (pricesRaw) => {
     const priceMap = {};
@@ -108,7 +93,6 @@ const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = 
         return {
             ...decor,
             decorFrom: fromImported ? "importedDecors" : "decors",
-            ...(decor.type === 3 ? { frameURL: frameImageURL(decor) } : {}),
             sellingPrices: {
                 loginWithNitro: sells(decor, "loginWithNitro") ? tier.loginWithNitro : 0,
                 loginWithoutNitro: sells(decor, "loginWithoutNitro") ? tier.loginWithoutNitro : 0,
@@ -318,8 +302,6 @@ const importDecor = async (fields) => {
 module.exports = {
     NAMES,
     SALE_FLAGS,
-    FRAME_API,
-    frameImageURL,
     onPanel,
     buildDecorList,
     buildPriceReport,

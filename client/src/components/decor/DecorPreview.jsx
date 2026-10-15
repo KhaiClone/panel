@@ -69,10 +69,10 @@ function NameplatePreview({ decor }) {
 function FramePreview({ decor }) {
     const f = decor.frame;
     if (!f?.layers?.length) {
-        // Older / hand-imported frames: only the /preview image (or KhaiDevApi's composition).
+        // Older / hand-imported frames: only the /preview image.
         return (
             <div className="dp-frame-outer">
-                <img className="dp-frame-fallback" src={decor.frameURL || decor.staticURL} alt="" loading="lazy" />
+                <img className="dp-frame-fallback" src={decor.staticURL} alt="" loading="lazy" />
             </div>
         );
     }
