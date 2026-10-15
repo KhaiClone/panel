@@ -47,34 +47,38 @@ const assistant = () => busTarget("decors", "decor.gift.deliver", "ArnTo-assista
 
 const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 3: "Frame", 1000: "Bundle" };
 
-// The picture /decor-find shows (KhaiDevApi renders it); `thumb` is the plain
-// CDN image, light enough for a list of them.
-const imageOf = (decor) => {
-    const api = decorService.FRAME_API();
-    if (decor.type === 3) return decorService.frameImageURL(decor);
-    if (decor.type === 1000) {
-        const [fg, bg] = Array.isArray(decor.assetURL) ? decor.assetURL : [];
-        if (!fg) return null;
-        return (
-            `${api}/discord/deco?image1=${encodeURI(fg)}` +
-            (bg ? `&image2=${encodeURI(bg)}` : "") +
-            (decor.backgroundColors?.length ? `&colors=${decor.backgroundColors.join(",")}` : "") +
-            "&type=bundle"
-        );
+// Pictures come straight from Discord's CDN, which Discord always loads. The
+// composed picture /decor-find shows (decor on a sample avatar / profile,
+// bundle layers, a frame around a profile) is drawn by ArnTo-Auto itself from
+// the record's fields below (its functions/decorImage.js) — no longer linked
+// to KhaiDevApi, whose Render free tier made Discord drop the image.
+const thumbOf = (decor) => {
+    if (decor.type === 1000) return (Array.isArray(decor.assetURL) && decor.assetURL[0]) || null;
+    if (decor.type === 3 && (decor.previewValid === false || !decor.staticURL)) {
+        // /preview is gone: the frame's ring layer (or its first) on its own.
+        const layers = decor.frame?.layers || [];
+        const layer = layers.find((l) => l.anchor === "center") || layers[0];
+        if (layer) return `https://cdn.discordapp.com/media/v1/collectibles-shop/${decor.sku_id}/${layer.id}/static`;
     }
-    const src = decor.staticURL || (typeof decor.assetURL === "string" ? decor.assetURL : null);
-    return src ? `${api}/discord/deco?image=${encodeURI(src)}&type=${decor.type}` : null;
+    if (decor.staticURL) return decor.staticURL;
+    // A nameplate's assetURL is a .webm — not a picture.
+    return decor.type === 0 && typeof decor.assetURL === "string" ? decor.assetURL : null;
 };
-const thumbOf = (decor) =>
-    (decor.type === 3 ? decorService.frameImageURL(decor) : null) ||
-    decor.staticURL ||
-    (Array.isArray(decor.assetURL) ? decor.assetURL[0] : null) ||
-    imageOf(decor);
+
+/** The record's fields a composed picture is drawn from — only those its type uses. */
+const artOf = (decor) => {
+    if (decor.type === 1000) return { assetURL: decor.assetURL || [], backgroundColors: decor.backgroundColors || [] };
+    const art = { staticURL: decor.staticURL || null };
+    if (decor.type === 0 && !decor.staticURL && typeof decor.assetURL === "string") art.assetURL = decor.assetURL;
+    if (decor.type === 3) Object.assign(art, { frame: decor.frame || null, previewValid: decor.previewValid ?? null });
+    return art;
+};
 
 /**
  * Every decor sold as a Gift (switch on, priced), grouped like the decor site:
  * its theme in the categories' order, leftovers under "Khác".
- * → { categories: [{ sku_id, name, count }], decors: [{ sku_id, name, type, typeLabel, category, price, thumb, image, members? }] }
+ * → { categories: [{ sku_id, name, count }], decors: [{ sku_id, name, type, typeLabel, category, price, thumb, image, members?, ...art }] }
+ *   `image` is `thumb` again, for readers from before the art fields.
  */
 const catalog = async () => {
     const [list, cats] = await Promise.all([decorService.listDecors(), decorService.listCategories()]);
@@ -82,6 +86,7 @@ const catalog = async () => {
     for (const d of list) {
         const price = d.type === 1000 ? d.sellingPrices?.giftBundle : d.sellingPrices?.gift;
         if (!(price > 0)) continue;
+        const thumb = thumbOf(d);
         decors.push({
             sku_id: d.sku_id,
             name: d.name,
@@ -89,9 +94,10 @@ const catalog = async () => {
             typeLabel: TYPE_LABEL[d.type] || "Decor",
             category: d.category_sku_id || null,
             price,
-            thumb: thumbOf(d),
-            image: imageOf(d),
+            thumb,
+            image: thumb,
             ...(d.type === 1000 ? { members: (d.items || []).map((i) => i.name).filter(Boolean) } : {}),
+            ...artOf(d),
         });
     }
     const counts = new Map();
@@ -282,6 +288,5 @@ module.exports = {
     cancelOrder,
     buyerInfo,
     createByHand,
-    imageOf,
     thumbOf,
 };
