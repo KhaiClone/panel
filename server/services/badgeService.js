@@ -13,17 +13,17 @@
  * "verifying" ở trên là lượt đọc TRƯỚC khi gửi — để biết tài khoản đang ở đâu mà
  * tính kế hoạch, và để chặn người mua lại mốc họ đã có. Nó không phải xác minh.
  *
- * BỐN QUYẾT ĐỊNH THIẾT KẾ, theo yêu cầu:
+ * NĂM QUYẾT ĐỊNH THIẾT KẾ, theo yêu cầu:
  *  1. Không có bước xác nhận riêng trước khi hiện QR — khách chọn mốc là mua luôn.
- *  2. Reader lỗi thì KHÔNG tự tịch thu: đơn treo ở manual_review chờ duyệt tay.
+ *  2. Đọc lỗi thì KHÔNG tự tịch thu: đơn treo ở manual_review chờ duyệt tay.
  *     Tự động tịch thu khi hạ tầng của mình hỏng là kịch bản tệ nhất có thể có.
  *  3. Đã sở hữu mốc mà vẫn mua thì mất tiền (forfeited).
  *  4. GỬI XONG LÀ XONG. Không có bước đọc lại badge sau khi đơn hoàn tất — không
  *     tự động, không cả nút bấm tay, cho mọi loại badge. Gửi xong là báo khách.
- *
- * `measuredValue` LUÔN lấy từ reader, không bao giờ từ lời khai của khách. Khách
- * khai thấp để ăn nâng cấp miễn phí là bất khả thi vì kế hoạch gửi tính từ số
- * đọc được, không phải số khai.
+ *  5. Game badge (tiered) CHỈ BÁN CHO TÀI KHOẢN CÓ NITRO (2026-10-17). Tiến độ
+ *     luôn đọc bằng chính token khách — không reader, không lời khai. Discord
+ *     giấu badge bị ẩn với người ngoài, nên đọc hộ là đọc ra 0 rồi gửi thừa.
+ *     Đọc được hay không phải biết TRƯỚC khi hiện QR (check/quote).
  *
  * DB model `badge_orders` — xem _shape() ở cuối file.
  */
@@ -44,12 +44,12 @@ const ACCOUNTS = "badge_accounts";
 //
 // Badge tiered cần ~1 ngày để Discord dựng lại, nên mọi lượt đọc sớm hơn đều ra
 // số cũ và chấm nhầm một đơn đang tốt thành hỏng — đã xảy ra thật một lần, khách
-// nhận DM báo động vô cớ. Mỗi lượt đọc còn tốn một request từ acc reader, trong
-// khi khách đã nhận đủ thứ họ mua ngay lúc gửi xong. Biết chắc phải đợi một ngày
-// mới đọc được thì cái "xác minh" ấy không mua thêm thông tin gì.
+// nhận DM báo động vô cớ. Mỗi lượt đọc còn là thêm một request từ token khách,
+// trong khi khách đã nhận đủ thứ họ mua ngay lúc gửi xong. Biết chắc phải đợi một
+// ngày mới đọc được thì cái "xác minh" ấy không mua thêm thông tin gì.
 //
-// Cần đối chứng lúc tranh chấp thì đọc thủ công bằng badgeReader, không đi qua
-// đơn và không đổi trạng thái đơn.
+// Cần đối chứng lúc tranh chấp thì đọc thủ công bằng badgeReader.readSelf, không
+// đi qua đơn và không đổi trạng thái đơn.
 
 const bus = new EventEmitter();
 bus.setMaxListeners(0);
@@ -159,14 +159,36 @@ function _headroomToNextTier(badgeKey, currentValue) {
 
 // ── Báo giá (ArnTo-Auto gọi trước khi hiện QR) ───────────────────────────────────
 
+const NEEDS_NITRO = "Game Time và Game Variety chỉ bán cho tài khoản có Nitro";
+
 /**
- * Kiểm token + báo giá. KHÔNG dùng reader: khách có Nitro thì tự đọc bằng token
- * của chính họ, khách không Nitro thì chưa đọc gì cả — reader chỉ vào cuộc sau
- * khi tiền đã về. Nhờ vậy không ai spam được tài nguyên acc của bạn.
+ * Tiến độ game badge của chính khách, đọc bằng token của họ. Ném lỗi 400 với lý
+ * do khách đọc được khi không bán được: không Nitro, hoặc có Nitro mà Discord vẫn
+ * đóng danh sách badge (đã gặp thật). Đừng để chữ "token" lọt vào câu này — bot
+ * sẽ hiểu nhầm thành token chết.
+ */
+async function _readOwn(token, me) {
+    if (!me.hasNitro) throw _err(NEEDS_NITRO, 400, { needsNitro: true });
+    try {
+        return await badgeReader.readSelf(token, me.userId);
+    } catch (err) {
+        if (err.invalidToken) throw err;
+        throw _err(
+            "Discord không cho đọc tiến độ badge của tài khoản này nên hiện chưa mua được Game Time / Game Variety",
+            400,
+            { unreadable: true },
+        );
+    }
+}
+
+/**
+ * Kiểm token + báo giá. Game badge: đọc tiến độ bằng token khách ngay tại đây, và
+ * từ chối luôn nếu không đọc được — để không ai trả tiền cho một đơn mà panel
+ * không chạy được.
  */
 async function quote({ token, badgeKey, tierKey }) {
     const me = await badgeReader.checkNitro(token);
-    const q = await pricingStore.quote(badgeKey, tierKey, { hasNitro: me.hasNitro });
+    const q = await pricingStore.quote(badgeKey, tierKey);
 
     let current = null;
     let alreadyOwned = null;
@@ -181,18 +203,10 @@ async function quote({ token, badgeKey, tierKey }) {
         } catch {
             current = null;
         }
-    } else if (me.hasNitro) {
-        // Miễn phí với chúng ta: đọc bằng chính token khách.
-        try {
-            const read = await badgeReader.readSelf(token, me.userId);
-            const b = read.badges[badgeKey];
-            current = b?.value ?? null;
-            alreadyOwned =
-                current !== null && q.threshold !== null && current >= q.threshold;
-        } catch {
-            // Đọc hỏng không được chặn việc bán — reader thật sự chạy sau thanh toán.
-            current = null;
-        }
+    } else {
+        const read = await _readOwn(token, me);
+        current = read.badges[badgeKey]?.value ?? null;
+        alreadyOwned = current !== null && q.threshold !== null && current >= q.threshold;
     }
 
     return {
@@ -207,40 +221,32 @@ async function quote({ token, badgeKey, tierKey }) {
         threshold: q.threshold,
         unit: q.unit,
         price: q.price,
-        basePrice: q.basePrice,
-        multiplier: q.multiplier,
-        // null = chưa biết (khách không Nitro, badge tiered). Bot phải hỏi khách khai.
         currentValue: current,
         alreadyOwned,
-        // HypeSquad không cần khai gì: ta đọc được nhà hiện tại miễn phí.
-        needsDeclaration: q.kind === "tiered" && !me.hasNitro,
         forfeitOnWrongTier: q.forfeitOnWrongTier,
     };
 }
 
 /**
  * Kiểm token và lấy tình trạng tài khoản, KHÔNG cần biết định mua mốc nào.
- * Bot dùng cái này ngay sau khi khách dán token, để dựng bảng giá đã áp đúng hệ
- * số Nitro và đánh dấu sẵn những mốc khách đã sở hữu.
- *
- * Vẫn không đụng reader: khách có Nitro thì đọc bằng token của họ, khách không
- * Nitro thì trả values = null và bot sẽ hỏi khách tự khai.
+ * Bot dùng cái này ngay sau khi khách dán token, để ẩn những mốc khách đã sở hữu
+ * và ẩn hẳn game badge khi tài khoản không mua được (`tieredReason` nói vì sao).
  */
 async function check({ token }) {
     const me = await badgeReader.checkNitro(token);
     let values = null;
-    if (me.hasNitro) {
-        try {
-            const read = await badgeReader.readSelf(token, me.userId);
-            values = Object.fromEntries(
-                Object.entries(read.badges).map(([k, b]) => [
-                    k,
-                    { value: b.value, currentTier: b.currentTier, owned: b.owned },
-                ]),
-            );
-        } catch {
-            values = null;
-        }
+    let tieredReason = null;
+    try {
+        const read = await _readOwn(token, me);
+        values = Object.fromEntries(
+            Object.entries(read.badges).map(([k, b]) => [
+                k,
+                { value: b.value, currentTier: b.currentTier, owned: b.owned },
+            ]),
+        );
+    } catch (err) {
+        if (err.invalidToken) throw err;
+        tieredReason = err.message;
     }
 
     // HypeSquad đọc được cho MỌI khách, có Nitro hay không, vì profile không bị
@@ -258,26 +264,31 @@ async function check({ token }) {
         hasNitro: me.hasNitro,
         premiumType: me.premiumType,
         values,
+        // false → bot không bán Game Time / Game Variety cho tài khoản này.
+        tieredAvailable: values !== null,
+        tieredReason,
         hypesquadHouse,
-        // Chỉ badge tiered mới cần khai, và chỉ khi khách không có Nitro.
-        needsDeclaration: !me.hasNitro,
     };
 }
 
 // ── Tạo đơn (gọi sau khi thanh toán thành công) ──────────────────────────────────
 
+/**
+ * Tiền đã về rồi, nên ở đây KHÔNG chặn theo Nitro: khách mất Nitro giữa lúc báo
+ * giá và lúc trả tiền thì đơn vẫn được tạo, rồi _process đẩy sang manual_review
+ * để hoàn tiền — còn hơn một khoản tiền không có đơn nào trên panel.
+ */
 async function createOrder({
     token,
     badgeKey,
     tierKey,
-    declaredValue = null,
     ref = null,
     webhookUrl = null,
     webhookBotId = null,
     paymentId = null,
 }) {
     const me = await badgeReader.checkNitro(token);
-    const q = await pricingStore.quote(badgeKey, tierKey, { hasNitro: me.hasNitro });
+    const q = await pricingStore.quote(badgeKey, tierKey);
 
     const order = {
         orderId: crypto.randomUUID(),
@@ -298,7 +309,6 @@ async function createOrder({
         price: q.price,
         overshoot: q.overshoot,
         forfeitOnWrongTier: q.forfeitOnWrongTier,
-        declaredValue: Number.isFinite(declaredValue) ? declaredValue : null,
         measuredValue: null,
         measuredAt: null,
         measuredSource: null,
@@ -356,7 +366,7 @@ async function _process(orderId) {
 
     // ── Badge "choice" (HypeSquad): ăn ngay, đường đi ngắn hẳn ──────────────────
     // Không mốc → không cần đọc trước, không có chuyện mua nhầm mốc đã có (đổi
-    // nhà là hành vi hợp lệ kể cả khi đang có nhà khác), không cần reader, và
+    // nhà là hành vi hợp lệ kể cả khi đang có nhà khác), không cần Nitro, và
     // xác minh được ngay bằng chính token khách.
     if (order.kind === "choice") return _processChoice(orderId, order, token);
 
@@ -366,19 +376,17 @@ async function _process(orderId) {
 
     let read;
     try {
-        read = await badgeReader.read({
-            token,
-            userId: order.accountId,
-            hasNitro: order.hasNitro,
-            force: true,
-        });
+        // Hỏi lại Nitro ngay lúc chạy: khách có thể mất Nitro sau khi báo giá.
+        const me = await badgeReader.checkNitro(token);
+        read = await _readOwn(token, me);
     } catch (err) {
         if (err.invalidToken) {
             await _patch(orderId, { status: "token_dead", error: err.message });
             _dispatch(order, { type: "failed", status: "token_dead", error: err.message });
             return _shape(await _get(orderId));
         }
-        // Reader chết / rate-limit / 404: KHÔNG tịch thu, KHÔNG gửi. Treo chờ duyệt.
+        // Mất Nitro / Discord đóng danh sách badge / lỗi mạng: KHÔNG tịch thu,
+        // KHÔNG gửi. Treo chờ duyệt.
         await _patch(orderId, { status: "manual_review", error: err.message });
         _dispatch(order, { type: "manual_review", status: "manual_review", error: err.message });
         return _shape(await _get(orderId));
@@ -430,8 +438,7 @@ async function _process(orderId) {
             "game_variety",
             read.badges.game_variety?.value ?? 0,
         );
-        // Đọc bằng token của khách nên không tốn reader. Hỏng thì bỏ qua — lớp
-        // chặn cứng varietyHeadroom vẫn còn.
+        // Hỏng thì bỏ qua — lớp chặn cứng varietyHeadroom vẫn còn.
         playedGameIds = await badgeReader
             .readPlayedApplicationIds(token)
             .catch(() => []);
@@ -546,8 +553,8 @@ async function _process(orderId) {
  * HypeSquad: gọi API đổi nhà, rồi đọc lại profile để chắc chắn nó ăn.
  *
  * Xác minh bằng profile chứ không tin vào mã 204 trả về: đã thấy trường hợp API
- * nhận request nhưng badge không đổi. Đọc profile bằng chính token khách nên
- * không tốn reader, và badge `hypesquad_house_N` hiện với mọi người xem.
+ * nhận request nhưng badge không đổi. Đọc profile bằng chính token khách, và
+ * badge `hypesquad_house_N` hiện với mọi người xem — kể cả khách không Nitro.
  */
 async function _processChoice(orderId, order, token) {
     await _patch(orderId, { status: "sending", total: 1, sent: 0, error: null });
@@ -680,8 +687,6 @@ async function waitIdle({ timeoutMs = 90_000 } = {}) {
 const runningCount = () => running.size;
 
 function start() {
-    // Nâng cấp êm: .env cũ còn BADGE_READER_TOKEN thì đưa vào pool một lần.
-    badgeReader.importEnvReader().catch(() => {});
     restoreOrders().catch(() => {});
 }
 

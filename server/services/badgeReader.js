@@ -1,35 +1,24 @@
 /**
  * badgeReader.js
- * Đọc tiến độ badge của một tài khoản Discord.
+ * Đọc tiến độ badge của một tài khoản Discord — luôn bằng CHÍNH token của nó.
  *
- * Discord chỉ trả badge directory cho NGƯỜI XEM có Nitro — gate nằm ở phía người
- * gửi request, không phải phía chủ badge. Nên có hai đường đọc:
+ * Game Time / Game Variety chỉ bán cho tài khoản có Nitro, vì chỉ chủ tài khoản
+ * có Nitro mới đọc được tiến độ của mình:
  *
- *   readSelf(token)    — khách có Nitro: đọc bằng chính token của khách.
- *                        GET /users/@me/badges trả CẢ catalog kèm progress.current,
- *                        tức con số chính xác. Không tốn gì của reader.
- *   readOther(userId)  — khách không Nitro: đọc bằng token reader.
- *                        GET /users/{id}/badges chỉ trả badge ĐÃ SỞ HỮU, và
- *                        progress = null — con số phải parse từ info_label
- *                        ("9,844 games played"). Badge vắng mặt = chưa sở hữu.
+ *   GET /users/@me/badges   — Nitro: CẢ catalog kèm progress.current, tức con số
+ *                             chính xác, kể cả badge chủ acc đã ẩn (`hidden`).
+ *                             Không Nitro: 404, kể cả /users/@me/badges/{id}.
  *
- * Reader là tài sản không thay thế được (acc cá nhân có Nitro), nên ở đây:
- *   - chỉ đọc, không bao giờ ghi
- *   - cache theo userId để retry/gọi trùng không phát thêm request
- *   - đi TRỰC TIẾP, không qua proxy, trừ khi bật BADGE_READER_USE_PROXY=1.
- *     Một acc cá nhân có IP ổn định thì bình thường; IP nhảy loạn giữa các proxy
- *     mới là thứ trông giống bot.
+ * Không còn reader (acc Nitro đọc hộ người khác). Đo ngày 2026-10-17: người
+ * khác xem thì Discord bỏ hẳn trường `hidden`, nên badge bị ẩn trông y hệt badge
+ * chưa sở hữu — đọc hộ là đọc ra 0 rồi gửi thừa. Đọc bằng token chủ acc thì
+ * không dính chuyện ẩn badge hay Profile riêng tư.
  */
 
 const axios = require("axios");
-const db = require("../db");
 const { getBuildNumber } = require("./questEngine");
-const proxyPool = require("./proxyPool");
-const readerStore = require("./badgeReaderStore");
 const { BADGE_CATALOG } = require("./pricingStore");
 
-const CACHE_KEY = "badge_reads";
-const CACHE_TTL = 10 * 60_000; // đủ để gộp retry, đủ ngắn để không bao giờ báo số cũ
 const API = "https://discord.com/api/v9";
 
 const USER_AGENT =
@@ -81,8 +70,8 @@ async function _headers(token) {
         // locale là đổi dấu phân cách, và parse sẽ sai.
         "x-discord-locale": "en-US",
         "accept-language": "en-US",
-        // Client thật luôn gửi timezone. Reader là acc của ta ở VN dùng client
-        // tiếng Anh — một tổ hợp hoàn toàn bình thường.
+        // Client thật luôn gửi timezone. Khách của shop ở VN dùng client tiếng
+        // Anh — một tổ hợp hoàn toàn bình thường.
         "x-discord-timezone": "Asia/Ho_Chi_Minh",
         accept: "*/*",
         origin: "https://discord.com",
@@ -119,7 +108,10 @@ function _normalize(raw) {
     };
 }
 
-/** Badge nào không xuất hiện thì coi như chưa sở hữu (value 0). */
+/**
+ * Badge nào không xuất hiện thì coi như chưa sở hữu (value 0). Chỉ đúng vì ta
+ * luôn đọc bằng token của chủ acc: chủ acc thấy cả badge mình đã ẩn.
+ */
 function _fillMissing(found) {
     const out = {};
     for (const key of Object.keys(BADGE_CATALOG)) {
@@ -137,61 +129,40 @@ function _fillMissing(found) {
     return out;
 }
 
-async function _get(path, token, agent) {
+async function _get(path, token) {
     return axios.get(API + path, {
         headers: await _headers(token),
         timeout: 20_000,
         validateStatus: () => true,
-        ...(agent ? { httpsAgent: agent, proxy: false } : {}),
     });
 }
 
 /**
- * GET /users/{id}/badges với 1 lần retry.
+ * GET danh sách badge với 1 lần retry.
  *
  * Retry không phải cho lỗi mạng: lần gọi đầu tiên cho một user quan sát được là
  * TRẢ THIẾU badge (chỉ 3/7), lần gọi thứ hai mới đủ — có vẻ Discord dựng cache
- * catalog cho người xem ngay tại request đầu. Thiếu badge mà tưởng là "chưa sở
- * hữu" thì bot sẽ gửi thừa và khách được nâng cấp miễn phí, nên luôn gọi 2 lần
- * khi lần đầu không thấy badge nào ta quan tâm.
+ * catalog ngay tại request đầu. Thiếu badge mà tưởng là "chưa sở hữu" thì bot sẽ
+ * gửi thừa và khách được nâng cấp miễn phí, nên luôn gọi 2 lần khi lần đầu không
+ * thấy badge nào ta quan tâm.
  */
-async function _fetchBadges(path, token, agent) {
-    let res = await _get(path, token, agent);
+async function _fetchBadges(path, token) {
+    let res = await _get(path, token);
     if (res.status === 200 && Array.isArray(res.data?.badges)) {
         const hit = res.data.badges.some((b) => BY_ID[b.badge_id]);
         if (hit) return res;
         await new Promise((r) => setTimeout(r, 900));
-        const again = await _get(path, token, agent);
+        const again = await _get(path, token);
         if (again.status === 200 && Array.isArray(again.data?.badges)) return again;
     }
     return res;
 }
 
-// ── Cache ────────────────────────────────────────────────────────────────────────
-
-async function _cacheGet(userId) {
-    const all = (await db.get(CACHE_KEY)) || {};
-    const hit = all[userId];
-    if (!hit || Date.now() - hit.at > CACHE_TTL) return null;
-    return hit.result;
-}
-
-async function _cacheSet(userId, result) {
-    const all = (await db.get(CACHE_KEY)) || {};
-    // Dọn bản ghi hết hạn ngay lúc ghi, khỏi cần job riêng.
-    const now = Date.now();
-    for (const [k, v] of Object.entries(all)) {
-        if (now - v.at > CACHE_TTL) delete all[k];
-    }
-    all[userId] = { at: now, result };
-    await db.set(CACHE_KEY, all);
-}
-
 // ── Public ───────────────────────────────────────────────────────────────────────
 
-/** Token này có Nitro không (quyết định đọc bằng đường nào). */
+/** Token này có Nitro không — game badge chỉ bán khi có. */
 async function checkNitro(token) {
-    const res = await _get("/users/@me", token, null);
+    const res = await _get("/users/@me", token);
     if (res.status === 401 || res.status === 403) {
         throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
     }
@@ -208,21 +179,22 @@ async function checkNitro(token) {
 }
 
 /**
- * Đọc bằng chính token của khách. Miễn phí — không tốn lượt nào của reader.
+ * Đọc tiến độ bằng chính token của khách.
  *
- * 404 Ở ĐÂY KHÔNG CÓ NGHĨA LÀ "THIẾU NITRO". Đo được trên acc `taynhocuto1811`:
- * `premium_type = 2` (Nitro đầy đủ) mà `/users/@me/badges` vẫn 404, trong khi
- * reader đọc `/users/{id}/badges` của chính acc đó lại ra 200 với 5 badge.
- * Đổi sang đường dẫn có id thay cho `@me` cũng 404 — nên 404 là chuyện của
- * NGƯỜI XEM, không phải của đường dẫn hay của acc được xem.
- *
- * Vì không đoán được nguyên nhân, chỉ ném cờ `directoryClosed` để read() biết
- * mà vòng sang reader, thay vì treo đơn lại.
+ * 404 Ở ĐÂY KHÔNG CHỈ CÓ NGHĨA LÀ "THIẾU NITRO". Đo được trên acc `taynhocuto1811`:
+ * `premium_type = 2` (Nitro đầy đủ) mà `/users/@me/badges` vẫn 404. Đường dẫn có
+ * id (`/users/{id}/badges`) trả badge đã sở hữu, vẫn kèm progress khi chính chủ
+ * gọi (đo 2026-10-17), nên thử nó trước khi bỏ cuộc. Hai đường đều 404 thì ném
+ * cờ `directoryClosed` — tài khoản này không mua game badge được.
  */
 async function readSelf(token, userId) {
-    const res = await _fetchBadges("/users/@me/badges", token, null);
+    let res = await _fetchBadges("/users/@me/badges", token);
+    if (res.status === 404 && userId) res = await _fetchBadges(`/users/${userId}/badges`, token);
+    if (res.status === 401) {
+        throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
+    }
     if (res.status === 404) {
-        throw _err("Token này không mở được badge directory (HTTP 404)", 400, {
+        throw _err("Discord không mở danh sách badge cho tài khoản này (HTTP 404)", 400, {
             directoryClosed: true,
         });
     }
@@ -238,136 +210,11 @@ async function readSelf(token, userId) {
 }
 
 /**
- * Đọc badge của người khác bằng một reader trong pool.
- *
- * Đây là con đường DUY NHẤT tiêu tài nguyên acc của bạn — mỗi lần gọi là một
- * request phát ra từ acc thật. Chỉ gọi sau khi khách đã thanh toán.
- *
- * Một token hỏng KHÔNG được làm hỏng đơn hàng: reader chết hoặc bị rate-limit
- * thì đánh dấu rồi bốc reader khác trong pool thử lại. Chỉ khi hết sạch reader
- * khoẻ mới ném readerDown (→ đơn treo ở manual_review, không tịch thu).
- */
-async function readOther(userId, { force = false } = {}) {
-    if (!force) {
-        const cached = await _cacheGet(userId);
-        if (cached) return { ...cached, cached: true };
-    }
-
-    const tried = [];
-    let lastError = null;
-
-    // Nhiều nhất 3 reader cho một lượt đọc. Thử mãi chỉ tổ đốt cả pool khi sự cố
-    // nằm ở phía Discord chứ không phải ở token.
-    for (let attempt = 0; attempt < 3; attempt++) {
-        const reader = await readerStore.pick({ exclude: tried });
-        if (!reader) break;
-        tried.push(reader.id);
-
-        let lease = null;
-        let agent = null;
-        if (process.env.BADGE_READER_USE_PROXY === "1") {
-            lease = await proxyPool.acquire(`badge-reader-${reader.id}`, { feature: "badge" });
-            agent = lease.agent;
-        }
-
-        try {
-            const res = await _fetchBadges(`/users/${userId}/badges`, reader.token, agent);
-
-            if (res.status === 401 || res.status === 403) {
-                await readerStore.markFailure(reader.id, "dead", `HTTP ${res.status}`);
-                lastError = `Reader ${reader.username} đã chết`;
-                continue;
-            }
-            if (res.status === 429) {
-                await readerStore.markFailure(reader.id, "rate_limited", "HTTP 429");
-                lastError = `Reader ${reader.username} bị rate-limit`;
-                continue;
-            }
-            if (res.status === 404) {
-                // Nhập nhằng cố ý không đoán: có thể reader mất Nitro, có thể user
-                // id sai. Cả hai đều KHÔNG được hiểu thành "khách chưa có badge
-                // nào" — hiểu sai kiểu đó là tịch thu tiền oan hoặc gửi thừa.
-                // Thử reader khác: nếu cái nào cũng 404 thì mới là id sai thật.
-                await readerStore.markFailure(reader.id, "soft", "HTTP 404");
-                lastError =
-                    "Không đọc được badge — reader mất quyền hoặc user id không tồn tại";
-                continue;
-            }
-            if (res.status !== 200 || !Array.isArray(res.data?.badges)) {
-                await readerStore.markFailure(reader.id, "soft", `HTTP ${res.status}`);
-                lastError = `Đọc badge thất bại (HTTP ${res.status})`;
-                continue;
-            }
-
-            const found = {};
-            for (const raw of res.data.badges) {
-                const n = _normalize(raw);
-                if (n) found[n.key] = n;
-            }
-            const result = {
-                userId,
-                source: "reader",
-                readerId: reader.id,
-                badges: _fillMissing(found),
-            };
-            await readerStore.markUsed(reader.id);
-            await _cacheSet(userId, result);
-            return result;
-        } catch (err) {
-            await readerStore.markFailure(reader.id, "soft", err.message);
-            lastError = err.message;
-        } finally {
-            lease?.release();
-        }
-    }
-
-    if (tried.length) {
-        throw _err(`${lastError} (đã thử ${tried.length} reader)`, 503, { readerDown: true });
-    }
-    // pick() không trả gì ngay từ đầu: phân biệt "chưa thêm reader nào" với "có
-    // reader nhưng đang nghỉ / bị tắt" — hai cái cần hành động khác hẳn nhau.
-    const sum = await readerStore.summary();
-    throw _err(
-        sum.total
-            ? `Không còn reader nào khả dụng lúc này (${sum.total} reader, ${sum.healthy} khoẻ) — có thể đang nghỉ sau rate-limit`
-            : "Chưa thêm reader nào — vào trang Badges thêm một tài khoản có Nitro",
-        503,
-        { readerDown: true },
-    );
-}
-
-/**
- * Đọc theo đường rẻ nhất có thể: có token + có Nitro thì tự đọc, còn lại mới
- * nhờ reader.
- */
-async function read({ token = null, userId = null, hasNitro = null, force = false } = {}) {
-    if (token) {
-        const me = hasNitro === null ? await checkNitro(token) : { userId, hasNitro };
-        const id = me.userId ?? userId;
-        if (me.hasNitro) {
-            try {
-                return await readSelf(token, id);
-            } catch (err) {
-                // Có Nitro nhưng directory vẫn đóng. Không treo đơn vì chuyện đó:
-                // reader đọc được acc này, và khách thì đã trả tiền rồi. Tốn
-                // thêm một lượt reader là cái giá rẻ hơn hẳn một đơn kẹt.
-                if (!err.directoryClosed) throw err;
-                return readOther(id, { force });
-            }
-        }
-        return readOther(id, { force });
-    }
-    if (!userId) throw _err("Cần token hoặc userId", 400);
-    return readOther(userId, { force });
-}
-
-/**
  * Badge trên PROFILE (khác badge directory).
  *
  * `/users/{id}/profile` trả về mảng badge dạng chuỗi id (`hypesquad_house_3`,
- * `quest_completed`…). Với badge tiered thì endpoint này bị lọc theo Nitro của
- * người xem, nhưng `hypesquad_house_N` thì AI CŨNG THẤY — kể cả tài khoản không
- * Nitro tự xem chính mình. Nhờ vậy xác minh HypeSquad không tốn reader lần nào.
+ * `quest_completed`…). `hypesquad_house_N` thì AI CŨNG THẤY — kể cả tài khoản
+ * không Nitro tự xem chính mình. Nhờ vậy HypeSquad vẫn bán cho mọi khách.
  *
  * @returns {Promise<string[]>} danh sách badge id
  */
@@ -375,7 +222,6 @@ async function readProfileBadges(token, userId) {
     const res = await _get(
         `/users/${userId}/profile?with_mutual_guilds=false&with_mutual_friends=false`,
         token,
-        null,
     );
     if (res.status === 401 || res.status === 403) {
         throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
@@ -396,10 +242,10 @@ async function readProfileBadges(token, userId) {
  * game mới.
  *
  * Chỉ đọc được cho CHÍNH chủ token (không đọc được của người khác), và không
- * cần Nitro — nên miễn phí với mọi khách.
+ * cần Nitro.
  */
 async function readPlayedApplicationIds(token) {
-    const res = await _get("/users/@me/activities/statistics/applications", token, null);
+    const res = await _get("/users/@me/activities/statistics/applications", token);
     if (res.status === 401 || res.status === 403) {
         throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
     }
@@ -416,100 +262,11 @@ async function readHypeSquadHouse(token, userId) {
     return null;
 }
 
-// ── Quản lý pool reader ──────────────────────────────────────────────────────────
-
-/** Thêm một reader: xác thực token trước, rồi mới lưu. */
-async function addReader(token, label) {
-    const me = await checkNitro(token);
-    if (!me.hasNitro) {
-        throw _err(
-            `${me.username} không có Nitro — tài khoản này không đọc được badge của người khác`,
-            400,
-        );
-    }
-    return readerStore.add({
-        token,
-        label,
-        accountId: me.userId,
-        username: me.username,
-        premiumType: me.premiumType,
-    });
-}
-
-/** Thay token cho một reader đã có (token cũ hết hạn nhưng vẫn là acc đó). */
-async function replaceReaderToken(id, token) {
-    const me = await checkNitro(token);
-    return readerStore.replaceToken(id, {
-        token,
-        accountId: me.userId,
-        username: me.username,
-        premiumType: me.premiumType,
-    });
-}
-
-/** Hỏi lại Discord xem một reader còn dùng được không, rồi cập nhật trạng thái. */
-async function verifyReader(id) {
-    const token = await readerStore.getToken(id);
-    if (!token) throw _err("Reader not found", 404);
-    try {
-        const me = await checkNitro(token);
-        return readerStore.markChecked(id, {
-            ok: me.hasNitro,
-            premiumType: me.premiumType,
-            username: me.username,
-            error: me.hasNitro ? null : "The account no longer has Nitro",
-        });
-    } catch (err) {
-        return readerStore.markChecked(id, {
-            ok: false,
-            premiumType: null,
-            error: err.message,
-        });
-    }
-}
-
-/** Kiểm tra lại toàn bộ pool. */
-async function verifyAllReaders() {
-    const rows = await readerStore.list();
-    const out = [];
-    for (const r of rows) out.push(await verifyReader(r.id));
-    return out;
-}
-
-/** Tóm tắt pool cho trang admin và health check. */
-async function readerStatus() {
-    return { ...(await readerStore.summary()), readers: await readerStore.list() };
-}
-
-/**
- * Nếu .env còn BADGE_READER_TOKEN từ trước thì nhập nó vào pool một lần, để
- * không ai phải cấu hình lại tay khi nâng cấp. Sau đó pool là nguồn duy nhất.
- */
-async function importEnvReader() {
-    const token = process.env.BADGE_READER_TOKEN;
-    if (!token) return null;
-    const existing = await readerStore.list();
-    if (existing.length) return null;
-    try {
-        return await addReader(token, "Imported from .env");
-    } catch {
-        return null;
-    }
-}
-
 module.exports = {
     checkNitro,
+    readSelf,
     readProfileBadges,
     readPlayedApplicationIds,
     readHypeSquadHouse,
-    read,
-    readSelf,
-    readOther,
-    readerStatus,
-    addReader,
-    replaceReaderToken,
-    verifyReader,
-    verifyAllReaders,
-    importEnvReader,
     _parseInfoLabel,
 };

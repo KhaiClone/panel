@@ -115,7 +115,6 @@ const BADGE_CATALOG = {
 const DEFAULTS = {
     autoBadge: {
         enabled: false,           // bật khi đã đặt giá xong
-        nonNitroSurcharge: 1.5,   // hệ số nhân cho khách không Nitro
         overshoot: 1.1,           // bù tỷ lệ credit ~94% của /science
         forfeitOnWrongTier: true, // đã sở hữu mốc mà vẫn mua thì mất tiền
         badges: {},               // { [badgeKey]: { [tierKey]: { price, enabled } } }
@@ -139,8 +138,9 @@ function _mergeBadges(stored) {
             label: cat.label,
             unit: cat.unit,
             kind,
-            // Chỉ badge tiered mới phải đọc tiến độ, tức chỉ nó mới tiêu reader.
-            usesReader: kind === "tiered",
+            // Badge tiered phải đọc tiến độ, và chỉ chủ acc có Nitro mới đọc được
+            // tiến độ của mình — nên chỉ bán cho tài khoản có Nitro.
+            requiresNitro: kind === "tiered",
             supported,
             tiers: cat.tiers.map((t) => {
                 const s = storedTiers[t.key] ?? {};
@@ -161,10 +161,12 @@ function _mergeBadges(stored) {
 /** Toàn bộ bảng giá, đã điền mặc định. */
 async function getPricing() {
     const stored = (await db.get(KEY)) || {};
+    // nonNitroSurcharge cũ còn nằm trong DB từ hồi bán cho khách không Nitro.
+    const { nonNitroSurcharge: _retired, ...autoBadge } = stored.autoBadge ?? {};
     return {
         autoBadge: {
             ...DEFAULTS.autoBadge,
-            ...(stored.autoBadge ?? {}),
+            ...autoBadge,
             badges: _mergeBadges(stored.autoBadge),
         },
         autoQuest: { ...DEFAULTS.autoQuest, ...(stored.autoQuest ?? {}) },
@@ -216,6 +218,7 @@ async function updateFeature(feature, patch = {}) {
 
     const stored = (await db.get(KEY)) || {};
     const current = { ...DEFAULTS[feature], ...(stored[feature] ?? {}) };
+    delete current.nonNitroSurcharge; // đã gỡ: game badge chỉ bán cho Nitro
 
     for (const [k, v] of Object.entries(patch)) {
         if (!(k in DEFAULTS[feature]) || k === "badges") continue;
@@ -229,12 +232,6 @@ async function updateFeature(feature, patch = {}) {
             current[k] = num;
         }
     }
-    // Hệ số < 1 nghĩa là giảm giá cho khách không Nitro — hợp lệ. Nhưng 0 thì gần
-    // như chắc chắn là gõ nhầm, và nó biến mọi đơn thành miễn phí.
-    if (current.nonNitroSurcharge !== undefined && current.nonNitroSurcharge <= 0) {
-        throw _bad("nonNitroSurcharge must be greater than 0");
-    }
-
     // Giá từng mốc chỉ đi qua setTier. Vòng lặp trên đã bỏ qua `badges` trong
     // patch, nên giữ nguyên giá đã lưu ở đây — xoá nó đi là mất sạch bảng giá.
     if ("badges" in DEFAULTS[feature]) current.badges = stored[feature]?.badges ?? {};
@@ -244,10 +241,10 @@ async function updateFeature(feature, patch = {}) {
 }
 
 /**
- * Giá cuối cùng của một mốc, đã áp hệ số non-Nitro.
- * Giá phẳng: không phụ thuộc mốc khách đang có.
+ * Giá của một mốc. Giá phẳng: không phụ thuộc mốc khách đang có, cũng không phụ
+ * thuộc Nitro. Chuyện badge nào chỉ bán cho Nitro là việc của badgeService.
  */
-async function quote(badgeKey, tierKey, { hasNitro = true } = {}) {
+async function quote(badgeKey, tierKey) {
     const pricing = await getPricing();
     if (!pricing.autoBadge.enabled) throw _bad("Auto Badge đang tắt");
 
@@ -258,22 +255,17 @@ async function quote(badgeKey, tierKey, { hasNitro = true } = {}) {
     if (!tier) throw _bad(`Mốc không hợp lệ: ${tierKey}`);
     if (!tier.enabled) throw _bad(`Mốc "${tier.name}" hiện không bán`);
 
-    // Phụ phí non-Nitro chỉ áp cho badge PHẢI đọc bằng reader. HypeSquad không
-    // đụng reader lần nào nên tính thêm tiền là không có cơ sở.
-    const multiplier =
-        hasNitro || !badge.usesReader ? 1 : pricing.autoBadge.nonNitroSurcharge;
     return {
         badgeKey,
         badgeId: badge.badgeId,
+        label: badge.label,
         kind: badge.kind,
-        usesReader: badge.usesReader,
+        requiresNitro: badge.requiresNitro,
         unit: badge.unit,
         tier,
         threshold: tier.threshold ?? null,
         houseId: tier.houseId ?? null,
-        basePrice: tier.price,
-        multiplier,
-        price: Math.round(tier.price * multiplier),
+        price: tier.price,
         overshoot: pricing.autoBadge.overshoot,
         // Chỉ badge tiered mới có khái niệm "mua nhầm mốc đã có".
         forfeitOnWrongTier: badge.kind === "tiered" && pricing.autoBadge.forfeitOnWrongTier,

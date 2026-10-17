@@ -1,89 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const badgeService = require("./../services/badgeService");
-const badgeReader = require("./../services/badgeReader");
-const readerStore = require("./../services/badgeReaderStore");
 
 // Mounted at /api/badges behind authMiddleware (see index.js).
 // Trang /badges của panel: xem đơn, duyệt những đơn treo ở manual_review.
-
-// ── Pool reader ──────────────────────────────────────────────────────────────────
-// Khai báo trước /:orderId để "readers" không bị đọc thành một orderId.
-
-/** GET /api/badges/readers — pool + tóm tắt sức khoẻ */
-router.get("/readers", async (req, res, next) => {
-    try {
-        res.json(await badgeReader.readerStatus());
-    } catch (err) {
-        next(err);
-    }
-});
-
-/** POST /api/badges/readers { token, label } — thêm reader (token được xác thực trước) */
-router.post("/readers", async (req, res, next) => {
-    try {
-        const { token, label } = req.body || {};
-        if (!token) return res.status(400).json({ error: "token is required" });
-        res.status(201).json(await badgeReader.addReader(String(token).trim(), label));
-    } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
-        next(err);
-    }
-});
-
-/** PATCH /api/badges/readers/:id { label?, enabled?, token? } */
-router.patch("/readers/:id", async (req, res, next) => {
-    try {
-        if (req.body?.token) {
-            return res.json(
-                await badgeReader.replaceReaderToken(req.params.id, String(req.body.token).trim()),
-            );
-        }
-        res.json(await readerStore.update(req.params.id, req.body || {}));
-    } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
-        next(err);
-    }
-});
-
-/** POST /api/badges/readers/:id/verify — hỏi lại Discord xem còn dùng được không */
-router.post("/readers/:id/verify", async (req, res, next) => {
-    try {
-        res.json(await badgeReader.verifyReader(req.params.id));
-    } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
-        next(err);
-    }
-});
-
-/** POST /api/badges/readers/verify-all */
-router.post("/readers/verify-all", async (req, res, next) => {
-    try {
-        res.json(await badgeReader.verifyAllReaders());
-    } catch (err) {
-        next(err);
-    }
-});
-
-/** DELETE /api/badges/readers/:id */
-router.delete("/readers/:id", async (req, res, next) => {
-    try {
-        await readerStore.remove(req.params.id);
-        res.json({ ok: true });
-    } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
-        next(err);
-    }
-});
-
-/** GET /api/badges/reader — giữ lại cho tương thích, trả cùng dữ liệu với /readers */
-router.get("/reader", async (req, res, next) => {
-    try {
-        res.json(await badgeReader.readerStatus());
-    } catch (err) {
-        next(err);
-    }
-});
 
 /** GET /api/badges?status=&ref= — danh sách đơn */
 router.get("/", async (req, res, next) => {

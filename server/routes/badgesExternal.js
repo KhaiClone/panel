@@ -7,8 +7,9 @@ const badgeService = require("../services/badgeService");
 
 /**
  * POST /check { token }
- * Kiểm token + lấy tình trạng tài khoản trước khi dựng bảng giá. Khách có Nitro
- * thì trả luôn tiến độ hiện tại (đọc bằng token của chính họ). Không dùng reader.
+ * Kiểm token + lấy tình trạng tài khoản trước khi dựng bảng giá. Trả tiến độ
+ * hiện tại (đọc bằng token của chính khách), và `tieredAvailable: false` kèm
+ * `tieredReason` khi tài khoản không mua được game badge (không Nitro…).
  */
 router.post("/check", async (req, res, next) => {
     try {
@@ -23,9 +24,8 @@ router.post("/check", async (req, res, next) => {
 
 /**
  * POST /quote { token, badgeKey, tierKey }
- * Kiểm token + báo giá. KHÔNG dùng reader — khách có Nitro thì đọc bằng token của
- * chính họ, khách không Nitro thì trả needsDeclaration=true để bot hỏi khách khai.
- * Gọi bao nhiêu lần cũng không tốn tài nguyên acc reader.
+ * Kiểm token + báo giá. Game badge: 400 nếu tài khoản không có Nitro hoặc Discord
+ * không cho đọc tiến độ — bot không được hiện QR khi quote lỗi.
  */
 router.post("/quote", async (req, res, next) => {
     try {
@@ -41,9 +41,9 @@ router.post("/quote", async (req, res, next) => {
 });
 
 /**
- * POST /start { token, badgeKey, tierKey, declaredValue?, ref?, webhookUrl?, paymentId? }
- * CHỈ gọi sau khi tiền đã về. Panel đọc giá trị thật bằng reader, so với mốc đã
- * mua, rồi gửi /science. Trả về ngay, tiến độ đi qua webhook.
+ * POST /start { token, badgeKey, tierKey, ref?, webhookUrl?, paymentId? }
+ * CHỈ gọi sau khi tiền đã về. Panel đọc giá trị thật bằng token của khách, so
+ * với mốc đã mua, rồi gửi /science. Trả về ngay, tiến độ đi qua webhook.
  */
 router.post("/start", async (req, res, next) => {
     try {
@@ -51,13 +51,11 @@ router.post("/start", async (req, res, next) => {
         if (!token || !badgeKey || !tierKey) {
             return res.status(400).json({ error: "token, badgeKey, tierKey là bắt buộc" });
         }
-        const declared = Number(req.body.declaredValue);
         res.status(201).json(
             await badgeService.createOrder({
                 token,
                 badgeKey,
                 tierKey,
-                declaredValue: Number.isFinite(declared) ? declared : null,
                 ref: req.body.ref ?? null,
                 webhookUrl: req.body.webhookUrl ?? null,
                 // Key riêng của project → webhook đi theo project đó (callbackService).

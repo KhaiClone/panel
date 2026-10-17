@@ -7,7 +7,8 @@ import { DataTable, Field, Notice, PageHeader, StatusBadge, Toggle } from "../co
 //  Pricing — bảng giá của các hệ thống auto.
 //
 //  Giá phẳng theo mốc: mỗi mốc một giá cố định, KHÔNG phụ thuộc mốc khách đang
-//  có. Chỉ hệ số non-Nitro làm đổi con số cuối cùng.
+//  có, cũng không phụ thuộc Nitro. Game Time / Game Variety chỉ bán cho tài
+//  khoản có Nitro (panel đọc tiến độ bằng chính token khách).
 //
 //  Ngưỡng của từng mốc là thông số Discord, nằm cứng trong pricingStore.js và
 //  không sửa được ở đây — trang này chỉ đặt giá và bật/tắt.
@@ -75,7 +76,7 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                             {badge.kind === "choice"
                                 ? "pick an option · applies instantly"
                                 : `${UNIT_VI(badge.unit)} · shows up in ~1 day`}
-                            {badge.usesReader === false ? " · no reader needed" : ""}
+                            {badge.requiresNitro ? " · Nitro accounts only" : ""}
                         </span>
                     </div>
                     {!badge.supported && (
@@ -184,7 +185,6 @@ export default function PricingPage() {
         });
         setSettings({
             enabled: data.autoBadge.enabled,
-            nonNitroSurcharge: String(data.autoBadge.nonNitroSurcharge),
             overshoot: String(data.autoBadge.overshoot),
             forfeitOnWrongTier: data.autoBadge.forfeitOnWrongTier,
         });
@@ -246,7 +246,6 @@ export default function PricingPage() {
         try {
             const { data } = await api.patch("/pricing/autoBadge", {
                 enabled: settings.enabled,
-                nonNitroSurcharge: Number(settings.nonNitroSurcharge),
                 overshoot: Number(settings.overshoot),
                 forfeitOnWrongTier: settings.forfeitOnWrongTier,
             });
@@ -348,21 +347,6 @@ export default function PricingPage() {
                         marginBottom: 16,
                     }}
                 >
-                    <Field
-                        label="Non-Nitro multiplier"
-                        hint="Final price = tier price × this multiplier. 1 = no surcharge."
-                    >
-                        <input
-                            type="number"
-                            min="0.1"
-                            step="0.1"
-                            value={settings.nonNitroSurcharge}
-                            onChange={(e) =>
-                                setSettings((s) => ({ ...s, nonNitroSurcharge: e.target.value }))
-                            }
-                            className="input"
-                        />
-                    </Field>
                     <Field label="Overshoot multiplier" hint="Makes up for the ~94% credit rate of /science. 1.1 = send 10% extra.">
                         <input
                             type="number"
@@ -373,7 +357,7 @@ export default function PricingPage() {
                             className="input"
                         />
                     </Field>
-                    <Field label="Forfeit on a wrong declared tier" hint="Applies to buyers without Nitro, checked after payment.">
+                    <Field label="Forfeit on an owned tier" hint="Checked after payment: if the account already reached the tier, the payment is kept.">
                         <div style={{ paddingTop: 4 }}>
                             <Toggle
                                 checked={settings.forfeitOnWrongTier}

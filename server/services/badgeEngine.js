@@ -175,7 +175,7 @@ async function loadGames() {
  * Từ mốc đích + giá trị hiện tại → chính xác cần gửi những game nào, mỗi game
  * bao nhiêu giờ.
  *
- * `current` PHẢI là số reader đọc được, không phải lời khai của khách — đó là
+ * `current` PHẢI là số đọc được từ Discord, không phải lời khai của khách — đó là
  * chỗ bịt lỗ hổng khai thấp để ăn nâng cấp miễn phí.
  */
 async function planOrder({
@@ -188,7 +188,7 @@ async function planOrder({
     // Game Variety nhiều khả năng không nhích.
     playedGameIds = [],
     // Còn bao nhiêu game nữa mới chạm mốc Game Variety kế tiếp. badgeService
-    // tính từ chính giá trị reader đọc được. Infinity = không cần chặn.
+    // tính từ chính giá trị đọc được. Infinity = không cần chặn.
     varietyHeadroom = Infinity,
     spread = GAME_TIME_SPREAD,
 }) {

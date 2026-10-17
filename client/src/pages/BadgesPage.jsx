@@ -6,9 +6,10 @@ import { EmptyState, Notice, PageHeader, StatusBadge } from "../components/ui";
 // ─────────────────────────────────────────────────────────────────────────────
 //  Auto Badge — đơn hàng + duyệt tay.
 //
-//  Đơn treo ở "manual_review" là những đơn KHÔNG tự quyết được: reader chết,
-//  rate-limit, 404, hoặc panel restart giữa lúc đang gửi. Cố ý không tự động hoá
-//  chỗ này — tự tịch thu tiền khách khi hạ tầng của mình hỏng là kịch bản tệ nhất.
+//  Đơn treo ở "manual_review" là những đơn KHÔNG tự quyết được: khách mất Nitro
+//  sau khi trả tiền, Discord không cho đọc tiến độ, hoặc panel restart giữa lúc
+//  đang gửi. Cố ý không tự động hoá chỗ này — tự tịch thu tiền khách khi hạ tầng
+//  của mình hỏng là kịch bản tệ nhất.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS = {
@@ -92,8 +93,9 @@ function OrderRow({ order, onAction, busy }) {
                         · {fmtNum(order.price)}đ
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
-                        {order.kind === "choice" ? "current house" : "declared"}{" "}
-                        {order.kind === "choice" ? "" : fmtNum(order.declaredValue)} · measured{" "}
+                        {/* "declared" only exists on orders from before game badges went Nitro-only */}
+                        {order.declaredValue != null ? `declared ${fmtNum(order.declaredValue)} · ` : ""}
+                        measured{" "}
                         <strong style={{ color: order.measuredValue === null ? "var(--text-dim)" : "var(--text-muted)" }}>
                             {fmtNum(order.measuredValue)}
                         </strong>
@@ -139,189 +141,16 @@ function OrderRow({ order, onAction, busy }) {
     );
 }
 
-// ── Pool reader ──────────────────────────────────────────────────────────────────
-
-const READER_STATUS = {
-    ok:        { label: "Working",       tone: "success" },
-    no_nitro:  { label: "Nitro lapsed",  tone: "warning" },
-    dead:      { label: "Token dead",    tone: "danger" },
-    unknown:   { label: "Not checked",   tone: "neutral" },
-};
-
-function ReaderPool({ pool, onAdd, onAction, busy }) {
-    const { canEdit } = usePageAccess("badges");
-    const [token, setToken] = useState("");
-    const [label, setLabel] = useState("");
-    const [open, setOpen] = useState(false);
-
-    const submit = async () => {
-        if (!token.trim()) return;
-        await onAdd(token.trim(), label.trim());
-        setToken("");
-        setLabel("");
-    };
-
-    const readers = pool?.readers ?? [];
-
-    return (
-        <Card style={{ marginBottom: 16 }}>
-            <div
-                style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    gap: 10, flexWrap: "wrap", marginBottom: readers.length || open ? 14 : 0,
-                }}
-            >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span className="status-dot" style={{ background: pool?.ok ? "var(--success)" : "var(--danger)" }} />
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>Reader pool</span>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                        {pool
-                            ? `${pool.healthy}/${pool.total} usable`
-                            : "loading…"}
-                        {pool && !pool.ok ? ` — ${pool.reason}` : ""}
-                    </span>
-                </div>
-                {canEdit && (
-                    <div style={{ display: "flex", gap: 6 }}>
-                        <Btn disabled={busy || !readers.length} onClick={() => onAction(null, "verify-all")}>
-                            Check all
-                        </Btn>
-                        <Btn tone="primary" onClick={() => setOpen((v) => !v)}>
-                            {open ? "Close" : "Add reader"}
-                        </Btn>
-                    </div>
-                )}
-            </div>
-
-            {!pool?.ok && (
-                <div style={{ fontSize: 11, color: "var(--warning)", marginBottom: 12 }}>
-                    No healthy reader left — every order from a buyer <strong>without Nitro</strong> will wait in
-                    "Needs review". Orders from buyers with Nitro still run normally (read with their own token).
-                </div>
-            )}
-
-            {open && (
-                <div
-                    style={{
-                        display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap",
-                        alignItems: "flex-end",
-                    }}
-                >
-                    <div style={{ flex: "2 1 280px" }}>
-                        <label className="label">
-                            Token (the account must have Nitro)
-                        </label>
-                        <input
-                            className="input"
-                            type="password"
-                            value={token}
-                            onChange={(e) => setToken(e.target.value)}
-                            placeholder="Paste a Discord token"
-                        />
-                    </div>
-                    <div style={{ flex: "1 1 140px" }}>
-                        <label className="label">
-                            Label (optional)
-                        </label>
-                        <input
-                            className="input"
-                            value={label}
-                            onChange={(e) => setLabel(e.target.value)}
-                            placeholder="e.g. main account"
-                        />
-                    </div>
-                    <Btn tone="primary" disabled={busy || !token.trim()} onClick={submit}>
-                        Add
-                    </Btn>
-                </div>
-            )}
-
-            {readers.map((r) => {
-                const st = READER_STATUS[r.status] ?? READER_STATUS.unknown;
-                return (
-                    <div
-                        key={r.id}
-                        style={{
-                            borderTop: "1px solid var(--border-light)", padding: "10px 0",
-                            display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
-                        }}
-                    >
-                        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>
-                                {r.label}
-                                <span
-                                    style={{
-                                        color: "var(--text-dim)", fontWeight: 400,
-                                        marginLeft: 6, fontSize: 11,
-                                    }}
-                                >
-                                    {r.username} · {r.accountId}
-                                </span>
-                            </div>
-                            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
-                                {r.uses ?? 0} reads · {r.failures ?? 0} failures
-                                {r.lastUsedAt ? ` · last used ${fmtTime(r.lastUsedAt)}` : ""}
-                            </div>
-                            {r.lastError && (
-                                <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 2 }}>
-                                    {r.lastError}
-                                </div>
-                            )}
-                        </div>
-                        <div style={{ flex: "0 0 110px", textAlign: "right" }}>
-                            <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
-                            {r.onCooldown && (
-                                <div style={{ fontSize: 11, color: "var(--warning)" }}>
-                                    cooling down until {fmtTime(r.cooldownUntil)}
-                                </div>
-                            )}
-                            {!r.enabled && (
-                                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>disabled</div>
-                            )}
-                        </div>
-                        {canEdit && <div style={{ display: "flex", gap: 6 }}>
-                            <Btn disabled={busy} onClick={() => onAction(r.id, "verify")}>
-                                Check
-                            </Btn>
-                            <Btn
-                                disabled={busy}
-                                onClick={() => onAction(r.id, r.enabled ? "disable" : "enable")}
-                            >
-                                {r.enabled ? "Disable" : "Enable"}
-                            </Btn>
-                            <Btn tone="danger" disabled={busy} onClick={() => onAction(r.id, "remove")}>
-                                Remove
-                            </Btn>
-                        </div>}
-                    </div>
-                );
-            })}
-
-            {!readers.length && !open && (
-                <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    No reader yet. Add at least one account with Nitro to read the badge progress of
-                    buyers without Nitro.
-                </div>
-            )}
-        </Card>
-    );
-}
-
 export default function BadgesPage() {
     const [orders, setOrders] = useState([]);
-    const [pool, setPool] = useState(null);
     const [filter, setFilter] = useState("");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
 
     const load = useCallback(async () => {
         try {
-            const [o, r] = await Promise.all([
-                api.get("/badges", { params: filter ? { status: filter } : {} }),
-                api.get("/badges/readers"),
-            ]);
-            setOrders(o.data);
-            setPool(r.data);
+            const { data } = await api.get("/badges", { params: filter ? { status: filter } : {} });
+            setOrders(data);
             setError("");
         } catch (err) {
             setError(err.response?.data?.error || err.message);
@@ -347,36 +176,6 @@ export default function BadgesPage() {
         }
     };
 
-    const onReaderAction = async (id, action) => {
-        setBusy(true);
-        setError("");
-        try {
-            if (action === "verify-all") await api.post("/badges/readers/verify-all");
-            else if (action === "verify") await api.post(`/badges/readers/${id}/verify`);
-            else if (action === "enable") await api.patch(`/badges/readers/${id}`, { enabled: true });
-            else if (action === "disable") await api.patch(`/badges/readers/${id}`, { enabled: false });
-            else if (action === "remove") await api.delete(`/badges/readers/${id}`);
-            await load();
-        } catch (err) {
-            setError(err.response?.data?.error || err.message);
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    const onReaderAdd = async (token, label) => {
-        setBusy(true);
-        setError("");
-        try {
-            await api.post("/badges/readers", { token, label });
-            await load();
-        } catch (err) {
-            setError(err.response?.data?.error || err.message);
-        } finally {
-            setBusy(false);
-        }
-    };
-
     const pending = orders.filter((o) => o.status === "manual_review").length;
 
     return (
@@ -384,7 +183,7 @@ export default function BadgesPage() {
             <div style={{ marginBottom: 20 }}>
                 <PageHeader
                     title="Auto Badge"
-                    description={'Badge orders. Payment happens on ArnTo-Auto; the panel reads the real progress, then sends — once sent, the order is done. Press "Verify now" if you need to cross-check.'}
+                    description="Badge orders. Payment happens on ArnTo-Auto. Game Time and Game Variety are sold to Nitro accounts only: the panel reads the buyer's progress with their own token, then sends — once sent, the order is done."
                 />
             </div>
 
@@ -393,9 +192,6 @@ export default function BadgesPage() {
                     <Notice tone="danger">{error}</Notice>
                 </div>
             )}
-
-            {/* Reader pool — with no healthy reader the panel is blind to buyers without Nitro, so it sits at the top */}
-            <ReaderPool pool={pool} onAdd={onReaderAdd} onAction={onReaderAction} busy={busy} />
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                 {["", "manual_review", "sent", "forfeited"].map((s) => (
