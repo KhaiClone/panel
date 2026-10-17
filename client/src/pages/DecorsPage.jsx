@@ -58,7 +58,7 @@ const tierPrice = (d, w) => (w.key === "gift" && d.type === 1000 ? d.tierPrices?
 const originalOf = (d, w) => (w.key === "loginWithoutNitro" ? d.prices?.withoutNitro : w.key === "gift" && d.type === 1000 ? null : d.prices?.withNitro);
 
 /**
- * `from` = the card's "Từ" price, the decor site's rule: Login with Nitro while
+ * `from` = the card's "From" price, the decor site's rule: Login with Nitro while
  * it is sold, else the cheapest way still sold (0 = none of them has a price).
  */
 const saleState = (d) => {
@@ -285,7 +285,7 @@ function DecorModal({ decor, categories, saving, onClose, onToggle, onTheme, onD
                             })}
                         </div>
                         <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "6px 0 0" }}>
-                            A way that is off shows “Không bán” on the decor site and in the bot's /decor-find.
+                            A way that is off shows as not for sale on the decor site and in the bot's /decor-find.
                         </p>
 
                         {decor.type === 1000 && decor.items?.length > 0 && (

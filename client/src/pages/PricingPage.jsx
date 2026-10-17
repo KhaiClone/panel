@@ -4,14 +4,15 @@ import { usePageAccess } from "../context/AuthContext";
 import { DataTable, Field, Notice, PageHeader, StatusBadge, Toggle } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Pricing — bảng giá của các hệ thống auto.
+//  Pricing — the price list of the auto systems.
 //
-//  Giá phẳng theo mốc: mỗi mốc một giá cố định, KHÔNG phụ thuộc mốc khách đang
-//  có, cũng không phụ thuộc Nitro. Game Time / Game Variety chỉ bán cho tài
-//  khoản có Nitro (panel đọc tiến độ bằng chính token khách).
+//  Flat prices per tier: each tier has one fixed price that does NOT depend on
+//  the tier the customer already has, nor on Nitro. Game Time / Game Variety are
+//  sold to Nitro accounts only (the panel reads progress with the customer's own
+//  token).
 //
-//  Ngưỡng của từng mốc là thông số Discord, nằm cứng trong pricingStore.js và
-//  không sửa được ở đây — trang này chỉ đặt giá và bật/tắt.
+//  Each tier's threshold is a Discord value, hard-coded in pricingStore.js and
+//  not editable here — this page only sets prices and turns them on or off.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RARITY_COLOR = {
@@ -21,13 +22,13 @@ const RARITY_COLOR = {
     mythic: "var(--warning)",
 };
 
-const UNIT_VI = (u) => (u === "hours" ? "hours" : u === "house" ? "house" : "games");
+const unitLabel = (u) => (u === "hours" ? "hours" : u === "house" ? "house" : "games");
 
-// Badge "choice" (HypeSquad) không có ngưỡng — đừng in ra NaN.
+// A "choice" badge (HypeSquad) has no threshold — never print NaN.
 const fmtUnit = (n, unit) =>
     n === null || n === undefined
         ? "—"
-        : `${Number(n).toLocaleString("vi-VN")} ${UNIT_VI(unit)}`;
+        : `${Number(n).toLocaleString("vi-VN")} ${unitLabel(unit)}`;
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                             badge_id {badge.badgeId} ·{" "}
                             {badge.kind === "choice"
                                 ? "pick an option · applies instantly"
-                                : `${UNIT_VI(badge.unit)} · shows up in ~1 day`}
+                                : `${unitLabel(badge.unit)} · shows up in ~1 day`}
                             {badge.requiresNitro ? " · Nitro accounts only" : ""}
                         </span>
                     </div>

@@ -7,7 +7,7 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, Toggle }
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ticket Menus — what a customer picks in a new ArnTo-Shop ticket: a service
 //  (which category the ticket moves to, how the seller is pinged), then one of
-//  its products or "Khác" (the channel's name, the seller). /menu on ArnTo-Shop
+//  its products or "Other" (the channel's name, the seller). /menu on ArnTo-Shop
 //  edits the same menus. The logic lives in server/services/ticketMenuService.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ function ServiceForm({ initial, isNew, pingVars, onSave, saving }) {
         >
             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <Field label="Name in the menu">
-                    <input className="input" value={f.label} onChange={set("label")} maxLength={100} placeholder="Mua Sắm" autoFocus={isNew} required />
+                    <input className="input" value={f.label} onChange={set("label")} maxLength={100} placeholder="Shopping" autoFocus={isNew} required />
                 </Field>
                 <Field label="Key" hint={isNew ? "a-z, 0-9, - and _ — cannot change later" : "Fixed"}>
                     <input className="input mono" value={f.key} onChange={set("key")} maxLength={32} placeholder="buy" disabled={!isNew} required />
@@ -74,7 +74,7 @@ function ServiceForm({ initial, isNew, pingVars, onSave, saving }) {
                 <Field label="Emoji" hint="A Unicode emoji, or a server emoji: <:name:id>">
                     <input className="input mono" value={f.emoji} onChange={set("emoji")} placeholder="🛒" />
                 </Field>
-                <Field label="Category to move the ticket to" hint="Empty: the seller's own category (Khác & sellers)">
+                <Field label="Category to move the ticket to" hint="Empty: the seller's own category (Other & sellers)">
                     <input className="input mono" value={f.category} onChange={set("category")} placeholder="1397481540799168522" />
                 </Field>
             </div>
@@ -112,7 +112,7 @@ function ProductForm({ initial, isNew, services, sellers, onSave, saving }) {
         >
             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <Field label="Name">
-                    <input className="input" value={f.name} onChange={set("name")} maxLength={100} placeholder="Nitro Boost 1 tháng" autoFocus={isNew} required />
+                    <input className="input" value={f.name} onChange={set("name")} maxLength={100} placeholder="Nitro Boost 1 month" autoFocus={isNew} required />
                 </Field>
                 <Field label="Emoji" hint="A Unicode emoji, or a server emoji: <:name:id>">
                     <input className="input mono" value={f.emoji} onChange={set("emoji")} placeholder="🛒" />
@@ -181,7 +181,7 @@ function SettingsForm({ initial, onSave, saving }) {
         >
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 500 }}>
-                    <Toggle checked={other.enabled} onChange={setO("enabled")} /> "Khác" — last option of every product menu
+                    <Toggle checked={other.enabled} onChange={setO("enabled")} /> "Other" — the last option of every product menu
                 </label>
                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, opacity: other.enabled ? 1 : 0.5 }}>
                     <Field label="Name">
@@ -387,7 +387,7 @@ export default function TicketMenusPage() {
                 actions={canEdit && (
                     <>
                         <button className="btn-ghost" disabled={!data} onClick={() => setModal({ kind: "settings" })}>
-                            <Icon name="settings" /> Khác &amp; sellers
+                            <Icon name="settings" /> Other &amp; sellers
                         </button>
                         <button className="btn-ghost" disabled={!data} onClick={() => setModal({ kind: "product" })}>
                             <Icon name="plus" /> New product
@@ -544,13 +544,13 @@ export default function TicketMenusPage() {
                                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>1. Choose a service</div>
                                             <SelectPreview
-                                                placeholder="Chọn dịch vụ"
+                                                placeholder="Choose a service"
                                                 options={services.filter((s) => s.enabled).map((s) => ({ label: s.label, description: s.description, emoji: s.emoji }))}
                                             />
                                         </div>
                                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                             <div style={{ fontSize: 12, color: "var(--text-muted)" }}>2. After picking “{service.label}”</div>
-                                            <SelectPreview placeholder="Chọn sản phẩm" options={previewOptions} />
+                                            <SelectPreview placeholder="Choose a product" options={previewOptions} />
                                         </div>
                                     </div>
                                 )}
@@ -586,7 +586,7 @@ export default function TicketMenusPage() {
                 </Modal>
             )}
             {modal?.kind === "settings" && (
-                <Modal title="Khác & sellers" onClose={() => setModal(null)} width={640}>
+                <Modal title="Other & sellers" onClose={() => setModal(null)} width={640}>
                     <SettingsForm initial={data} onSave={(body) => run(() => api.put("/ticket-menus/settings", body))} saving={saving} />
                 </Modal>
             )}

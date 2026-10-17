@@ -420,7 +420,7 @@ export default function DecorPrices({ onChange }) {
                     title={`Remove the ${removing.type} price for ${money(removing.original)}?`}
                     message={
                         removing.used > 0
-                            ? `${removing.used} ${removing.type === "gift-bundle" ? "bundle(s)" : "decor(s)"} still use this tier: they show 0đ / "Chưa có mốc giá" until you set a new price. The row stays in the table for as long as they use it.`
+                            ? `${removing.used} ${removing.type === "gift-bundle" ? "bundle(s)" : "decor(s)"} still use this tier: they show 0đ / "no price tier yet" until you set a new price. The row stays in the table for as long as they use it.`
                             : "Nothing uses this tier any more — the row disappears from the table."
                     }
                     confirmText="Remove"

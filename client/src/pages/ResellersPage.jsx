@@ -5,13 +5,13 @@ import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  CTV (cộng tác viên) — ArnTo-Shop's resellers: they buy at the CTV price and
+//  Resellers — ArnTo-Shop's resellers: they buy at the reseller price and
 //  sell on in their own shops, paying order by order like any buyer.
 //
-//  Adding one here has ArnTo-Shop give them the CTV role and DM them the welcome
+//  Adding one here has ArnTo-Shop give them the Reseller role and DM them the welcome
 //  text; removing takes the role back. Their orders are not kept here: they are
 //  read from the shop's orders, which the shop stamps when the buyer holds the
-//  CTV role. The CTV prices are the owner's price channel on Discord. The logic
+//  Reseller role. The reseller prices are the owner's price channel on Discord. The logic
 //  lives in server/services/resellerService.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -70,9 +70,9 @@ const discordText = (d, what) => {
     if (d.queued) return { tone: "success", text: `Saved. ArnTo-Shop will ${what} as soon as it reads the bus.` };
     const r = d.result || {};
     const parts = [];
-    if (r.role === "added") parts.push("CTV role given");
-    else if (r.role === "had") parts.push("they already had the CTV role");
-    else if (r.role === "removed") parts.push("CTV role taken back");
+    if (r.role === "added") parts.push("Reseller role given");
+    else if (r.role === "had") parts.push("they already had the Reseller role");
+    else if (r.role === "removed") parts.push("Reseller role taken back");
     else if (r.role === "not_member") parts.push("they are not in the shop server — no role");
     else if (r.role) parts.push(`role: ${r.role}`);
     if (r.dm === "sent") parts.push("DM sent");
@@ -111,10 +111,10 @@ function ResellerModal({ initial, isNew, onClose, onDone }) {
     };
 
     return (
-        <Modal title={isNew ? "New CTV" : `Edit ${initial.userTag || initial.userId}`} onClose={onClose} width={480}>
+        <Modal title={isNew ? "New reseller" : `Edit ${initial.userTag || initial.userId}`} onClose={onClose} width={480}>
             <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {isNew && (
-                    <Field label="Discord user ID" hint="ArnTo-Shop gives them the CTV role and DMs them the welcome text (DM texts button).">
+                    <Field label="Discord user ID" hint="ArnTo-Shop gives them the Reseller role and DMs them the welcome text (DM texts button).">
                         <input className="input mono" value={d.userId} onChange={(e) => set({ userId: e.target.value })} placeholder="953525563878948914" autoFocus />
                     </Field>
                 )}
@@ -125,12 +125,12 @@ function ResellerModal({ initial, isNew, onClose, onDone }) {
                     <input className="input" value={d.note} maxLength={300} onChange={(e) => set({ note: e.target.value })} />
                 </Field>
                 {!isNew && (
-                    <Field label="CTV since" hint="Orders opened before the shop marked CTV orders count from this day. For CTVs copied from the role it is the day they joined the server — correct it if you know better.">
+                    <Field label="Reseller since" hint="Orders opened before the shop marked reseller orders count from this day. For resellers copied from the role it is the day they joined the server — correct it if you know better.">
                         <input className="input" type="date" value={d.since} max={toDay(Date.now())} onChange={(e) => set({ since: e.target.value })} style={{ width: "auto" }} />
                     </Field>
                 )}
                 {error && <Notice tone="danger">{error}</Notice>}
-                <Actions onCancel={onClose} busy={busy} label={isNew ? "Add CTV" : "Save"} disabled={isNew ? !SNOWFLAKE.test(d.userId.trim()) : !d.since} />
+                <Actions onCancel={onClose} busy={busy} label={isNew ? "Add reseller" : "Save"} disabled={isNew ? !SNOWFLAKE.test(d.userId.trim()) : !d.since} />
             </form>
         </Modal>
     );
@@ -170,9 +170,9 @@ function TextsModal({ onClose, onDone }) {
                 <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
                         Variables: {d.vars.map((v) => <code key={v} className="mono" style={{ marginRight: 6 }}>{v}</code>)}— <code className="mono">{"{user}"}</code> is a mention. Discord markdown and{" "}
-                        <code className="mono">{"<#channel>"}</code> links work (point them at your CTV price channel). Empty = the default text.
+                        <code className="mono">{"<#channel>"}</code> links work (point them at your reseller price channel). Empty = the default text.
                     </p>
-                    <Field label="Welcome — DMed when they become a CTV">
+                    <Field label="Welcome — DMed when they become a reseller">
                         <textarea className="input" rows={10} value={d.welcome} maxLength={1900} onChange={(e) => setD({ ...d, welcome: e.target.value })} style={{ resize: "vertical", fontSize: 13, lineHeight: 1.5 }} />
                     </Field>
                     <Field label="Farewell — DMed when they are removed">
@@ -195,16 +195,16 @@ function SyncModal({ result, nameOf, onClose }) {
         );
     const nothing = !result.given?.length && !result.missing?.length && !result.extra?.length && !result.failed?.length;
     return (
-        <Modal title="CTV role check" onClose={onClose} width={520}>
+        <Modal title="Reseller role check" onClose={onClose} width={520}>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {nothing && <Notice tone="success">Every CTV has the role, and nobody else does.</Notice>}
+                {nothing && <Notice tone="success">Every reseller has the role, and nobody else does.</Notice>}
                 {line("Role given to", result.given, "success")}
                 {line("Already had it", result.had)}
                 {line("Not in the shop server", result.missing, "warning")}
                 {line("Could not give it", result.failed, "danger")}
                 {result.extra?.length > 0 && (
                     <>
-                        {line("Hold the role but are not CTVs", result.extra, "warning")}
+                        {line("Hold the role but are not resellers", result.extra, "warning")}
                         <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>Left as they are — add them here, or take the role away on Discord.</p>
                     </>
                 )}
@@ -257,12 +257,12 @@ function Pager({ page, pages, pageSize, total, onPage, onPageSize }) {
     );
 }
 
-/** The CTV orders, one page at a time from the server — never all of them at once. */
+/** The reseller orders, one page at a time from the server — never all of them at once. */
 function Orders({ userId, userLabel, month, onClear, refreshKey }) {
     const [result, setResult] = useState(null); // { total, page, pageSize, pages, orders }
     const [allMonths, setAllMonths] = useState(false);
     const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
-    // The page belongs to one filter: another CTV, month or page size starts at page 1.
+    // The page belongs to one filter: another reseller, month or page size starts at page 1.
     const filter = `${userId || ""}|${allMonths ? "all" : month}|${pageSize}`;
     const [at, setAt] = useState({ filter, page: 1 });
     const page = at.filter === filter ? at.page : 1;
@@ -286,9 +286,9 @@ function Orders({ userId, userLabel, month, onClear, refreshKey }) {
     return (
         <div className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>CTV orders</h2>
+                <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Reseller orders</h2>
                 {userId && (
-                    <button className="chip active" title="Show every CTV's orders" onClick={onClear}>
+                    <button className="chip active" title="Show every reseller's orders" onClick={onClear}>
                         {userLabel || userId} <Icon name="x" size={12} />
                     </button>
                 )}
@@ -305,11 +305,11 @@ function Orders({ userId, userLabel, month, onClear, refreshKey }) {
             {!result && loading ? (
                 <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</p>
             ) : !rows.length ? (
-                <EmptyState compact icon="orders" title="No CTV orders" description={allMonths ? undefined : "Try All time, or another month."} />
+                <EmptyState compact icon="orders" title="No reseller orders" description={allMonths ? undefined : "Try All time, or another month."} />
             ) : (
                 // The current page stays on screen, dimmed, while the next one loads.
                 <div style={{ opacity: loading ? 0.6 : 1, transition: "opacity 120ms" }}>
-                    <DataTable minWidth={760} columns={["When", "CTV", "Order", "Seller", { label: "Price", align: "right" }, "Status"]}>
+                    <DataTable minWidth={760} columns={["When", "Reseller", "Order", "Seller", { label: "Price", align: "right" }, "Status"]}>
                         {rows.map((o) => {
                             const s = st(o.status);
                             return (
@@ -322,7 +322,7 @@ function Orders({ userId, userLabel, month, onClear, refreshKey }) {
                                         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</div>
                                         <div className="mono cell-sub">
                                             {o.orderId}
-                                            {!o.stamped && <span title="Opened before the shop marked CTV orders — counted because it falls after “CTV since”"> · by date</span>}
+                                            {!o.stamped && <span title="Opened before the shop marked reseller orders — counted because it falls after “Reseller since”"> · by date</span>}
                                         </div>
                                     </td>
                                     <td className="nowrap top">{o.sellerName}</td>
@@ -377,7 +377,7 @@ export default function ResellersPage() {
             setData(list.data);
             setError("");
         } catch (err) {
-            setError(errMsg(err, "Could not load the CTVs"));
+            setError(errMsg(err, "Could not load the resellers"));
         } finally {
             setLoading(false);
         }
@@ -428,7 +428,7 @@ export default function ResellersPage() {
     const share = t && t.shopRevenue > 0 ? Math.round((t.revenue / t.shopRevenue) * 1000) / 10 : null;
 
     const table = (list) => (
-        <DataTable minWidth={900} columns={["CTV", "Their shop", { label: monthName(data.month), align: "right" }, { label: "All time", align: "right" }, "Last order", "CTV since", ""]}>
+        <DataTable minWidth={900} columns={["Reseller", "Their shop", { label: monthName(data.month), align: "right" }, { label: "All time", align: "right" }, "Last order", "Reseller since", ""]}>
             {list.map((r) => (
                 <tr key={r.userId} style={{ opacity: r.active ? 1 : 0.6 }}>
                     <td className="nowrap top">
@@ -476,7 +476,7 @@ export default function ResellersPage() {
                                 Edit
                             </button>}
                             {!canEdit ? null : r.active ? (
-                                <button className="btn-ghost btn-sm is-danger" title="Remove — the CTV role is taken back" onClick={() => setConfirmRemove(r)}>
+                                <button className="btn-ghost btn-sm is-danger" title="Remove — the Reseller role is taken back" onClick={() => setConfirmRemove(r)}>
                                     Remove
                                 </button>
                             ) : (
@@ -494,18 +494,18 @@ export default function ResellersPage() {
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 18 }}>
             <PageHeader
-                title="CTV"
-                description="Resellers (cộng tác viên): they buy at the CTV price and sell on in their own shops. Adding one gives the CTV role."
+                title="Resellers"
+                description="ArnTo-Shop's resellers: they buy at the reseller price and sell on in their own shops. Adding one gives the Reseller role."
                 actions={canEdit && (
                     <>
-                        <button className="btn-ghost" disabled={syncing || !status?.handler} onClick={sync} title="Give the role to every CTV who lacks it; list who holds it without being one">
+                        <button className="btn-ghost" disabled={syncing || !status?.handler} onClick={sync} title="Give the role to every reseller who lacks it; list who holds it without being one">
                             <Icon name="shieldCheck" /> {syncing ? "Checking…" : "Check roles"}
                         </button>
                         <button className="btn-ghost" onClick={() => setModal({ type: "texts" })}>
                             <Icon name="message" /> DM texts
                         </button>
                         <button className="btn-primary" onClick={() => setModal({ type: "new" })}>
-                            <Icon name="plus" /> New CTV
+                            <Icon name="plus" /> New reseller
                         </button>
                     </>
                 )}
@@ -514,7 +514,7 @@ export default function ResellersPage() {
             {error && <Notice tone="danger">{error}</Notice>}
             {status && !status.imported && (
                 <Notice>
-                    ArnTo-Shop has not copied the members holding the CTV role here yet — it does on its first start with the new version (Pull &amp; Update, then restart). CTVs added here before that are
+                    ArnTo-Shop has not copied the members holding the Reseller role here yet — it does on its first start with the new version (Pull &amp; Update, then restart). Resellers added here before that are
                     kept.
                 </Notice>
             )}
@@ -539,10 +539,10 @@ export default function ResellersPage() {
                         </select>
                     </div>
                     <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-                        <StatCard label="CTVs" value={status?.active ?? "—"} />
-                        <StatCard label="CTV revenue" value={t ? money(t.revenue) : "—"} hint={t ? `${t.orders} completed order${t.orders === 1 ? "" : "s"}` : undefined} />
+                        <StatCard label="Resellers" value={status?.active ?? "—"} />
+                        <StatCard label="Reseller revenue" value={t ? money(t.revenue) : "—"} hint={t ? `${t.orders} completed order${t.orders === 1 ? "" : "s"}` : undefined} />
                         <StatCard label="Share of shop revenue" value={share === null ? "—" : `${share}%`} hint={t ? `of ${money(t.shopRevenue)}` : undefined} />
-                        <StatCard label="CTVs who bought" value={t ? t.buyers : "—"} tone={t && t.pending > 0 ? "warning" : undefined} hint={t && t.pending > 0 ? `${t.pending} order${t.pending === 1 ? "" : "s"} pending` : undefined} />
+                        <StatCard label="Resellers who bought" value={t ? t.buyers : "—"} tone={t && t.pending > 0 ? "warning" : undefined} hint={t && t.pending > 0 ? `${t.pending} order${t.pending === 1 ? "" : "s"} pending` : undefined} />
                     </div>
                 </>
             )}
@@ -561,7 +561,7 @@ export default function ResellersPage() {
                     <EmptyState
                         compact
                         icon="resellers"
-                        title="No CTVs yet"
+                        title="No resellers yet"
                         description={<>Add one here, or run <code className="mono">/ctv-new</code> on ArnTo-Shop.</>}
                     />
                 ) : (
@@ -586,7 +586,7 @@ export default function ResellersPage() {
             {confirmRemove && (
                 <ConfirmModal
                     title={`Remove ${confirmRemove.userTag || confirmRemove.userId}?`}
-                    message="ArnTo-Shop takes the CTV role back and DMs them the farewell text. Their orders stay counted, and they can be added again later."
+                    message="ArnTo-Shop takes the Reseller role back and DMs them the farewell text. Their orders stay counted, and they can be added again later."
                     confirmText="Remove"
                     onConfirm={remove}
                     onCancel={() => setConfirmRemove(null)}

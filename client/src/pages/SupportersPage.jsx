@@ -5,7 +5,7 @@ import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Supporters — ArnTo-Shop's paid helpers (hỗ trợ viên) and their salary.
+//  Supporters — ArnTo-Shop's paid helpers and their salary.
 //
 //  Adding one here has ArnTo-Shop give them the Supporter role and DM them the
 //  welcome text; removing takes the role back. The Staff role is the owner's,

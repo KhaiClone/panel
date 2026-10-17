@@ -26,7 +26,7 @@ const EMPTY_FORM = {
     rotateMinIntervalSec: 60,
     rotateIdleIntervalSec: 0,
     enabled: true,
-    // Tính năng nào được dùng proxy này. Rỗng = không tính năng nào dùng được.
+    // Which features may use this proxy. Empty = no feature can.
     uses: ["quest"],
     note: "",
 };
@@ -595,8 +595,8 @@ export default function ProxiesPage() {
     const [err, setErr] = useState(null);
     const [savingSettings, setSavingSettings] = useState(false);
     const [rowState, setRowState] = useState({}); // proxyId -> { testing, rotating, msg, ok }
-    // Pool này phục vụ nhiều tính năng; `feature` quyết định đang xem/sửa cài đặt
-    // của cái nào. Danh sách lấy từ backend để thêm feature không phải sửa UI.
+    // This pool serves several features; `feature` picks whose settings are being
+    // viewed/edited. The list comes from the backend, so a new feature needs no UI change.
     const [feature, setFeature] = useState("quest");
     const [features, setFeatures] = useState([{ key: "quest", label: "Auto Quest" }]);
     const [editing, setEditing] = useState(undefined); // undefined = closed, null = new

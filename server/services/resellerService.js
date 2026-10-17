@@ -192,7 +192,7 @@ const row = (userId) => conn().prepare("SELECT * FROM resellers WHERE user_id = 
 
 const requireRow = (userId, { active = true } = {}) => {
     const r = row(userId);
-    if (!r || (active && !r.active)) throw httpError(404, "This user is not a CTV");
+    if (!r || (active && !r.active)) throw httpError(404, "This user is not a reseller");
     return r;
 };
 
@@ -298,8 +298,8 @@ const userIdOf = (v) => {
 
 const joinedAtOf = (v) => {
     const n = Math.round(Number(v));
-    if (!Number.isFinite(n) || n <= 0) throw httpError(400, "Invalid “CTV since” date");
-    if (n > Date.now() + 86_400_000) throw httpError(400, "“CTV since” cannot be in the future");
+    if (!Number.isFinite(n) || n <= 0) throw httpError(400, "Invalid “Reseller since” date");
+    if (n > Date.now() + 86_400_000) throw httpError(400, "“Reseller since” cannot be in the future");
     return n;
 };
 
@@ -364,7 +364,7 @@ const addReseller = async (input = {}, who = {}) => {
         }
     }
     const old = row(userId);
-    if (old?.active) throw httpError(409, "This user is already a CTV");
+    if (old?.active) throw httpError(409, "This user is already a reseller");
     const shopName = input.shop !== undefined ? str(input.shop, 200) : old?.shop || "";
     const note = input.note !== undefined ? str(input.note, 300) : old?.note || "";
     const now = Date.now();
@@ -391,7 +391,7 @@ const update = (userId, input = {}) => {
     const note = input.note !== undefined ? str(input.note, 300) : r.note;
     const userTag = input.userTag !== undefined ? str(input.userTag, 64) || r.user_tag : r.user_tag;
     const joinedAt = input.joinedAt !== undefined ? joinedAtOf(input.joinedAt) : r.joined_at;
-    if (r.left_at && joinedAt > r.left_at) throw httpError(400, "“CTV since” must be before they were removed");
+    if (r.left_at && joinedAt > r.left_at) throw httpError(400, "“Reseller since” must be before they were removed");
     conn()
         .prepare("UPDATE resellers SET user_tag = ?, shop = ?, note = ?, joined_at = ?, updated_at = ? WHERE user_id = ?")
         .run(userTag, shopName, note, joinedAt, Date.now(), r.user_id);

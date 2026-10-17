@@ -25,6 +25,8 @@ const fold = (s) =>
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, " ")
         .trim();
+/** A catalog category's name here; the catch-all one is named for Auto's Discord panel. */
+const catLabel = (c) => (c.sku_id === "other" ? "Other" : c.name);
 
 function Thumb({ src }) {
     const box = { width: 36, height: 36, flex: "none", borderRadius: 6, background: "var(--bg-hover)" };
@@ -65,7 +67,7 @@ function Result({ result, buyer, onAgain, onClose }) {
             ) : (
                 <Notice tone="warning">
                     ArnTo-Auto recorded it as <b className="mono">{result.id}</b>, but the shop's order is not open yet
-                    {result.shopError ? `: ${result.shopError}` : ""}. ArnTo-Auto retries every 5 minutes, or press Thử lại on its staff card.
+                    {result.shopError ? `: ${result.shopError}` : ""}. ArnTo-Auto retries every 5 minutes, or press the retry button on its staff card.
                 </Notice>
             )}
             {result.existed && (
@@ -137,8 +139,8 @@ export default function DecoGiftOrderModal({ onClose, onCreated }) {
 
     const decors = useMemo(() => (catalog?.decors || []).map((d) => ({ ...d, sku_id: String(d.sku_id), norm: fold(d.name) })), [catalog]);
     const index = useMemo(() => new Map(decors.map((d) => [d.sku_id, d])), [decors]);
-    const catName = useMemo(() => new Map((catalog?.categories || []).map((c) => [c.sku_id, c.name])), [catalog]);
-    const catNorm = useMemo(() => new Map((catalog?.categories || []).map((c) => [c.sku_id, fold(c.name)])), [catalog]);
+    const catName = useMemo(() => new Map((catalog?.categories || []).map((c) => [c.sku_id, catLabel(c)])), [catalog]);
+    const catNorm = useMemo(() => new Map((catalog?.categories || []).map((c) => [c.sku_id, fold(catLabel(c))])), [catalog]);
 
     // Ranked like ArnTo-Auto's search: exact > prefix > contains > all words > its collection.
     // A shop link or SKU finds that decor.

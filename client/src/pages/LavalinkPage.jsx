@@ -13,7 +13,7 @@ import LiveLog from "../components/LiveLog";
 //  what they authenticate with.
 //
 //  Two tabs: Node — a table, one row per node, that opens into its controls and
-//  a live log — and Cấu hình, the shared config. Status refreshes itself every
+//  a live log — and Config, the shared config. Status refreshes itself every
 //  30s while the page is visible; logs stream as they are written.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ function Field({ label, hint, children }) {
     );
 }
 
-// ── Tổng quan ────────────────────────────────────────────────────────────────
+// ── Overview ─────────────────────────────────────────────────────────────────
 
 function Metric({ label, value, dim }) {
     return (

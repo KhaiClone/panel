@@ -199,7 +199,7 @@ export default function OrdersPage() {
                                         {o.buyerTag || <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11 }}>{o.buyerId}</span>}
                                         {o.reseller === true && (
                                             <span style={{ marginLeft: 6 }}>
-                                                <StatusBadge tone="accent" title="Bought by a CTV (reseller)">CTV</StatusBadge>
+                                                <StatusBadge tone="accent" title="Bought by a reseller">Reseller</StatusBadge>
                                             </span>
                                         )}
                                     </td>

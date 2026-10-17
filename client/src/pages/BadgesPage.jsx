@@ -4,12 +4,12 @@ import { usePageAccess } from "../context/AuthContext";
 import { EmptyState, Notice, PageHeader, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Auto Badge — đơn hàng + duyệt tay.
+//  Auto Badge — orders + manual review.
 //
-//  Đơn treo ở "manual_review" là những đơn KHÔNG tự quyết được: khách mất Nitro
-//  sau khi trả tiền, Discord không cho đọc tiến độ, hoặc panel restart giữa lúc
-//  đang gửi. Cố ý không tự động hoá chỗ này — tự tịch thu tiền khách khi hạ tầng
-//  của mình hỏng là kịch bản tệ nhất.
+//  Orders held in "manual_review" are the ones that could NOT be settled on their
+//  own: the customer lost Nitro after paying, Discord would not show the progress,
+//  or the panel restarted mid-send. Deliberately not automated — forfeiting a
+//  customer's money because our own infrastructure broke is the worst outcome.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS = {

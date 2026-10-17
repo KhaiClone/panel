@@ -33,14 +33,14 @@ function relative(ms) {
         ["second", 1e3],
     ];
     const [unit, size] = units.find(([, s]) => abs >= s) || units[units.length - 1];
-    return new Intl.RelativeTimeFormat("vi", { numeric: "auto" }).format(Math.round(diff / size), unit);
+    return new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(Math.round(diff / size), unit);
 }
 
 const formatTime = (sec, style = "f") => {
     const ms = Number(sec) * 1000;
     if (!Number.isFinite(ms)) return "";
     if (style === "R") return relative(ms);
-    return new Date(ms).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false, ...(TIME_STYLES[style] || TIME_STYLES.f) });
+    return new Date(ms).toLocaleString("en-GB", { timeZone: "Asia/Ho_Chi_Minh", hour12: false, ...(TIME_STYLES[style] || TIME_STYLES.f) });
 };
 
 const emojiUrl = (id, animated) => `https://cdn.discordapp.com/emojis/${id}.${animated ? "gif" : "png"}?size=48`;
@@ -291,7 +291,7 @@ export function Embed({ e }) {
                     <span>
                         {e.footer?.text}
                         {e.footer?.text && e.timestamp ? " • " : ""}
-                        {e.timestamp ? new Date(e.timestamp).toLocaleString("vi-VN", { hour12: false }) : ""}
+                        {e.timestamp ? new Date(e.timestamp).toLocaleString("en-GB", { hour12: false }) : ""}
                     </span>
                 </div>
             )}

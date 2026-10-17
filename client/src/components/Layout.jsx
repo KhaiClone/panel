@@ -50,7 +50,7 @@ const NAV_SECTIONS = [
             { to: "/vouchers",     label: "Vouchers",     icon: I.voucher },
             { to: "/ticket-menus", label: "Ticket Menus", icon: I.menus },
             { to: "/supporters",   label: "Supporters",   icon: I.supporters },
-            { to: "/resellers",    label: "CTV",          icon: I.resellers },
+            { to: "/resellers",    label: "Resellers",    icon: I.resellers },
             { to: "/messages",     label: "Messages",     icon: I.message },
             { to: "/webhooks",     label: "Webhooks",     icon: I.webhook },
         ],
