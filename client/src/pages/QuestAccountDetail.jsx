@@ -25,6 +25,9 @@ const fmtDate = (iso) => {
     }
 };
 
+const fmtWhen = (ms) =>
+    new Date(ms).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+
 const gridStyle = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
@@ -114,7 +117,7 @@ export default function QuestAccountDetail() {
                                     </button>
                                 )}
                                 {(a.mode === "monthly"
-                                    ? a.status === "monthly"
+                                    ? ["monthly", "error", "token_dead"].includes(a.status)
                                     : ["stopped", "error", "token_dead", "done"].includes(a.status)) && (
                                     <button className="btn-success" disabled={busy} onClick={runAgain}>
                                         <Icon name="play" /> {a.mode === "monthly" ? "Run now" : "Run again"}
@@ -130,7 +133,12 @@ export default function QuestAccountDetail() {
             </div>
 
             {msg && <Notice tone={msg.ok ? "success" : "danger"}>{msg.text}</Notice>}
-            {a.error && <Notice tone="warning">{a.error}</Notice>}
+            {a.error && (
+                <Notice tone="warning">
+                    {a.error}
+                    {a.errorAt && <span style={{ opacity: 0.75 }}> · {fmtWhen(a.errorAt)}</span>}
+                </Notice>
+            )}
 
             <div className="stat-grid">
                 <StatCard label="Mode" value={modeText} />

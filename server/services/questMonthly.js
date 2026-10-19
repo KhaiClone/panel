@@ -13,6 +13,10 @@
  * RETENTION — an expired plan is kept ONE WEEK so the customer can still renew
  * (activate() extends monthlyExpiresAt). Past that grace window an un-renewed plan is
  * erased by the hourly sweep: record, encrypted token and live quest state all go.
+ *
+ * LAST ERROR — key `quest_monthly_outcome`: { [accountId]: { status, error, at } } for
+ * the accounts whose last pass failed (status "token_dead" | "error"). /quests shows
+ * it until a pass gets through or the plan is activated again with a working token.
  */
 
 const crypto = require("crypto");
@@ -76,6 +80,30 @@ function _isPurgeable(r) {
     const at = _purgeAt(r);
     return Number.isFinite(at) && at <= Date.now();
 }
+// ── Last error per subscriber ────────────────────────────────────────────────────
+// A token that dies mid-pass used to show only as a live event, so it was gone from
+// /quests once the pass moved on or the page reloaded. It is kept here instead —
+// beside the plans, not in them, so this write can never race a renewal in
+// activate(). One write at a time: accounts run in parallel and each write rewrites
+// the whole map.
+const OUTCOME_KEY = "quest_monthly_outcome";
+const TOKEN_DEAD_TEXT = "Discord rejected the token (invalid or expired) — the buyer needs to send a new one.";
+let _outcomeChain = Promise.resolve();
+
+/** Record why this account's pass failed ({ status, error }), or clear it (null). */
+function _setOutcome(accountId, outcome) {
+    _outcomeChain = _outcomeChain
+        .then(async () => {
+            const map = (await db.get(OUTCOME_KEY)) || {};
+            if (outcome) map[accountId] = { status: outcome.status, error: outcome.error ?? null, at: Date.now() };
+            else if (map[accountId]) delete map[accountId];
+            else return;
+            await db.set(OUTCOME_KEY, map);
+        })
+        .catch((e) => console.warn(`[Monthly] last error ${accountId}: ${e.message}`));
+    return _outcomeChain;
+}
+
 function _webhook(rec, event) {
     if (!rec.webhookUrl && !rec.webhookBotId) return;
     // Address and x-api-key follow the project that registered it (callbackService).
@@ -117,6 +145,8 @@ async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = nul
     };
     if (existing) await db.findOneAndUpdate(MODEL, { accountId }, rec);
     else await db.create(MODEL, rec);
+    // The token just resolved, so an old token error no longer applies.
+    await _setOutcome(accountId, null);
     return { accountId, username: resolved.username, monthlyExpiresAt, months: m };
 }
 
@@ -124,7 +154,7 @@ async function listActive() {
     return ((await db.get(MODEL)) || []).filter(_isActive);
 }
 
-function _publicRec(r) {
+function _publicRec(r, lastError = null) {
     return {
         accountId: r.accountId,
         username: r.username,
@@ -132,14 +162,19 @@ function _publicRec(r) {
         active: _isActive(r),
         purgeAt: _purgeAt(r),
         ref: r.ref ?? null,
+        lastError,
     };
 }
 /** Plans past their grace window are hidden right away, before the sweep erases them. */
 async function list() {
-    return ((await db.get(MODEL)) || []).filter((r) => !_isPurgeable(r)).map(_publicRec);
+    const errors = (await db.get(OUTCOME_KEY)) || {};
+    return ((await db.get(MODEL)) || [])
+        .filter((r) => !_isPurgeable(r))
+        .map((r) => _publicRec(r, errors[r.accountId] ?? null));
 }
 async function remove(accountId) {
     await db.findOneAndDelete(MODEL, { accountId });
+    await _setOutcome(accountId, null);
     return true;
 }
 
@@ -156,6 +191,7 @@ async function purgeExpired() {
         if (!_isPurgeable(rec)) continue;
         try {
             await db.findOneAndDelete(MODEL, { accountId: rec.accountId });
+            await _setOutcome(rec.accountId, null);
             questService.clearLive(rec.accountId);
             questService.emitExternalEvent(rec.accountId, { type: "removed" });
             _webhook(rec, { type: "removed", reason: "monthly_expired" });
@@ -197,10 +233,24 @@ async function _gap(sec, abort) {
         await new Promise((r) => setTimeout(r, Math.min(1000, until - Date.now())));
 }
 
+/**
+ * Keep an account's failure on /quests: stored, shown live, and a dead token is told
+ * to arnto-auto (`notify` false when it is the panel's fault, not the buyer's).
+ */
+async function _fail(rec, failure, { notify = true } = {}) {
+    await _setOutcome(rec.accountId, failure);
+    questService.emitExternalEvent(rec.accountId, { type: "status", ...failure });
+    if (notify && failure.status === "token_dead") _webhook(rec, { type: "status", status: "token_dead" });
+}
+
 /** One subscriber: enroll everything, then complete every quest. */
 async function _runAccount(rec, abort) {
     const token = _decrypt(rec);
-    if (!token) return { ok: false, completed: 0 };
+    if (!token) {
+        const failure = { status: "token_dead", error: "Could not decrypt the stored token (secret changed?)." };
+        await _fail(rec, failure, { notify: false });
+        return { ok: false, completed: 0, failure };
+    }
     // Hold the egress lease for the whole pass — the pool will not rotate this
     // proxy's IP while it is out (see proxyPool.acquire).
     const lease = await proxyPool.acquire(token);
@@ -208,22 +258,24 @@ async function _runAccount(rec, abort) {
     let ok = false;
     let completed = 0;
     let started = false;
+    let failure = null; // { status, error } when this account's pass failed
     activeIds.set(rec.accountId, rec.username);
     try {
         const resolved = await resolveDiscordAccount(token, lease.agent);
         if (!resolved.ok) {
             egressFailed = !resolved.invalidToken;
-            if (resolved.invalidToken) {
-                questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
-                _webhook(rec, { type: "status", status: "token_dead" });
-            }
-            return { ok, completed };
+            failure = resolved.invalidToken
+                ? { status: "token_dead", error: TOKEN_DEAD_TEXT }
+                : { status: "error", error: resolved.reason };
+            return { ok, completed, failure };
         }
+        // The token works, so whatever the last pass hit no longer stands.
+        await _setOutcome(rec.accountId, null);
         // Reset this account's live state so /quests shows the current batch, then
         // feed quest_start/progress/done (with media) into the shared realtime bus
         // — this is what makes monthly accounts render quest cards like single ones.
         questService.clearLive(rec.accountId);
-        questService.emitExternalEvent(rec.accountId, { type: "status", status: "running" });
+        questService.emitExternalEvent(rec.accountId, { type: "status", status: "running", error: null });
         started = true;
         const completer = new QuestAutocompleter(resolved.api, {
             label: rec.username,
@@ -283,20 +335,21 @@ async function _runAccount(rec, abort) {
         if (e?.aborted) {
             // Stopped (pause / Stop / panel move) — not the egress route's fault.
         } else if (isInvalidTokenError(e)) {
-            started = false; // keep the token_dead badge, not the idle one
-            questService.emitExternalEvent(rec.accountId, { type: "status", status: "token_dead" });
-            _webhook(rec, { type: "status", status: "token_dead" });
+            failure = { status: "token_dead", error: TOKEN_DEAD_TEXT };
         } else {
             egressFailed = true;
+            failure = { status: "error", error: e.message };
             console.error(`[Monthly] ${rec.username} error: ${e.message}`);
         }
     } finally {
         lease.release({ failed: egressFailed });
         activeIds.delete(rec.accountId);
-        // Back to the idle "monthly" badge once this account's pass is over, finished or not.
-        if (started) questService.emitExternalEvent(rec.accountId, { type: "status", status: "monthly" });
+        // A failure keeps its badge; otherwise back to the idle "monthly" one once
+        // this account's pass is over, finished or stopped.
+        if (failure) await _fail(rec, failure);
+        else if (started) questService.emitExternalEvent(rec.accountId, { type: "status", status: "monthly", error: null });
     }
-    return { ok, completed };
+    return { ok, completed, failure };
 }
 
 /**
@@ -307,7 +360,7 @@ async function runBatch(abort = { stopped: false }, { accountIds = null, progres
     const settings = await questSettings.get();
     let accts = await listActive();
     if (accountIds) accts = accts.filter((r) => accountIds.includes(r.accountId));
-    Object.assign(progress, { total: accts.length, done: 0, processed: 0, completed: 0 });
+    Object.assign(progress, { total: accts.length, done: 0, processed: 0, completed: 0, failed: [] });
 
     let next = 0;
     const worker = async () => {
@@ -317,40 +370,61 @@ async function runBatch(abort = { stopped: false }, { accountIds = null, progres
             progress.done++;
             if (r.ok) progress.processed++;
             progress.completed += r.completed;
+            if (r.failure) progress.failed.push({ accountId: rec.accountId, username: rec.username, ...r.failure });
             if (next < accts.length) await _gap(settings.accountDelaySec, abort);
         }
     };
     const workers = Math.max(1, Math.min(settings.concurrency, accts.length));
     await Promise.all(Array.from({ length: workers }, worker));
-    return { processed: progress.processed, completed: progress.completed, total: accts.length, aborted: abort.stopped };
+    return {
+        processed: progress.processed,
+        completed: progress.completed,
+        failed: progress.failed,
+        total: accts.length,
+        aborted: abort.stopped,
+    };
 }
 
 // ── Daily enroll-only scan (no completion) ───────────────────────────────────────
 async function runEnrollScan(abort = { stopped: false }, { progress = {} } = {}) {
     const settings = await questSettings.get();
     const accts = await listActive();
-    Object.assign(progress, { total: accts.length, done: 0, processed: 0 });
+    Object.assign(progress, { total: accts.length, done: 0, processed: 0, failed: [] });
+    // A dead token found here is kept on /quests like one found by a pass, but the
+    // buyer is only told by the pass — not by every daily scan.
+    const tokenDead = async (rec, error) => {
+        const failure = { status: "token_dead", error };
+        await _fail(rec, failure, { notify: false });
+        progress.failed.push({ accountId: rec.accountId, username: rec.username, ...failure });
+    };
     for (const rec of accts) {
         if (abort.stopped) break;
         const token = _decrypt(rec);
         progress.done++;
-        if (!token) continue;
+        if (!token) {
+            await tokenDead(rec, "Could not decrypt the stored token (secret changed?).");
+            continue;
+        }
         const lease = await proxyPool.acquire(token);
         try {
             const resolved = await resolveDiscordAccount(token, lease.agent);
-            if (!resolved.ok) continue;
+            if (!resolved.ok) {
+                if (resolved.invalidToken) await tokenDead(rec, TOKEN_DEAD_TEXT);
+                continue;
+            }
             const completer = new QuestAutocompleter(resolved.api, { label: rec.username });
             const quests = await completer.fetchQuests();
             if (quests.length) await completer.autoAccept(quests);
             progress.processed++;
         } catch (e) {
-            if (!isInvalidTokenError(e)) console.error(`[MonthlyEnroll] ${rec.username}: ${e.message}`);
+            if (isInvalidTokenError(e)) await tokenDead(rec, TOKEN_DEAD_TEXT);
+            else console.error(`[MonthlyEnroll] ${rec.username}: ${e.message}`);
         } finally {
             lease.release();
         }
         await _gap(settings.accountDelaySec, abort);
     }
-    return { processed: progress.processed, total: accts.length, aborted: abort.stopped };
+    return { processed: progress.processed, failed: progress.failed, total: accts.length, aborted: abort.stopped };
 }
 
 // ── Schedulers (Asia/Ho_Chi_Minh; catch-up + crash-safe like arnto-auto) ─────────
@@ -395,8 +469,17 @@ function nextAt(days, time, lastDate) {
 // Only one of each at a time, scheduled or manual.
 let currentRun = null;
 let currentEnroll = null;
-// What the last pass / scan ended with (in memory — for the status line only).
+// What the last pass / scan ended with, for the status line on /quests — saved so
+// the accounts it failed on are still listed after a restart.
+const LAST_RESULT_KEY = "quest_monthly_last_result";
 const lastResult = { run: null, enroll: null };
+function _saveLastResult() {
+    db.set(LAST_RESULT_KEY, lastResult).catch((e) => console.warn("[Monthly] last result:", e.message));
+}
+async function _loadLastResult() {
+    const saved = await db.get(LAST_RESULT_KEY).catch(() => null);
+    if (saved) Object.assign(lastResult, { run: saved.run ?? null, enroll: saved.enroll ?? null });
+}
 
 function _conflict(message, status = 409) {
     const e = new Error(message);
@@ -412,10 +495,12 @@ function _startRun(trigger, accountId = null) {
     run.promise = runBatch(run.abort, { accountIds: accountId ? [accountId] : null, progress: run.progress })
         .then((res) => {
             lastResult.run = { ...res, trigger, accountId, startedAt: run.startedAt, finishedAt: Date.now() };
+            _saveLastResult();
             return res;
         })
         .catch((e) => {
             lastResult.run = { error: e.message, trigger, accountId, startedAt: run.startedAt, finishedAt: Date.now() };
+            _saveLastResult();
             throw e;
         })
         .finally(() => {
@@ -431,10 +516,12 @@ function _startEnroll(trigger) {
     scan.promise = runEnrollScan(scan.abort, { progress: scan.progress })
         .then((res) => {
             lastResult.enroll = { ...res, trigger, startedAt: scan.startedAt, finishedAt: Date.now() };
+            _saveLastResult();
             return res;
         })
         .catch((e) => {
             lastResult.enroll = { error: e.message, trigger, startedAt: scan.startedAt, finishedAt: Date.now() };
+            _saveLastResult();
             throw e;
         })
         .finally(() => {
@@ -588,6 +675,7 @@ async function status() {
 }
 
 function start() {
+    _loadLastResult().catch(() => {});
     startRetentionSweep();
     _checkRun().catch(() => {});
     _checkEnroll().catch(() => {});

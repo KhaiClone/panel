@@ -17,11 +17,16 @@ async function combinedList() {
         const quests = questService.getLive(m.accountId);
         const completedCount = Object.values(quests).filter((q) => q.state === "done").length;
         const busy = questMonthly.isRunning(m.accountId);
+        // A failed last pass (dead token, Discord unreachable) stays on the badge
+        // until a pass gets through — not just for the moment the live event shows.
+        const failed = !busy && m.active ? m.lastError : null;
         return {
             accountId: m.accountId,
             username: m.username,
             mode: "monthly",
-            status: busy ? "running" : m.active ? "monthly" : "expired",
+            status: busy ? "running" : failed ? failed.status : m.active ? "monthly" : "expired",
+            error: failed?.error ?? null,
+            errorAt: failed?.at ?? null,
             monthlyExpiresAt: m.monthlyExpiresAt,
             // Expired plans are erased a week later unless renewed — the UI counts down.
             purgeAt: m.purgeAt,

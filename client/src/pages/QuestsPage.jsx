@@ -26,6 +26,9 @@ const fmtDate = (iso) => {
     }
 };
 
+const fmtWhen = (ms) =>
+    new Date(ms).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+
 // Single-quest accounts are erased one week after their run (token, progress, owner
 // link — everything). A monthly subscriber lives as long as the plan, then gets the
 // same one-week window to renew before it is erased too.
@@ -227,6 +230,15 @@ function AccountRow({ a, live, onOpen }) {
                 <span style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{progressText}</span>
                 <Icon name="chevronRight" style={{ color: "var(--text-dim)" }} />
             </div>
+
+            {/* Why it stopped — stays until the next run gets through. */}
+            {a.error && (a.status === "token_dead" || a.status === "error") && (
+                <p style={{ margin: 0, fontSize: 12, color: STATUS[a.status].color, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <Icon name="alert" size={13} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.error}</span>
+                    {a.errorAt && <span style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>· {fmtWhen(a.errorAt)}</span>}
+                </p>
+            )}
 
             {pct !== null && (
                 <div style={{ height: 5, borderRadius: 4, background: "var(--bg-input)", overflow: "hidden" }}>

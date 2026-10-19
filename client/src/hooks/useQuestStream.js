@@ -48,10 +48,18 @@ export default function useQuestStream() {
             }
             const aid = evt.accountId;
             if (evt.type === "status") {
+                // `error: null` on the event clears an old error; a new run starts clean.
+                const error = "error" in evt ? evt.error : evt.status === "running" ? null : undefined;
                 setAccounts((prev) =>
                     prev.map((a) =>
                         a.accountId === aid
-                            ? { ...a, status: evt.status, error: evt.error ?? a.error, running: evt.status === "running" }
+                            ? {
+                                  ...a,
+                                  status: evt.status,
+                                  error: error === undefined ? a.error : error,
+                                  errorAt: error ? evt.at : error === null ? null : a.errorAt,
+                                  running: evt.status === "running",
+                              }
                             : a,
                     ),
                 );

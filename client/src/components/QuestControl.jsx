@@ -50,9 +50,29 @@ function lastText(last, lastDate) {
     if (last) {
         const what = last.aborted ? "stopped" : "finished";
         const n = last.completed != null ? `, ${last.completed} quest(s)` : "";
-        return `last ${last.trigger === "manual" ? "manual " : ""}${what} ${fmtClock(last.finishedAt)} — ${last.processed}/${last.total} account(s)${n}`;
+        const failed = last.failed?.length ? `, ${last.failed.length} failed` : "";
+        return `last ${last.trigger === "manual" ? "manual " : ""}${what} ${fmtClock(last.finishedAt)} — ${last.processed}/${last.total} account(s)${n}${failed}`;
     }
     return lastDate ? `last scheduled run ${lastDate}` : "never ran";
+}
+
+const FAIL_LABEL = { token_dead: "token error", error: "error" };
+
+/** Accounts a pass / scan could not do, named so they stay visible after it moves on. */
+function Failed({ list, prefix, top = 8 }) {
+    if (!list?.length) return null;
+    const shown = list.slice(0, 12);
+    return (
+        <p style={{ margin: `${top}px 0 0`, fontSize: 11.5, color: "var(--warning)", lineHeight: 1.6, display: "flex", gap: 6 }}>
+            <Icon name="alert" size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+                {prefix}
+                {list.length} failed —{" "}
+                {shown.map((f) => `${f.username} (${FAIL_LABEL[f.status] || f.status})`).join(", ")}
+                {list.length > shown.length && `, +${list.length - shown.length} more`}
+            </span>
+        </p>
+    );
 }
 
 function Progress({ label, cur, accounts, onStop, busy }) {
@@ -81,6 +101,7 @@ function Progress({ label, cur, accounts, onStop, busy }) {
             {accounts?.length > 0 && (
                 <p style={{ margin: "8px 0 0", fontSize: 11.5, color: "var(--text-dim)" }}>Now: {accounts.join(", ")}</p>
             )}
+            <Failed list={cur.failed} />
         </div>
     );
 }
@@ -298,6 +319,13 @@ export default function QuestControl({ runningCount = 0, waitingCount = 0, onCha
                     busy={busy}
                     onStop={canEdit ? () => act(() => api.post("/quests/control/stop", { what: "enroll" }), "Stopping the scan…") : null}
                 />
+            )}
+            {/* What the last pass / scan could not do, once it is over. */}
+            {!st.run.current && st.run.last?.failed?.length > 0 && (
+                <Failed top={12} list={st.run.last.failed} prefix={`Last monthly pass (${fmtClock(st.run.last.finishedAt)}): `} />
+            )}
+            {!st.enroll.current && st.enroll.last?.failed?.length > 0 && (
+                <Failed top={12} list={st.enroll.last.failed} prefix={`Last enroll scan (${fmtClock(st.enroll.last.finishedAt)}): `} />
             )}
 
             {msg && (
