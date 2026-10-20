@@ -110,7 +110,8 @@ người dùng nói rõ trong chat.
 34. Không đặt tên hàm module-level là `process` (che `process.env` — đã làm chết mọi đơn badge một lần).
 35. Token khách luôn lưu mã hoá aes-256-gcm; `_shape()` bỏ token khỏi mọi response; không log token.
 36. Ảnh trên Discord: không dùng KhaiDevApi — render trong bot (sharp) hoặc URL CDN Discord. QR VietQR:
-    host `api.vietqr.io` (`img.vietqr.io` giờ trả SVG, Discord không hiện).
+    bot tự vẽ bằng gói `qrcode` từ chuỗi EMVCo, như pokezone-pay (ArnTo-Auto `functions/vietQr.js`);
+    không dùng ảnh `img.vietqr.io` (giờ trả SVG, Discord không hiện).
 37. **Không thêm lại** những thứ đã gỡ có chủ đích: hệ thống Robux; Embeds/message templates
     (`client.ui`); badge reader (đọc hộ) + phụ phí non-Nitro; đọc lại badge sau khi gửi; dòng "Backup sent"
     trong panel log; Integrations/HTTP API trong bot; Cloudflare.
