@@ -4,9 +4,14 @@ const questService = require("../services/questService");
 const questMonthly = require("../services/questMonthly");
 const questSettings = require("../services/questSettings");
 const discordBus = require("../services/discordBus");
+const { englishErrors, englishJson } = require("../services/legacyText");
 
 // Mounted behind authMiddleware (see index.js). Discord Quest runner —
 // standalone (does NOT talk to the ArnTo-Auto bot).
+
+// Records saved before the panel went English still hold Vietnamese errors — the
+// page shows them translated (services/legacyText.js). Data is left as it is.
+router.use(englishJson);
 
 // Per-quest accounts + monthly subscribers, normalized into one list for the UI.
 async function combinedList() {
@@ -240,12 +245,12 @@ router.get("/stream", async (req, res, next) => {
 
         // Initial snapshot so the UI can render current state immediately.
         res.write(
-            `data: ${JSON.stringify({ type: "snapshot", accounts: await combinedList() })}\n\n`,
+            `data: ${JSON.stringify({ type: "snapshot", accounts: englishErrors(await combinedList()) })}\n\n`,
         );
 
         const onEvent = (evt) => {
             try {
-                res.write(`data: ${JSON.stringify(evt)}\n\n`);
+                res.write(`data: ${JSON.stringify(englishErrors(evt))}\n\n`);
             } catch {}
         };
         questService.bus.on("event", onEvent);

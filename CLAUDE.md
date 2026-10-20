@@ -91,6 +91,10 @@ người dùng nói rõ trong chat.
     - Text khách thấy trong bot = tiếng Việt. Lỗi của `/api/external/*` mà CHỈ bot đọc có thể tiếng Việt.
     - Lỗi đi cả hai phía mang hai câu: `err.message` tiếng Anh (lưu vào record, hiện trên panel) và
       `err.vi` câu tiếng Việt cho bot/khách — route external và payload bus gửi `err.vi ?? err.message`.
+    - Record lưu TRƯỚC khi chuyển sang tiếng Anh vẫn giữ `error` tiếng Việt; dữ liệu không bị sửa. Router
+      của trang (`/api/quests`, `/api/badges`) dịch khi trả ra bằng `router.use(englishJson)`
+      (`server/services/legacyText.js`). Router mới hiện `error` từ record cũ → dùng nó; đổi câu lỗi
+      tiếng Việt cũ nào → thêm vào bản đồ trong file đó. Không gắn vào router `/api/external/*`.
     - Số và tiền chỉ định dạng qua `client/src/utils/format.js`: `fmtNum` → `1,234,567`, `money` →
       `1,000,000 VND` (người dùng chọn 2026-10-20); không có giá trị → `—`. Không dùng `vi-VN` / `đ`.
     - Trang CTV hiển thị tên **Resellers**. Code mới hay sửa một trang: không để lọt chuỗi tiếng Việt nào

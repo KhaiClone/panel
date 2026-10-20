@@ -1,10 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const badgeService = require("./../services/badgeService");
+const { englishJson } = require("../services/legacyText");
 
 // Mounted at /api/badges behind authMiddleware (see index.js).
 // Trang /badges của panel: xem đơn, duyệt những đơn treo ở manual_review, và
 // (owner) thêm tay một tài khoản không qua thanh toán.
+
+// Đơn lưu trước khi panel chuyển sang tiếng Anh vẫn giữ `error` tiếng Việt — trang
+// hiện bản dịch (services/legacyText.js), dữ liệu để nguyên.
+router.use(englishJson);
 
 /** Đơn thêm tay là đơn miễn phí — không phải thứ một quyền staff được trao. */
 const ownerOnly = (req, res, next) =>

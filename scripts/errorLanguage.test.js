@@ -40,6 +40,7 @@ stubAbs(require.resolve("axios", { paths: [path.join(SERVER, "services")] }), fa
 const badgeReader = require("../server/services/badgeReader");
 const { BadgeSender, planOrder, setHypeSquad, loadGames } = require("../server/services/badgeEngine");
 const { resolveDiscordAccount } = require("../server/services/questEngine");
+const { toEnglish } = require("../server/services/legacyText");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const VI = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
@@ -56,6 +57,8 @@ const twoTexts = (err, en, vi) => {
     assert.doesNotMatch(err.message, VI, `Vietnamese in message: ${err.message}`);
     assert.strictEqual(err.message, en);
     assert.strictEqual(err.vi, vi);
+    // Records saved before the switch hold `vi`; the pages translate it back (legacyText).
+    assert.strictEqual(toEnglish(vi), en, `legacyText does not translate: ${vi}`);
 };
 const TOKEN_DEAD = ["The token is invalid or dead", "Token không hợp lệ hoặc đã chết"];
 
