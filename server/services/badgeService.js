@@ -13,6 +13,9 @@
  * "verifying" ở trên là lượt đọc TRƯỚC khi gửi — để biết tài khoản đang ở đâu mà
  * tính kế hoạch, và để chặn người mua lại mốc họ đã có. Nó không phải xác minh.
  *
+ * Đơn tay (`source: "manual"`, owner thêm trên trang /badges, không thanh toán)
+ * chạy cùng vòng đời này — khác biệt ghi ở createManualOrder().
+ *
  * NĂM QUYẾT ĐỊNH THIẾT KẾ, theo yêu cầu:
  *  1. Không có bước xác nhận riêng trước khi hiện QR — khách chọn mốc là mua luôn.
  *  2. Đọc lỗi thì KHÔNG tự tịch thu: đơn treo ở manual_review chờ duyệt tay.
@@ -236,6 +239,7 @@ async function check({ token }) {
     const me = await badgeReader.checkNitro(token);
     let values = null;
     let tieredReason = null;
+    let tieredCode = null;
     try {
         const read = await _readOwn(token, me);
         values = Object.fromEntries(
@@ -247,6 +251,7 @@ async function check({ token }) {
     } catch (err) {
         if (err.invalidToken) throw err;
         tieredReason = err.message;
+        tieredCode = err.needsNitro ? "needsNitro" : err.unreadable ? "unreadable" : "error";
     }
 
     // HypeSquad đọc được cho MỌI khách, có Nitro hay không, vì profile không bị
@@ -267,6 +272,8 @@ async function check({ token }) {
         // false → bot không bán Game Time / Game Variety cho tài khoản này.
         tieredAvailable: values !== null,
         tieredReason,
+        // Cùng lý do ở dạng mã, cho trang panel (tiếng Anh): needsNitro | unreadable | error.
+        tieredCode,
         hypesquadHouse,
     };
 }
@@ -334,6 +341,138 @@ async function createOrder({
     return _shape(order);
 }
 
+// ── Đơn tay (chủ panel tự thêm acc, không qua thanh toán) ────────────────────────
+//
+// Trang /badges, chỉ owner. Không đi qua ArnTo-Auto: không giá, không webhook,
+// không bảng giá — mốc lấy thẳng từ CATALOG nên chạy được cả khi Auto Badge đang
+// tắt hay mốc chưa đặt giá. Sau khi tạo, đơn chạy đúng đường của đơn có trả tiền.
+//
+// Khác đơn bán ở ba chỗ, vì tiền không ở đây:
+//   - Tài khoản không đọc được tiến độ (không Nitro…) vẫn gửi được: chủ panel tự
+//     nhập con số hiện tại (`enteredValue`). Nhập sai thì gửi thừa/thiếu — đó là
+//     lựa chọn của chính họ, không phải của khách.
+//   - Đã có mốc thì từ chối ngay lúc tạo; lỡ lọt tới lúc chạy thì "cancelled",
+//     không bao giờ "forfeited".
+//   - Duyệt tay chỉ có Retry / Cancel — không có tiền để tịch thu hay hoàn.
+
+function _catalogTier(badgeKey, tierKey) {
+    const cat = pricingStore.BADGE_CATALOG[badgeKey];
+    if (!cat || cat.supported === false) throw _err(`Invalid badge: ${badgeKey}`);
+    const tier = cat.tiers.find((t) => t.key === tierKey);
+    if (!tier) throw _err(`Invalid tier: ${tierKey}`);
+    return { cat, tier, kind: cat.kind ?? "tiered" };
+}
+
+function _manualCatalog() {
+    return Object.entries(pricingStore.BADGE_CATALOG)
+        .filter(([, c]) => c.supported !== false)
+        .map(([key, c]) => ({
+            key,
+            label: c.label,
+            unit: c.unit,
+            kind: c.kind ?? "tiered",
+            tiers: c.tiers.map((t) => ({
+                key: t.key,
+                name: t.name,
+                threshold: t.threshold ?? null,
+                houseId: t.houseId ?? null,
+            })),
+        }));
+}
+
+/** Tình trạng tài khoản cho form thêm tay — như check(), kèm catalog và overshoot. */
+async function checkManual({ token }) {
+    const [account, pricing] = await Promise.all([
+        check({ token: String(token).trim() }),
+        pricingStore.getPricing(),
+    ]);
+    return { ...account, overshoot: pricing.autoBadge.overshoot, catalog: _manualCatalog() };
+}
+
+async function createManualOrder(
+    { token, badgeKey, tierKey, currentValue = null, note = "" },
+    createdBy = null,
+) {
+    token = String(token ?? "").trim();
+    if (!token) throw _err("Paste the account's token");
+    const { cat, tier, kind } = _catalogTier(badgeKey, tierKey);
+    const me = await badgeReader.checkNitro(token);
+    const pricing = await pricingStore.getPricing();
+
+    let enteredValue = null;
+    if (kind === "choice") {
+        const house = await badgeReader.readHypeSquadHouse(token, me.userId).catch(() => null);
+        if (house === tier.houseId) throw _err(`${me.username} is already in ${tier.name}`, 409);
+    } else {
+        let current = null;
+        try {
+            current = (await _readOwn(token, me)).badges[badgeKey]?.value ?? null;
+        } catch (err) {
+            if (err.invalidToken) throw err;
+        }
+        if (!Number.isFinite(current)) {
+            const n = currentValue === null || currentValue === "" ? NaN : Number(currentValue);
+            if (!Number.isFinite(n) || n < 0) {
+                throw _err(
+                    `Discord does not show this account's ${cat.label} progress — enter its current value`,
+                    400,
+                    { needsValue: true },
+                );
+            }
+            enteredValue = current = n;
+        }
+        if (current >= tier.threshold) {
+            throw _err(`${me.username} already has ${tier.name} (${current} ${cat.unit})`, 409);
+        }
+    }
+
+    const order = {
+        orderId: crypto.randomUUID(),
+        source: "manual",
+        createdBy,
+        note: String(note ?? "").trim().slice(0, 200) || null,
+        ref: null,
+        paymentId: null,
+        accountId: me.userId,
+        username: me.username,
+        hasNitro: me.hasNitro,
+        locale: me.locale ?? null,
+        ...(_encrypt(token)),
+        badgeKey,
+        tierKey,
+        tierName: tier.name,
+        kind,
+        houseId: tier.houseId ?? null,
+        threshold: tier.threshold ?? null,
+        unit: cat.unit,
+        price: 0,
+        overshoot: pricing.autoBadge.overshoot,
+        forfeitOnWrongTier: false,
+        enteredValue,
+        measuredValue: null,
+        measuredAt: null,
+        measuredSource: null,
+        status: "paid",
+        error: null,
+        plan: null,
+        sent: 0,
+        total: 0,
+        webhookUrl: null,
+        webhookBotId: null,
+        createdAt: Date.now(),
+        paidAt: null,
+        sentAt: null,
+        finalTier: null,
+        finalValue: null,
+        updatedAt: Date.now(),
+    };
+
+    await db.create(MODEL, order);
+    _dispatch(order, { type: "order_created", status: "paid" });
+    processOrder(order.orderId).catch(() => {});
+    return _shape(order);
+}
+
 // ── Chạy đơn ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -374,7 +513,11 @@ async function _process(orderId) {
     await _patch(orderId, { status: "verifying", error: null });
     _dispatch(order, { type: "status", status: "verifying" });
 
-    let read;
+    // Đơn tay của tài khoản Discord không cho đọc: chủ panel đã tự nhập con số lúc
+    // tạo đơn. Vẫn thử đọc trước — đọc được thì số thật thắng số nhập.
+    const entered = Number.isFinite(order.enteredValue) ? order.enteredValue : null;
+
+    let read = null;
     try {
         // Hỏi lại Nitro ngay lúc chạy: khách có thể mất Nitro sau khi báo giá.
         const me = await badgeReader.checkNitro(token);
@@ -387,13 +530,16 @@ async function _process(orderId) {
         }
         // Mất Nitro / Discord đóng danh sách badge / lỗi mạng: KHÔNG tịch thu,
         // KHÔNG gửi. Treo chờ duyệt.
-        await _patch(orderId, { status: "manual_review", error: err.message });
-        _dispatch(order, { type: "manual_review", status: "manual_review", error: err.message });
-        return _shape(await _get(orderId));
+        if (entered === null) {
+            await _patch(orderId, { status: "manual_review", error: err.message });
+            _dispatch(order, { type: "manual_review", status: "manual_review", error: err.message });
+            return _shape(await _get(orderId));
+        }
     }
 
-    const badge = read.badges[order.badgeKey];
-    const measured = badge?.value;
+    const badge = read?.badges[order.badgeKey];
+    const readValue = Number.isFinite(badge?.value) ? badge.value : null;
+    const measured = readValue ?? entered;
     if (!Number.isFinite(measured)) {
         // Đọc được badge nhưng không suy ra được con số — cũng là chờ duyệt, vì
         // đoán bừa ở đây thì hoặc gửi thừa hoặc tịch thu oan.
@@ -406,16 +552,23 @@ async function _process(orderId) {
     await _patch(orderId, {
         measuredValue: measured,
         measuredAt: Date.now(),
-        measuredSource: read.source,
+        measuredSource: readValue === null ? "entered" : read.source,
     });
 
     // ── Bước 2: đã sở hữu mốc rồi thì tịch thu ──────────────────────────────────
+    // Đơn tay không có tiền để tịch thu: huỷ.
+    if (measured >= order.threshold && order.source === "manual") {
+        const error = `Account already has ${order.tierName} (${measured} ${order.unit})`;
+        await _patch(orderId, { status: "cancelled", error, finalValue: measured, finalTier: badge?.currentTier ?? null });
+        _dispatch(order, { type: "cancelled", status: "cancelled", error });
+        return _shape(await _get(orderId));
+    }
     if (measured >= order.threshold) {
         const patch = {
             status: order.forfeitOnWrongTier ? "forfeited" : "refund_due",
             error: `Tài khoản đã đạt mốc ${order.tierName} (${measured} ${order.unit})`,
             finalValue: measured,
-            finalTier: badge.currentTier ?? null,
+            finalTier: badge?.currentTier ?? null,
         };
         await _patch(orderId, patch);
         _dispatch(order, {
@@ -436,7 +589,7 @@ async function _process(orderId) {
     if (order.badgeKey === "game_time") {
         varietyHeadroom = _headroomToNextTier(
             "game_variety",
-            read.badges.game_variety?.value ?? 0,
+            read?.badges.game_variety?.value ?? 0,
         );
         // Hỏng thì bỏ qua — lớp chặn cứng varietyHeadroom vẫn còn.
         playedGameIds = await badgeReader
@@ -605,7 +758,10 @@ async function _processChoice(orderId, order, token) {
 
 // ── Duyệt tay ────────────────────────────────────────────────────────────────────
 
-/** Duyệt một đơn manual_review: "retry" chạy lại, "forfeit" tịch thu, "cancel" huỷ. */
+/**
+ * Duyệt một đơn manual_review: "retry" chạy lại, "forfeit" tịch thu, "cancel" huỷ.
+ * Đơn tay không có tiền: "cancel" là huỷ hẳn, không có "forfeit".
+ */
 async function resolveManual(orderId, action) {
     const order = await _get(orderId);
     if (!order) throw _err("Order not found", 404);
@@ -614,6 +770,12 @@ async function resolveManual(orderId, action) {
     if (action === "retry") {
         await _patch(orderId, { status: "paid", error: null });
         return processOrder(orderId);
+    }
+    if (order.source === "manual") {
+        if (action !== "cancel") throw _err("An order added by hand can only be retried or cancelled");
+        await _patch(orderId, { status: "cancelled", error: "Cancelled on review" });
+        _dispatch(order, { type: "cancelled", status: "cancelled" });
+        return _shape(await _get(orderId));
     }
     if (action === "forfeit") {
         await _patch(orderId, { status: "forfeited", error: "Bị tịch thu khi duyệt tay" });
@@ -639,12 +801,15 @@ function _shape(o) {
     return rest;
 }
 
-async function listOrders({ ref = null, status = null } = {}) {
+/** source: "manual" = thêm tay trên panel, "auto" = bán qua ArnTo-Auto (đơn cũ không có trường này). */
+async function listOrders({ ref = null, status = null, source = null } = {}) {
     const query = {};
     if (ref) query.ref = ref;
     if (status) query.status = status;
-    const rows = await db.find(MODEL, query);
-    return (rows ?? []).map(_shape).sort((a, b) => b.createdAt - a.createdAt);
+    let rows = (await db.find(MODEL, query)) ?? [];
+    if (source === "manual") rows = rows.filter((o) => o.source === "manual");
+    else if (source === "auto") rows = rows.filter((o) => o.source !== "manual");
+    return rows.map(_shape).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 async function getOrder(orderId) {
@@ -695,6 +860,8 @@ module.exports = {
     check,
     quote,
     createOrder,
+    checkManual,
+    createManualOrder,
     processOrder,
     resolveManual,
     listOrders,

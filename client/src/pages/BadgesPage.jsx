@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client";
-import { usePageAccess } from "../context/AuthContext";
-import { EmptyState, Notice, PageHeader, StatusBadge } from "../components/ui";
+import { useAuth, usePageAccess } from "../context/AuthContext";
+import ManualBadgeModal from "../components/ManualBadgeModal";
+import { EmptyState, Icon, Notice, PageHeader, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Auto Badge — orders + manual review.
@@ -10,6 +11,9 @@ import { EmptyState, Notice, PageHeader, StatusBadge } from "../components/ui";
 //  own: the customer lost Nitro after paying, Discord would not show the progress,
 //  or the panel restarted mid-send. Deliberately not automated — forfeiting a
 //  customer's money because our own infrastructure broke is the worst outcome.
+//
+//  The owner can also add an account by hand (ManualBadgeModal): a free order with
+//  source "manual" that runs the same way. It can only be retried or cancelled.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS = {
@@ -22,7 +26,12 @@ const STATUS = {
     refund_due:    { label: "Refund due",    tone: "danger" },
     token_dead:    { label: "Token dead",    tone: "danger" },
     error:         { label: "Error",         tone: "danger" },
+    cancelled:     { label: "Cancelled",     tone: "neutral" },
 };
+
+// Filter chips: a status, or "manual" for the orders added by hand.
+const FILTERS = ["", "manual_review", "sent", "forfeited", "manual"];
+const filterLabel = (f) => (f === "" ? "All" : f === "manual" ? "By hand" : (STATUS[f]?.label ?? f));
 
 const fmtTime = (ts) => {
     if (!ts) return "—";
@@ -59,10 +68,19 @@ function Btn({ children, onClick, tone = "default", disabled }) {
     );
 }
 
+function Tag({ children, bg, color }) {
+    return (
+        <span style={{ marginLeft: 8, fontSize: 10, padding: "1px 6px", borderRadius: 4, background: bg, color }}>
+            {children}
+        </span>
+    );
+}
+
 function OrderRow({ order, onAction, busy }) {
     const { canEdit } = usePageAccess("badges");
     const st = STATUS[order.status] ?? { label: order.status, tone: "neutral" };
     const pct = order.total ? Math.round((order.sent / order.total) * 100) : 0;
+    const manual = order.source === "manual";
 
     return (
         <div style={{ borderTop: "1px solid var(--border-light)", padding: "12px 0" }}>
@@ -74,14 +92,14 @@ function OrderRow({ order, onAction, busy }) {
                             {order.accountId}
                         </span>
                         {!order.hasNitro && (
-                            <span
-                                style={{
-                                    marginLeft: 8, fontSize: 10, padding: "1px 6px", borderRadius: 4,
-                                    background: "var(--warning-bg)", color: "var(--warning)",
-                                }}
-                            >
+                            <Tag bg="var(--warning-bg)" color="var(--warning)">
                                 no Nitro
-                            </span>
+                            </Tag>
+                        )}
+                        {manual && (
+                            <Tag bg="var(--info-bg)" color="var(--info)">
+                                by hand
+                            </Tag>
                         )}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
@@ -90,7 +108,7 @@ function OrderRow({ order, onAction, busy }) {
                         {order.threshold == null
                             ? ""
                             : ` · ${fmtNum(order.threshold)} ${unitVi(order.unit)}`}{" "}
-                        · {fmtNum(order.price)}đ
+                        · {manual ? "free" : `${fmtNum(order.price)}đ`}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
                         {/* "declared" only exists on orders from before game badges went Nitro-only */}
@@ -101,6 +119,9 @@ function OrderRow({ order, onAction, busy }) {
                         </strong>
                         {order.measuredSource ? ` (${order.measuredSource})` : ""} · created {fmtTime(order.createdAt)}
                     </div>
+                    {order.note && (
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>{order.note}</div>
+                    )}
                     {order.error && (
                         <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>{order.error}</div>
                     )}
@@ -122,7 +143,17 @@ function OrderRow({ order, onAction, busy }) {
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    {canEdit && order.status === "manual_review" && (
+                    {canEdit && order.status === "manual_review" && manual && (
+                        <>
+                            <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
+                                Retry
+                            </Btn>
+                            <Btn disabled={busy} onClick={() => onAction(order.orderId, "cancel")}>
+                                Cancel
+                            </Btn>
+                        </>
+                    )}
+                    {canEdit && order.status === "manual_review" && !manual && (
                         <>
                             <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
                                 Retry
@@ -142,6 +173,8 @@ function OrderRow({ order, onAction, busy }) {
 }
 
 export default function BadgesPage() {
+    const { isOwner } = useAuth();
+    const [adding, setAdding] = useState(false);
     const [orders, setOrders] = useState([]);
     const [filter, setFilter] = useState("");
     const [busy, setBusy] = useState(false);
@@ -149,7 +182,8 @@ export default function BadgesPage() {
 
     const load = useCallback(async () => {
         try {
-            const { data } = await api.get("/badges", { params: filter ? { status: filter } : {} });
+            const params = filter === "manual" ? { source: "manual" } : filter ? { status: filter } : {};
+            const { data } = await api.get("/badges", { params });
             setOrders(data);
             setError("");
         } catch (err) {
@@ -184,6 +218,13 @@ export default function BadgesPage() {
                 <PageHeader
                     title="Auto Badge"
                     description="Badge orders. Payment happens on ArnTo-Auto. Game Time and Game Variety are sold to Nitro accounts only: the panel reads the buyer's progress with their own token, then sends — once sent, the order is done."
+                    actions={
+                        isOwner && (
+                            <button type="button" className="btn-primary" title="A free order — no payment" onClick={() => setAdding(true)}>
+                                <Icon name="plus" /> Add account by hand
+                            </button>
+                        )
+                    }
                 />
             </div>
 
@@ -194,14 +235,14 @@ export default function BadgesPage() {
             )}
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                {["", "manual_review", "sent", "forfeited"].map((s) => (
+                {FILTERS.map((s) => (
                     <button
                         key={s || "all"}
                         type="button"
                         onClick={() => setFilter(s)}
                         className={`chip${filter === s ? " active" : ""}`}
                     >
-                        {s === "" ? "All" : (STATUS[s]?.label ?? s)}
+                        {filterLabel(s)}
                         {s === "manual_review" && pending > 0 ? ` (${pending})` : ""}
                     </button>
                 ))}
@@ -216,6 +257,8 @@ export default function BadgesPage() {
                     ))}
                 </Card>
             )}
+
+            {adding && <ManualBadgeModal onClose={() => setAdding(false)} onCreated={load} />}
         </div>
     );
 }
