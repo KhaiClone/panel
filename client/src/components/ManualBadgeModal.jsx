@@ -6,15 +6,14 @@ import { fmtNum } from "../utils/format";
 // Add an account to Auto Badge by hand — no payment, owner only
 // (server: badgeService.createManualOrder). The order then runs exactly like a
 // paid one: read the progress, plan, send. An account whose progress Discord
-// will not show (no Nitro…) can still be sent to: the owner types its current
-// value, and a wrong number means sending too much or too little.
+// will not answer with (an HTTP error…) can still be sent to: the owner types its
+// current value, and a wrong number means sending too much or too little.
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
 const HOUSES = { 1: "Bravery", 2: "Brilliance", 3: "Balance" };
 
 const UNREADABLE = {
-    needsNitro: "No Nitro, so Discord does not show this account its own Game Time / Game Variety progress.",
-    unreadable: "Discord does not show this account its Game Time / Game Variety progress, even with Nitro.",
+    unreadable: "Discord did not answer with this account's Game Time / Game Variety progress.",
     error: "Could not read this account's Game Time / Game Variety progress.",
 };
 

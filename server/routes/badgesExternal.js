@@ -12,7 +12,7 @@ const badgeService = require("../services/badgeService");
  * POST /check { token }
  * Kiểm token + lấy tình trạng tài khoản trước khi dựng bảng giá. Trả tiến độ
  * hiện tại (đọc bằng token của chính khách), và `tieredAvailable: false` kèm
- * `tieredReason` khi tài khoản không mua được game badge (không Nitro…).
+ * `tieredReason` khi Discord không trả lời được tiến độ (lỗi HTTP…).
  */
 router.post("/check", async (req, res, next) => {
     try {
@@ -27,8 +27,8 @@ router.post("/check", async (req, res, next) => {
 
 /**
  * POST /quote { token, badgeKey, tierKey }
- * Kiểm token + báo giá. Game badge: 400 nếu tài khoản không có Nitro hoặc Discord
- * không cho đọc tiến độ — bot không được hiện QR khi quote lỗi.
+ * Kiểm token + báo giá. Game badge: 400 nếu Discord không trả lời được tiến độ —
+ * bot không được hiện QR khi quote lỗi. Có Nitro hay không không còn quan trọng.
  */
 router.post("/quote", async (req, res, next) => {
     try {

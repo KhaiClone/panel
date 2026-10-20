@@ -9,8 +9,8 @@ import { fmtNum, money } from "../utils/format";
 //  Auto Badge — orders + manual review.
 //
 //  Orders held in "manual_review" are the ones that could NOT be settled on their
-//  own: the customer lost Nitro after paying, Discord would not show the progress,
-//  or the panel restarted mid-send. Deliberately not automated — forfeiting a
+//  own: Discord would not answer with the progress after payment, a send was
+//  refused mid-way, or the panel restarted mid-send. Deliberately not automated — forfeiting a
 //  customer's money because our own infrastructure broke is the worst outcome.
 //
 //  The owner can also add an account by hand (ManualBadgeModal): a free order with
@@ -117,7 +117,10 @@ function OrderRow({ order, onAction, busy }) {
                         <strong style={{ color: order.measuredValue === null ? "var(--text-dim)" : "var(--text-muted)" }}>
                             {fmtNum(order.measuredValue)}
                         </strong>
-                        {order.measuredSource ? ` (${order.measuredSource})` : ""} · created {fmtTime(order.createdAt)}
+                        {order.measuredSource
+                            ? ` (${order.measuredSource === "empty" ? "no badges yet" : order.measuredSource})`
+                            : ""}{" "}
+                        · created {fmtTime(order.createdAt)}
                     </div>
                     {order.note && (
                         <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>{order.note}</div>
@@ -217,7 +220,7 @@ export default function BadgesPage() {
             <div style={{ marginBottom: 20 }}>
                 <PageHeader
                     title="Auto Badge"
-                    description="Badge orders. Payment happens on ArnTo-Auto. Game Time and Game Variety are sold to Nitro accounts only: the panel reads the buyer's progress with their own token, then sends — once sent, the order is done."
+                    description="Badge orders. Payment happens on ArnTo-Auto. Game Time and Game Variety are sold to every account, Nitro or not: the panel reads the buyer's progress with their own token (an account with no badges yet counts as 0), then sends — once sent, the order is done."
                     actions={
                         isOwner && (
                             <button type="button" className="btn-primary" title="A free order — no payment" onClick={() => setAdding(true)}>

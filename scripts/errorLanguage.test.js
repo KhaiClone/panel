@@ -76,7 +76,7 @@ const test = async (name, fn) => {
 (async () => {
     console.log("errors — English on the panel, Vietnamese for ArnTo-Auto");
 
-    await test("badgeReader: dead token, Discord down, closed badge list, failed reads", async () => {
+    await test("badgeReader: dead token, Discord down, failed reads", async () => {
         reply = () => ({ status: 401, data: {} });
         const dead = await caught(() => badgeReader.checkNitro("t"));
         twoTexts(dead, ...TOKEN_DEAD);
@@ -90,10 +90,8 @@ const test = async (name, fn) => {
         twoTexts(await caught(() => badgeReader.readSelf("t", "1")), "Reading the badges failed (HTTP 500)", "Đọc badge thất bại (HTTP 500)");
         twoTexts(await caught(() => badgeReader.readProfileBadges("t", "1")), "Reading the profile failed (HTTP 500)", "Đọc profile thất bại (HTTP 500)");
 
-        reply = () => ({ status: 404, data: {} });
-        const closed = await caught(() => badgeReader.readSelf("t", "1"));
-        twoTexts(closed, "Discord does not open this account's badge list (HTTP 404)", "Discord không mở danh sách badge cho tài khoản này (HTTP 404)");
-        assert.strictEqual(closed.directoryClosed, true);
+        // A 404 on the badge list is no longer an error: the account has no badges
+        // yet and counts as 0 (scripts/badgeReader.test.js).
 
         reply = () => ({ status: 403, data: {} });
         twoTexts(await caught(() => badgeReader.readPlayedApplicationIds("t")), ...TOKEN_DEAD);

@@ -2,12 +2,13 @@
  * badgeReader.js
  * Đọc tiến độ badge của một tài khoản Discord — luôn bằng CHÍNH token của nó.
  *
- * Game Time / Game Variety chỉ bán cho tài khoản có Nitro, vì chỉ chủ tài khoản
- * có Nitro mới đọc được tiến độ của mình:
+ *   GET /users/@me/badges   — CẢ catalog kèm progress.current, tức con số chính
+ *                             xác, kể cả badge chủ acc đã ẩn (`hidden`).
  *
- *   GET /users/@me/badges   — Nitro: CẢ catalog kèm progress.current, tức con số
- *                             chính xác, kể cả badge chủ acc đã ẩn (`hidden`).
- *                             Không Nitro: 404, kể cả /users/@me/badges/{id}.
+ * Có Nitro hay không đều đọc được (2026-10-21). Ngày 2026-10-17 acc không Nitro
+ * còn bị 404 ở mọi đường, nên game badge từng chỉ bán cho Nitro; nay Discord đã
+ * mở cho mọi acc tự xem badge của mình, chỉ acc CHƯA TỪNG đạt thành tựu nào là
+ * không có danh sách — xem readSelf().
  *
  * Không còn reader (acc Nitro đọc hộ người khác). Đo ngày 2026-10-17: người
  * khác xem thì Discord bỏ hẳn trường `hidden`, nên badge bị ẩn trông y hệt badge
@@ -169,7 +170,10 @@ async function _fetchBadges(path, token) {
 
 // ── Public ───────────────────────────────────────────────────────────────────────
 
-/** Token này có Nitro không — game badge chỉ bán khi có. */
+/**
+ * Kiểm token + thông tin tài khoản. Tên hàm có từ hồi game badge chỉ bán cho
+ * Nitro; giờ `hasNitro` chỉ còn để hiển thị trên đơn.
+ */
 async function checkNitro(token) {
     const res = await _get("/users/@me", token);
     if (res.status === 401 || res.status === 403) throw _tokenDead();
@@ -190,22 +194,21 @@ async function checkNitro(token) {
 /**
  * Đọc tiến độ bằng chính token của khách.
  *
- * 404 Ở ĐÂY KHÔNG CHỈ CÓ NGHĨA LÀ "THIẾU NITRO". Đo được trên acc `taynhocuto1811`:
- * `premium_type = 2` (Nitro đầy đủ) mà `/users/@me/badges` vẫn 404. Đường dẫn có
- * id (`/users/{id}/badges`) trả badge đã sở hữu, vẫn kèm progress khi chính chủ
- * gọi (đo 2026-10-17), nên thử nó trước khi bỏ cuộc. Hai đường đều 404 thì ném
- * cờ `directoryClosed` — tài khoản này không mua game badge được.
+ * Đường dẫn có id (`/users/{id}/badges`) trả badge đã sở hữu, vẫn kèm progress
+ * khi chính chủ gọi (đo 2026-10-17), nên thử nó khi `@me` trả 404.
+ *
+ * HAI ĐƯỜNG ĐỀU 404 = TÀI KHOẢN CHƯA CÓ THÀNH TỰU NÀO → mọi badge tính là 0
+ * (`source: "empty"`). Người dùng quan sát 2026-10-21: acc không Nitro nay đều tự
+ * xem được badge, trừ acc chưa từng đạt thành tựu gì thì Discord không hiện danh
+ * sách. Trước đây 404 bị coi là "không đọc được" và chặn bán (đã gặp cả trên acc
+ * Nitro `taynhocuto1811`). Nếu sau này thấy một acc 404 mà thật ra đã có tiến
+ * độ, đơn của nó sẽ gửi thừa: sửa ở đây, đừng sửa ở nơi gọi.
  */
 async function readSelf(token, userId) {
     let res = await _fetchBadges("/users/@me/badges", token);
     if (res.status === 404 && userId) res = await _fetchBadges(`/users/${userId}/badges`, token);
     if (res.status === 401) throw _tokenDead();
-    if (res.status === 404) {
-        throw _err("Discord does not open this account's badge list (HTTP 404)", 400, {
-            directoryClosed: true,
-            vi: "Discord không mở danh sách badge cho tài khoản này (HTTP 404)",
-        });
-    }
+    if (res.status === 404) return { userId, source: "empty", badges: _fillMissing({}) };
     if (res.status !== 200 || !Array.isArray(res.data?.badges)) {
         throw _err(`Reading the badges failed (HTTP ${res.status})`, 502, {
             vi: `Đọc badge thất bại (HTTP ${res.status})`,

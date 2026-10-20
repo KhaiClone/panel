@@ -9,8 +9,8 @@ import { fmtNum } from "../utils/format";
 //
 //  Flat prices per tier: each tier has one fixed price that does NOT depend on
 //  the tier the customer already has, nor on Nitro. Game Time / Game Variety are
-//  sold to Nitro accounts only (the panel reads progress with the customer's own
-//  token).
+//  sold to every account, Nitro or not (the panel reads progress with the
+//  customer's own token).
 //
 //  Each tier's threshold is a Discord value, hard-coded in pricingStore.js and
 //  not editable here — this page only sets prices and turns them on or off.
@@ -78,7 +78,6 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                             {badge.kind === "choice"
                                 ? "pick an option · applies instantly"
                                 : `${unitLabel(badge.unit)} · shows up in ~1 day`}
-                            {badge.requiresNitro ? " · Nitro accounts only" : ""}
                         </span>
                     </div>
                     {!badge.supported && (

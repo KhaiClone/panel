@@ -265,8 +265,9 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Backup:** `.env` đi kèm mỗi backup dạng plain text (đã chấp nhận rủi ro); rollback bằng link message.
 - **Panel log:** mọi thứ vào `DISCORD_PANEL_LOG_WEBHOOK` trừ cảnh báo hết hạn/gia hạn của khách.
 - **Lavalink:** bỏ qua bản cài tay cũ; update 02:00 VN từng node; agent không cài Java.
-- **Auto Badge:** game badge (Game Time/Variety) chỉ BÁN cho acc có Nitro, đọc bằng token chính khách,
-  không reader; gửi xong là xong (không đọc lại); đã có mốc mà mua = mất tiền (forfeit); lỗi đọc → chờ
+- **Auto Badge:** game badge (Game Time/Variety) BÁN CHO MỌI acc, có Nitro hay không (2026-10-21; trước đó
+  chỉ Nitro), đọc bằng token chính khách, không reader; acc chưa có thành tựu nào (Discord 404 cả hai
+  đường) tính là 0; gửi xong là xong (không đọc lại); đã có mốc mà mua = mất tiền (forfeit); lỗi đọc → chờ
   duyệt tay, không tự tịch thu. Đơn **thêm tay** trên trang /badges: owner only, miễn phí, acc không đọc
   được thì owner nhập giá trị hiện tại; không bao giờ forfeit (chỉ Retry/Cancel).
 - **Auto Quest:** pause là một công tắc toàn cục (đơn mới vẫn lưu, chưa chạy); "Run now" không tính là

@@ -4,7 +4,8 @@
  * createManualOrder + routes/badges.js): owner only, free, any catalog tier; an account
  * Discord will not read can be sent to with an entered value; owned tiers are refused,
  * and a manual order is never forfeited — only retried or cancelled. Paid orders keep
- * forfeiting. Errors are English on the panel (orders, /api/badges) and keep their
+ * forfeiting. Game badges are sold to non-Nitro accounts too, and an account with no
+ * badges yet buys from 0. Errors are English on the panel (orders, /api/badges) and keep their
  * Vietnamese text towards ArnTo-Auto (badge.event, /api/external/badges), which shows
  * it to buyers. Discord, the sender, the proxy pool and the callbacks are stubbed.
  * Run:  node scripts/badgeManual.test.js
@@ -44,11 +45,13 @@ const db = {
 };
 stub("db", db);
 
-// Discord accounts by token. values = null → Discord will not show the progress.
+// Discord accounts by token. values = null → Discord fails to answer with the progress;
+// fresh = no badges yet (the real readSelf answers zeros with source "empty").
 const accounts = {
-    nonitro: { userId: "1", username: "free", hasNitro: false, values: null, house: null },
+    nonitro: { userId: "1", username: "free", hasNitro: false, values: { game_time: 3, game_variety: 1 }, house: null },
     nitro: { userId: "2", username: "rich", hasNitro: true, values: { game_time: 10, game_variety: 3 }, house: 1 },
     closed: { userId: "3", username: "closed", hasNitro: true, values: null, house: null },
+    fresh: { userId: "4", username: "new", hasNitro: false, values: {}, empty: true, house: null },
 };
 // Same shape as badgeReader's errors: English message, Vietnamese `vi` for ArnTo-Auto.
 const invalid = () =>
@@ -63,12 +66,12 @@ stub("services/badgeReader", {
     },
     readSelf: async (token, userId) => {
         const a = accounts[token];
-        if (!a.values) throw Object.assign(new Error("HTTP 404"), { status: 400, directoryClosed: true });
+        if (!a.values) throw Object.assign(new Error("Reading the badges failed (HTTP 500)"), { status: 502, vi: "Đọc badge thất bại (HTTP 500)" });
         const badges = {};
         for (const k of ["game_time", "game_variety", "streaming"]) {
             badges[k] = { key: k, value: a.values[k] ?? 0, currentTier: null, owned: (a.values[k] ?? 0) > 0 };
         }
-        return { userId, source: "self", badges };
+        return { userId, source: a.empty ? "empty" : "self", badges };
     },
     readHypeSquadHouse: async (token) => accounts[token].house,
     readPlayedApplicationIds: async () => [],
@@ -167,14 +170,17 @@ const test = async (name, fn) => {
         as = { kind: "owner", username: "admin" };
     });
 
-    await test("check: catalog without unsupported badges, overshoot, and why progress is unreadable", async () => {
+    await test("check: catalog without unsupported badges, overshoot, no Nitro needed, why progress is unreadable", async () => {
         const { status, body } = await call("POST", "/manual/check", { token: "nonitro" });
         assert.strictEqual(status, 200);
         assert.deepStrictEqual(body.catalog.map((b) => b.key), ["game_time", "game_variety", "hypesquad"]);
         assert.strictEqual(body.overshoot, 1.1);
-        assert.strictEqual(body.tieredAvailable, false);
-        assert.strictEqual(body.tieredCode, "needsNitro");
+        assert.strictEqual(body.hasNitro, false);
+        assert.strictEqual(body.tieredAvailable, true);
+        assert.strictEqual(body.tieredCode, null);
+        assert.strictEqual(body.values.game_time.value, 3);
         const closed = await call("POST", "/manual/check", { token: "closed" });
+        assert.strictEqual(closed.body.tieredAvailable, false);
         assert.strictEqual(closed.body.tieredCode, "unreadable");
         const ok = await call("POST", "/manual/check", { token: "nitro" });
         assert.strictEqual(ok.body.values.game_time.value, 10);
@@ -212,15 +218,15 @@ const test = async (name, fn) => {
     });
 
     await test("unreadable account: asks for the current value, then sends from it", async () => {
-        const ask = await call("POST", "/manual", { token: "nonitro", badgeKey: "game_variety", tierKey: "enthusiast" });
+        const ask = await call("POST", "/manual", { token: "closed", badgeKey: "game_variety", tierKey: "enthusiast" });
         assert.strictEqual(ask.status, 400);
         assert.strictEqual(ask.body.needsValue, true);
-        const bad = await call("POST", "/manual", { token: "nonitro", badgeKey: "game_variety", tierKey: "enthusiast", currentValue: -1 });
+        const bad = await call("POST", "/manual", { token: "closed", badgeKey: "game_variety", tierKey: "enthusiast", currentValue: -1 });
         assert.strictEqual(bad.body.needsValue, true);
-        const owned = await call("POST", "/manual", { token: "nonitro", badgeKey: "game_variety", tierKey: "enthusiast", currentValue: 10 });
+        const owned = await call("POST", "/manual", { token: "closed", badgeKey: "game_variety", tierKey: "enthusiast", currentValue: 10 });
         assert.strictEqual(owned.status, 409);
 
-        const { status, body } = await call("POST", "/manual", { token: "nonitro", badgeKey: "game_variety", tierKey: "enthusiast", currentValue: 4 });
+        const { status, body } = await call("POST", "/manual", { token: "closed", badgeKey: "game_variety", tierKey: "enthusiast", currentValue: 4 });
         assert.strictEqual(status, 201);
         assert.strictEqual(body.enteredValue, 4);
         const done = await settle(body.orderId);
@@ -299,6 +305,43 @@ const test = async (name, fn) => {
         assert.ok(auto.body.length === 1 && auto.body[0].ref === "buyer");
     });
 
+    // ── Game badges for every account, Nitro or not (2026-10-21) ────────────────
+    await test("a non-Nitro account buys a game badge like any other", async () => {
+        await pricingStore.setTier("game_time", "dedicated", { price: 1000, enabled: true });
+        const check = await call("POST", "/external/check", { token: "nonitro" });
+        assert.strictEqual(check.body.tieredAvailable, true);
+        assert.strictEqual(check.body.tieredReason, null);
+        assert.strictEqual(check.body.values.game_time.value, 3);
+        const quote = await call("POST", "/external/quote", { token: "nonitro", badgeKey: "game_time", tierKey: "dedicated" });
+        assert.strictEqual(quote.status, 200);
+        assert.strictEqual(quote.body.hasNitro, false);
+        assert.strictEqual(quote.body.currentValue, 3);
+        assert.strictEqual(quote.body.alreadyOwned, false);
+        // An owned tier is still caught before the QR.
+        const owned = await call("POST", "/external/quote", { token: "nonitro", badgeKey: "game_time", tierKey: "casual" });
+        assert.strictEqual(owned.body.alreadyOwned, true);
+
+        const order = await badgeService.createOrder({ token: "nonitro", badgeKey: "game_time", tierKey: "dedicated", ref: "buyer3" });
+        const done = await settle(order.orderId);
+        assert.strictEqual(done.status, "sent");
+        assert.strictEqual(done.measuredValue, 3);
+        assert.strictEqual(done.measuredSource, "self");
+        assert.strictEqual(plans.at(-1).current, 3);
+    });
+
+    await test("an account with no badges yet buys from 0", async () => {
+        const check = await call("POST", "/external/check", { token: "fresh" });
+        assert.strictEqual(check.body.tieredAvailable, true);
+        assert.strictEqual(check.body.values.game_variety.value, 0);
+        const order = await badgeService.createOrder({ token: "fresh", badgeKey: "game_time", tierKey: "dedicated", ref: "buyer3" });
+        const done = await settle(order.orderId);
+        assert.strictEqual(done.status, "sent");
+        assert.strictEqual(done.measuredValue, 0);
+        assert.strictEqual(done.measuredSource, "empty");
+        assert.strictEqual(done.sent, Math.ceil(20 * 1.1));
+        assert.strictEqual(plans.at(-1).varietyHeadroom, 1, "Game Variety at 0 → next tier (2) is 1 away");
+    });
+
     // ── Panel = English, ArnTo-Auto = the Vietnamese its buyers already get ──────
     const VI = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
     const paid = async (token, tierKey) => {
@@ -308,9 +351,9 @@ const test = async (name, fn) => {
     };
 
     await test("external quote/check answer ArnTo-Auto in Vietnamese", async () => {
-        const noNitro = await call("POST", "/external/quote", { token: "nonitro", badgeKey: "game_time", tierKey: "casual" });
-        assert.strictEqual(noNitro.status, 400);
-        assert.strictEqual(noNitro.body.error, "Game Time và Game Variety chỉ bán cho tài khoản có Nitro");
+        const unread = await call("POST", "/external/quote", { token: "closed", badgeKey: "game_time", tierKey: "casual" });
+        assert.strictEqual(unread.status, 400);
+        assert.match(unread.body.error, /^Discord không cho đọc tiến độ badge/);
         const closed = await call("POST", "/external/check", { token: "closed" });
         assert.strictEqual(closed.body.tieredCode, "unreadable");
         assert.match(closed.body.tieredReason, /^Discord không cho đọc tiến độ badge/);

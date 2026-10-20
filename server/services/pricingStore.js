@@ -28,9 +28,9 @@ const RARITY = { 1: "common", 2: "rare", 3: "epic", 5: "mythic" };
 
 // `kind` quyết định cả cách định giá lẫn cách chạy:
 //
-//   "tiered" — khách mua một MỐC. Cần biết giá trị hiện tại (→ dùng reader cho
-//              khách không Nitro), chạy qua /science, badge lên sau ~1 ngày.
-//   "choice" — khách chọn một PHƯƠNG ÁN. Không có ngưỡng, không cần reader,
+//   "tiered" — khách mua một MỐC. Cần biết giá trị hiện tại (đọc bằng token
+//              khách), chạy qua /science, badge lên sau ~1 ngày.
+//   "choice" — khách chọn một PHƯƠNG ÁN. Không có ngưỡng, không cần đọc trước,
 //              gọi API một phát là xong và xác minh được ngay.
 const BADGE_CATALOG = {
     game_time: {
@@ -92,8 +92,7 @@ const BADGE_CATALOG = {
     },
     // HypeSquad: POST /hypesquad/online, ăn ngay, không có mốc.
     // Badge `hypesquad_house_N` hiện trên profile với MỌI người xem (không cần
-    // Nitro), nên xác minh được ngay bằng chính token khách — không tốn reader,
-    // và vì thế cũng không chịu phụ phí non-Nitro.
+    // Nitro), nên xác minh được ngay bằng chính token khách.
     hypesquad: {
         badgeId: 4,
         label: "HypeSquad",
@@ -138,9 +137,9 @@ function _mergeBadges(stored) {
             label: cat.label,
             unit: cat.unit,
             kind,
-            // Badge tiered phải đọc tiến độ, và chỉ chủ acc có Nitro mới đọc được
-            // tiến độ của mình — nên chỉ bán cho tài khoản có Nitro.
-            requiresNitro: kind === "tiered",
+            // Không còn `requiresNitro` (2026-10-21): game badge bán cho mọi tài
+            // khoản. ArnTo-Auto thiếu trường này thì tự coi badge tiered là cần
+            // đọc tiến độ — vẫn ẩn chúng khi check báo `tieredAvailable: false`.
             supported,
             tiers: cat.tiers.map((t) => {
                 const s = storedTiers[t.key] ?? {};
@@ -218,7 +217,7 @@ async function updateFeature(feature, patch = {}) {
 
     const stored = (await db.get(KEY)) || {};
     const current = { ...DEFAULTS[feature], ...(stored[feature] ?? {}) };
-    delete current.nonNitroSurcharge; // đã gỡ: game badge chỉ bán cho Nitro
+    delete current.nonNitroSurcharge; // đã gỡ: game badge không có phụ phí non-Nitro
 
     for (const [k, v] of Object.entries(patch)) {
         if (!(k in DEFAULTS[feature]) || k === "badges") continue;
@@ -242,7 +241,7 @@ async function updateFeature(feature, patch = {}) {
 
 /**
  * Giá của một mốc. Giá phẳng: không phụ thuộc mốc khách đang có, cũng không phụ
- * thuộc Nitro. Chuyện badge nào chỉ bán cho Nitro là việc của badgeService.
+ * thuộc Nitro. Chuyện tài khoản nào mua được là việc của badgeService.
  */
 async function quote(badgeKey, tierKey) {
     const pricing = await getPricing();
@@ -260,7 +259,6 @@ async function quote(badgeKey, tierKey) {
         badgeId: badge.badgeId,
         label: badge.label,
         kind: badge.kind,
-        requiresNitro: badge.requiresNitro,
         unit: badge.unit,
         tier,
         threshold: tier.threshold ?? null,
