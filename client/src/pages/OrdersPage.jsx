@@ -4,8 +4,7 @@ import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import DecoGiftOrderModal from "../components/DecoGiftOrderModal";
 import { DataTable, EmptyState, Icon, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
-
-const money = (n) => (typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—");
+import { money } from "../utils/format";
 
 const STATUS = {
     pending:   { label: "Pending",   tone: "warning" },

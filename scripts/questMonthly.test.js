@@ -4,7 +4,8 @@
  * dies during a pass or the enroll scan stays on /quests as "token_dead" with its
  * reason — after the pass has moved on, on a fresh GET and after a restart — until a
  * pass gets through or the plan is activated again; other failures show as "error".
- * Discord, the proxy pool and the callbacks are stubbed.
+ * Reasons are English on the panel and Vietnamese on /api/external/quests (arnto-auto
+ * shows them to buyers). Discord, the proxy pool and the callbacks are stubbed.
  * Run:  node scripts/questMonthly.test.js
  */
 
@@ -58,9 +59,14 @@ class QuestAutocompleter {
 }
 stub("services/questEngine", {
     QuestAutocompleter,
+    // Same shape as the real one: English `reason` for the panel, `reasonVi` for arnto-auto.
     resolveDiscordAccount: async (token) => {
-        if (token === "dead") return { ok: false, invalidToken: true, reason: "Token không hợp lệ (HTTP 401)" };
-        if (token === "down") return { ok: false, invalidToken: false, reason: "Không kết nối được Discord: ECONNRESET" };
+        if (token === "dead") {
+            return { ok: false, invalidToken: true, reason: "Discord did not accept the token (HTTP 401)", reasonVi: "Token không hợp lệ (HTTP 401)" };
+        }
+        if (token === "down") {
+            return { ok: false, invalidToken: false, reason: "Could not reach Discord: ECONNRESET", reasonVi: "Không kết nối được Discord: ECONNRESET" };
+        }
         return { ok: true, api: { token }, accountId: "111", username: "khai" };
     },
     isInvalidTokenError: (e) => !!e?.invalidToken,
@@ -78,6 +84,7 @@ const questService = require("../server/services/questService");
 const questSettings = require("../server/services/questSettings");
 const questMonthly = require("../server/services/questMonthly");
 const router = require("../server/routes/quests");
+const external = require("../server/routes/questsExternal");
 
 const events = [];
 questService.bus.on("event", (e) => events.push(e));
@@ -109,6 +116,21 @@ const listAccounts = () =>
         });
         req.on("error", reject);
     });
+// POST with a JSON body — /start on the panel router, /external/* = what arnto-auto calls.
+const post = (p, body) =>
+    new Promise((resolve, reject) => {
+        const data = JSON.stringify(body);
+        const req = require("http").request(
+            { port: server.address().port, path: p, method: "POST", agent: false, headers: { "content-type": "application/json", "content-length": Buffer.byteLength(data) } },
+            (res) => {
+                let out = "";
+                res.on("data", (c) => (out += c));
+                res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(out) }));
+            },
+        );
+        req.on("error", reject);
+        req.end(data);
+    });
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -124,6 +146,8 @@ const test = async (name, fn) => {
 (async () => {
     await questSettings.update({ accountDelaySec: 0 });
     const app = express();
+    app.use(express.json());
+    app.use("/external", external);
     app.use(router);
     server = app.listen(0);
     await new Promise((r) => server.once("listening", r));
@@ -174,12 +198,27 @@ const test = async (name, fn) => {
         assert.match(a.error, /rejected the token/);
     });
 
-    await test("Discord unreachable shows as error with its reason", async () => {
+    await test("Discord unreachable shows as error with its reason, in English", async () => {
         await setToken("down");
         await questMonthly.runBatch();
         const [a] = await listAccounts();
         assert.strictEqual(a.status, "error");
-        assert.match(a.error, /ECONNRESET/);
+        assert.strictEqual(a.error, "Could not reach Discord: ECONNRESET");
+    });
+
+    await test("a refused token: English on the panel, Vietnamese for arnto-auto's buyer", async () => {
+        // arnto-auto puts this error in the buyer's "Kích hoạt thất bại" embed.
+        const ext = await post("/external/monthly", { token: "dead", months: 1, ref: "buyer" });
+        assert.strictEqual(ext.status, 401);
+        assert.strictEqual(ext.body.error, "Token không hợp lệ (HTTP 401)");
+        const extDown = await post("/external/start", { token: "down" });
+        assert.strictEqual(extDown.status, 502);
+        assert.strictEqual(extDown.body.error, "Không kết nối được Discord: ECONNRESET");
+        const panel = await post("/start", { token: "dead", mode: "monthly" });
+        assert.strictEqual(panel.status, 401);
+        assert.strictEqual(panel.body.error, "Discord did not accept the token (HTTP 401)");
+        const preview = await post("/preview", { token: "down" });
+        assert.strictEqual(preview.body.error, "Could not reach Discord: ECONNRESET");
     });
 
     await test("a pass that gets through clears it", async () => {

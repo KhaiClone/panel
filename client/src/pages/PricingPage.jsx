@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import { DataTable, Field, Notice, PageHeader, StatusBadge, Toggle } from "../components/ui";
+import { fmtNum } from "../utils/format";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Pricing — the price list of the auto systems.
@@ -28,7 +29,7 @@ const unitLabel = (u) => (u === "hours" ? "hours" : u === "house" ? "house" : "g
 const fmtUnit = (n, unit) =>
     n === null || n === undefined
         ? "—"
-        : `${Number(n).toLocaleString("vi-VN")} ${unitLabel(unit)}`;
+        : `${fmtNum(Number(n))} ${unitLabel(unit)}`;
 
 // ── Building blocks ──────────────────────────────────────────────────────────
 

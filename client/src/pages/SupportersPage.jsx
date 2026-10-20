@@ -3,6 +3,7 @@ import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
+import { money } from "../utils/format";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Supporters — ArnTo-Shop's paid helpers and their salary.
@@ -17,7 +18,6 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchIn
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
 const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—");
-const money = (n) => `${Number(n || 0).toLocaleString("vi-VN")}đ`;
 const mask = (acct) => (acct && acct.length > 4 ? `•••${acct.slice(-4)}` : acct || "—");
 const SNOWFLAKE = /^\d{17,20}$/;
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import api from "../api/client";
 import { Field, Modal, Notice } from "./ui";
+import { fmtNum } from "../utils/format";
 
 // Add an account to Auto Badge by hand — no payment, owner only
 // (server: badgeService.createManualOrder). The order then runs exactly like a
@@ -9,7 +10,6 @@ import { Field, Modal, Notice } from "./ui";
 // value, and a wrong number means sending too much or too little.
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
-const fmtNum = (n) => (Number.isFinite(n) ? Number(n).toLocaleString("vi-VN") : "—");
 const HOUSES = { 1: "Bravery", 2: "Brilliance", 3: "Balance" };
 
 const UNREADABLE = {

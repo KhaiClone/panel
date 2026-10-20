@@ -56,18 +56,18 @@ function _stalled(msg) {
 function _throwIfExpired(quest, name) {
     const exp = _getExpiresAt(quest);
     if (exp && new Date(exp) <= new Date())
-        throw _stalled(`"${name}" đã hết hạn lúc ${exp}`);
+        throw _stalled(`"${name}" expired at ${exp}`);
 }
 
 function _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed }) {
     const now = Date.now();
     if (now - lastProgressAt > NO_PROGRESS_TIMEOUT_MS)
         throw _stalled(
-            `"${name}" đứng yên ${Math.round((now - lastProgressAt) / 60000)} phút ở ${done}/${needed}s`,
+            `"${name}" made no progress for ${Math.round((now - lastProgressAt) / 60000)} min at ${done}/${needed}s`,
         );
     if (now - startedAt > maxRunMs)
         throw _stalled(
-            `"${name}" quá ${Math.round(maxRunMs / 60000)} phút mà chưa xong (${done}/${needed}s)`,
+            `"${name}" still not done after ${Math.round(maxRunMs / 60000)} min (${done}/${needed}s)`,
         );
 }
 
@@ -373,7 +373,7 @@ class QuestAutocompleter {
     }
     _throwIfAborted() {
         if (this.abort?.stopped) {
-            const e = new Error("Đã dừng theo yêu cầu.");
+            const e = new Error("Stopped on request.");
             e.aborted = true;
             throw e;
         }
@@ -424,7 +424,7 @@ class QuestAutocompleter {
                 this._lastFetched = list;
                 return list;
             }
-            _throwIfUnauthorized(res, "Lấy danh sách quest thất bại");
+            _throwIfUnauthorized(res, "Fetching the quest list failed");
             if (res.status === 429) {
                 await sleep(res.data?.retry_after ?? 10);
                 return this.fetchQuests();
@@ -454,7 +454,7 @@ class QuestAutocompleter {
                         isAndroid ? { headers: this.api.androidEnrollHeaders() } : {},
                     );
                     if (res.status === 401) {
-                        const e = new Error("Token bị từ chối khi enroll (401)");
+                        const e = new Error("Discord rejected the token on enroll (401)");
                         e.invalidToken = true;
                         throw e;
                     }
@@ -464,7 +464,7 @@ class QuestAutocompleter {
                     }
                     if (![200, 201, 204].includes(res.status))
                         this._log(
-                            `⚠ Không enroll được "${_getQuestName(q)}" (HTTP ${res.status}) — bỏ qua.`,
+                            `⚠ Could not enroll "${_getQuestName(q)}" (HTTP ${res.status}) — skipped.`,
                         );
                     break;
                 }
@@ -513,7 +513,7 @@ class QuestAutocompleter {
         const name = _getQuestName(quest);
         const needed = _getSecondsNeeded(quest);
         const startedAt = Date.now();
-        this._log(`▶ Bắt đầu "${name}" (${taskType})${needed ? ` — cần ${needed}s` : ""}`);
+        this._log(`▶ Started "${name}" (${taskType})${needed ? ` — needs ${needed}s` : ""}`);
         this._emit({
             type: "quest_start",
             questId: String(quest.id),
@@ -535,7 +535,7 @@ class QuestAutocompleter {
             // move on. invalidToken / aborted still bubble up to the caller's loop.
             if (!err?.questStalled) throw err;
             this.completedIds.add(quest.id); // don't retry it in the same session
-            this._log(`⏭ Bỏ qua ${err.message}`);
+            this._log(`⏭ Skipped ${err.message}`);
             this._emit({
                 type: "quest_skipped",
                 questId: String(quest.id),
@@ -546,7 +546,7 @@ class QuestAutocompleter {
         }
         this.completedIds.add(quest.id);
         const secs = Math.round((Date.now() - startedAt) / 1000);
-        this._log(`✓ Hoàn thành "${name}" (mất ${secs}s)`);
+        this._log(`✓ Completed "${name}" (took ${secs}s)`);
         this._emit({ type: "quest_done", questId: String(quest.id), name, took: secs });
         return { skipped: false };
     }
@@ -585,7 +585,7 @@ class QuestAutocompleter {
                     const res = await this.api.post(`/quests/${qid}/video-progress`, {
                         timestamp: Math.min(needed, done + 7 + Math.random()),
                     });
-                    _throwIfUnauthorized(res, "Video progress thất bại");
+                    _throwIfUnauthorized(res, "Video progress failed");
                     if (res.status === 200) {
                         if (res.data.completed_at) return;
                         done = Math.min(needed, done + 7);
@@ -624,7 +624,7 @@ class QuestAutocompleter {
             const res = await this.api.post(`/quests/${qid}/video-progress`, {
                 timestamp: needed,
             });
-            _throwIfUnauthorized(res, "Video finish thất bại");
+            _throwIfUnauthorized(res, "Video finish failed");
         } catch (err) {
             if (err?.invalidToken) throw err;
         }
@@ -650,7 +650,7 @@ class QuestAutocompleter {
                     application_id: applicationId,
                     terminal: false,
                 });
-                _throwIfUnauthorized(res, "Heartbeat thất bại");
+                _throwIfUnauthorized(res, "Heartbeat failed");
                 if (res.status === 200) {
                     done = res.data.progress?.[taskType]?.value ?? done;
                     if (res.data.completed_at || done >= needed) break;
@@ -687,7 +687,7 @@ class QuestAutocompleter {
                 application_id: applicationId,
                 terminal: true,
             });
-            _throwIfUnauthorized(res, "Heartbeat terminal thất bại");
+            _throwIfUnauthorized(res, "Terminal heartbeat failed");
         } catch (err) {
             if (err?.invalidToken) throw err;
         }
@@ -714,7 +714,7 @@ class QuestAutocompleter {
                     stream_key: streamKey,
                     terminal: false,
                 });
-                _throwIfUnauthorized(res, "Activity heartbeat thất bại");
+                _throwIfUnauthorized(res, "Activity heartbeat failed");
                 if (res.status === 200) {
                     done = res.data.progress?.PLAY_ACTIVITY?.value ?? done;
                     if (res.data.completed_at || done >= needed) break;
@@ -750,7 +750,7 @@ class QuestAutocompleter {
                 stream_key: streamKey,
                 terminal: true,
             });
-            _throwIfUnauthorized(res, "Activity terminal thất bại");
+            _throwIfUnauthorized(res, "Terminal activity heartbeat failed");
         } catch (err) {
             if (err?.invalidToken) throw err;
         }
@@ -758,7 +758,7 @@ class QuestAutocompleter {
 
     async _getActivityReferrer(applicationId) {
         const res = await this.api.post(`/applications/${applicationId}/proxy-tickets`, {});
-        _throwIfUnauthorized(res, "Lấy proxy ticket thất bại");
+        _throwIfUnauthorized(res, "Fetching the proxy ticket failed");
         const referrer = new URL(`https://${applicationId}.discordsays.com/`);
         referrer.searchParams.set("instance_id", "example-cl-instance");
         referrer.searchParams.set("platform", "desktop");
@@ -794,7 +794,7 @@ class QuestAutocompleter {
                     },
                 },
             );
-            _throwIfUnauthorized(authRes, "Achievement authorize thất bại");
+            _throwIfUnauthorized(authRes, "Achievement authorize failed");
             const location = authRes.data?.location;
             const authCode = location ? new URL(location).searchParams.get("code") : null;
             if (!authCode) return;
@@ -844,10 +844,13 @@ class QuestAutocompleter {
 
 /** Validate a token and resolve its Discord account (id + username).
  *  Pass an httpsAgent to route this account's traffic through an egress proxy — the
- *  resolved `api` reuses it for the whole run loop. */
+ *  resolved `api` reuses it for the whole run loop.
+ *  A failure has two texts: `reason` (English) is what the panel stores and shows;
+ *  `reasonVi` is what /api/external/quests answers, because arnto-auto puts that
+ *  error straight into the buyer's "Kích hoạt thất bại" embed. */
 async function resolveDiscordAccount(rawToken, httpsAgent = null) {
     const token = String(rawToken ?? "").trim();
-    if (!token) return { ok: false, invalidToken: false, reason: "Token trống." };
+    if (!token) return { ok: false, invalidToken: false, reason: "The token is empty.", reasonVi: "Token trống." };
     const buildNumber = await getBuildNumber();
     const api = new DiscordAPI(token, buildNumber, httpsAgent);
     try {
@@ -856,7 +859,8 @@ async function resolveDiscordAccount(rawToken, httpsAgent = null) {
             return {
                 ok: false,
                 invalidToken: res.status === 401 || res.status === 403,
-                reason: `Token không hợp lệ (HTTP ${res.status})`,
+                reason: `Discord did not accept the token (HTTP ${res.status})`,
+                reasonVi: `Token không hợp lệ (HTTP ${res.status})`,
             };
         return {
             ok: true,
@@ -866,7 +870,12 @@ async function resolveDiscordAccount(rawToken, httpsAgent = null) {
             username: res.data.username ?? "Unknown",
         };
     } catch (err) {
-        return { ok: false, invalidToken: false, reason: `Không kết nối được Discord: ${err.message}` };
+        return {
+            ok: false,
+            invalidToken: false,
+            reason: `Could not reach Discord: ${err.message}`,
+            reasonVi: `Không kết nối được Discord: ${err.message}`,
+        };
     }
 }
 

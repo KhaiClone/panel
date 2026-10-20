@@ -7,6 +7,8 @@ const questMonthly = require("../services/questMonthly");
 // project key). This is how ArnTo-Auto delegates quest execution to the panel: it
 // keeps payment, the panel runs the quests and webhooks events back. A webhook
 // registered with a project key belongs to that project (callbackService).
+// Errors answer `err.vi` when there is one: arnto-auto shows the text to the buyer
+// in Vietnamese, while `err.message` is the English the panel's own pages show.
 
 /** POST /preview { token } — resolve + list available quests */
 router.post("/preview", async (req, res, next) => {
@@ -15,7 +17,7 @@ router.post("/preview", async (req, res, next) => {
         if (!token) return res.status(400).json({ error: "token required" });
         res.json(await questService.previewToken(token));
     } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });
         next(err);
     }
 });
@@ -40,7 +42,7 @@ router.post("/start", async (req, res, next) => {
             }),
         );
     } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });
         next(err);
     }
 });
@@ -71,7 +73,7 @@ router.post("/monthly", async (req, res, next) => {
             await questMonthly.activate({ token, months, ref, webhookUrl, webhookBotId: req.apiCaller?.botId ?? null }),
         );
     } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });
         next(err);
     }
 });

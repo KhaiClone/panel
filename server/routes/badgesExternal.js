@@ -4,6 +4,9 @@ const badgeService = require("../services/badgeService");
 
 // Mounted at /api/external/badges behind apiKeyMiddleware (PANEL_API_KEY or a project key).
 // ArnTo-Auto giữ phần thanh toán; panel chạy phần còn lại và webhook kết quả về.
+//
+// Lỗi trả về `err.vi` (câu tiếng Việt) khi có: bot đưa nguyên văn tới khách và
+// coi lỗi 400 có chữ "token" là token chết. `err.message` là bản tiếng Anh cho panel.
 
 /**
  * POST /check { token }
@@ -17,7 +20,7 @@ router.post("/check", async (req, res, next) => {
         if (!token) return res.status(400).json({ error: "token là bắt buộc" });
         res.json(await badgeService.check({ token }));
     } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });
         next(err);
     }
 });
@@ -35,7 +38,7 @@ router.post("/quote", async (req, res, next) => {
         }
         res.json(await badgeService.quote({ token, badgeKey, tierKey }));
     } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });
         next(err);
     }
 });
@@ -64,7 +67,7 @@ router.post("/start", async (req, res, next) => {
             }),
         );
     } catch (err) {
-        if (err.status) return res.status(err.status).json({ error: err.message });
+        if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });
         next(err);
     }
 });

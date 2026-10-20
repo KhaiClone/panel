@@ -30,12 +30,21 @@ const BY_ID = Object.fromEntries(
     Object.entries(BADGE_CATALOG).map(([key, cat]) => [cat.badgeId, key]),
 );
 
+// Lỗi mang hai câu: `message` tiếng Anh cho panel (lưu vào đơn, hiện trên trang
+// /badges), `vi` là câu cũ gửi sang ArnTo-Auto — bot đưa nguyên văn lỗi tới khách
+// và coi lỗi 400 có chữ "token" là token chết, nên câu `vi` không được đổi.
 function _err(message, status = 502, extra = {}) {
     const e = new Error(message);
     e.status = status;
     Object.assign(e, extra);
     return e;
 }
+
+const _tokenDead = () =>
+    _err("The token is invalid or dead", 400, {
+        invalidToken: true,
+        vi: "Token không hợp lệ hoặc đã chết",
+    });
 
 function _superProps(buildNumber) {
     return Buffer.from(
@@ -163,10 +172,10 @@ async function _fetchBadges(path, token) {
 /** Token này có Nitro không — game badge chỉ bán khi có. */
 async function checkNitro(token) {
     const res = await _get("/users/@me", token);
-    if (res.status === 401 || res.status === 403) {
-        throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
+    if (res.status === 401 || res.status === 403) throw _tokenDead();
+    if (res.status !== 200) {
+        throw _err(`Discord returned HTTP ${res.status}`, 502, { vi: `Discord trả HTTP ${res.status}` });
     }
-    if (res.status !== 200) throw _err(`Discord trả HTTP ${res.status}`);
     return {
         userId: String(res.data.id),
         username: res.data.username ?? "Unknown",
@@ -190,16 +199,17 @@ async function checkNitro(token) {
 async function readSelf(token, userId) {
     let res = await _fetchBadges("/users/@me/badges", token);
     if (res.status === 404 && userId) res = await _fetchBadges(`/users/${userId}/badges`, token);
-    if (res.status === 401) {
-        throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
-    }
+    if (res.status === 401) throw _tokenDead();
     if (res.status === 404) {
-        throw _err("Discord không mở danh sách badge cho tài khoản này (HTTP 404)", 400, {
+        throw _err("Discord does not open this account's badge list (HTTP 404)", 400, {
             directoryClosed: true,
+            vi: "Discord không mở danh sách badge cho tài khoản này (HTTP 404)",
         });
     }
     if (res.status !== 200 || !Array.isArray(res.data?.badges)) {
-        throw _err(`Đọc badge thất bại (HTTP ${res.status})`);
+        throw _err(`Reading the badges failed (HTTP ${res.status})`, 502, {
+            vi: `Đọc badge thất bại (HTTP ${res.status})`,
+        });
     }
     const found = {};
     for (const raw of res.data.badges) {
@@ -223,11 +233,11 @@ async function readProfileBadges(token, userId) {
         `/users/${userId}/profile?with_mutual_guilds=false&with_mutual_friends=false`,
         token,
     );
-    if (res.status === 401 || res.status === 403) {
-        throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
-    }
+    if (res.status === 401 || res.status === 403) throw _tokenDead();
     if (res.status !== 200 || !Array.isArray(res.data?.badges)) {
-        throw _err(`Đọc profile thất bại (HTTP ${res.status})`);
+        throw _err(`Reading the profile failed (HTTP ${res.status})`, 502, {
+            vi: `Đọc profile thất bại (HTTP ${res.status})`,
+        });
     }
     return res.data.badges.map((b) => b.id);
 }
@@ -246,9 +256,7 @@ async function readProfileBadges(token, userId) {
  */
 async function readPlayedApplicationIds(token) {
     const res = await _get("/users/@me/activities/statistics/applications", token);
-    if (res.status === 401 || res.status === 403) {
-        throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
-    }
+    if (res.status === 401 || res.status === 403) throw _tokenDead();
     if (res.status !== 200 || !Array.isArray(res.data)) return [];
     return res.data.map((a) => String(a.application_id)).filter(Boolean);
 }

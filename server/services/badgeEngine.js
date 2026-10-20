@@ -104,12 +104,20 @@ function _tzFor(locale) {
     return LOCALE_TZ[locale] ?? DEFAULT_TZ;
 }
 
+// `message` tiếng Anh cho panel; `vi` là câu cũ ArnTo-Auto nhận (sự kiện "failed"
+// đi thẳng tới khách) — xem _err trong badgeReader.js.
 function _err(message, status = 502, extra = {}) {
     const e = new Error(message);
     e.status = status;
     Object.assign(e, extra);
     return e;
 }
+
+const _tokenDead = () =>
+    _err("The token is invalid or dead", 400, {
+        invalidToken: true,
+        vi: "Token không hợp lệ hoặc đã chết",
+    });
 
 function _superProps(buildNumber, session, locale = DEFAULT_LOCALE) {
     return Buffer.from(
@@ -152,7 +160,9 @@ async function loadGames() {
         validateStatus: () => true,
     });
     if (res.status !== 200 || !Array.isArray(res.data)) {
-        throw _err(`Không tải được danh sách game (HTTP ${res.status})`);
+        throw _err(`Could not load the game list (HTTP ${res.status})`, 502, {
+            vi: `Không tải được danh sách game (HTTP ${res.status})`,
+        });
     }
     const seen = new Set();
     const list = [];
@@ -164,7 +174,7 @@ async function loadGames() {
         seen.add(id);
         list.push({ id, name: entry.name ?? "Unknown", exe: exe.name });
     }
-    if (!list.length) throw _err("Danh sách game rỗng");
+    if (!list.length) throw _err("The game list is empty", 502, { vi: "Danh sách game rỗng" });
     gamesCache = { list, at: Date.now() };
     return list;
 }
@@ -203,9 +213,9 @@ async function planOrder({
         const fresh = games.filter((g) => !claimed.has(g.id)).slice(0, need);
         if (fresh.length < need) {
             throw _err(
-                `Không đủ game mới: cần ${need}, còn ${fresh.length}`,
+                `Not enough new games: ${need} needed, ${fresh.length} left`,
                 409,
-                { exhausted: true },
+                { exhausted: true, vi: `Không đủ game mới: cần ${need}, còn ${fresh.length}` },
             );
         }
         // 1 phút mỗi game: đủ để tính là "đã chơi", cộng vào Game Time không đáng kể.
@@ -270,7 +280,9 @@ async function planOrder({
         let crossedVarietyTier = false;
         if (!pool.length) {
             const fresh = games.filter((g) => !claimed.has(g.id));
-            if (!fresh.length) throw _err("Không còn game nào để dùng", 409, { exhausted: true });
+            if (!fresh.length) {
+                throw _err("No games left to use", 409, { exhausted: true, vi: "Không còn game nào để dùng" });
+            }
             pool = fresh.slice(0, 1);
             openedNew = 1;
             crossedVarietyTier = varietyHeadroom <= 0;
@@ -309,7 +321,9 @@ async function planOrder({
         };
     }
 
-    throw _err(`Badge chưa hỗ trợ gửi: ${badgeKey}`, 400);
+    throw _err(`Sending is not supported for this badge: ${badgeKey}`, 400, {
+        vi: `Badge chưa hỗ trợ gửi: ${badgeKey}`,
+    });
 }
 
 // ── Sender ───────────────────────────────────────────────────────────────────────
@@ -355,11 +369,13 @@ class BadgeSender {
             validateStatus: () => true,
             ...this._proxyCfg,
         });
-        if (res.status === 401 || res.status === 403) {
-            throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
+        if (res.status === 401 || res.status === 403) throw _tokenDead();
+        if (res.status !== 200) {
+            throw _err(`Discord returned HTTP ${res.status}`, 502, { vi: `Discord trả HTTP ${res.status}` });
         }
-        if (res.status !== 200) throw _err(`Discord trả HTTP ${res.status}`);
-        if (!res.data?.analytics_token) throw _err("Không lấy được analytics_token");
+        if (!res.data?.analytics_token) {
+            throw _err("Could not get the analytics_token", 502, { vi: "Không lấy được analytics_token" });
+        }
         this.analyticsToken = res.data.analytics_token;
         if (res.data.locale) this.locale = res.data.locale;
         return {
@@ -568,12 +584,12 @@ async function setHypeSquad(token, houseId, { agent = null, locale = DEFAULT_LOC
             ...(agent ? { httpsAgent: agent, proxy: false } : {}),
         },
     );
-    if (res.status === 401 || res.status === 403) {
-        throw _err("Token không hợp lệ hoặc đã chết", 400, { invalidToken: true });
-    }
+    if (res.status === 401 || res.status === 403) throw _tokenDead();
     // Discord trả 204 khi thành công.
     if (res.status !== 204 && res.status !== 200) {
-        throw _err(res.data?.message || `Đổi HypeSquad thất bại (HTTP ${res.status})`);
+        throw _err(res.data?.message || `Changing the HypeSquad house failed (HTTP ${res.status})`, 502, {
+            vi: res.data?.message || `Đổi HypeSquad thất bại (HTTP ${res.status})`,
+        });
     }
     return { ok: true, houseId };
 }

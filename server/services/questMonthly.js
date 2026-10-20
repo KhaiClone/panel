@@ -123,6 +123,7 @@ async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = nul
     const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
+        e.vi = resolved.reasonVi; // what /api/external/quests answers (shown to the buyer)
         e.status = resolved.invalidToken ? 401 : 502;
         throw e;
     }

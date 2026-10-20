@@ -41,6 +41,8 @@ const TEMPLATE_VARS = ["{user}", "{id}", "{tag}"];
 const newId = customAlphabet("0123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 10);
 const httpError = (status, message, extra) => Object.assign(new Error(message), { status }, extra);
 const str = (v, max) => String(v ?? "").trim().slice(0, max);
+// Same style as the pages (client/src/utils/format.js money): "1,000,000 VND".
+const vnd = (n) => `${Number(n).toLocaleString("en-US")} VND`;
 
 const DEFAULT_WELCOME = [
     "# Thông Báo Gia Nhập Đội Ngũ Hỗ Trợ Tại ArnTo Shop",
@@ -407,7 +409,7 @@ const update = (userId, input = {}) => {
 /** They leave — refused while they are still owed money (pay them first). */
 const remove = async (userId, who = {}) => {
     const r = requireRow(userId);
-    if (r.balance > 0) throw httpError(409, `Still owed ${r.balance.toLocaleString("vi-VN")}đ — pay it out first`);
+    if (r.balance > 0) throw httpError(409, `Still owed ${vnd(r.balance)} — pay it out first`);
     const now = Date.now();
     let entry;
     conn().transaction(() => {
@@ -436,7 +438,7 @@ const credit = async (userId, input = {}, who = {}) => {
     let entry;
     c.transaction(() => {
         const balance = c.prepare("SELECT balance FROM supporters WHERE user_id = ?").pluck().get(r.user_id) + amount;
-        if (balance < 0) throw httpError(409, `The balance would go below 0 (it is ${(balance - amount).toLocaleString("vi-VN")}đ)`);
+        if (balance < 0) throw httpError(409, `The balance would go below 0 (it is ${vnd(balance - amount)})`);
         c.prepare("UPDATE supporters SET balance = ?, updated_at = ? WHERE user_id = ?").run(balance, Date.now(), r.user_id);
         entry = addEntry(r.user_id, { kind, amount, balance, sellerId, orderId, note }, who);
     })();
@@ -519,7 +521,7 @@ const importFrom = (botId, body = {}) => {
         kvSet(SETTINGS, s);
         kvSet(META, { owner: botId, imported: true, importedAt: Date.now() });
     })();
-    console.log(`[Supporter] Imported ${count} supporters (${total}đ owed) from project ${botId}`);
+    console.log(`[Supporter] Imported ${count} supporters (${vnd(total)} owed) from project ${botId}`);
     return { imported: true, supporters: count, balance: total };
 };
 

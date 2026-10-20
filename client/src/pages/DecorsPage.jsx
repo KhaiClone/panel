@@ -6,6 +6,7 @@ import ConfirmModal from "../components/ConfirmModal";
 import DecorPrices from "../components/DecorPrices";
 import DecorPreview from "../components/decor/DecorPreview";
 import { EmptyState, Icon, Modal, Notice, PageHeader, SearchInput } from "../components/ui";
+import { money } from "../utils/format";
 import "./DecorsPage.css";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +48,6 @@ const SALE_FILTERS = [
 const SECTIONS_PER_PAGE = 8;
 const ITEMS_PER_PAGE = 24;
 
-const money = (n) => (typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—");
 const errText = (err, fallback) => err.response?.data?.error || err.response?.data?.message || fallback;
 
 const sells = (d, w) => !d[w.flag];

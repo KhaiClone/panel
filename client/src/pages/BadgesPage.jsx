@@ -3,6 +3,7 @@ import api from "../api/client";
 import { useAuth, usePageAccess } from "../context/AuthContext";
 import ManualBadgeModal from "../components/ManualBadgeModal";
 import { EmptyState, Icon, Notice, PageHeader, StatusBadge } from "../components/ui";
+import { fmtNum, money } from "../utils/format";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Auto Badge — orders + manual review.
@@ -44,7 +45,6 @@ const fmtTime = (ts) => {
     }
 };
 
-const fmtNum = (n) => (Number.isFinite(n) ? Number(n).toLocaleString("vi-VN") : "—");
 const unitVi = (u) => (u === "hours" ? "hours" : u === "house" ? "house" : "games");
 const badgeVi = (k) =>
     ({ game_time: "Game Time", game_variety: "Game Variety", hypesquad: "HypeSquad", streaming: "Streaming" })[k] ??
@@ -108,7 +108,7 @@ function OrderRow({ order, onAction, busy }) {
                         {order.threshold == null
                             ? ""
                             : ` · ${fmtNum(order.threshold)} ${unitVi(order.unit)}`}{" "}
-                        · {manual ? "free" : `${fmtNum(order.price)}đ`}
+                        · {manual ? "free" : money(order.price)}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
                         {/* "declared" only exists on orders from before game badges went Nitro-only */}

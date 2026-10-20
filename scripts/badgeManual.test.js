@@ -4,7 +4,9 @@
  * createManualOrder + routes/badges.js): owner only, free, any catalog tier; an account
  * Discord will not read can be sent to with an entered value; owned tiers are refused,
  * and a manual order is never forfeited — only retried or cancelled. Paid orders keep
- * forfeiting. Discord, the sender, the proxy pool and the callbacks are stubbed.
+ * forfeiting. Errors are English on the panel (orders, /api/badges) and keep their
+ * Vietnamese text towards ArnTo-Auto (badge.event, /api/external/badges), which shows
+ * it to buyers. Discord, the sender, the proxy pool and the callbacks are stubbed.
  * Run:  node scripts/badgeManual.test.js
  */
 
@@ -48,9 +50,13 @@ const accounts = {
     nitro: { userId: "2", username: "rich", hasNitro: true, values: { game_time: 10, game_variety: 3 }, house: 1 },
     closed: { userId: "3", username: "closed", hasNitro: true, values: null, house: null },
 };
-const invalid = () => Object.assign(new Error("Token không hợp lệ hoặc đã chết"), { status: 400, invalidToken: true });
+// Same shape as badgeReader's errors: English message, Vietnamese `vi` for ArnTo-Auto.
+const invalid = () =>
+    Object.assign(new Error("The token is invalid or dead"), { status: 400, invalidToken: true, vi: "Token không hợp lệ hoặc đã chết" });
+const down = () => Object.assign(new Error("Discord returned HTTP 500"), { status: 502, vi: "Discord trả HTTP 500" });
 stub("services/badgeReader", {
     checkNitro: async (token) => {
+        if (token === "down") throw down();
         const a = accounts[token];
         if (!a) throw invalid();
         return { userId: a.userId, username: a.username, hasNitro: a.hasNitro, premiumType: a.hasNitro ? 2 : 0, locale: "vi" };
@@ -69,7 +75,7 @@ stub("services/badgeReader", {
 });
 
 const plans = [];
-const sender = { abort: false };
+const sender = { abort: false, initError: null };
 stub("services/badgeEngine", {
     planOrder: async (args) => {
         plans.push(args);
@@ -77,7 +83,9 @@ stub("services/badgeEngine", {
         return { games: [{ id: "g1" }], sessions: Array.from({ length: need }, () => ({ game: { id: "g1" }, hours: 1 })), hoursPerSession: 1, need };
     },
     BadgeSender: class {
-        async init() {}
+        async init() {
+            if (sender.initError) throw sender.initError;
+        }
         async run(plan) {
             const total = plan.sessions.length;
             return sender.abort ? { sent: 0, total, aborted: true, status: 429 } : { sent: total, total, aborted: false };
@@ -94,6 +102,7 @@ stub("services/callbackService", { send: (url, botId, event) => webhooks.push(ev
 const badgeService = require("../server/services/badgeService");
 const pricingStore = require("../server/services/pricingStore");
 const router = require("../server/routes/badges");
+const external = require("../server/routes/badgesExternal");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 let server;
@@ -140,8 +149,11 @@ const test = async (name, fn) => {
     app.use(express.json());
     app.use((req, res, next) => {
         req.auth = as;
+        req.apiCaller = { botId: "auto" };
         next();
     });
+    // /external = what ArnTo-Auto calls (/api/external/badges); the rest is the panel's /api/badges.
+    app.use("/external", external);
     app.use(router);
     server = app.listen(0);
     await new Promise((r) => server.once("listening", r));
@@ -285,6 +297,84 @@ const test = async (name, fn) => {
         assert.ok(manual.body.length > 0 && manual.body.every((o) => o.source === "manual"));
         const auto = await call("GET", "/?source=auto");
         assert.ok(auto.body.length === 1 && auto.body[0].ref === "buyer");
+    });
+
+    // ── Panel = English, ArnTo-Auto = the Vietnamese its buyers already get ──────
+    const VI = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+    const paid = async (token, tierKey) => {
+        const order = await badgeService.createOrder({ token, badgeKey: "game_time", tierKey, ref: "buyer2", webhookBotId: "auto" });
+        const done = await settle(order.orderId);
+        return { done, events: webhooks.filter((w) => w.orderId === order.orderId) };
+    };
+
+    await test("external quote/check answer ArnTo-Auto in Vietnamese", async () => {
+        const noNitro = await call("POST", "/external/quote", { token: "nonitro", badgeKey: "game_time", tierKey: "casual" });
+        assert.strictEqual(noNitro.status, 400);
+        assert.strictEqual(noNitro.body.error, "Game Time và Game Variety chỉ bán cho tài khoản có Nitro");
+        const closed = await call("POST", "/external/check", { token: "closed" });
+        assert.strictEqual(closed.body.tieredCode, "unreadable");
+        assert.match(closed.body.tieredReason, /^Discord không cho đọc tiến độ badge/);
+        // Auto reads a 400 that says "token" as a dead token — this reason must not.
+        assert.doesNotMatch(closed.body.tieredReason, /token/i);
+        const dead = await call("POST", "/external/quote", { token: "nope", badgeKey: "game_time", tierKey: "casual" });
+        assert.strictEqual(dead.status, 400);
+        assert.strictEqual(dead.body.error, "Token không hợp lệ hoặc đã chết");
+        const broken = await call("POST", "/external/check", { token: "down" });
+        assert.strictEqual(broken.status, 502);
+        assert.strictEqual(broken.body.error, "Discord trả HTTP 500");
+    });
+
+    await test("the same failures read English on the panel", async () => {
+        const broken = await call("POST", "/manual/check", { token: "down" });
+        assert.strictEqual(broken.status, 502);
+        assert.strictEqual(broken.body.error, "Discord returned HTTP 500");
+    });
+
+    await test("a forfeited order: English on the order, Vietnamese in the event", async () => {
+        const { done, events } = await paid("nitro", "casual");
+        assert.strictEqual(done.status, "forfeited");
+        assert.strictEqual(done.error, "Account already has Casual (10 hours)");
+        const ev = events.find((e) => e.type === "forfeited");
+        assert.strictEqual(ev.error, "Tài khoản đã đạt mốc Casual (10 hours)");
+    });
+
+    await test("unreadable at run time: held for review in English, event in Vietnamese", async () => {
+        await pricingStore.setTier("game_time", "serious", { price: 1000, enabled: true });
+        const { done, events } = await paid("closed", "serious");
+        assert.strictEqual(done.status, "manual_review");
+        assert.match(done.error, /^Discord does not show this account's badge progress/);
+        const ev = events.find((e) => e.type === "manual_review");
+        assert.match(ev.error, /^Discord không cho đọc tiến độ badge/);
+    });
+
+    await test("a token that dies while sending: English on the order, Vietnamese to the buyer", async () => {
+        sender.initError = invalid();
+        const { done, events } = await paid("nitro", "serious");
+        sender.initError = null;
+        assert.strictEqual(done.status, "token_dead");
+        assert.strictEqual(done.error, "The token is invalid or dead");
+        // Auto puts this text in the buyer's "Đơn thất bại" DM.
+        const ev = events.find((e) => e.type === "failed");
+        assert.strictEqual(ev.error, "Token không hợp lệ hoặc đã chết");
+    });
+
+    await test("review outcomes and a send refused mid-way are English", async () => {
+        sender.abort = true;
+        const { done } = await paid("nitro", "serious");
+        sender.abort = false;
+        assert.match(done.error, /^Discord refused with HTTP 429 after 0\/\d+ games$/);
+        const refund = await call("POST", `/${done.orderId}/resolve`, { action: "cancel" });
+        assert.strictEqual(refund.body.error, "Cancelled on review — refund due");
+        sender.abort = true;
+        const again = await paid("nitro", "serious");
+        sender.abort = false;
+        const forfeit = await call("POST", `/${again.done.orderId}/resolve`, { action: "forfeit" });
+        assert.strictEqual(forfeit.body.error, "Forfeited on review");
+    });
+
+    await test("no order the panel lists carries Vietnamese", async () => {
+        const { body } = await call("GET", "/");
+        for (const o of body) assert.doesNotMatch(String(o.error ?? ""), VI, `${o.orderId}: ${o.error}`);
     });
 
     server.close();

@@ -3,6 +3,7 @@ import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
+import { money } from "../utils/format";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Resellers — ArnTo-Shop's resellers: they buy at the reseller price and
@@ -18,7 +19,6 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchIn
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
 const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—");
 const fmtDay = (ts) => (ts ? new Date(ts).toLocaleDateString("en-GB") : "—");
-const money = (n) => `${Number(n || 0).toLocaleString("vi-VN")}đ`;
 const monthName = (m) => (m ? new Date(`${m}-01T00:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "");
 const SNOWFLAKE = /^\d{17,20}$/;
 // The month the figures start on: this one, in Vietnam (UTC+7) like the server's.

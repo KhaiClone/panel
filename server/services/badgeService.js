@@ -99,6 +99,12 @@ function _err(message, status = 400, extra = {}) {
 
 // ── Webhook về ArnTo-Auto ────────────────────────────────────────────────────────
 
+// Lỗi đi hai đường: `order.error` lưu câu tiếng Anh (trang /badges hiển thị), còn
+// `error` trong sự kiện gửi ArnTo-Auto giữ câu tiếng Việt (`err.vi`) — Auto đưa
+// nguyên văn lỗi của sự kiện "failed" vào DM khách. Lỗi không có `vi` (lỗi mạng
+// của axios…) đi nguyên văn như trước.
+const _vi = (err) => err?.vi ?? err?.message;
+
 function _dispatch(order, event) {
     bus.emit("event", { orderId: order.orderId, at: Date.now(), ...event });
     if (!order.webhookUrl && !order.webhookBotId) return;
@@ -162,24 +168,30 @@ function _headroomToNextTier(badgeKey, currentValue) {
 
 // ── Báo giá (ArnTo-Auto gọi trước khi hiện QR) ───────────────────────────────────
 
-const NEEDS_NITRO = "Game Time và Game Variety chỉ bán cho tài khoản có Nitro";
-
 /**
  * Tiến độ game badge của chính khách, đọc bằng token của họ. Ném lỗi 400 với lý
  * do khách đọc được khi không bán được: không Nitro, hoặc có Nitro mà Discord vẫn
- * đóng danh sách badge (đã gặp thật). Đừng để chữ "token" lọt vào câu này — bot
- * sẽ hiểu nhầm thành token chết.
+ * đóng danh sách badge (đã gặp thật). `vi` là câu khách thấy trên Auto. Đừng để
+ * chữ "token" lọt vào câu này — bot sẽ hiểu nhầm thành token chết.
  */
 async function _readOwn(token, me) {
-    if (!me.hasNitro) throw _err(NEEDS_NITRO, 400, { needsNitro: true });
+    if (!me.hasNitro) {
+        throw _err("Game Time and Game Variety are sold to Nitro accounts only", 400, {
+            needsNitro: true,
+            vi: "Game Time và Game Variety chỉ bán cho tài khoản có Nitro",
+        });
+    }
     try {
         return await badgeReader.readSelf(token, me.userId);
     } catch (err) {
         if (err.invalidToken) throw err;
         throw _err(
-            "Discord không cho đọc tiến độ badge của tài khoản này nên hiện chưa mua được Game Time / Game Variety",
+            "Discord does not show this account's badge progress, so Game Time / Game Variety cannot be bought yet",
             400,
-            { unreadable: true },
+            {
+                unreadable: true,
+                vi: "Discord không cho đọc tiến độ badge của tài khoản này nên hiện chưa mua được Game Time / Game Variety",
+            },
         );
     }
 }
@@ -250,7 +262,7 @@ async function check({ token }) {
         );
     } catch (err) {
         if (err.invalidToken) throw err;
-        tieredReason = err.message;
+        tieredReason = _vi(err);
         tieredCode = err.needsNitro ? "needsNitro" : err.unreadable ? "unreadable" : "error";
     }
 
@@ -271,6 +283,7 @@ async function check({ token }) {
         values,
         // false → bot không bán Game Time / Game Variety cho tài khoản này.
         tieredAvailable: values !== null,
+        // Câu tiếng Việt bot đưa nguyên văn cho khách — trang panel không hiện nó.
         tieredReason,
         // Cùng lý do ở dạng mã, cho trang panel (tiếng Anh): needsNitro | unreadable | error.
         tieredCode,
@@ -492,14 +505,14 @@ async function processOrder(orderId) {
 
 async function _process(orderId) {
     let order = await _get(orderId);
-    if (!order) throw _err("Không tìm thấy đơn", 404);
+    if (!order) throw _err("Order not found", 404);
     if (!["paid", "manual_review", "sending"].includes(order.status)) {
         return _shape(order);
     }
 
     const token = _decrypt(order);
     if (!token) {
-        await _patch(orderId, { status: "error", error: "Không giải mã được token" });
+        await _patch(orderId, { status: "error", error: "Could not decrypt the stored token" });
         return _shape(await _get(orderId));
     }
 
@@ -525,14 +538,14 @@ async function _process(orderId) {
     } catch (err) {
         if (err.invalidToken) {
             await _patch(orderId, { status: "token_dead", error: err.message });
-            _dispatch(order, { type: "failed", status: "token_dead", error: err.message });
+            _dispatch(order, { type: "failed", status: "token_dead", error: _vi(err) });
             return _shape(await _get(orderId));
         }
         // Mất Nitro / Discord đóng danh sách badge / lỗi mạng: KHÔNG tịch thu,
         // KHÔNG gửi. Treo chờ duyệt.
         if (entered === null) {
             await _patch(orderId, { status: "manual_review", error: err.message });
-            _dispatch(order, { type: "manual_review", status: "manual_review", error: err.message });
+            _dispatch(order, { type: "manual_review", status: "manual_review", error: _vi(err) });
             return _shape(await _get(orderId));
         }
     }
@@ -543,9 +556,8 @@ async function _process(orderId) {
     if (!Number.isFinite(measured)) {
         // Đọc được badge nhưng không suy ra được con số — cũng là chờ duyệt, vì
         // đoán bừa ở đây thì hoặc gửi thừa hoặc tịch thu oan.
-        const reason = "Không đọc được con số tiến độ";
-        await _patch(orderId, { status: "manual_review", error: reason });
-        _dispatch(order, { type: "manual_review", status: "manual_review", error: reason });
+        await _patch(orderId, { status: "manual_review", error: "Could not read the progress value" });
+        _dispatch(order, { type: "manual_review", status: "manual_review", error: "Không đọc được con số tiến độ" });
         return _shape(await _get(orderId));
     }
 
@@ -566,7 +578,7 @@ async function _process(orderId) {
     if (measured >= order.threshold) {
         const patch = {
             status: order.forfeitOnWrongTier ? "forfeited" : "refund_due",
-            error: `Tài khoản đã đạt mốc ${order.tierName} (${measured} ${order.unit})`,
+            error: `Account already has ${order.tierName} (${measured} ${order.unit})`,
             finalValue: measured,
             finalTier: badge?.currentTier ?? null,
         };
@@ -574,7 +586,7 @@ async function _process(orderId) {
         _dispatch(order, {
             type: order.forfeitOnWrongTier ? "forfeited" : "refund_due",
             status: patch.status,
-            error: patch.error,
+            error: `Tài khoản đã đạt mốc ${order.tierName} (${measured} ${order.unit})`,
             measuredValue: measured,
             threshold: order.threshold,
             unit: order.unit,
@@ -610,13 +622,13 @@ async function _process(orderId) {
         });
     } catch (err) {
         await _patch(orderId, { status: "manual_review", error: err.message });
-        _dispatch(order, { type: "manual_review", status: "manual_review", error: err.message });
+        _dispatch(order, { type: "manual_review", status: "manual_review", error: _vi(err) });
         return _shape(await _get(orderId));
     }
 
     if (!plan.sessions?.length) {
         // Đã đủ rồi mà chưa vượt threshold — hiếm, nhưng đừng gửi rỗng.
-        await _patch(orderId, { status: "manual_review", error: "Kế hoạch rỗng" });
+        await _patch(orderId, { status: "manual_review", error: "The send plan is empty" });
         return _shape(await _get(orderId));
     }
 
@@ -665,7 +677,7 @@ async function _process(orderId) {
         _dispatch(order, {
             type: "failed",
             status: dead ? "token_dead" : "error",
-            error: err.message,
+            error: _vi(err),
         });
         return _shape(await _get(orderId));
     }
@@ -675,7 +687,7 @@ async function _process(orderId) {
         await _patch(orderId, {
             status: "manual_review",
             sent: result.sent,
-            error: `Discord từ chối ở HTTP ${result.status} sau ${result.sent}/${result.total} game`,
+            error: `Discord refused with HTTP ${result.status} after ${result.sent}/${result.total} games`,
         });
         _dispatch(order, { type: "manual_review", status: "manual_review", sent: result.sent });
         return _shape(await _get(orderId));
@@ -726,7 +738,7 @@ async function _processChoice(orderId, order, token) {
         _dispatch(order, {
             type: "failed",
             status: dead ? "token_dead" : "error",
-            error: err.message,
+            error: _vi(err),
         });
         return _shape(await _get(orderId));
     }
@@ -778,12 +790,12 @@ async function resolveManual(orderId, action) {
         return _shape(await _get(orderId));
     }
     if (action === "forfeit") {
-        await _patch(orderId, { status: "forfeited", error: "Bị tịch thu khi duyệt tay" });
+        await _patch(orderId, { status: "forfeited", error: "Forfeited on review" });
         _dispatch(order, { type: "forfeited", status: "forfeited" });
         return _shape(await _get(orderId));
     }
     if (action === "cancel") {
-        await _patch(orderId, { status: "refund_due", error: "Huỷ khi duyệt tay" });
+        await _patch(orderId, { status: "refund_due", error: "Cancelled on review — refund due" });
         _dispatch(order, { type: "refund_due", status: "refund_due" });
         return _shape(await _get(orderId));
     }
@@ -831,7 +843,7 @@ async function restoreOrders() {
         } else if (o.status === "sending") {
             await _patch(o.orderId, {
                 status: "manual_review",
-                error: `Panel restart giữa lúc gửi (${o.sent}/${o.total}). Gửi lại sẽ cộng thừa — kiểm tra rồi quyết.`,
+                error: `The panel restarted mid-send (${o.sent}/${o.total}). Sending again would add too much — check first, then decide.`,
             }).catch(() => {});
         }
     }

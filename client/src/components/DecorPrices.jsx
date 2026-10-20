@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "./ConfirmModal";
+import { money } from "../utils/format";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Decor price table — the assistant's `prices` lookup, edited from the panel.
@@ -19,9 +20,6 @@ import ConfirmModal from "./ConfirmModal";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 3: "Frame" };
-
-const money = (n) =>
-    typeof n === "number" ? n.toLocaleString("vi-VN") + "đ" : "—";
 
 const th = {
     padding: "6px 8px",
@@ -420,7 +418,7 @@ export default function DecorPrices({ onChange }) {
                     title={`Remove the ${removing.type} price for ${money(removing.original)}?`}
                     message={
                         removing.used > 0
-                            ? `${removing.used} ${removing.type === "gift-bundle" ? "bundle(s)" : "decor(s)"} still use this tier: they show 0đ / "no price tier yet" until you set a new price. The row stays in the table for as long as they use it.`
+                            ? `${removing.used} ${removing.type === "gift-bundle" ? "bundle(s)" : "decor(s)"} still use this tier: they show 0 VND / "no price tier yet" until you set a new price. The row stays in the table for as long as they use it.`
                             : "Nothing uses this tier any more — the row disappears from the table."
                     }
                     confirmText="Remove"

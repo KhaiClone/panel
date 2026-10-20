@@ -154,7 +154,8 @@ const discord = { via: "discord", byId: ARNTO, byTag: "arnto" };
         assert.deepStrictEqual(r.discord, { sent: true, queued: true });
         assert.strictEqual(bus.notices[0].payload.event, "credit");
         assert.deepStrictEqual(owed(TAM), { [ARNTO]: 11000, [KHAIDEV]: 5000 });
-        await rejects(() => supporters.credit(TAM, { kind: "deduct", amount: 999999 }, { via: "panel" }), 409);
+        const below = await rejects(() => supporters.credit(TAM, { kind: "deduct", amount: 999999 }, { via: "panel" }), 409);
+        assert.strictEqual(below.message, "The balance would go below 0 (it is 16,000 VND)");
         assert.strictEqual(supporters.get(TAM).balance, 16000, "a refused deduction changes nothing");
         await rejects(() => supporters.credit(TAM, { kind: "add", amount: -5 }, { via: "panel" }), 400);
         await rejects(() => supporters.credit(TAM, { kind: "bonus", amount: 5 }, { via: "panel" }), 400);
@@ -179,7 +180,8 @@ const discord = { via: "discord", byId: ARNTO, byTag: "arnto" };
     });
 
     await test("remove: refused while owed; then they leave, history kept, and can come back", async () => {
-        await rejects(() => supporters.remove(TAM, { via: "panel" }), 409);
+        const owing = await rejects(() => supporters.remove(TAM, { via: "panel" }), 409);
+        assert.strictEqual(owing.message, "Still owed 3,000 VND — pay it out first");
         await supporters.payout(TAM, {}, discord);
         bus.requests.length = 0;
         const r = await supporters.remove(TAM, { via: "panel" });

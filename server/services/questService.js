@@ -230,6 +230,7 @@ async function previewToken(token) {
     const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
+        e.vi = resolved.reasonVi; // what /api/external/quests answers (shown to the buyer)
         e.status = resolved.invalidToken ? 401 : 502;
         throw e;
     }
@@ -269,6 +270,7 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
         // A dead token is not the proxy's fault; anything else might be.
         lease?.release({ failed: !resolved.invalidToken });
         const e = new Error(resolved.reason);
+        e.vi = resolved.reasonVi; // what /api/external/quests answers (shown to the buyer)
         e.status = resolved.invalidToken ? 401 : 502;
         throw e;
     }
@@ -532,7 +534,7 @@ async function _runLoop(accountId, completer, abort, record) {
         if (isInvalidTokenError(err)) {
             _releaseLease(accountId);
             await _setStatus(accountId, "token_dead", {
-                error: "Token không hợp lệ / đã hết hạn.",
+                error: "Discord rejected the token (invalid or expired).",
             });
         } else {
             // The run died for a non-token reason — a rotating proxy gets a fresh IP
@@ -574,7 +576,7 @@ async function restore() {
         const token = _decrypt(rec);
         if (!token) {
             await _setStatus(rec.accountId, "token_dead", {
-                error: "Không giải mã được token (đổi secret?).",
+                error: "Could not decrypt the stored token (secret changed?).",
             });
             continue;
         }

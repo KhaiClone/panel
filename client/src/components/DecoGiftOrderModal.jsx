@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../api/client";
 import { Field, Icon, Modal, Notice, SearchInput } from "./ui";
+import { money } from "../utils/format";
 
 // A Deco Gift order for a buyer who paid in a ticket instead of by QR.
 // ArnTo-Auto records it as paid (server: decorGiftService.createByHand); the
@@ -11,7 +12,6 @@ const MAX_ITEMS = 5;
 const SNOWFLAKE = /^\d{17,20}$/;
 const RESULTS = 30;
 
-const money = (n) => `${Number(n || 0).toLocaleString("vi-VN")}đ`;
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
 const newRef = () => Array.from(window.crypto.getRandomValues(new Uint8Array(12)), (b) => (b % 36).toString(36)).join("");
 /** A pasted mention or ID → the ID. */
