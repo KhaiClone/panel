@@ -55,7 +55,7 @@ router.get("/deco-gift/catalog", async (req, res, next) => {
     }
 });
 
-/** GET /api/shop/deco-gift/buyer/:id → { known, tag } */
+/** GET /api/shop/deco-gift/buyer/:id → { known, tag, reseller } */
 router.get("/deco-gift/buyer/:id", async (req, res, next) => {
     try {
         res.json(await decorGift.buyerInfo(req.params.id));

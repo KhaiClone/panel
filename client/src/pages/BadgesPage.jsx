@@ -111,6 +111,7 @@ function OrderRow({ order, onAction, busy }) {
                             ? ""
                             : ` · ${fmtNum(order.threshold)} ${unitVi(order.unit)}`}{" "}
                         · {manual ? "free" : money(order.price)}
+                        {order.reseller ? " (reseller price)" : ""}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
                         {/* "declared" only exists on orders from before game badges went Nitro-only */}

@@ -5,7 +5,7 @@ const decorGift = require("../services/decorGiftService");
 // Deco Gift panel (services/decorGiftService.js). A project key only: the
 // shared PANEL_API_KEY does not say who is selling.
 //
-//   GET  /catalog                      decors sold as Gift, with prices + images
+//   GET  /catalog                      decors sold as Gift, with prices (+ resellerPrice for CTVs) + images
 //   POST /orders                       { paymentId, buyerId, sellerId, items, total } → the shop's order
 //   POST /orders/:orderId/deliver      { buyerId, items: [{ name, type, link }] } → assistant DMs, shop completes
 //   POST /orders/:orderId/complete     the shop completes (a retry after a delivered-but-not-completed)

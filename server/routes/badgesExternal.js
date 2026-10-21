@@ -26,17 +26,18 @@ router.post("/check", async (req, res, next) => {
 });
 
 /**
- * POST /quote { token, badgeKey, tierKey }
+ * POST /quote { token, badgeKey, tierKey, buyerId? }
  * Kiểm token + báo giá. Game badge: 400 nếu Discord không trả lời được tiến độ —
  * bot không được hiện QR khi quote lỗi. Có Nitro hay không không còn quan trọng.
+ * buyerId (người trả tiền) là CTV → `price` là giá CTV khi mốc có, `reseller: true`.
  */
 router.post("/quote", async (req, res, next) => {
     try {
-        const { token, badgeKey, tierKey } = req.body || {};
+        const { token, badgeKey, tierKey, buyerId } = req.body || {};
         if (!token || !badgeKey || !tierKey) {
             return res.status(400).json({ error: "token, badgeKey, tierKey là bắt buộc" });
         }
-        res.json(await badgeService.quote({ token, badgeKey, tierKey }));
+        res.json(await badgeService.quote({ token, badgeKey, tierKey, buyerId: buyerId ?? null }));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });
         next(err);
@@ -44,9 +45,10 @@ router.post("/quote", async (req, res, next) => {
 });
 
 /**
- * POST /start { token, badgeKey, tierKey, ref?, webhookUrl?, paymentId? }
+ * POST /start { token, badgeKey, tierKey, ref?, webhookUrl?, paymentId?, buyerId? }
  * CHỈ gọi sau khi tiền đã về. Panel đọc giá trị thật bằng token của khách, so
  * với mốc đã mua, rồi gửi /science. Trả về ngay, tiến độ đi qua webhook.
+ * buyerId như /quote: đơn ghi giá CTV khi người mua là CTV.
  */
 router.post("/start", async (req, res, next) => {
     try {
@@ -64,6 +66,7 @@ router.post("/start", async (req, res, next) => {
                 // Key riêng của project → webhook đi theo project đó (callbackService).
                 webhookBotId: req.apiCaller?.botId ?? null,
                 paymentId: req.body.paymentId ?? null,
+                buyerId: req.body.buyerId ?? null,
             }),
         );
     } catch (err) {

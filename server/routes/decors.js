@@ -44,6 +44,15 @@ router.put("/prices", async (req, res, next) => {
     }
 });
 
+/** PUT /api/decors/prices/reseller — a gift / gift-bundle tier's reseller price { type, original, resellerPrice } */
+router.put("/prices/reseller", async (req, res, next) => {
+    try {
+        res.json(await decorService.setResellerPrice(req.body));
+    } catch (err) {
+        next(err);
+    }
+});
+
 /** DELETE /api/decors/prices/:type/:original — remove one tier */
 router.delete("/prices/:type/:original", async (req, res, next) => {
     try {

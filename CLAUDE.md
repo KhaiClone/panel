@@ -280,7 +280,10 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Ticket menus:** quản cả dịch vụ + sản phẩm; owner = project import đầu tiên; `/menu` thay lệnh cũ.
 - **Stock:** /kho trên ArnTo-assistant quản mọi thứ trừ TẠO loại sản phẩm (chỉ panel).
 - **Supporters / CTV:** Supporter = role của bot (/supporter-*); Staff = owner trao tay. CTV trả theo
-  từng đơn, admin thêm tay, giá CTV cho hàng auto "trao đổi sau" (chưa tính gì).
+  từng đơn, admin thêm tay. Giá CTV cho đơn auto (2026-10-21): **giá riêng từng món** đặt cạnh giá
+  thường — Quest lẻ + gói tháng, từng mốc Badge, từng bậc gift / gift-bundle; áp cho CTV đang hoạt
+  động trên trang Resellers ở cả 4 nơi (Quest, Badge, Deco Gift trên Discord, Deco Gift tạo trên web);
+  để trống = giá thường. Đơn ticket vẫn theo kênh giá CTV của owner.
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +
   nút Reload (1 lần/10 phút cho mọi người); Sent giữ 3 ngày.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.

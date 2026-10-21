@@ -869,6 +869,17 @@ being one. One sealed bus command, `reseller.event` (role, DM). Stored in `data/
 | `POST` | `/api/external/resellers` | `{ userId, userTag, shop?, note?, byId, byTag }` → `{ reseller, event }`; 409 if already a CTV |
 | `DELETE` | `/api/external/resellers/:userId` | `{ byId, byTag }` → `{ reseller, event }` |
 
+**Reseller prices on the auto orders.** Auto Quest (per quest, monthly plan) and every Auto
+Badge tier take a reseller price on the Pricing page; every `gift` / `gift-bundle` tier of the
+decor price table takes one too (Decors → Price tiers; stored as `resellerPrice` on the
+assistant's `prices` row, never shown on the decor site). An **active** CTV on this page pays
+the reseller price wherever one is set, the regular price everywhere else — a reseller price
+never puts a tier on sale by itself. ArnTo-Auto asks `GET /api/external/pricing/buyer/:userId`
+→ `{ reseller }` (any project key, cached 60 s) for Auto Quest and Deco Gift, and passes
+`buyerId` to `/api/external/badges/quote` and `/start`, where the panel picks the price itself
+(badge orders keep `reseller: true`). A Deco Gift order made on the Orders page for a CTV is
+priced the same way. Ticket orders are untouched: their CTV prices stay in the owner's channel.
+
 **Messages.** Write a message Discohook-style on the Messages page, pick a channel, and
 ArnTo-assistant posts it as itself (`server/services/botMessages.js`, the bot's side in
 ArnTo-assistant `functions/botMessage.js`). Nothing goes over HTTP to the bot — five bus

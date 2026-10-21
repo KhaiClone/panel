@@ -39,6 +39,7 @@ const db = require("../db");
 const badgeReader = require("./badgeReader");
 const { BadgeSender, planOrder, setHypeSquad } = require("./badgeEngine");
 const pricingStore = require("./pricingStore");
+const resellers = require("./resellerService");
 const proxyPool = require("./proxyPool");
 const callbacks = require("./callbackService");
 
@@ -196,10 +197,13 @@ async function _readOwn(token, me) {
  * Kiểm token + báo giá. Game badge: đọc tiến độ bằng token khách ngay tại đây, và
  * từ chối luôn nếu không đọc được — để không ai trả tiền cho một đơn mà panel
  * không chạy được.
+ *
+ * `buyerId` = Discord id người trả tiền (không phải tài khoản nhận badge): là CTV
+ * thì báo giá CTV của mốc khi có (`reseller: true`).
  */
-async function quote({ token, badgeKey, tierKey }) {
+async function quote({ token, badgeKey, tierKey, buyerId = null }) {
     const me = await badgeReader.checkNitro(token);
-    const q = await pricingStore.quote(badgeKey, tierKey);
+    const q = await pricingStore.quote(badgeKey, tierKey, { reseller: resellers.isReseller(buyerId) });
 
     let current = null;
     let alreadyOwned = null;
@@ -232,6 +236,8 @@ async function quote({ token, badgeKey, tierKey }) {
         threshold: q.threshold,
         unit: q.unit,
         price: q.price,
+        regularPrice: q.regularPrice,
+        reseller: q.reseller,
         currentValue: current,
         alreadyOwned,
         forfeitOnWrongTier: q.forfeitOnWrongTier,
@@ -302,9 +308,10 @@ async function createOrder({
     webhookUrl = null,
     webhookBotId = null,
     paymentId = null,
+    buyerId = null,
 }) {
     const me = await badgeReader.checkNitro(token);
-    const q = await pricingStore.quote(badgeKey, tierKey);
+    const q = await pricingStore.quote(badgeKey, tierKey, { reseller: resellers.isReseller(buyerId) });
 
     const order = {
         orderId: crypto.randomUUID(),
@@ -323,6 +330,7 @@ async function createOrder({
         threshold: q.threshold,
         unit: q.unit,
         price: q.price,
+        reseller: q.reseller, // trả giá CTV
         overshoot: q.overshoot,
         forfeitOnWrongTier: q.forfeitOnWrongTier,
         measuredValue: null,

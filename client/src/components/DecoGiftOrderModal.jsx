@@ -33,7 +33,11 @@ function Thumb({ src }) {
     return src ? <img src={src} alt="" loading="lazy" style={{ ...box, objectFit: "contain" }} /> : <span style={box} />;
 }
 
-function DecorRow({ d, sub, action }) {
+/** What this buyer pays for `d`: an active reseller pays its reseller price when it has one. */
+const priceFor = (d, reseller) => (reseller && d.resellerPrice > 0 ? { price: d.resellerPrice, reseller: true } : { price: d.price, reseller: false });
+
+function DecorRow({ d, sub, action, ctv }) {
+    const { price, reseller } = priceFor(d, ctv);
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", minWidth: 0 }}>
             <Thumb src={d.thumb} />
@@ -41,7 +45,10 @@ function DecorRow({ d, sub, action }) {
                 <p style={{ margin: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</p>
                 <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</p>
             </div>
-            <span className="mono" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{money(d.price)}</span>
+            <span className="mono" style={{ fontSize: 12, whiteSpace: "nowrap" }} title={reseller ? `Reseller price · regular ${money(d.price)}` : undefined}>
+                {money(price)}
+                {reseller && <span style={{ color: "var(--info)", marginLeft: 4 }}>R</span>}
+            </span>
             {action}
         </div>
     );
@@ -50,9 +57,10 @@ function DecorRow({ d, sub, action }) {
 function BuyerHint({ id, buyer }) {
     if (!id) return "Paste their ID or mention — ArnTo-Shop DMs them the bill, ArnTo-assistant the gift links.";
     if (!buyer || buyer.id !== id) return "Looking up…";
-    if (buyer.known === true) return <span style={{ color: "var(--success)" }}>✓ {buyer.tag}</span>;
+    const reseller = buyer.reseller ? " · reseller — decors with a reseller price (R) cost that" : "";
+    if (buyer.known === true) return <span style={{ color: "var(--success)" }}>✓ {buyer.tag}{reseller}</span>;
     if (buyer.known === false) return <span style={{ color: "var(--danger)" }}>No Discord user has this ID.</span>;
-    return "Could not look the name up (the panel's Discord bot is away) — check the ID yourself.";
+    return `Could not look the name up (the panel's Discord bot is away) — check the ID yourself${reseller}.`;
 }
 
 function Result({ result, buyer, onAgain, onClose }) {
@@ -170,8 +178,10 @@ export default function DecoGiftOrderModal({ onClose, onCreated }) {
             .map(([, d]) => d);
     }, [query, decors, index, catNorm]);
 
+    // The server prices the order the same way (decorGiftService.createByHand).
+    const ctv = buyer?.id === buyerId && buyer.reseller === true;
     const items = picked.map((s) => index.get(s)).filter(Boolean);
-    const total = items.reduce((s, d) => s + d.price, 0);
+    const total = items.reduce((s, d) => s + priceFor(d, ctv).price, 0);
     const full = picked.length >= MAX_ITEMS;
     const sub = (d) => [d.typeLabel, catName.get(d.category)].filter(Boolean).join(" · ");
     const unknownBuyer = buyer?.id === buyerId && buyer.known === false;
@@ -225,7 +235,10 @@ export default function DecoGiftOrderModal({ onClose, onCreated }) {
                     {/* Not a <Field>: a <label> would send every click in the list to its first button. */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>
-                            Decors ({items.length}/{MAX_ITEMS}) <span style={{ fontWeight: 400, color: "var(--text-dim)" }}>· Gift prices from the Decors page, not editable here</span>
+                            Decors ({items.length}/{MAX_ITEMS}){" "}
+                            <span style={{ fontWeight: 400, color: "var(--text-dim)" }}>
+                                · Gift prices from the Decors page, not editable here{ctv ? " · reseller prices (R) for this buyer" : ""}
+                            </span>
                         </span>
                         {items.length > 0 && (
                             <div className="card" style={{ padding: 2 }}>
@@ -233,6 +246,7 @@ export default function DecoGiftOrderModal({ onClose, onCreated }) {
                                     <DecorRow
                                         key={d.sku_id}
                                         d={d}
+                                        ctv={ctv}
                                         sub={sub(d)}
                                         action={
                                             <button
@@ -271,6 +285,7 @@ export default function DecoGiftOrderModal({ onClose, onCreated }) {
                                             <DecorRow
                                                 key={d.sku_id}
                                                 d={d}
+                                                ctv={ctv}
                                                 sub={sub(d)}
                                                 action={
                                                     <button

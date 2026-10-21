@@ -18,10 +18,16 @@ const discordBus = require("./discordBus");
 //  for 0 here (what the decor site and the snapshot show), and the assistant's
 //  /decor-find says it is not sold; /decor-load carries the flags over when it
 //  rewrites `decors`.
+//
+//  Reseller prices: a `gift` / `gift-bundle` row may carry `resellerPrice`, what
+//  an active CTV pays for a Deco Gift (ArnTo-Auto, or an order made on the
+//  panel) — empty = the regular price. Only the Deco Gift catalog reads it: the
+//  public decor site never sees it. The assistant reads `price` only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NAMES = ["decors", "importedDecors", "prices", "decorCategories"];
 const PRICE_TYPES = ["login", "gift", "gift-bundle"];
+const RESELLER_TYPES = ["gift", "gift-bundle"]; // the auto (Deco Gift) ones
 
 /** Way of selling → the record flag that switches it off. `gift` is the bundle's gift-bundle too. */
 const SALE_FLAGS = { loginWithNitro: "noLoginWithNitro", loginWithoutNitro: "noLoginWithoutNitro", gift: "noGift" };
@@ -38,12 +44,20 @@ const owner = () => sharedStore.nameRow("importedDecors")?.owner || null;
 const read = (name, op = "get", query) => sharedStore.run(name, op, { query });
 const write = (name, op, args) => sharedStore.run(name, op, args);
 
+/** A row's reseller price: a number above 0, else null (not set). */
+const resellerOf = (row) => (Number.isFinite(row?.resellerPrice) && row.resellerPrice > 0 ? row.resellerPrice : null);
+
 const priceLookup = (pricesRaw) => {
     const priceMap = {};
-    for (const p of pricesRaw) priceMap[`${p.type}:${p.original}`] = p.price;
+    const resellerMap = {};
+    for (const p of pricesRaw) {
+        priceMap[`${p.type}:${p.original}`] = p.price;
+        resellerMap[`${p.type}:${p.original}`] = resellerOf(p);
+    }
     return {
         getPrice: (type, original) => priceMap[`${type}:${original}`] ?? 0,
         hasPrice: (type, original) => Object.prototype.hasOwnProperty.call(priceMap, `${type}:${original}`),
+        getResellerPrice: (type, original) => resellerMap[`${type}:${original}`] ?? null,
     };
 };
 
@@ -51,13 +65,15 @@ const priceLookup = (pricesRaw) => {
  * GET /api/decors — decors + imported, with selling prices (the public site's
  * shape). `sellingPrices` honours the sale switches (0 = not sold); with
  * `tierPrices`, the Decors page also gets what each way costs from the price
- * table regardless of them, so flipping a switch needs no reload.
+ * table regardless of them, so flipping a switch needs no reload. With
+ * `reseller` (the Deco Gift catalog only), `resellerGift` is the gift's — or
+ * the bundle's gift-bundle — reseller price, null when not set or not sold.
  */
-const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = false } = {}) => {
+const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = false, reseller = false } = {}) => {
     const allDecors = [...decorsRaw, ...importedDecorsRaw];
     const importedSkuIds = new Set(importedDecorsRaw.map((d) => d.sku_id));
     const decorMap = Object.fromEntries(allDecors.map((d) => [d.sku_id, d]));
-    const { getPrice } = priceLookup(pricesRaw);
+    const { getPrice, getResellerPrice } = priceLookup(pricesRaw);
 
     return allDecors.map((decor) => {
         const fromImported = importedSkuIds.has(decor.sku_id);
@@ -82,6 +98,7 @@ const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = 
                     giftBundle: sells(decor, "gift") ? giftBundle : 0,
                 },
                 ...(tierPrices ? { tierPrices: tier } : {}),
+                ...(reseller ? { resellerGift: sells(decor, "gift") && giftBundle > 0 ? getResellerPrice("gift-bundle", totalGiftPrice) : null } : {}),
                 items,
             };
         }
@@ -99,6 +116,7 @@ const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = 
                 gift: sells(decor, "gift") ? tier.gift : 0,
             },
             ...(tierPrices ? { tierPrices: tier } : {}),
+            ...(reseller ? { resellerGift: sells(decor, "gift") && tier.gift > 0 ? getResellerPrice("gift", decor.prices.withNitro) : null } : {}),
         };
     });
 };
@@ -123,7 +141,7 @@ const listCategories = async () => {
  */
 const buildPriceReport = (decorsRaw, importedRaw, prices) => {
     const decors = [...decorsRaw, ...importedRaw];
-    const { getPrice, hasPrice } = priceLookup(prices);
+    const { getPrice, hasPrice, getResellerPrice } = priceLookup(prices);
     const priceOf = (type, original) => (hasPrice(type, original) ? getPrice(type, original) : null);
     const ref = (d) => ({ sku_id: d.sku_id, name: d.name, type: d.type });
 
@@ -135,6 +153,7 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
                 original,
                 login: priceOf("login", original),
                 gift: priceOf("gift", original),
+                giftReseller: getResellerPrice("gift", original),
                 decorCount: 0,
                 loginCount: 0,
                 giftCount: 0,
@@ -177,7 +196,9 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
         if (b.type !== 1000 || !sells(b, "gift")) continue;
         const members = (b.items || []).map((s) => decorMap[s]).filter(Boolean);
         const total = members.reduce((sum, m) => sum + getPrice("gift", m.prices?.withNitro), 0);
-        if (!bundleTiers.has(total)) bundleTiers.set(total, { total, giftBundle: priceOf("gift-bundle", total), bundleCount: 0, bundles: [] });
+        if (!bundleTiers.has(total)) {
+            bundleTiers.set(total, { total, giftBundle: priceOf("gift-bundle", total), giftBundleReseller: getResellerPrice("gift-bundle", total), bundleCount: 0, bundles: [] });
+        }
         const t = bundleTiers.get(total);
         t.bundleCount++;
         t.bundles.push(ref(b));
@@ -185,7 +206,9 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
 
     for (const p of prices) {
         if (p.type === "gift-bundle") {
-            if (!bundleTiers.has(p.original)) bundleTiers.set(p.original, { total: p.original, giftBundle: p.price, bundleCount: 0, bundles: [] });
+            if (!bundleTiers.has(p.original)) {
+                bundleTiers.set(p.original, { total: p.original, giftBundle: p.price, giftBundleReseller: resellerOf(p), bundleCount: 0, bundles: [] });
+            }
         } else if (!decorTiers.has(p.original)) {
             tier(p.original);
         }
@@ -197,7 +220,7 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
     for (const t of bundleTiers.values()) t.bundles.sort(byName);
     return {
         types: PRICE_TYPES,
-        rows: prices.map(({ type, original, price }) => ({ type, original, price })),
+        rows: prices.map((p) => ({ type: p.type, original: p.original, price: p.price, resellerPrice: resellerOf(p) })),
         decorTiers: [...decorTiers.values()].sort(byNumber("original")),
         bundleTiers: [...bundleTiers.values()].sort(byNumber("total")),
     };
@@ -221,6 +244,26 @@ const upsertPrice = async (body = {}) => {
         ? write("prices", "findOneAndUpdate", { query: { type, original }, data: { price } })
         : write("prices", "create", { data: { type, original, price } });
     return { message: existing ? "Price tier updated" : "Price tier added", row };
+};
+
+/**
+ * The reseller price of an existing gift / gift-bundle tier { type, original,
+ * resellerPrice } — empty / null clears it (CTVs pay the regular price).
+ */
+const setResellerPrice = async (body = {}) => {
+    requirePanel();
+    const { type } = body;
+    const original = Number(body.original);
+    if (!RESELLER_TYPES.includes(type)) throw httpError(400, `Reseller prices are for ${RESELLER_TYPES.join(" and ")} tiers only.`);
+    if (!Number.isFinite(original) || original < 0) throw httpError(400, "original must be a non-negative number.");
+    let resellerPrice = null;
+    if (body.resellerPrice !== null && body.resellerPrice !== undefined && body.resellerPrice !== "") {
+        resellerPrice = Math.round(Number(body.resellerPrice));
+        if (!Number.isFinite(resellerPrice) || resellerPrice <= 0) throw httpError(400, "The reseller price must be above 0 — leave it empty for the regular price.");
+    }
+    if (!read("prices", "findOne", { type, original })) throw httpError(404, "Set the regular price of this tier first.");
+    const row = write("prices", "findOneAndUpdate", { query: { type, original }, data: { resellerPrice } });
+    return { message: resellerPrice ? "Reseller price saved" : "Reseller price removed", row };
 };
 
 const deletePrice = async (type, rawOriginal) => {
@@ -310,6 +353,7 @@ module.exports = {
     listCategories,
     listPrices,
     upsertPrice,
+    setResellerPrice,
     deletePrice,
     updateDecor,
     updateDecors,

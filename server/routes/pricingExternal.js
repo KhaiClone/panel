@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const pricingStore = require("../services/pricingStore");
+const resellers = require("../services/resellerService");
 
 // Mounted at /api/external/pricing behind apiKeyMiddleware (x-api-key = PANEL_API_KEY).
 //
@@ -12,6 +13,22 @@ const pricingStore = require("../services/pricingStore");
 router.get("/", async (req, res, next) => {
     try {
         res.json(await pricingStore.getPricing());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /buyer/:userId → { userId, reseller }
+ * Người mua có phải CTV đang hoạt động không (danh sách Resellers trên panel).
+ * reseller: true → bot tính giá CTV của những món có giá CTV (resellerPrice…),
+ * món không có giá CTV vẫn giá thường. Auto Badge thì panel tự quyết qua
+ * /api/external/badges/quote { buyerId }.
+ */
+router.get("/buyer/:userId", async (req, res, next) => {
+    try {
+        const userId = String(req.params.userId);
+        res.json({ userId, reseller: resellers.isReseller(userId) });
     } catch (err) {
         next(err);
     }
@@ -32,17 +49,17 @@ router.get("/:feature", async (req, res, next) => {
 });
 
 /**
- * POST /quote { badgeKey, tierKey, hasNitro }
- * Giá cuối cùng của một mốc. Giá phẳng — không phụ thuộc mốc khách đang có; chỉ
- * hệ số non-Nitro làm thay đổi con số.
+ * POST /quote { badgeKey, tierKey, buyerId? }
+ * Giá cuối cùng của một mốc. Giá phẳng — không phụ thuộc mốc khách đang có hay
+ * Nitro; chỉ người mua là CTV (buyerId) mới đổi con số, khi mốc có giá CTV.
  */
 router.post("/quote", async (req, res, next) => {
     try {
-        const { badgeKey, tierKey, hasNitro = true } = req.body || {};
+        const { badgeKey, tierKey, buyerId } = req.body || {};
         if (!badgeKey || !tierKey) {
             return res.status(400).json({ error: "badgeKey và tierKey là bắt buộc" });
         }
-        res.json(await pricingStore.quote(badgeKey, tierKey, { hasNitro: Boolean(hasNitro) }));
+        res.json(await pricingStore.quote(badgeKey, tierKey, { reseller: resellers.isReseller(buyerId) }));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);

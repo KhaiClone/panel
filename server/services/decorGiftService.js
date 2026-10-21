@@ -1,6 +1,7 @@
 const sharedStore = require("./sharedStore");
 const discordBus = require("./discordBus");
 const decorService = require("./decorService");
+const resellers = require("./resellerService");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Auto Deco Gift — a buyer picks decors on ArnTo-Auto's Discord panel, pays by
@@ -77,11 +78,12 @@ const artOf = (decor) => {
 /**
  * Every decor sold as a Gift (switch on, priced), grouped like the decor site:
  * its theme in the categories' order, leftovers under "Khác".
- * → { categories: [{ sku_id, name, count }], decors: [{ sku_id, name, type, typeLabel, category, price, thumb, image, members?, ...art }] }
+ * → { categories: [{ sku_id, name, count }], decors: [{ sku_id, name, type, typeLabel, category, price, resellerPrice, thumb, image, members?, ...art }] }
  *   `image` is `thumb` again, for readers from before the art fields.
+ *   `resellerPrice`: what an active CTV pays (the price table's), null = `price`.
  */
 const catalog = async () => {
-    const [list, cats] = await Promise.all([decorService.listDecors(), decorService.listCategories()]);
+    const [list, cats] = await Promise.all([decorService.listDecors({ reseller: true }), decorService.listCategories()]);
     const decors = [];
     for (const d of list) {
         const price = d.type === 1000 ? d.sellingPrices?.giftBundle : d.sellingPrices?.gift;
@@ -94,6 +96,7 @@ const catalog = async () => {
             typeLabel: TYPE_LABEL[d.type] || "Decor",
             category: d.category_sku_id || null,
             price,
+            resellerPrice: d.resellerGift ?? null,
             thumb,
             image: thumb,
             ...(d.type === 1000 ? { members: (d.items || []).map((i) => i.name).filter(Boolean) } : {}),
@@ -213,7 +216,8 @@ const cancelOrder = async (orderId) => {
 // A buyer who paid in a ticket instead of by QR: staff pick the decors on the
 // Orders page and ArnTo-Auto records the order as paid — bus "decor.gift.create".
 // From there it is an ordinary Deco Gift order: the shop's arnto_N, the staff
-// card, an admin approves with the links. Priced from the catalog, never by hand.
+// card, an admin approves with the links. Priced from the catalog, never by hand
+// — an active CTV at the reseller prices, like on ArnTo-Auto's Discord panel.
 
 const MANUAL_REF = /^[a-z0-9]{8,20}$/;
 // Auto asks the panel for the shop's order (≤ BUS_TIMEOUT) before it answers.
@@ -225,14 +229,18 @@ const auto = () => {
     return botId;
 };
 
-/** A Discord user id → { known: true, tag } | { known: false } | { known: null } (the bus is down). */
+/**
+ * A Discord user id → { known: true, tag } | { known: false } | { known: null } (the bus is down),
+ * each with `reseller`: an active CTV pays the reseller prices.
+ */
 const buyerInfo = async (id) => {
     if (!SNOWFLAKE.test(String(id || ""))) throw httpError(400, "Not a Discord user ID");
+    const reseller = resellers.isReseller(id);
     try {
         const tag = await discordBus.userTag(id);
-        return tag === undefined ? { known: null, tag: null } : { known: true, tag };
+        return tag === undefined ? { known: null, tag: null, reseller } : { known: true, tag, reseller };
     } catch (err) {
-        if (err.code === 10013) return { known: false, tag: null }; // unknown user
+        if (err.code === 10013) return { known: false, tag: null, reseller }; // unknown user
         throw err;
     }
 };
@@ -253,10 +261,16 @@ const createByHand = async ({ ref, buyerId, skus, note } = {}, auth = {}) => {
 
     const target = auto();
     const index = new Map((await catalog()).decors.map((d) => [String(d.sku_id), d]));
+    // An active CTV pays the reseller price of each decor that has one.
+    const ctv = resellers.isReseller(buyer);
+    let atResellerPrice = false;
     const items = wanted.map((sku) => {
         const d = index.get(sku);
         if (!d) throw httpError(409, "A picked decor is no longer sold as a Gift — reopen the form");
-        return { sku_id: d.sku_id, name: d.name, type: d.type, typeLabel: d.typeLabel, price: d.price, thumb: d.thumb || null, image: d.image || null };
+        const asReseller = ctv && d.resellerPrice > 0;
+        if (asReseller) atResellerPrice = true;
+        const price = asReseller ? d.resellerPrice : d.price;
+        return { sku_id: d.sku_id, name: d.name, type: d.type, typeLabel: d.typeLabel, price, thumb: d.thumb || null, image: d.image || null };
     });
     const by =
         auth.kind === "staff"
@@ -270,6 +284,8 @@ const createByHand = async ({ ref, buyerId, skus, note } = {}, auth = {}) => {
             buyerId: buyer,
             items,
             total: items.reduce((s, i) => s + i.price, 0),
+            // At least one decor at its reseller price — ArnTo-Auto says so on the staff card.
+            reseller: atResellerPrice,
             note: String(note || "").trim().slice(0, 300),
             by,
         },

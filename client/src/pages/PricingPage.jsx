@@ -14,6 +14,10 @@ import { fmtNum } from "../utils/format";
 //
 //  Each tier's threshold is a Discord value, hard-coded in pricingStore.js and
 //  not editable here — this page only sets prices and turns them on or off.
+//
+//  Reseller prices: what an active reseller (the Resellers page) pays instead.
+//  Empty = they pay the regular price; a tier still needs its regular price and
+//  its switch to be on sale at all.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RARITY_COLOR = {
@@ -43,6 +47,9 @@ function Card({ children, style }) {
 
 const capitalize = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
+const priceText = (v) => (v === null || v === undefined ? "" : String(v));
+const priceValue = (s) => (s === "" ? null : Number(s));
+
 // ── Badge pricing table ──────────────────────────────────────────────────────
 
 function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
@@ -52,8 +59,7 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
             badge.tiers.some((t) => {
                 const d = drafts[t.key];
                 if (!d) return false;
-                const priceNow = t.price === null ? "" : String(t.price);
-                return d.price !== priceNow || d.enabled !== t.enabled;
+                return d.price !== priceText(t.price) || d.resellerPrice !== priceText(t.resellerPrice) || d.enabled !== t.enabled;
             }),
         [badge.tiers, drafts],
     );
@@ -100,11 +106,19 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
 
             <DataTable
                 flush
-                minWidth={560}
-                columns={["#", "Tier / option", "Threshold", "Rarity", { label: "Price (VND)", width: 150 }, { label: "On sale", width: 70 }]}
+                minWidth={720}
+                columns={[
+                    "#",
+                    "Tier / option",
+                    "Threshold",
+                    "Rarity",
+                    { label: "Price (VND)", width: 150 },
+                    { label: "Reseller price (VND)", width: 160 },
+                    { label: "On sale", width: 70 },
+                ]}
             >
                 {badge.tiers.map((t, i) => {
-                    const d = drafts[t.key] ?? { price: "", enabled: false };
+                    const d = drafts[t.key] ?? { price: "", resellerPrice: "", enabled: false };
                     const priced = d.price !== "" && Number(d.price) > 0;
                     return (
                         <tr key={t.key}>
@@ -135,6 +149,22 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
                                 />
                             </td>
                             <td>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min="0"
+                                    step="1000"
+                                    placeholder="regular price"
+                                    title="What an active reseller pays. Empty = the regular price."
+                                    value={d.resellerPrice}
+                                    disabled={!badge.supported}
+                                    onChange={(e) =>
+                                        setDraft(badgeKey, t.key, { resellerPrice: e.target.value })
+                                    }
+                                    style={{ padding: "6px 8px", fontSize: 13 }}
+                                />
+                            </td>
+                            <td>
                                 <Toggle
                                     checked={d.enabled}
                                     disabled={!priced || !badge.supported}
@@ -157,11 +187,13 @@ function BadgeTable({ badgeKey, badge, drafts, setDraft, onSave, saving }) {
 export default function PricingPage() {
     const { canEdit } = usePageAccess("pricing");
     const [pricing, setPricing] = useState(null);
-    const [drafts, setDrafts] = useState({}); // { [badgeKey]: { [tierKey]: {price, enabled} } }
+    const [drafts, setDrafts] = useState({}); // { [badgeKey]: { [tierKey]: {price, resellerPrice, enabled} } }
     const [settings, setSettings] = useState(null);
     const [others, setOthers] = useState({
         questPricePerItem: "",
         questMonthlyPrice: "",
+        questResellerPricePerItem: "",
+        questResellerMonthlyPrice: "",
     });
     const [saving, setSaving] = useState("");
     const [error, setError] = useState("");
@@ -174,7 +206,8 @@ export default function PricingPage() {
             d[badgeKey] = {};
             for (const t of badge.tiers) {
                 d[badgeKey][t.key] = {
-                    price: t.price === null ? "" : String(t.price),
+                    price: priceText(t.price),
+                    resellerPrice: priceText(t.resellerPrice),
                     enabled: t.enabled,
                 };
             }
@@ -183,6 +216,8 @@ export default function PricingPage() {
         setOthers({
             questPricePerItem: String(data.autoQuest.pricePerItem ?? ""),
             questMonthlyPrice: String(data.autoQuest.monthlyPrice ?? ""),
+            questResellerPricePerItem: priceText(data.autoQuest.resellerPricePerItem),
+            questResellerMonthlyPrice: priceText(data.autoQuest.resellerMonthlyPrice),
         });
         setSettings({
             enabled: data.autoBadge.enabled,
@@ -227,7 +262,8 @@ export default function PricingPage() {
             const tiers = {};
             for (const [tierKey, d] of Object.entries(drafts[badgeKey])) {
                 tiers[tierKey] = {
-                    price: d.price === "" ? null : Number(d.price),
+                    price: priceValue(d.price),
+                    resellerPrice: priceValue(d.resellerPrice),
                     enabled: d.enabled,
                 };
             }
@@ -266,6 +302,8 @@ export default function PricingPage() {
             const { data } = await api.patch("/pricing/autoQuest", {
                 pricePerItem: Number(others.questPricePerItem),
                 monthlyPrice: Number(others.questMonthlyPrice),
+                resellerPricePerItem: priceValue(others.questResellerPricePerItem),
+                resellerMonthlyPrice: priceValue(others.questResellerMonthlyPrice),
             });
             hydrate(data);
             setToast("Saved the other systems' prices");
@@ -294,7 +332,7 @@ export default function PricingPage() {
             <div style={{ marginBottom: 20 }}>
                 <PageHeader
                     title="Pricing"
-                    description="Flat prices per tier — each tier has one fixed price, whatever tier the buyer is on now. Thresholds are Discord's numbers and cannot be changed here."
+                    description="Flat prices per tier — each tier has one fixed price, whatever tier the buyer is on now. A reseller price, when set, is what an active reseller pays instead. Thresholds are Discord's numbers and cannot be changed here."
                 />
             </div>
 
@@ -401,7 +439,7 @@ export default function PricingPage() {
                 <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 14 }}>
                     ArnTo-Auto reads these prices from /api/external/pricing and caches them for 60 seconds. If the
                     panel is down the bot uses the cached prices, then the ones in .env — so a change here needs no
-                    bot restart.
+                    bot restart. Deco Gift prices, regular and reseller, are in the Decors page&apos;s price table.
                 </div>
                 <div
                     style={{
@@ -431,6 +469,32 @@ export default function PricingPage() {
                             value={others.questMonthlyPrice}
                             onChange={(e) =>
                                 setOthers((o) => ({ ...o, questMonthlyPrice: e.target.value }))
+                            }
+                            className="input"
+                        />
+                    </Field>
+                    <Field label="Auto Quest — per quest, resellers" hint="Empty = resellers pay the regular price.">
+                        <input
+                            type="number"
+                            min="0"
+                            step="500"
+                            placeholder="regular price"
+                            value={others.questResellerPricePerItem}
+                            onChange={(e) =>
+                                setOthers((o) => ({ ...o, questResellerPricePerItem: e.target.value }))
+                            }
+                            className="input"
+                        />
+                    </Field>
+                    <Field label="Auto Quest — monthly plan, resellers" hint="Empty = resellers pay the regular price.">
+                        <input
+                            type="number"
+                            min="0"
+                            step="5000"
+                            placeholder="regular price"
+                            value={others.questResellerMonthlyPrice}
+                            onChange={(e) =>
+                                setOthers((o) => ({ ...o, questResellerMonthlyPrice: e.target.value }))
                             }
                             className="input"
                         />

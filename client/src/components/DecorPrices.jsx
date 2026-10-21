@@ -17,6 +17,10 @@ import { money } from "../utils/format";
 //
 //  A missing row makes the decor show 0đ on the shop site, so tiers that decors
 //  actually use but have no price are called out at the top.
+//
+//  Gift and gift-bundle rows also take a reseller price: what an active
+//  reseller pays for a Deco Gift (ArnTo-Auto, or an order made on the panel).
+//  Empty = the regular price. The public decor site never shows it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 3: "Frame" };
@@ -51,7 +55,7 @@ const parseAmount = (raw) => {
  * A set price also gets a ✕ that asks before removing it (emptying the field
  * still removes it too).
  */
-function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = true }) {
+function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = true, placeholder, title, disabled = false }) {
     const { canEdit } = usePageAccess("decors");
     const [draft, setDraft] = useState(value === null ? "" : String(value));
     const [state, setState] = useState(null); // "saving" | "saved" | "error"
@@ -100,9 +104,9 @@ function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = 
             <input
                 className="input mono"
                 inputMode="numeric"
-                placeholder={needed ? "not set" : "not needed"}
+                placeholder={placeholder ?? (needed ? "not set" : "not needed")}
                 value={draft}
-                disabled={!canEdit || state === "saving"}
+                disabled={!canEdit || disabled || state === "saving"}
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={commit}
                 onKeyDown={(e) => {
@@ -110,7 +114,7 @@ function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = 
                     if (e.key === "Escape")
                         setDraft(value === null ? "" : String(value));
                 }}
-                title="Leave empty (or press ✕) to remove this price"
+                title={title ?? "Leave empty (or press ✕) to remove this price"}
                 style={{
                     width: 120,
                     padding: "5px 8px",
@@ -137,6 +141,23 @@ function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = 
                 </button>
             )}
         </div>
+    );
+}
+
+/** A gift / gift-bundle tier's reseller price — the tier needs its regular price first. */
+function ResellerCell({ type, original, regular, value, onSave }) {
+    return (
+        <PriceCell
+            type={type}
+            original={original}
+            value={value}
+            onSave={onSave}
+            onClear={(ty, o) => onSave(ty, o, null)}
+            needed={false}
+            disabled={regular === null}
+            placeholder={regular === null ? "set the price first" : "regular price"}
+            title="What an active reseller pays for a Deco Gift. Empty = the regular price."
+        />
     );
 }
 
@@ -347,6 +368,11 @@ export default function DecorPrices({ onChange }) {
         await api.delete(`/decors/prices/${type}/${original}`);
         await afterWrite();
     };
+    // Reseller prices change nothing the decor list shows: only this table reloads.
+    const saveReseller = async (type, original, resellerPrice) => {
+        await api.put("/decors/prices/reseller", { type, original, resellerPrice });
+        await fetchPrices();
+    };
     const askRemove = (type, original, used) =>
         setRemoving({ type, original, used });
     const confirmRemove = async () => {
@@ -447,7 +473,8 @@ export default function DecorPrices({ onChange }) {
                     >
                         Maps a Discord original price to what the shop charges.
                         Replaces <code>/decor-price</code>. Empty a field to
-                        remove that tier.
+                        remove that tier — a reseller field, to charge
+                        resellers the regular price again.
                     </p>
                 </div>
                 <label
@@ -515,7 +542,7 @@ export default function DecorPrices({ onChange }) {
                             width: "100%",
                             borderCollapse: "collapse",
                             fontSize: 13,
-                            minWidth: 620,
+                            minWidth: 780,
                         }}
                     >
                         <thead>
@@ -528,6 +555,7 @@ export default function DecorPrices({ onChange }) {
                                 <th style={th}>ORIGINAL</th>
                                 <th style={th}>LOGIN</th>
                                 <th style={th}>GIFT</th>
+                                <th style={th}>GIFT · RESELLER</th>
                                 <th style={th}>USED BY</th>
                             </tr>
                         </thead>
@@ -535,7 +563,7 @@ export default function DecorPrices({ onChange }) {
                             {decorTiers.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan={4}
+                                        colSpan={5}
                                         style={{
                                             ...td,
                                             textAlign: "center",
@@ -593,6 +621,15 @@ export default function DecorPrices({ onChange }) {
                                                 }
                                             />
                                         </td>
+                                        <td style={td}>
+                                            <ResellerCell
+                                                type="gift"
+                                                original={t.original}
+                                                regular={t.gift}
+                                                value={t.giftReseller ?? null}
+                                                onSave={saveReseller}
+                                            />
+                                        </td>
                                         <td
                                             style={{
                                                 ...td,
@@ -643,7 +680,7 @@ export default function DecorPrices({ onChange }) {
                             width: "100%",
                             borderCollapse: "collapse",
                             fontSize: 13,
-                            minWidth: 560,
+                            minWidth: 700,
                         }}
                     >
                         <thead>
@@ -655,6 +692,7 @@ export default function DecorPrices({ onChange }) {
                             >
                                 <th style={th}>GIFT TOTAL</th>
                                 <th style={th}>BUNDLE PRICE</th>
+                                <th style={th}>RESELLER</th>
                                 <th style={th}>USED BY</th>
                             </tr>
                         </thead>
@@ -662,7 +700,7 @@ export default function DecorPrices({ onChange }) {
                             {bundleTiers.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan={3}
+                                        colSpan={4}
                                         style={{
                                             ...td,
                                             textAlign: "center",
@@ -698,6 +736,15 @@ export default function DecorPrices({ onChange }) {
                                                 onRemove={(ty, o) =>
                                                     askRemove(ty, o, t.bundleCount)
                                                 }
+                                            />
+                                        </td>
+                                        <td style={td}>
+                                            <ResellerCell
+                                                type="gift-bundle"
+                                                original={t.total}
+                                                regular={t.giftBundle}
+                                                value={t.giftBundleReseller ?? null}
+                                                onSave={saveReseller}
                                             />
                                         </td>
                                         <td

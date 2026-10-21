@@ -15,8 +15,11 @@ const orderService = require("./orderService");
 //                   role when it was opened. An older order without the stamp
 //                   counts when it was opened while they were a CTV.
 //
-//  CTVs pay order by order, like any buyer; the CTV prices are the owner's own
-//  price channel on Discord, not here.
+//  CTVs pay order by order, like any buyer. Ticket orders: the CTV prices are
+//  the owner's own price channel on Discord, not here. Auto orders (Auto Quest,
+//  Auto Badge, Deco Gift): a price may have a reseller price beside it (the
+//  Pricing page, the decor price table), charged to whoever is an active CTV
+//  here (isReseller) whenever it is set.
 //
 //  The shop does everything on Discord (role, DM) from one bus command,
 //  "reseller.event". A change made on the page is sent to it; one the shop made
@@ -240,6 +243,9 @@ const list = ({ all = false, month } = {}) => {
     }
     return { month: m, months: recentMonths(), ordersOnPanel: !!orders, totals, resellers };
 };
+
+/** Is this Discord user an active CTV? Decides the reseller price of auto orders. */
+const isReseller = (userId) => SNOWFLAKE.test(String(userId || "")) && !!row(userId)?.active;
 
 /** The shop's view: no stats. */
 const listPlain = ({ all = false } = {}) => rows({ all }).map((r) => toReseller(r));
@@ -478,6 +484,7 @@ module.exports = {
     TEMPLATE_VARS,
     monthOf,
     canAccess,
+    isReseller,
     getSettings,
     setSettings,
     list,

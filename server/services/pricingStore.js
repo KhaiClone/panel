@@ -15,6 +15,12 @@
  *
  * ArnTo-Auto đọc bảng này qua /api/external/pricing rồi cache lại, nên panel sập
  * thì bot vẫn bán được bằng giá cache.
+ *
+ * Giá CTV (reseller, 2026-10-21): mỗi giá có thể có thêm một giá CTV đặt riêng
+ * (`resellerPrice` của từng mốc, `resellerPricePerItem` / `resellerMonthlyPrice`
+ * của Auto Quest). Người mua là CTV đang hoạt động (resellerService.isReseller)
+ * thì trả giá CTV; để trống = CTV trả giá thường. Giá CTV không bao giờ tự bật
+ * một mốc: mốc vẫn phải có giá thường và được bật.
  */
 
 const db = require("../db");
@@ -121,8 +127,23 @@ const DEFAULTS = {
     autoQuest: {
         pricePerItem: 2000,
         monthlyPrice: 50000,
+        resellerPricePerItem: null, // null = CTV trả giá thường
+        resellerMonthlyPrice: null,
     },
 };
+
+/** Giá CTV hợp lệ là số > 0; còn lại (null, 0, rác) = chưa đặt. */
+const _resellerPrice = (v) => (Number.isFinite(v) && v > 0 ? v : null);
+
+/** Giá CTV gửi lên từ UI: rỗng/null = xoá, còn lại phải là số > 0. */
+function _parseResellerPrice(v, label) {
+    if (v === null || v === undefined || v === "") return null;
+    const price = Number(v);
+    if (!Number.isFinite(price) || price <= 0) {
+        throw _bad(`Invalid reseller price for ${label}: ${v} — leave it empty for the regular price`);
+    }
+    return Math.round(price);
+}
 
 // ── Merge ────────────────────────────────────────────────────────────────────────
 
@@ -148,6 +169,7 @@ function _mergeBadges(stored) {
                     ...t,
                     rarityName: RARITY[t.rarity] ?? "common",
                     price,
+                    resellerPrice: _resellerPrice(s.resellerPrice),
                     // một mốc chỉ bán được khi có giá VÀ được bật VÀ badge có hỗ trợ
                     enabled: Boolean(s.enabled) && price > 0 && supported,
                 };
@@ -168,8 +190,15 @@ async function getPricing() {
             ...autoBadge,
             badges: _mergeBadges(stored.autoBadge),
         },
-        autoQuest: { ...DEFAULTS.autoQuest, ...(stored.autoQuest ?? {}) },
+        autoQuest: _questPricing(stored.autoQuest),
     };
+}
+
+function _questPricing(stored) {
+    const q = { ...DEFAULTS.autoQuest, ...(stored ?? {}) };
+    q.resellerPricePerItem = _resellerPrice(q.resellerPricePerItem);
+    q.resellerMonthlyPrice = _resellerPrice(q.resellerMonthlyPrice);
+    return q;
 }
 
 function _bad(message) {
@@ -205,6 +234,9 @@ async function setTier(badgeKey, tierKey, patch = {}) {
         }
     }
     if ("enabled" in patch) entry.enabled = Boolean(patch.enabled);
+    if ("resellerPrice" in patch) {
+        entry.resellerPrice = _parseResellerPrice(patch.resellerPrice, tierKey);
+    }
 
     stored.autoBadge.badges[badgeKey][tierKey] = entry;
     await db.set(KEY, stored);
@@ -223,6 +255,8 @@ async function updateFeature(feature, patch = {}) {
         if (!(k in DEFAULTS[feature]) || k === "badges") continue;
         if (typeof DEFAULTS[feature][k] === "boolean") {
             current[k] = Boolean(v);
+        } else if (DEFAULTS[feature][k] === null) {
+            current[k] = _parseResellerPrice(v, k); // giá CTV: rỗng = giá thường
         } else {
             const num = Number(v);
             if (!Number.isFinite(num) || num < 0) {
@@ -242,8 +276,11 @@ async function updateFeature(feature, patch = {}) {
 /**
  * Giá của một mốc. Giá phẳng: không phụ thuộc mốc khách đang có, cũng không phụ
  * thuộc Nitro. Chuyện tài khoản nào mua được là việc của badgeService.
+ *
+ * `reseller`: người mua là CTV (bên gọi tự hỏi resellerService). Mốc có giá CTV
+ * thì `price` là giá CTV và `reseller: true`; không thì giá thường.
  */
-async function quote(badgeKey, tierKey) {
+async function quote(badgeKey, tierKey, { reseller = false } = {}) {
     const pricing = await getPricing();
     if (!pricing.autoBadge.enabled) throw _bad("Auto Badge đang tắt");
 
@@ -254,6 +291,7 @@ async function quote(badgeKey, tierKey) {
     if (!tier) throw _bad(`Mốc không hợp lệ: ${tierKey}`);
     if (!tier.enabled) throw _bad(`Mốc "${tier.name}" hiện không bán`);
 
+    const asReseller = Boolean(reseller) && tier.resellerPrice !== null;
     return {
         badgeKey,
         badgeId: badge.badgeId,
@@ -263,7 +301,9 @@ async function quote(badgeKey, tierKey) {
         tier,
         threshold: tier.threshold ?? null,
         houseId: tier.houseId ?? null,
-        price: tier.price,
+        price: asReseller ? tier.resellerPrice : tier.price,
+        regularPrice: tier.price,
+        reseller: asReseller,
         overshoot: pricing.autoBadge.overshoot,
         // Chỉ badge tiered mới có khái niệm "mua nhầm mốc đã có".
         forfeitOnWrongTier: badge.kind === "tiered" && pricing.autoBadge.forfeitOnWrongTier,
