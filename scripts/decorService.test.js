@@ -29,7 +29,7 @@ const PRICES = [
     { type: "login", original: 200, price: 30 },
     { type: "login", original: 150, price: 25 },
     { type: "gift", original: 200, price: 40 },
-    { type: "gift-bundle", original: 60, price: 50 },
+    { type: "gift-bundle-set", original: "100x1+200x1", price: 50 }, // bundle 9: one 100 + one 200
 ];
 const decor = (sku, withNitro, withoutNitro, extra = {}) => ({ sku_id: sku, name: `d${sku}`, type: 0, prices: { withNitro, withoutNitro }, ...extra });
 const LOADED = [decor("1", 100, 80), decor("2", 200, 150, { noLoginWithNitro: true }), { sku_id: "9", name: "bundle", type: 1000, items: ["1", "2"], prices: { withNitro: 250, withoutNitro: 200 } }];
@@ -84,10 +84,10 @@ ok("price report: a bundle that sells a way needs its members' tiers for it", ()
     assert.deepStrictEqual(t200.decors.map((d) => d.sku_id), ["2"], "listed once");
 });
 
-ok("price report: a bundle without gift needs no gift-bundle tier", () => {
+ok("price report: a bundle without gift needs no bundle tier", () => {
     const noGift = LOADED.map((d) => (d.sku_id === "9" ? { ...d, noGift: true } : d));
-    const before = decorService.buildPriceReport(LOADED, [], PRICES).bundleTiers.find((t) => t.total === 60);
-    const after = decorService.buildPriceReport(noGift, [], PRICES).bundleTiers.find((t) => t.total === 60);
+    const before = decorService.buildPriceReport(LOADED, [], PRICES).bundleTiers.find((t) => t.key === "100x1+200x1");
+    const after = decorService.buildPriceReport(noGift, [], PRICES).bundleTiers.find((t) => t.key === "100x1+200x1");
     assert.strictEqual(before.bundleCount, 1);
     assert.strictEqual(after.bundleCount, 0, "only the price row remains");
 });

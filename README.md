@@ -671,9 +671,21 @@ or "Hàng loạt" for a theme / the current filter). A switched-off way sells fo
 three are off) and the assistant's `/decor-find` says the same. `/decor-load` copies the
 flags onto the decors it rewrites — deploy the assistant before using them on loaded
 decors, or the next load wipes them. The price table's "unpriced" warning only counts
-ways that are sold (a bundle that sells a way needs its members' tiers for it).
+ways that are sold (a bundle that sells login needs its members' login tiers for it).
 `PATCH /api/decors/:sku_id` (one; `category_sku_id` for imported only) and
 `PATCH /api/decors` `{ sku_ids, …flags }` (many).
+
+**Bundle gift prices by composition.** A bundle's Gift Bundle price is looked up by what
+is in it: each member's Discord Nitro price × how many — `gift-bundle-set` rows keyed
+`66000x2`, `66000x1+99000x1` (cheapest first). So a bundle of 2 decors at 66,000 has one
+price, a bundle of 3 another, and changing a decor's gift price no longer touches its
+bundles. Its login prices still add up its members'. Until 2026-10-21 the key was the sum
+of the members' gift *selling* prices (`gift-bundle` rows), so one changed gift price
+dropped the price of every bundle holding that decor. On its first start the panel moves
+each bundle's old price to its composition once (`__decor.bundleSets` in shared.sqlite);
+the old rows stay, listed on Decors → Price tiers with a **Remove old tiers** button —
+remove them once ArnTo-assistant (whose `/decor-find` builds the same key) is updated.
+Deploy the panel first: an updated assistant before it finds no composition rows.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -870,7 +882,7 @@ being one. One sealed bus command, `reseller.event` (role, DM). Stored in `data/
 | `DELETE` | `/api/external/resellers/:userId` | `{ byId, byTag }` → `{ reseller, event }` |
 
 **Reseller prices on the auto orders.** Auto Quest (per quest, monthly plan) and every Auto
-Badge tier take a reseller price on the Pricing page; every `gift` / `gift-bundle` tier of the
+Badge tier take a reseller price on the Pricing page; every `gift` / `gift-bundle-set` tier of the
 decor price table takes one too (Decors → Price tiers; stored as `resellerPrice` on the
 assistant's `prices` row, never shown on the decor site). An **active** CTV on this page pays
 the reseller price wherever one is set, the regular price everywhere else — a reseller price

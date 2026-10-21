@@ -1,5 +1,6 @@
 const sharedStore = require("./sharedStore");
 const discordBus = require("./discordBus");
+const lifecycle = require("./lifecycle");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Decors for the panel's Decors page.
@@ -19,15 +20,27 @@ const discordBus = require("./discordBus");
 //  /decor-find says it is not sold; /decor-load carries the flags over when it
 //  rewrites `decors`.
 //
-//  Reseller prices: a `gift` / `gift-bundle` row may carry `resellerPrice`, what
-//  an active CTV pays for a Deco Gift (ArnTo-Auto, or an order made on the
+//  Bundle gift prices (`gift-bundle-set` rows) are looked up by what is IN the
+//  bundle: each member's Discord (Nitro) price and how many of each, as the key
+//  "66000x2" or "66000x1+99000x1" (see bundleSetKey). Until 2026-10-21 they
+//  were looked up by the sum of the members' gift SELLING prices (`gift-bundle`
+//  rows), so changing one decor's gift price moved every bundle holding it to
+//  another sum — one with no price. The old rows are moved once
+//  (migrateBundleSets); compositions that had different old prices are left
+//  for the owner to set. The assistant's /decor-find builds the same key.
+//
+//  Reseller prices: a `gift` / `gift-bundle-set` row may carry `resellerPrice`,
+//  what an active CTV pays for a Deco Gift (ArnTo-Auto, or an order made on the
 //  panel) — empty = the regular price. Only the Deco Gift catalog reads it: the
 //  public decor site never sees it. The assistant reads `price` only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NAMES = ["decors", "importedDecors", "prices", "decorCategories"];
-const PRICE_TYPES = ["login", "gift", "gift-bundle"];
-const RESELLER_TYPES = ["gift", "gift-bundle"]; // the auto (Deco Gift) ones
+const BUNDLE_SET = "gift-bundle-set";
+const LEGACY_BUNDLE = "gift-bundle"; // keyed by the old sum: read only to move it, then removable
+const PRICE_TYPES = ["login", "gift", BUNDLE_SET];
+const RESELLER_TYPES = ["gift", BUNDLE_SET]; // the auto (Deco Gift) ones
+const MIGRATION = "__decor.bundleSets"; // { at, moved, conflicts } once the old bundle rows were moved
 
 /** Way of selling → the record flag that switches it off. `gift` is the bundle's gift-bundle too. */
 const SALE_FLAGS = { loginWithNitro: "noLoginWithNitro", loginWithoutNitro: "noLoginWithoutNitro", gift: "noGift" };
@@ -43,6 +56,68 @@ const requirePanel = () => {
 const owner = () => sharedStore.nameRow("importedDecors")?.owner || null;
 const read = (name, op = "get", query) => sharedStore.run(name, op, { query });
 const write = (name, op, args) => sharedStore.run(name, op, args);
+const kvGet = (name) => {
+    const r = sharedStore.raw().prepare("SELECT value FROM kv WHERE name = ?").get(name);
+    return r ? JSON.parse(r.value) : null;
+};
+const kvSet = (name, value) => sharedStore.raw().prepare("INSERT OR REPLACE INTO kv (name, value) VALUES (?, ?)").run(name, JSON.stringify(value));
+
+// ── Bundle compositions ──────────────────────────────────────────────────────
+
+const SET_KEY = /^\d+x[1-9]\d*(\+\d+x[1-9]\d*)*$/;
+
+/** { original → count } → "66000x1+99000x2", the cheapest member first. */
+const keyOf = (counts) =>
+    [...counts]
+        .sort((a, b) => a[0] - b[0])
+        .map(([original, count]) => `${original}x${count}`)
+        .join("+");
+
+/**
+ * A bundle's members → its composition key: each member's Discord Nitro price
+ * and how many of each ("66000x2"). null when no member has a price.
+ */
+const bundleSetKey = (members) => {
+    const counts = new Map();
+    for (const m of members) {
+        const original = m && m.type !== 1000 ? m.prices?.withNitro : undefined;
+        if (!Number.isFinite(original)) continue;
+        counts.set(original, (counts.get(original) || 0) + 1);
+    }
+    return counts.size ? keyOf(counts) : null;
+};
+
+/** "66000x1+99000x2" → [{ original: 66000, count: 1 }, …]; null if it is not a key. */
+const parseSetKey = (key) =>
+    SET_KEY.test(String(key ?? ""))
+        ? String(key)
+              .split("+")
+              .map((part) => {
+                  const [original, count] = part.split("x").map(Number);
+                  return { original, count };
+              })
+        : null;
+
+/** A key in any order or with repeats ("99000x1+66000x1") → its one spelling, or null. */
+const canonicalSetKey = (key) => {
+    const parts = parseSetKey(key);
+    if (!parts) return null;
+    const counts = new Map();
+    for (const { original, count } of parts) counts.set(original, (counts.get(original) || 0) + count);
+    return keyOf(counts);
+};
+
+/** A request's `original` for `type`: a composition key for bundles, a number otherwise. */
+const originalArg = (type, raw) => {
+    if (type === BUNDLE_SET) {
+        const key = canonicalSetKey(raw);
+        if (!key) throw httpError(400, "original must be a bundle composition like 66000x2 or 66000x1+99000x1.");
+        return key;
+    }
+    const original = Number(raw);
+    if (!Number.isFinite(original) || original < 0) throw httpError(400, "original must be a non-negative number.");
+    return original;
+};
 
 /** A row's reseller price: a number above 0, else null (not set). */
 const resellerOf = (row) => (Number.isFinite(row?.resellerPrice) && row.resellerPrice > 0 ? row.resellerPrice : null);
@@ -67,7 +142,9 @@ const priceLookup = (pricesRaw) => {
  * `tierPrices`, the Decors page also gets what each way costs from the price
  * table regardless of them, so flipping a switch needs no reload. With
  * `reseller` (the Deco Gift catalog only), `resellerGift` is the gift's — or
- * the bundle's gift-bundle — reseller price, null when not set or not sold.
+ * the bundle composition's — reseller price, null when not set or not sold.
+ * A bundle's login prices add up its members'; its gift price is its
+ * composition's (bundleSetKey), never its members' gift prices.
  */
 const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = false, reseller = false } = {}) => {
     const allDecors = [...decorsRaw, ...importedDecorsRaw];
@@ -81,13 +158,12 @@ const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = 
             const items = (decor.items || []).map((skuId) => decorMap[skuId]).filter(Boolean);
             let loginWithNitro = 0;
             let loginWithoutNitro = 0;
-            let totalGiftPrice = 0;
             for (const item of items) {
                 loginWithNitro += getPrice("login", item.prices.withNitro);
                 loginWithoutNitro += getPrice("login", item.prices.withoutNitro);
-                totalGiftPrice += getPrice("gift", item.prices.withNitro);
             }
-            const giftBundle = getPrice("gift-bundle", totalGiftPrice);
+            const setKey = bundleSetKey(items);
+            const giftBundle = setKey ? getPrice(BUNDLE_SET, setKey) : 0;
             const tier = { loginWithNitro, loginWithoutNitro, giftBundle };
             return {
                 ...decor,
@@ -98,7 +174,7 @@ const buildDecorList = (decorsRaw, importedDecorsRaw, pricesRaw, { tierPrices = 
                     giftBundle: sells(decor, "gift") ? giftBundle : 0,
                 },
                 ...(tierPrices ? { tierPrices: tier } : {}),
-                ...(reseller ? { resellerGift: sells(decor, "gift") && giftBundle > 0 ? getResellerPrice("gift-bundle", totalGiftPrice) : null } : {}),
+                ...(reseller ? { resellerGift: sells(decor, "gift") && giftBundle > 0 ? getResellerPrice(BUNDLE_SET, setKey) : null } : {}),
                 items,
             };
         }
@@ -137,7 +213,9 @@ const listCategories = async () => {
  * Price tiers and every decor / bundle using each (the assistant's listPrices).
  * A tier is needed only by the ways actually sold: `loginCount` / `giftCount`
  * count the decors that need its login / gift price — through their own
- * switches, or through a bundle that sells that way at the sum of its members.
+ * switches, or (login only) through a bundle that sells login at the sum of its
+ * members. A bundle's gift needs its composition's row (`bundleTiers`), not its
+ * members' gift prices. `legacyBundleTiers`: the old sum-keyed rows, unused.
  */
 const buildPriceReport = (decorsRaw, importedRaw, prices) => {
     const decors = [...decorsRaw, ...importedRaw];
@@ -180,35 +258,49 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
     };
     const decorMap = Object.fromEntries(decors.map((d) => [d.sku_id, d]));
     for (const d of decors) {
-        // A bundle sells at the sum of its members' prices: it needs theirs.
+        // A bundle sells login at the sum of its members' login prices: it needs theirs.
         const members = d.type === 1000 ? (d.items || []).map((s) => decorMap[s]) : [d];
         for (const m of members) {
             if (!m?.prices || m.type === 1000) continue;
             if (sells(d, "loginWithNitro")) need(m.prices.withNitro, "login", m);
             if (sells(d, "loginWithoutNitro")) need(m.prices.withoutNitro, "login", m);
-            // `gift` is only looked up with the Nitro original.
-            if (sells(d, "gift")) need(m.prices.withNitro, "gift", m);
+            // `gift` is only looked up with the Nitro original — and only for
+            // the decor itself: a bundle's gift is its composition's price.
+            if (d.type !== 1000 && sells(d, "gift")) need(m.prices.withNitro, "gift", m);
         }
     }
 
     const bundleTiers = new Map();
+    const bundleTier = (key) => {
+        if (!bundleTiers.has(key)) {
+            const members = parseSetKey(key) || [];
+            bundleTiers.set(key, {
+                key,
+                members,
+                memberCount: members.reduce((n, m) => n + m.count, 0),
+                giftBundle: priceOf(BUNDLE_SET, key),
+                giftBundleReseller: getResellerPrice(BUNDLE_SET, key),
+                bundleCount: 0,
+                bundles: [],
+            });
+        }
+        return bundleTiers.get(key);
+    };
     for (const b of decors) {
         if (b.type !== 1000 || !sells(b, "gift")) continue;
-        const members = (b.items || []).map((s) => decorMap[s]).filter(Boolean);
-        const total = members.reduce((sum, m) => sum + getPrice("gift", m.prices?.withNitro), 0);
-        if (!bundleTiers.has(total)) {
-            bundleTiers.set(total, { total, giftBundle: priceOf("gift-bundle", total), giftBundleReseller: getResellerPrice("gift-bundle", total), bundleCount: 0, bundles: [] });
-        }
-        const t = bundleTiers.get(total);
+        const key = bundleSetKey((b.items || []).map((s) => decorMap[s]).filter(Boolean));
+        if (!key) continue;
+        const t = bundleTier(key);
         t.bundleCount++;
         t.bundles.push(ref(b));
     }
 
+    const legacyBundleTiers = [];
     for (const p of prices) {
-        if (p.type === "gift-bundle") {
-            if (!bundleTiers.has(p.original)) {
-                bundleTiers.set(p.original, { total: p.original, giftBundle: p.price, giftBundleReseller: resellerOf(p), bundleCount: 0, bundles: [] });
-            }
+        if (p.type === BUNDLE_SET) {
+            if (parseSetKey(p.original)) bundleTier(p.original);
+        } else if (p.type === LEGACY_BUNDLE) {
+            legacyBundleTiers.push({ total: p.original, price: p.price, resellerPrice: resellerOf(p) });
         } else if (!decorTiers.has(p.original)) {
             tier(p.original);
         }
@@ -216,28 +308,39 @@ const buildPriceReport = (decorsRaw, importedRaw, prices) => {
 
     const byNumber = (key) => (a, b) => a[key] - b[key];
     const byName = (a, b) => String(a.name).localeCompare(String(b.name), "vi");
+    const discordTotal = (t) => t.members.reduce((s, m) => s + m.original * m.count, 0);
     for (const t of decorTiers.values()) t.decors.sort(byName);
     for (const t of bundleTiers.values()) t.bundles.sort(byName);
     return {
         types: PRICE_TYPES,
         rows: prices.map((p) => ({ type: p.type, original: p.original, price: p.price, resellerPrice: resellerOf(p) })),
         decorTiers: [...decorTiers.values()].sort(byNumber("original")),
-        bundleTiers: [...bundleTiers.values()].sort(byNumber("total")),
+        // Fewest decors first, then the cheapest.
+        bundleTiers: [...bundleTiers.values()].sort((a, b) => a.memberCount - b.memberCount || discordTotal(a) - discordTotal(b) || a.key.localeCompare(b.key)),
+        legacyBundleTiers: legacyBundleTiers.sort(byNumber("total")),
     };
 };
 
+/**
+ * The price report, plus how the old bundle rows were moved: `migration`
+ * { at, moved, conflicts } — only the conflicts whose composition still has no
+ * price (setting one in the table settles it).
+ */
 const listPrices = async () => {
     requirePanel();
-    return buildPriceReport(read("decors"), read("importedDecors"), read("prices"));
+    const prices = read("prices");
+    const report = buildPriceReport(read("decors"), read("importedDecors"), prices);
+    const m = kvGet(MIGRATION);
+    const priced = new Set(prices.filter((p) => p.type === BUNDLE_SET).map((p) => p.original));
+    return { ...report, migration: m && { ...m, conflicts: (m.conflicts || []).filter((c) => !priced.has(c.key)) } };
 };
 
 const upsertPrice = async (body = {}) => {
     requirePanel();
     const { type } = body;
-    const original = Number(body.original);
-    const price = Number(body.price);
     if (!PRICE_TYPES.includes(type)) throw httpError(400, `type must be one of: ${PRICE_TYPES.join(", ")}.`);
-    if (!Number.isFinite(original) || original < 0) throw httpError(400, "original must be a non-negative number.");
+    const original = originalArg(type, body.original);
+    const price = Number(body.price);
     if (!Number.isFinite(price) || price < 0) throw httpError(400, "price must be a non-negative number.");
     const existing = read("prices", "findOne", { type, original });
     const row = existing
@@ -247,15 +350,14 @@ const upsertPrice = async (body = {}) => {
 };
 
 /**
- * The reseller price of an existing gift / gift-bundle tier { type, original,
- * resellerPrice } — empty / null clears it (CTVs pay the regular price).
+ * The reseller price of an existing gift / gift-bundle-set tier { type,
+ * original, resellerPrice } — empty / null clears it (CTVs pay the regular price).
  */
 const setResellerPrice = async (body = {}) => {
     requirePanel();
     const { type } = body;
-    const original = Number(body.original);
     if (!RESELLER_TYPES.includes(type)) throw httpError(400, `Reseller prices are for ${RESELLER_TYPES.join(" and ")} tiers only.`);
-    if (!Number.isFinite(original) || original < 0) throw httpError(400, "original must be a non-negative number.");
+    const original = originalArg(type, body.original);
     let resellerPrice = null;
     if (body.resellerPrice !== null && body.resellerPrice !== undefined && body.resellerPrice !== "") {
         resellerPrice = Math.round(Number(body.resellerPrice));
@@ -268,12 +370,98 @@ const setResellerPrice = async (body = {}) => {
 
 const deletePrice = async (type, rawOriginal) => {
     requirePanel();
-    const original = Number(rawOriginal);
-    if (!PRICE_TYPES.includes(type)) throw httpError(400, "Invalid type.");
-    if (!Number.isFinite(original)) throw httpError(400, "Invalid original.");
+    if (!PRICE_TYPES.includes(type) && type !== LEGACY_BUNDLE) throw httpError(400, "Invalid type.");
+    const original = originalArg(type, rawOriginal);
     const deleted = write("prices", "findOneAndDelete", { query: { type, original } });
     if (!deleted) throw httpError(404, "Price tier not found.");
     return { message: "Price tier deleted", row: deleted };
+};
+
+/**
+ * Remove every old sum-keyed bundle row at once — the owner's button, after
+ * ArnTo-assistant reads the compositions too (its old /decor-find reads these).
+ */
+const deleteLegacyBundlePrices = async () => {
+    requirePanel();
+    const rows = read("prices", "find", { type: LEGACY_BUNDLE });
+    for (const r of rows) write("prices", "findOneAndDelete", { query: { type: LEGACY_BUNDLE, original: r.original } });
+    return { message: `${rows.length} old bundle tier(s) removed`, removed: rows.length };
+};
+
+// ── Moving the old bundle rows ───────────────────────────────────────────────
+
+let migrating = false;
+
+/**
+ * Once: each bundle's price under the old key (the sum of its members' gift
+ * prices, as it is charged today) goes to its composition's row. Bundles of one
+ * composition with different old prices are a conflict: nothing is written for
+ * it and the Price tiers tab lists the old prices for the owner to pick. A
+ * composition that already has a row is left alone. The old rows stay until
+ * the owner removes them. → { at, moved, conflicts } | null (not yet: no data)
+ */
+const migrateBundleSets = () => {
+    if (migrating || !onPanel() || kvGet(MIGRATION)) return null;
+    migrating = true;
+    try {
+        const decors = [...read("decors"), ...read("importedDecors")];
+        const prices = read("prices");
+        const decorMap = Object.fromEntries(decors.map((d) => [d.sku_id, d]));
+        const { getPrice } = priceLookup(prices);
+        const oldRows = new Map(prices.filter((p) => p.type === LEGACY_BUNDLE).map((p) => [p.original, p]));
+        const priced = new Set(prices.filter((p) => p.type === BUNDLE_SET).map((p) => p.original));
+
+        const found = new Map(); // key → Map("price/reseller" → { price, resellerPrice, bundles })
+        for (const b of decors) {
+            if (b.type !== 1000) continue;
+            const members = (b.items || []).map((s) => decorMap[s]).filter(Boolean);
+            const key = bundleSetKey(members);
+            if (!key || priced.has(key)) continue;
+            const total = members.reduce((sum, m) => sum + getPrice("gift", m.prices?.withNitro), 0);
+            const row = oldRows.get(total);
+            if (!row) continue;
+            const value = { price: row.price, resellerPrice: resellerOf(row) };
+            const values = found.get(key) || new Map();
+            const id = `${value.price}/${value.resellerPrice}`;
+            if (!values.has(id)) values.set(id, { ...value, bundles: [] });
+            values.get(id).bundles.push(b.name);
+            found.set(key, values);
+        }
+
+        let moved = 0;
+        const conflicts = [];
+        for (const [key, values] of found) {
+            const options = [...values.values()];
+            if (options.length > 1) {
+                conflicts.push({ key, options });
+                continue;
+            }
+            const { price, resellerPrice } = options[0];
+            write("prices", "create", { data: { type: BUNDLE_SET, original: key, price, ...(resellerPrice ? { resellerPrice } : {}) } });
+            moved++;
+        }
+        const result = { at: Date.now(), moved, conflicts };
+        kvSet(MIGRATION, result);
+        console.log(`[Decors] Bundle gift prices now go by composition: ${moved} moved, ${conflicts.length} to set by hand`);
+        return result;
+    } finally {
+        migrating = false;
+    }
+};
+
+/** Move the old bundle rows now, or as soon as the decor data is on the panel. */
+const start = () => {
+    const attempt = lifecycle.guard(() => {
+        try {
+            migrateBundleSets();
+        } catch (err) {
+            console.error(`[Decors] Moving the bundle gift prices failed: ${err.message}`);
+        }
+    });
+    attempt();
+    sharedStore.events.on("change", (name) => {
+        if (NAMES.includes(name) && !migrating && !kvGet(MIGRATION)) attempt();
+    });
 };
 
 /** The sale switches in a request body → { noLoginWithNitro, … } booleans; {} if none. */
@@ -345,7 +533,10 @@ const importDecor = async (fields) => {
 module.exports = {
     NAMES,
     SALE_FLAGS,
+    BUNDLE_SET,
     onPanel,
+    bundleSetKey,
+    canonicalSetKey,
     buildDecorList,
     buildPriceReport,
     sortCategories,
@@ -355,6 +546,9 @@ module.exports = {
     upsertPrice,
     setResellerPrice,
     deletePrice,
+    deleteLegacyBundlePrices,
+    migrateBundleSets,
+    start,
     updateDecor,
     updateDecors,
     deleteDecor,

@@ -35,7 +35,7 @@ router.get("/prices", async (req, res, next) => {
     }
 });
 
-/** PUT /api/decors/prices — add or update one tier { type, original, price } */
+/** PUT /api/decors/prices — add or update one tier { type, original, price } (gift-bundle-set: original = 66000x2) */
 router.put("/prices", async (req, res, next) => {
     try {
         res.json(await decorService.upsertPrice(req.body));
@@ -44,7 +44,7 @@ router.put("/prices", async (req, res, next) => {
     }
 });
 
-/** PUT /api/decors/prices/reseller — a gift / gift-bundle tier's reseller price { type, original, resellerPrice } */
+/** PUT /api/decors/prices/reseller — a gift / gift-bundle-set tier's reseller price { type, original, resellerPrice } */
 router.put("/prices/reseller", async (req, res, next) => {
     try {
         res.json(await decorService.setResellerPrice(req.body));
@@ -53,7 +53,16 @@ router.put("/prices/reseller", async (req, res, next) => {
     }
 });
 
-/** DELETE /api/decors/prices/:type/:original — remove one tier */
+/** DELETE /api/decors/prices/legacy-bundles — remove the old sum-keyed bundle tiers */
+router.delete("/prices/legacy-bundles", async (req, res, next) => {
+    try {
+        res.json(await decorService.deleteLegacyBundlePrices());
+    } catch (err) {
+        next(err);
+    }
+});
+
+/** DELETE /api/decors/prices/:type/:original — remove one tier (a bundle's original is its composition, 66000x2) */
 router.delete("/prices/:type/:original", async (req, res, next) => {
     try {
         res.json(await decorService.deletePrice(req.params.type, req.params.original));

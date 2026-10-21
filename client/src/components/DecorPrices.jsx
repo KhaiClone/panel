@@ -2,28 +2,46 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "./ConfirmModal";
-import { money } from "../utils/format";
+import { fmtNum, money } from "../utils/format";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Decor price table — the assistant's `prices` lookup, edited from the panel.
 //
 //  A row says "a decor whose Discord price is `original` sells for `price`".
 //  Three types:
-//    login       — selling an account that already owns the decor
-//    gift        — gifting the decor (looked up by the Nitro original price)
-//    gift-bundle — gifting a whole bundle; here `original` is the SUM of its
-//                  members' gift prices, not a Discord price. That is why
-//                  bundles get their own table.
+//    login           — selling an account that already owns the decor
+//    gift            — gifting the decor (looked up by the Nitro original price)
+//    gift-bundle-set — gifting a whole bundle, looked up by what is in it: each
+//                      member's Nitro original × how many ("66000x2"). That is
+//                      why bundles get their own table. (Before 2026-10-21 it
+//                      was the SUM of the members' gift prices — `gift-bundle`,
+//                      so a changed gift price dropped its bundles' prices; the
+//                      old rows were moved and are listed for removal.)
 //
 //  A missing row makes the decor show 0đ on the shop site, so tiers that decors
 //  actually use but have no price are called out at the top.
 //
-//  Gift and gift-bundle rows also take a reseller price: what an active
-//  reseller pays for a Deco Gift (ArnTo-Auto, or an order made on the panel).
-//  Empty = the regular price. The public decor site never shows it.
+//  Gift and bundle rows also take a reseller price: what an active reseller
+//  pays for a Deco Gift (ArnTo-Auto, or an order made on the panel). Empty =
+//  the regular price. The public decor site never shows it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TYPE_LABEL = { 0: "Avatar", 1: "Profile", 2: "Nameplate", 3: "Frame" };
+const BUNDLE_SET = "gift-bundle-set";
+
+/** A bundle composition [{ original, count }] → "2 × 66,000 + 1 × 99,000". */
+const compositionLabel = (members) => members.map((m) => `${m.count} × ${fmtNum(m.original)}`).join(" + ");
+/** "66000x1+99000x2" → the same, for a key on its own. */
+const keyLabel = (key) =>
+    compositionLabel(
+        String(key)
+            .split("+")
+            .map((part) => {
+                const [original, count] = part.split("x").map(Number);
+                return { original, count };
+            }),
+    );
+const tierLabel = (type, original) => (type === BUNDLE_SET ? keyLabel(original) : money(original));
 
 const th = {
     padding: "6px 8px",
@@ -144,7 +162,7 @@ function PriceCell({ type, original, value, onSave, onClear, onRemove, needed = 
     );
 }
 
-/** A gift / gift-bundle tier's reseller price — the tier needs its regular price first. */
+/** A gift / bundle tier's reseller price — the tier needs its regular price first. */
 function ResellerCell({ type, original, regular, value, onSave }) {
     return (
         <PriceCell
@@ -291,12 +309,11 @@ function AddTierForm({ onSave }) {
             >
                 <option value="login">login</option>
                 <option value="gift">gift</option>
-                <option value="gift-bundle">gift-bundle</option>
             </select>
             <input
                 className="input mono"
                 style={{ width: 130, padding: "5px 8px", fontSize: 12 }}
-                placeholder={type === "gift-bundle" ? "gift total" : "original"}
+                placeholder="original"
                 value={original}
                 onChange={(e) => setOriginal(e.target.value)}
             />
@@ -365,8 +382,18 @@ export default function DecorPrices({ onChange }) {
         await afterWrite();
     };
     const clear = async (type, original) => {
-        await api.delete(`/decors/prices/${type}/${original}`);
+        await api.delete(`/decors/prices/${type}/${encodeURIComponent(original)}`);
         await afterWrite();
+    };
+    const [legacyAsk, setLegacyAsk] = useState(false);
+    const removeLegacy = async () => {
+        setLegacyAsk(false);
+        try {
+            await api.delete("/decors/prices/legacy-bundles");
+            await fetchPrices();
+        } catch (err) {
+            alert(err.response?.data?.message || err.response?.data?.error || "Could not remove the old bundle tiers");
+        }
     };
     // Reseller prices change nothing the decor list shows: only this table reloads.
     const saveReseller = async (type, original, resellerPrice) => {
@@ -441,15 +468,24 @@ export default function DecorPrices({ onChange }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {removing && (
                 <ConfirmModal
-                    title={`Remove the ${removing.type} price for ${money(removing.original)}?`}
+                    title={`Remove the ${removing.type === BUNDLE_SET ? "bundle" : removing.type} price for ${tierLabel(removing.type, removing.original)}?`}
                     message={
                         removing.used > 0
-                            ? `${removing.used} ${removing.type === "gift-bundle" ? "bundle(s)" : "decor(s)"} still use this tier: they show 0 VND / "no price tier yet" until you set a new price. The row stays in the table for as long as they use it.`
+                            ? `${removing.used} ${removing.type === BUNDLE_SET ? "bundle(s)" : "decor(s)"} still use this tier: they show 0 VND / "no price tier yet" until you set a new price. The row stays in the table for as long as they use it.`
                             : "Nothing uses this tier any more — the row disappears from the table."
                     }
                     confirmText="Remove"
                     onConfirm={confirmRemove}
                     onCancel={() => setRemoving(null)}
+                />
+            )}
+            {legacyAsk && (
+                <ConfirmModal
+                    title={`Remove ${data.legacyBundleTiers.length} old bundle tier(s)?`}
+                    message="They are keyed by the old sum of gift prices and the panel no longer reads them. Before ArnTo-assistant is updated, its /decor-find still shows bundle gift prices from them."
+                    confirmText="Remove"
+                    onConfirm={removeLegacy}
+                    onCancel={() => setLegacyAsk(false)}
                 />
             )}
             <div
@@ -511,6 +547,68 @@ export default function DecorPrices({ onChange }) {
                     bundle tier(s) have no price — {gaps.decorCount} decor(s)
                     and {gaps.bundleCount} bundle(s) are showing 0đ on the shop
                     right now. Their names are listed under USED BY.
+                </div>
+            )}
+
+            {data.migration?.conflicts?.length > 0 && (
+                <div
+                    style={{
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        fontSize: 13,
+                        background: "var(--warning-bg)",
+                        color: "var(--warning)",
+                        border: "1px solid var(--warning-border)",
+                    }}
+                >
+                    When bundle prices moved to compositions, these had more
+                    than one old price — set the one you want in the bundle
+                    table:
+                    <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                        {data.migration.conflicts.map((c) => (
+                            <li key={c.key}>
+                                <b>{keyLabel(c.key)}</b>:{" "}
+                                {c.options
+                                    .map((o) => `${money(o.price)} (${o.bundles.join(", ")})`)
+                                    .join(" or ")}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {data.legacyBundleTiers?.length > 0 && (
+                <div
+                    style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        fontSize: 13,
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text-muted)",
+                    }}
+                >
+                    <span style={{ flex: 1, minWidth: 240 }}>
+                        {data.legacyBundleTiers.length} old bundle tier(s) keyed
+                        by the sum of gift prices are no longer used
+                        {data.migration?.moved
+                            ? ` — their prices moved to ${data.migration.moved} composition(s) below`
+                            : ""}
+                        . Remove them once ArnTo-assistant is updated.
+                    </span>
+                    {canEdit && (
+                        <button
+                            type="button"
+                            className="btn-ghost btn-sm"
+                            onClick={() => setLegacyAsk(true)}
+                        >
+                            Remove old tiers
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -669,9 +767,9 @@ export default function DecorPrices({ onChange }) {
                             margin: "3px 0 0",
                         }}
                     >
-                        Keyed by the sum of the members&apos; gift prices — so
-                        raising a member&apos;s gift price moves its bundle to a
-                        different tier, which then needs a price of its own.
+                        Keyed by what is in the bundle: each member&apos;s
+                        Discord (Nitro) price × how many. Changing a
+                        decor&apos;s gift price above does not touch them.
                     </p>
                 </div>
                 <div style={{ maxHeight: 400, overflow: "auto" }}>
@@ -690,7 +788,7 @@ export default function DecorPrices({ onChange }) {
                                     fontSize: 11,
                                 }}
                             >
-                                <th style={th}>GIFT TOTAL</th>
+                                <th style={th}>IN THE BUNDLE</th>
                                 <th style={th}>BUNDLE PRICE</th>
                                 <th style={th}>RESELLER</th>
                                 <th style={th}>USED BY</th>
@@ -714,22 +812,27 @@ export default function DecorPrices({ onChange }) {
                             ) : (
                                 bundleTiers.map((t) => (
                                     <tr
-                                        key={t.total}
+                                        key={t.key}
                                         style={{
                                             borderTop:
                                                 "1px solid var(--border-light)",
                                         }}
                                     >
-                                        <td
-                                            className="mono"
-                                            style={{ ...td, fontWeight: 600 }}
-                                        >
-                                            {money(t.total)}
+                                        <td style={td}>
+                                            <div
+                                                className="mono"
+                                                style={{ fontWeight: 600, whiteSpace: "nowrap" }}
+                                            >
+                                                {compositionLabel(t.members)}
+                                            </div>
+                                            <div className="cell-sub">
+                                                {t.memberCount} decor(s) · Discord prices, VND
+                                            </div>
                                         </td>
                                         <td style={td}>
                                             <PriceCell
-                                                type="gift-bundle"
-                                                original={t.total}
+                                                type={BUNDLE_SET}
+                                                original={t.key}
                                                 value={t.giftBundle}
                                                 onSave={save}
                                                 onClear={clear}
@@ -740,8 +843,8 @@ export default function DecorPrices({ onChange }) {
                                         </td>
                                         <td style={td}>
                                             <ResellerCell
-                                                type="gift-bundle"
-                                                original={t.total}
+                                                type={BUNDLE_SET}
+                                                original={t.key}
                                                 regular={t.giftBundle}
                                                 value={t.giftBundleReseller ?? null}
                                                 onSave={saveReseller}

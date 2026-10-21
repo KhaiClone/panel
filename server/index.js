@@ -220,6 +220,8 @@ const startBackgroundServices = () => {
     require("./services/discordBus").start().catch((e) => console.error("[Bus] start failed:", e.message));
     // The public decor site's data snapshot follows the shared decor data.
     require("./services/decorSitePublisher").start();
+    // Decors: bundle gift prices go by composition — the old sum-keyed ones are moved once.
+    require("./services/decorService").start();
     // Stock: closes deliveries whose answer was lost, and the hourly expiry reminders.
     require("./services/stockService").start();
     // Vouchers: closes DM batches whose answer was lost.

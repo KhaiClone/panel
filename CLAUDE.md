@@ -275,13 +275,16 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Deco Gift:** Auto host việc bán, chỉ nói chuyện với panel; panel nhờ Shop tạo đơn `arnto_N`;
   assistant DM link gift (payload sealed); tối đa 5 decor/đơn; đơn tạo trên web panel luôn theo giá Gift.
 - **Decor:** cờ bán `noLoginWithNitro` / `noLoginWithoutNitro` / `noGift` nằm trên record decor; deploy
-  assistant TRƯỚC (`/decor-load` xoá cờ nếu bản cũ).
+  assistant TRƯỚC (`/decor-load` xoá cờ nếu bản cũ). **Giá gift bundle theo tổ hợp deco lẻ** (2026-10-21):
+  khoá = giá Discord Nitro của từng deco × số lượng (`gift-bundle-set`, vd `66000x2`, `66000x1+99000x1`),
+  mỗi tổ hợp một giá — KHÔNG theo tổng giá bán gift lẻ nữa (đổi giá lẻ từng làm bundle mất giá). Panel và
+  `/decor-find` của assistant phải dựng khoá giống hệt nhau; deploy panel TRƯỚC assistant.
 - **Vouchers:** phần thưởng admin trao tay sau khi claim; granted | public; claim trên cả Discord + panel.
 - **Ticket menus:** quản cả dịch vụ + sản phẩm; owner = project import đầu tiên; `/menu` thay lệnh cũ.
 - **Stock:** /kho trên ArnTo-assistant quản mọi thứ trừ TẠO loại sản phẩm (chỉ panel).
 - **Supporters / CTV:** Supporter = role của bot (/supporter-*); Staff = owner trao tay. CTV trả theo
   từng đơn, admin thêm tay. Giá CTV cho đơn auto (2026-10-21): **giá riêng từng món** đặt cạnh giá
-  thường — Quest lẻ + gói tháng, từng mốc Badge, từng bậc gift / gift-bundle; áp cho CTV đang hoạt
+  thường — Quest lẻ + gói tháng, từng mốc Badge, từng bậc gift / tổ hợp bundle; áp cho CTV đang hoạt
   động trên trang Resellers ở cả 4 nơi (Quest, Badge, Deco Gift trên Discord, Deco Gift tạo trên web);
   để trống = giá thường. Đơn ticket vẫn theo kênh giá CTV của owner.
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +

@@ -148,7 +148,7 @@ const PRICES = [
     { type: "login", original: 100, price: 10000 },
     { type: "gift", original: 100, price: 20000, resellerPrice: 15000 },
     { type: "gift", original: 200, price: 40000 }, // no reseller price
-    { type: "gift-bundle", original: 60000, price: 50000, resellerPrice: 42000 },
+    { type: "gift-bundle-set", original: "100x1+200x1", price: 50000, resellerPrice: 42000 },
 ];
 const decor = (sku, withNitro, extra = {}) => ({ sku_id: sku, name: `d${sku}`, type: 0, prices: { withNitro, withoutNitro: withNitro }, ...extra });
 const LOADED = [decor("1", 100), decor("2", 200), { sku_id: "9", name: "bundle", type: 1000, items: ["1", "2"], prices: {} }, decor("5", 100, { noGift: true })];
@@ -277,7 +277,7 @@ const LOADED = [decor("1", 100), decor("2", 200), { sku_id: "9", name: "bundle",
         const list = Object.fromEntries(decorService.buildDecorList(LOADED, [], PRICES, { reseller: true }).map((d) => [d.sku_id, d]));
         assert.strictEqual(list["1"].resellerGift, 15000);
         assert.strictEqual(list["2"].resellerGift, null, "the 200 tier has none");
-        assert.strictEqual(list["9"].resellerGift, 42000, "a bundle: its gift-bundle tier (20,000 + 40,000)");
+        assert.strictEqual(list["9"].resellerGift, 42000, "a bundle: its composition's tier (one 100 + one 200)");
         assert.strictEqual(list["5"].resellerGift, null, "not sold as a gift");
     });
 
@@ -285,7 +285,7 @@ const LOADED = [decor("1", 100), decor("2", 200), { sku_id: "9", name: "bundle",
         const r = decorService.buildPriceReport(LOADED, [], PRICES);
         assert.strictEqual(r.decorTiers.find((t) => t.original === 100).giftReseller, 15000);
         assert.strictEqual(r.decorTiers.find((t) => t.original === 200).giftReseller, null);
-        assert.strictEqual(r.bundleTiers.find((t) => t.total === 60000).giftBundleReseller, 42000);
+        assert.strictEqual(r.bundleTiers.find((t) => t.key === "100x1+200x1").giftBundleReseller, 42000);
         assert.strictEqual(r.rows.find((x) => x.type === "gift" && x.original === 100).resellerPrice, 15000);
     });
 

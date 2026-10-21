@@ -54,7 +54,7 @@ const sells = (d, w) => !d[w.flag];
 const wayLabel = (d, w) => (w.key === "gift" && d.type === 1000 ? "Gift Bundle" : w.label);
 /** What this way costs from the price table (0 = no tier yet), whatever the switch. */
 const tierPrice = (d, w) => (w.key === "gift" && d.type === 1000 ? d.tierPrices?.giftBundle : d.tierPrices?.[w.key]) || 0;
-/** The Discord price it is based on; a gift bundle's is a sum, not shown. */
+/** The Discord price it is based on; a gift bundle's is its members' (the price table), not shown. */
 const originalOf = (d, w) => (w.key === "loginWithoutNitro" ? d.prices?.withoutNitro : w.key === "gift" && d.type === 1000 ? null : d.prices?.withNitro);
 
 /**
