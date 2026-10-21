@@ -47,6 +47,7 @@ const DAY = 24 * HOUR;
 const MAX_ITEM = 1000; // one Discord embed field
 const MAX_PASTE = 5000;
 const MAX_FIELDS = 10;
+const MAX_IMAGE_URL = 2000; // Discord's embed URL limit is 2048
 const SNOWFLAKE = /^\d{17,20}$/;
 const CODE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const DEFAULT_MESSAGE = "### Cảm ơn quý khách đã ủng hộ ArnTo Shop. Vui lòng cho chúng mình xin 1 legit tại <#1205054570074480710>";
@@ -130,6 +131,25 @@ const fingerprint = (productId, text) => crypto.createHmac("sha256", secret()).u
 
 const str = (v, max) => String(v ?? "").trim().slice(0, max);
 
+/**
+ * The DM's guide image (a GIF showing how to use the goods), shown under the
+ * item. Discord refuses the whole message over a bad image URL — the delivery
+ * would fail and the item go back to stock — so it is checked here, not there.
+ */
+const cleanImage = (v) => {
+    const url = String(v ?? "").trim();
+    if (!url) return "";
+    if (url.length > MAX_IMAGE_URL) throw httpError(400, "The image URL is too long");
+    let parsed;
+    try {
+        parsed = new URL(url);
+    } catch {
+        throw httpError(400, "The image URL is not a valid link");
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw httpError(400, "The image URL must start with http:// or https://");
+    return url;
+};
+
 /** The parts of a product type the admin edits, normalised. */
 const cleanConfig = (input = {}) => {
     const fields = (Array.isArray(input.fields) ? input.fields : String(input.fields || "").split("|"))
@@ -140,6 +160,7 @@ const cleanConfig = (input = {}) => {
     return {
         title: str(input.title, 256),
         message: str(input.message, 2000),
+        image: cleanImage(input.image),
         fields,
         separator: String(input.separator ?? ":").slice(0, 5) || ":",
         multiline: !!input.multiline,
@@ -418,7 +439,7 @@ const deliver = async ({ product, buyerId, buyerTag, staffId, staffTag, via = "p
                 deliveryId: id,
                 buyerId,
                 deadline: now + DEADLINE_MS,
-                product: { name: p.name, title: p.title || p.name, message: p.message || DEFAULT_MESSAGE },
+                product: { name: p.name, title: p.title || p.name, message: p.message || DEFAULT_MESSAGE, image: p.image || null },
                 item: formatItem(decrypt(item.content), p),
                 expiresAt,
             },

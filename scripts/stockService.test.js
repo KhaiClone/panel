@@ -92,6 +92,20 @@ const rejects = async (fn, status) => {
         assert.strictEqual(edited.multiline, true, "untouched settings stay");
         assert.strictEqual(edited.reminders.days, 7);
         assert.strictEqual(edited.reminders.enabled, false);
+        assert.strictEqual(edited.image, "", "no guide image by default");
+    });
+
+    await test("products: the guide image must be an http(s) link", async () => {
+        const gif = "https://cdn.example.com/huong-dan.gif";
+        const p = stock.createProduct({ name: "Có ảnh", code: "with-image", image: `  ${gif} ` });
+        assert.strictEqual(p.image, gif);
+        assert.strictEqual(stock.updateProduct(p.id, { title: "Khác" }).image, gif, "kept when another setting changes");
+        await rejects(() => stock.updateProduct(p.id, { image: "javascript:alert(1)" }), 400);
+        await rejects(() => stock.updateProduct(p.id, { image: "huong-dan.gif" }), 400);
+        await rejects(() => stock.updateProduct(p.id, { image: `https://x.com/${"a".repeat(2000)}` }), 400);
+        assert.strictEqual(stock.getProduct(p.id).image, gif, "a refused edit changes nothing");
+        assert.strictEqual(stock.updateProduct(p.id, { image: "" }).image, "", "cleared");
+        stock.deleteProduct(p.id);
     });
 
     await test("items: one per line, pasted twice skipped, encrypted at rest", async () => {
@@ -136,6 +150,7 @@ const rejects = async (fn, status) => {
         assert.ok(call.payload.deadline > Date.now());
         assert.deepStrictEqual(call.payload.item.fields.map((x) => x.name), ["Gmail", "Password", "Hash"]);
         assert.strictEqual(call.payload.product.message, stock.DEFAULT_MESSAGE);
+        assert.strictEqual(call.payload.product.image, null);
         const [h] = stock.listDeliveries({ productId: nitro.id });
         assert.strictEqual(h.id, r.deliveryId);
         assert.strictEqual(h.status, "delivered");
@@ -153,6 +168,14 @@ const rejects = async (fn, status) => {
         assert.deepStrictEqual([r.delivered, r.reason], [false, "dm_blocked"]);
         assert.deepStrictEqual(stock.getProduct(nitro.id).counts, before);
         assert.strictEqual(stock.listDeliveries({ productId: nitro.id }).length, 1);
+    });
+
+    await test("deliver: the guide image goes in the DM", async () => {
+        bus.answer = () => ({ delivered: false, reason: "dm_blocked" }); // leaves the stock as it was
+        stock.updateProduct(nitro.id, { image: "https://cdn.example.com/nitro.gif" });
+        await stock.deliver({ product: nitro.id, buyerId: BUYER });
+        assert.strictEqual(bus.calls.at(-1).payload.product.image, "https://cdn.example.com/nitro.gif");
+        stock.updateProduct(nitro.id, { image: "" });
     });
 
     await test("deliver: the assistant's error → back to stock", async () => {

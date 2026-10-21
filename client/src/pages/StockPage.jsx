@@ -73,19 +73,23 @@ function Secret({ text, shown, onToggle }) {
 
 // ── Product settings (create + edit) ─────────────────────────────────────────
 
-const emptyDraft = { name: "", code: "", enabled: true, title: "", message: "", fields: "", separator: ":", multiline: false, reminders: { enabled: false, days: 30 } };
-const toDraft = (p) => ({ ...p, fields: (p.fields || []).join(" | "), reminders: { ...p.reminders } });
+const emptyDraft = { name: "", code: "", enabled: true, title: "", message: "", image: "", fields: "", separator: ":", multiline: false, reminders: { enabled: false, days: 30 } };
+const toDraft = (p) => ({ ...p, image: p.image || "", fields: (p.fields || []).join(" | "), reminders: { ...p.reminders } });
+const isImageUrl = (s) => /^https?:\/\/\S+$/i.test(String(s || "").trim());
 const fromDraft = (d) => ({ ...d, fields: parseFields(d.fields), reminders: { enabled: d.reminders.enabled, days: Number(d.reminders.days) } });
 
 function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
     const [d, setD] = useState(initial);
     const [codeTouched, setCodeTouched] = useState(!isNew);
     const [sample, setSample] = useState("");
+    const [brokenImage, setBrokenImage] = useState(""); // the URL that failed to load
     useEffect(() => setD(initial), [initial]);
     const set = (patch) => setD((cur) => ({ ...cur, ...patch }));
 
     const fields = parseFields(d.fields);
     const preview = sample.trim() ? formatItem(sample.trim(), fields, d.separator) : null;
+    const image = d.image.trim();
+    const showImage = isImageUrl(image) && brokenImage !== image;
 
     return (
         <form
@@ -125,6 +129,21 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
             <Field label="DM message" hint="Empty = the default thank-you note. Discord markdown, <#channel> and <@user> work.">
                 <textarea className="input" rows={3} value={d.message} maxLength={2000} placeholder={defaultMessage} onChange={(e) => set({ message: e.target.value })} style={{ resize: "vertical", fontSize: 13, lineHeight: 1.5 }} />
             </Field>
+            <Field label="Guide image URL (optional)" hint="A direct link to a GIF, PNG or JPG, e.g. how to use the goods. Shown at the bottom of the DM.">
+                <input className="input mono" value={d.image} maxLength={2000} placeholder="https://…/guide.gif" onChange={(e) => set({ image: e.target.value })} />
+            </Field>
+            {image && !isImageUrl(image) && <Notice tone="warning">The link must start with http:// or https://.</Notice>}
+            {isImageUrl(image) && brokenImage === image && (
+                <Notice tone="warning">This image could not be loaded — check that the link opens the image itself, not a page around it.</Notice>
+            )}
+            {showImage && (
+                <img
+                    src={image}
+                    alt="Guide image"
+                    onError={() => setBrokenImage(image)}
+                    style={{ maxWidth: "100%", maxHeight: 220, alignSelf: "flex-start", borderRadius: 6, border: "1px solid var(--border)" }}
+                />
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(90px, 1fr)", gap: 12 }}>
                 <Field label="Field labels (optional)" hint="Separated by |. With labels each item is split into fields; without, it is sent as-is.">
@@ -183,6 +202,7 @@ function ProductForm({ initial, defaultMessage, isNew, onSave, saving }) {
                     ) : (
                         <pre className="mono" style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>{preview.text}</pre>
                     )}
+                    {showImage && <img src={image} alt="" style={{ display: "block", maxWidth: "100%", maxHeight: 300, marginTop: 10, borderRadius: 4 }} />}
                 </div>
             )}
 
