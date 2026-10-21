@@ -359,16 +359,27 @@ class BadgeSender {
     /** Lấy analytics_token — đây mới là token /science thực sự kiểm tra. */
     async init() {
         this.buildNumber = await getBuildNumber();
-        const res = await axios.get(ME_URL, {
-            headers: {
-                authorization: this.token,
-                "user-agent": USER_AGENT,
-                "x-super-properties": _superProps(this.buildNumber, this.session),
-            },
-            timeout: 15_000,
-            validateStatus: () => true,
-            ...this._proxyCfg,
-        });
+        let res;
+        try {
+            res = await axios.get(ME_URL, {
+                headers: {
+                    authorization: this.token,
+                    "user-agent": USER_AGENT,
+                    "x-super-properties": _superProps(this.buildNumber, this.session),
+                },
+                timeout: 15_000,
+                validateStatus: () => true,
+                ...this._proxyCfg,
+            });
+        } catch (err) {
+            // Không có phản hồi HTTP nào (timeout, bị từ chối kết nối…): lỗi nằm ở
+            // đường ra (proxy/node), không phải ở token. badgeService đổi egress.
+            throw _err(`Could not reach Discord: ${err.message}`, 502, {
+                vi: `Không kết nối được Discord: ${err.message}`,
+                egressFailed: true,
+                cause: err,
+            });
+        }
         if (res.status === 401 || res.status === 403) throw _tokenDead();
         if (res.status !== 200) {
             throw _err(`Discord returned HTTP ${res.status}`, 502, { vi: `Discord trả HTTP ${res.status}` });

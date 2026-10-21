@@ -484,6 +484,45 @@ async function createManualOrder(
 
 // ── Chạy đơn ─────────────────────────────────────────────────────────────────────
 
+// Số egress thử lần lượt trước khi bỏ cuộc. Mỗi egress chết tốn tối đa 15s (timeout
+// của init), nên 3 là đủ vượt qua một proxy/node hỏng mà không giữ đơn quá lâu.
+const EGRESS_ATTEMPTS = 3;
+
+/**
+ * Lấy lease egress rồi mở BadgeSender qua nó.
+ *
+ * Lease dính theo accountId: mỗi tài khoản luôn ra cùng một IP. Nhưng egress đó
+ * mà chết (proxy mua hết hạn, cổng agent của node bị firewall chặn…) thì đơn nào
+ * của tài khoản ấy cũng "timeout of 15000ms exceeded" y hệt, và trước đây rơi
+ * thẳng vào "error" — nên đổi sang egress khác trong pool. Đổi IP ở bước này vẫn
+ * an toàn vì chưa gửi event nào.
+ *
+ * Thử hết egress trong pool thì dừng, không lặng lẽ gửi thẳng từ IP của panel.
+ */
+async function _openSender(order, token) {
+    const tried = [];
+    const failures = [];
+    for (let attempt = 0; attempt < EGRESS_ATTEMPTS; attempt++) {
+        const lease = await proxyPool.acquire(order.accountId, { feature: "badge", exclude: tried });
+        if (attempt > 0 && !lease.source) break;
+        const sender = new BadgeSender(token, { agent: lease.agent });
+        try {
+            await sender.init();
+            return { lease, sender };
+        } catch (err) {
+            lease.release({ failed: Boolean(err.egressFailed) });
+            if (!err.egressFailed) throw err;
+            failures.push({ label: lease.source?.label ?? null, detail: err.cause?.message ?? err.message });
+            if (!lease.source) break;
+            tried.push(lease.source.id);
+        }
+    }
+    const list = (direct) => failures.map((f) => `${f.label ?? direct}: ${f.detail}`).join("; ");
+    throw _err(`Could not reach Discord through any egress (${list("direct connection")})`, 502, {
+        vi: `Không kết nối được Discord qua egress nào (${list("kết nối thẳng")})`,
+    });
+}
+
 /**
  * TUYỆT ĐỐI KHÔNG đặt tên hàm này là `process`: ở phạm vi module nó che khuất
  * global `process` của Node, khiến mọi `process.env` trong file thành undefined.
@@ -628,6 +667,25 @@ async function _process(orderId) {
         return _shape(await _get(orderId));
     }
 
+    // Mở đường ra TRƯỚC khi chuyển sang "sending": tới đây chưa gửi gì, nên hỏng
+    // ở bước này thì chạy lại hoàn toàn an toàn.
+    let lease;
+    let sender;
+    try {
+        ({ lease, sender } = await _openSender(order, token));
+    } catch (err) {
+        if (err.invalidToken) {
+            await _patch(orderId, { status: "token_dead", error: err.message });
+            _dispatch(order, { type: "failed", status: "token_dead", error: _vi(err) });
+            return _shape(await _get(orderId));
+        }
+        // Hạ tầng của mình hỏng (egress chết, Discord trả 5xx…) — như đọc lỗi:
+        // không tịch thu, treo chờ duyệt để bấm Retry.
+        await _patch(orderId, { status: "manual_review", error: err.message });
+        _dispatch(order, { type: "manual_review", status: "manual_review", error: _vi(err) });
+        return _shape(await _get(orderId));
+    }
+
     await _patch(orderId, {
         status: "sending",
         plan: {
@@ -654,12 +712,8 @@ async function _process(orderId) {
         unit: order.unit,
     });
 
-    // Lease dính theo accountId: mỗi tài khoản luôn ra cùng một IP.
-    const lease = await proxyPool.acquire(order.accountId, { feature: "badge" });
     let result;
     try {
-        const sender = new BadgeSender(token, { agent: lease.agent });
-        await sender.init();
         result = await sender.run(plan, {
             onBatch: ({ sent, total, ok, status }) => {
                 _patch(orderId, { sent }).catch(() => {});
@@ -767,13 +821,19 @@ async function _processChoice(orderId, order, token) {
 // ── Duyệt tay ────────────────────────────────────────────────────────────────────
 
 /**
+ * Đơn duyệt tay được: manual_review, và cả đơn "error" chưa gửi được gì — trước
+ * đây egress timeout lúc mở sender làm đơn rơi vào "error" và kẹt luôn ở đó.
+ */
+const _reviewable = (o) => o.status === "manual_review" || (o.status === "error" && !o.sent);
+
+/**
  * Duyệt một đơn manual_review: "retry" chạy lại, "forfeit" tịch thu, "cancel" huỷ.
  * Đơn tay không có tiền: "cancel" là huỷ hẳn, không có "forfeit".
  */
 async function resolveManual(orderId, action) {
     const order = await _get(orderId);
     if (!order) throw _err("Order not found", 404);
-    if (order.status !== "manual_review") throw _err("The order is not waiting for review");
+    if (!_reviewable(order)) throw _err("The order is not waiting for review");
 
     if (action === "retry") {
         await _patch(orderId, { status: "paid", error: null });

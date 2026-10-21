@@ -127,6 +127,12 @@ const test = async (name, fn) => {
         twoTexts(await caught(() => new BadgeSender("t").init()), "Discord returned HTTP 502", "Discord trả HTTP 502");
         reply = () => ({ status: 200, data: { id: "1" } });
         twoTexts(await caught(() => new BadgeSender("t").init()), "Could not get the analytics_token", "Không lấy được analytics_token");
+        // No HTTP answer at all (timeout through a dead egress): flagged so badgeService tries another one.
+        reply = () => null;
+        const unreachable = await caught(() => new BadgeSender("t").init());
+        twoTexts(unreachable, "Could not reach Discord: ECONNRESET", "Không kết nối được Discord: ECONNRESET");
+        assert.strictEqual(unreachable.egressFailed, true);
+        assert.strictEqual(unreachable.cause.message, "ECONNRESET");
 
         reply = () => ({ status: 403, data: {} });
         twoTexts(await caught(() => setHypeSquad("t", 1)), ...TOKEN_DEAD);

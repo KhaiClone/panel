@@ -81,6 +81,8 @@ function OrderRow({ order, onAction, busy }) {
     const st = STATUS[order.status] ?? { label: order.status, tone: "neutral" };
     const pct = order.total ? Math.round((order.sent / order.total) * 100) : 0;
     const manual = order.source === "manual";
+    // Same rule as badgeService._reviewable: an "error" order that sent nothing can be retried.
+    const reviewable = order.status === "manual_review" || (order.status === "error" && !order.sent);
 
     return (
         <div style={{ borderTop: "1px solid var(--border-light)", padding: "12px 0" }}>
@@ -146,7 +148,7 @@ function OrderRow({ order, onAction, busy }) {
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    {canEdit && order.status === "manual_review" && manual && (
+                    {canEdit && reviewable && manual && (
                         <>
                             <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
                                 Retry
@@ -156,7 +158,7 @@ function OrderRow({ order, onAction, busy }) {
                             </Btn>
                         </>
                     )}
-                    {canEdit && order.status === "manual_review" && !manual && (
+                    {canEdit && reviewable && !manual && (
                         <>
                             <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
                                 Retry

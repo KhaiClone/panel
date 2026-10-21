@@ -243,9 +243,13 @@ const NO_PROXY = { agent: null, source: null, release: () => {} };
  *
  * Pass { failed: true } to release() when the run died — a rotating proxy then
  * changes IP immediately (still throttled) instead of waiting for its idle timer.
+ *
+ * `exclude` skips entries by id (lease.source.id) — for a caller retrying after an
+ * entry could not reach the target. Excluding a whole tier falls through to the next.
  */
-async function acquire(key, { feature = "quest" } = {}) {
-    const tiers = await _tiers(feature);
+async function acquire(key, { feature = "quest", exclude = [] } = {}) {
+    const skip = new Set(exclude);
+    const tiers = (await _tiers(feature)).map((t) => t.filter((e) => !skip.has(e.id)));
     const pool = tiers.find((t) => t.length);
     if (!pool) return NO_PROXY;
 
