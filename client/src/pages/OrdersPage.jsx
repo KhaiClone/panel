@@ -36,9 +36,11 @@ function SellerCard({ data }) {
         <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
                 <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{data.name}</h3>
-                <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>
-                    Revenue <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginLeft: 6 }}>{money(data.revenue)}</span>
-                </p>
+                {data.revenue !== undefined && (
+                    <p style={{ margin: 0, fontSize: 12, color: "var(--text-dim)" }}>
+                        Revenue <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginLeft: 6 }}>{money(data.revenue)}</span>
+                    </p>
+                )}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between" }}>
                 <Metric label="Orders" value={data.total} />
@@ -137,14 +139,15 @@ export default function OrdersPage() {
 
             {error && <Notice tone="danger">{error}</Notice>}
 
-            {/* Aggregate stats (all sellers) */}
+            {/* Aggregate stats (all sellers). The server leaves revenue out for
+                staff without the "See revenue" grant (Panel Settings → Staff). */}
             {stats && (
                 <div className="stat-grid">
                     <StatCard label="Total orders" value={stats.total} />
                     <StatCard label="Pending" value={stats.pending} tone="warning" />
                     <StatCard label="Completed" value={stats.completed} tone="success" />
                     <StatCard label="Cancelled" value={stats.cancelled} tone="danger" />
-                    <StatCard label="Revenue" value={money(stats.revenue)} />
+                    {stats.revenue !== undefined && <StatCard label="Revenue" value={money(stats.revenue)} />}
                 </div>
             )}
 

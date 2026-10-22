@@ -4,10 +4,10 @@ const staffService = require("../services/staffService");
 // Staff access (services/staffService.js) — the owner's page, Panel Settings →
 // Staff. Mounted with authMiddleware: staff never reach these.
 //
-//   GET    /                      { staff, pages, settings }
+//   GET    /                      { staff, pages, grants, settings }
 //   PUT    /settings              { clientId, clientSecret, redirectUri, guildId, roleId }
-//   POST   /                      { userId, perms, note }
-//   PUT    /:userId               { perms?, note? }
+//   POST   /                      { userId, perms, grants?, note }
+//   PUT    /:userId               { perms?, grants?, note? }
 //   DELETE /:userId               removes them and ends their session
 //   GET    /sessions?userId=      newest first
 //   DELETE /sessions/:id          signs that session out
@@ -24,7 +24,7 @@ const handle = (fn) => async (req, res) => {
     }
 };
 
-router.get("/", handle(() => ({ staff: staffService.list(), pages: staffService.PAGES, settings: staffService.getSettings() })));
+router.get("/", handle(() => ({ staff: staffService.list(), pages: staffService.PAGES, grants: staffService.GRANTS, settings: staffService.getSettings() })));
 router.put("/settings", handle((req) => staffService.setSettings(req.body || {})));
 router.get("/sessions", handle((req) => staffService.sessions({ userId: req.query.userId, limit: req.query.limit })));
 router.delete("/sessions/:id", handle((req) => staffService.kick(req.params.id)));

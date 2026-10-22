@@ -105,7 +105,9 @@ function LoginSettings({ settings, onSaved }) {
 
 // ── Add / edit someone ───────────────────────────────────────────────────────
 
-function PermsGrid({ pages, perms, onChange }) {
+// `grants` are the parts of a page held back unless ticked (server:
+// staffService.GRANTS); a tick shows under its page once that page is given.
+function PermsGrid({ pages, grants, perms, held, onChange, onGrant }) {
     const sections = useMemo(() => {
         const out = [];
         for (const p of pages) {
@@ -123,20 +125,30 @@ function PermsGrid({ pages, perms, onChange }) {
                     <p style={{ fontSize: 11, fontWeight: 500, color: "var(--text-dim)", margin: "0 0 6px" }}>{s.label}</p>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {s.pages.map((p) => (
-                            <div key={p.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                                <span style={{ fontSize: 13 }}>{p.label}</span>
-                                <div className="tab-bar">
-                                    {LEVELS.map(([k, label]) => (
-                                        <button
-                                            type="button"
-                                            key={k}
-                                            className={`tab-item ${(perms[p.key] || "none") === k ? "active" : ""}`}
-                                            onClick={() => onChange(p.key, k)}
-                                        >
-                                            {label}
-                                        </button>
-                                    ))}
+                            <div key={p.key}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                                    <span style={{ fontSize: 13 }}>{p.label}</span>
+                                    <div className="tab-bar">
+                                        {LEVELS.map(([k, label]) => (
+                                            <button
+                                                type="button"
+                                                key={k}
+                                                className={`tab-item ${(perms[p.key] || "none") === k ? "active" : ""}`}
+                                                onClick={() => onChange(p.key, k)}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
+                                {(perms[p.key] || "none") !== "none" &&
+                                    grants.filter((g) => g.page === p.key).map((g) => (
+                                        <label key={g.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)", margin: "6px 0 0 12px", cursor: "pointer" }}>
+                                            <input type="checkbox" checked={held.includes(g.key)} onChange={(e) => onGrant(g.key, e.target.checked)} />
+                                            {g.label}
+                                            {g.hint && <span style={{ color: "var(--text-dim)" }}>— {g.hint}</span>}
+                                        </label>
+                                    ))}
                             </div>
                         ))}
                     </div>
@@ -146,20 +158,23 @@ function PermsGrid({ pages, perms, onChange }) {
     );
 }
 
-function StaffModal({ pages, member, onClose, onSaved }) {
+function StaffModal({ pages, grants, member, onClose, onSaved }) {
     const adding = !member;
-    const [d, setD] = useState(() => ({ userId: member?.userId || "", note: member?.note || "", perms: { ...(member?.perms || {}) } }));
+    const [d, setD] = useState(() => ({ userId: member?.userId || "", note: member?.note || "", perms: { ...(member?.perms || {}) }, grants: [...(member?.grants || [])] }));
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const set = (patch) => setD((cur) => ({ ...cur, ...patch }));
     const perms = Object.fromEntries(Object.entries(d.perms).filter(([, v]) => v && v !== "none"));
+    // A grant whose page was set back to None goes with it (the server drops it too).
+    const held = d.grants.filter((k) => perms[grants.find((g) => g.key === k)?.page]);
+    const toggleGrant = (key, on) => setD((cur) => ({ ...cur, grants: on ? [...cur.grants.filter((k) => k !== key), key] : cur.grants.filter((k) => k !== key) }));
 
     const submit = async (e) => {
         e.preventDefault();
         setBusy(true); setError("");
         try {
-            if (adding) await api.post("/staff", { userId: d.userId.trim(), note: d.note, perms });
-            else await api.put(`/staff/${member.userId}`, { note: d.note, perms });
+            if (adding) await api.post("/staff", { userId: d.userId.trim(), note: d.note, perms, grants: held });
+            else await api.put(`/staff/${member.userId}`, { note: d.note, perms, grants: held });
             onSaved();
         } catch (err) {
             setError(errMsg(err, "Could not save"));
@@ -177,7 +192,14 @@ function StaffModal({ pages, member, onClose, onSaved }) {
                 )}
                 <div>
                     <p style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)", margin: "0 0 8px" }}>Pages</p>
-                    <PermsGrid pages={pages} perms={d.perms} onChange={(page, level) => setD((cur) => ({ ...cur, perms: { ...cur.perms, [page]: level } }))} />
+                    <PermsGrid
+                        pages={pages}
+                        grants={grants}
+                        perms={d.perms}
+                        held={held}
+                        onChange={(page, level) => setD((cur) => ({ ...cur, perms: { ...cur.perms, [page]: level } }))}
+                        onGrant={toggleGrant}
+                    />
                     <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
                         View: they see the page. Edit: they can also change it. Servers, Bots, Terminal, the network pages and Panel Settings stay yours.
                     </p>
@@ -293,11 +315,11 @@ export default function StaffTab() {
     if (!data) {
         return <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>{error || "Loading…"}</div>;
     }
-    const { staff, pages, settings } = data;
+    const { staff, pages, grants, settings } = data;
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {modal && <StaffModal pages={pages} member={modal.member} onClose={() => setModal(null)} onSaved={() => { setModal(null); changed(); }} />}
+            {modal && <StaffModal pages={pages} grants={grants} member={modal.member} onClose={() => setModal(null)} onSaved={() => { setModal(null); changed(); }} />}
             {confirm && <ConfirmModal {...confirm} onCancel={() => setConfirm(null)} />}
 
             <LoginSettings settings={settings} onSaved={load} />
@@ -335,6 +357,9 @@ export default function StaffTab() {
                                             given.map((p) => (
                                                 <span key={p.key} style={{ display: "inline-block", marginRight: 10 }}>
                                                     {pageLabel[p.key]} <span style={{ color: s.perms[p.key] === "edit" ? "var(--accent-hover)" : "var(--text-dim)" }}>{s.perms[p.key]}</span>
+                                                    {grants.filter((g) => g.page === p.key && s.grants?.includes(g.key)).map((g) => (
+                                                        <span key={g.key} style={{ color: "var(--text-dim)" }}> + {g.label.toLowerCase()}</span>
+                                                    ))}
                                                 </span>
                                             ))
                                         )}

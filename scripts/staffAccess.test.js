@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Checks for staff access (server/services/staffService.js + middleware/auth.js):
- * settings, adding staff and their page permissions, the Discord login against a
+ * settings, adding staff and their page permissions and grants (Orders revenue,
+ * down to /api/shop/orders/stats), the Discord login against a
  * stubbed Discord (identity, Staff role, one session at a time, new-device notice),
  * the owner-only default, page gates (view = GET, edit = everything), the audit
  * log and its lines in the panel log channel, the role re-check sweep, and
@@ -28,7 +29,7 @@ const sharedStore = require("../server/services/sharedStore");
 const discordBus = require("../server/services/discordBus");
 const panelLog = require("../server/services/panelLog");
 const staff = require("../server/services/staffService");
-const { authMiddleware, pageAuth, isOwnerToken, identify } = require("../server/middleware/auth");
+const { authMiddleware, pageAuth, hasGrant, isOwnerToken, identify } = require("../server/middleware/auth");
 
 // ── Discord stub ─────────────────────────────────────────────────────────────
 const GUILD = "1103736775815471257";
@@ -206,6 +207,34 @@ const login = (userId, member, extra = {}) => {
         assert.ok(!staff.can(lan, "stock", "POST"));
         assert.ok(staff.can(lan, "orders", "DELETE"));
         assert.ok(!staff.can(lan, "supporters", "GET"));
+    });
+
+    console.log("grants");
+
+    await test("a grant goes with its page", () => {
+        assert.deepStrictEqual(staff.getStaff(LAN).grants, []);
+        assert.throws(() => staff.update(LAN, { grants: ["orders.everything"] }), /Unknown grant/);
+        assert.throws(() => staff.update(LAN, { grants: "orders.revenue" }), /list/);
+        logged.length = 0;
+        const lan = staff.update(LAN, { grants: ["orders.revenue"] });
+        assert.deepStrictEqual(lan.grants, ["orders.revenue"]);
+        assert.ok(staff.has(lan, "orders.revenue"));
+        assert.match(lastLog().text, /Orders \(edit\) → .*Orders \(edit \+ see revenue\)/);
+        // Taking the page away takes the grant, and giving the page back does not bring it back.
+        assert.deepStrictEqual(staff.update(LAN, { perms: { stock: "view" } }).grants, []);
+        assert.deepStrictEqual(staff.update(LAN, { perms: { stock: "view", orders: "edit" } }).grants, []);
+        // Ticked for a page they do not have: nothing.
+        assert.deepStrictEqual(staff.update(MINH, { grants: ["orders.revenue"] }).grants, []);
+    });
+
+    await test("a grant stored without its page counts for nothing", () => {
+        sharedStore.raw().prepare("UPDATE staff SET grants = ? WHERE user_id = ?").run(JSON.stringify(["orders.revenue"]), MINH);
+        const minh = staff.getStaff(MINH);
+        assert.deepStrictEqual(minh.grants, []);
+        assert.ok(!staff.has(minh, "orders.revenue"));
+        assert.ok(!staff.has({ perms: { orders: "view" }, grants: ["nope"] }, "nope"));
+        assert.ok(!hasGrant({ kind: "staff", staff: minh }, "orders.revenue"));
+        assert.ok(hasGrant({ kind: "owner", username: "admin" }, "orders.revenue"));
     });
 
     console.log("login");
@@ -412,6 +441,60 @@ const login = (userId, member, extra = {}) => {
         assert.ok(rows.every((r) => r.discord_token === null));
         const live = sharedStore.raw().prepare("SELECT discord_token FROM staff_sessions WHERE ended_at IS NULL").all();
         assert.ok(live.every((r) => r.discord_token && !r.discord_token.includes("access")));
+    });
+
+    console.log("orders revenue");
+
+    await test("/api/shop/orders/stats has revenue only for the owner and staff with the grant", async () => {
+        const express = require("express");
+        const giftPath = require.resolve("../server/services/decorGiftService");
+        require.cache[giftPath] = { id: giftPath, filename: giftPath, loaded: true, exports: {} };
+        const orderService = require("../server/services/orderService");
+        orderService.getStats = async () => ({
+            total: 3, pending: 1, completed: 2, cancelled: 0, buyers: 2, revenue: 150000,
+            bySeller: { a: { name: "ArnTo", total: 2, completed: 1, revenue: 100000 }, b: { name: "KhaiDev", total: 1, completed: 1, revenue: 50000 } },
+        });
+        const app = express();
+        app.use("/api/shop", pageAuth("orders"), require("../server/routes/shopOrders"));
+        const server = app.listen(0, "127.0.0.1");
+        await new Promise((r) => server.once("listening", r));
+        const stats = (token) =>
+            new Promise((resolve, reject) => {
+                const req = require("http").request(
+                    { host: "127.0.0.1", port: server.address().port, path: "/api/shop/orders/stats", agent: false, headers: { authorization: `Bearer ${token}` } },
+                    (res) => {
+                        let out = "";
+                        res.on("data", (c) => (out += c));
+                        res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(out) }));
+                    },
+                );
+                req.on("error", reject);
+                req.end();
+            });
+        try {
+            const mine = await stats(OWNER);
+            assert.strictEqual(mine.body.revenue, 150000);
+            assert.strictEqual(mine.body.bySeller.a.revenue, 100000);
+
+            staff.update(LAN, { perms: { orders: "view" }, grants: [] });
+            const { token } = await login(LAN, undefined, { device: "deviceBBBB2222" });
+            const without = await stats(token);
+            assert.strictEqual(without.status, 200);
+            assert.ok(!JSON.stringify(without.body).includes("revenue"), JSON.stringify(without.body));
+            assert.strictEqual(without.body.total, 3);
+            assert.deepStrictEqual(without.body.bySeller.a, { name: "ArnTo", total: 2, completed: 1 });
+
+            // Ticking it counts from the next request, no new sign-in needed.
+            staff.update(LAN, { grants: ["orders.revenue"] });
+            const withIt = await stats(token);
+            assert.strictEqual(withIt.body.revenue, 150000);
+            assert.strictEqual(withIt.body.bySeller.b.revenue, 50000);
+
+            staff.update(LAN, { perms: { stock: "view" } });
+            assert.strictEqual((await stats(token)).status, 403);
+        } finally {
+            await new Promise((r) => server.close(r));
+        }
     });
 
     sharedStore.close();

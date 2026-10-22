@@ -2,9 +2,12 @@ const express = require("express");
 const router = express.Router();
 const orderService = require("../services/orderService");
 const decorGift = require("../services/decorGiftService");
+const { hasGrant } = require("../middleware/auth");
 
 // Mounted behind pageAuth("orders") (see index.js). Thin proxy to the
 // ArnTo-Shop Orders API; the shop enforces its own logic and Discord side-effects.
+// The revenue totals go only to the owner and staff holding the
+// "orders.revenue" grant (Panel Settings → Staff); the page has the rest.
 
 /** GET /api/shop/orders?status=&sellerId= */
 router.get("/orders", async (req, res, next) => {
@@ -16,10 +19,11 @@ router.get("/orders", async (req, res, next) => {
     }
 });
 
-/** GET /api/shop/orders/stats */
+/** GET /api/shop/orders/stats — without `revenue` (overall and per seller) unless allowed */
 router.get("/orders/stats", async (req, res, next) => {
     try {
-        res.json(await orderService.getStats());
+        const stats = await orderService.getStats();
+        res.json(hasGrant(req.auth, "orders.revenue") ? stats : orderService.withoutRevenue(stats));
     } catch (err) {
         next(err);
     }

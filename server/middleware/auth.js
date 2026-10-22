@@ -122,6 +122,13 @@ const pageAuth = (page) => (req, res, next) => {
     next();
 };
 
+/**
+ * May whoever pageAuth let in see the part of the page `grant` covers
+ * (staffService.GRANTS)? The owner always; staff only when it was ticked.
+ * The route leaves that part out of its response otherwise.
+ */
+const hasGrant = (auth, grant) => auth?.kind === "owner" || (auth?.kind === "staff" && staffService.has(auth.staff, grant));
+
 /** For code that reads the token itself (terminal WebSocket, bot logs): is it the owner's? */
 const isOwnerToken = (token) => {
     try {
@@ -131,4 +138,4 @@ const isOwnerToken = (token) => {
     }
 };
 
-module.exports = { authMiddleware, pageAuth, identify, isOwnerToken, tokenOf, clientIp, AUTH_REQUIRED, FORBIDDEN };
+module.exports = { authMiddleware, pageAuth, hasGrant, identify, isOwnerToken, tokenOf, clientIp, AUTH_REQUIRED, FORBIDDEN };

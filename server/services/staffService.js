@@ -22,7 +22,8 @@ const panelLog = require("./panelLog");
 //                   back is enough to sign in again.
 //    what           per page: "view" (GET) or "edit" (everything). PAGES is the
 //                   whole list; every other route is the owner's alone
-//                   (middleware/auth.js — deny by default).
+//                   (middleware/auth.js — deny by default). GRANTS are the
+//                   parts of a page held back unless ticked (Orders revenue).
 //    one at a time  a new login ends the user's other sessions, so two people
 //                   sharing one account keep throwing each other out. Every
 //                   sign-in (flagged when the device is new), sign-out and
@@ -73,6 +74,16 @@ const PAGES = [
 const PAGE_KEYS = new Set(PAGES.map((p) => p.key));
 const LEVELS = new Set(["view", "edit"]);
 
+/**
+ * Parts of a page shown only to the people the owner ticks, on top of its
+ * view/edit level — worth nothing without the page itself. Orders is why: staff
+ * need the page to run orders, but its totals are the shop's income.
+ */
+const GRANTS = [
+    { key: "orders.revenue", page: "orders", label: "See revenue", hint: "The revenue totals, overall and per seller" },
+];
+const GRANT_PAGE = Object.fromEntries(GRANTS.map((g) => [g.key, g.page]));
+
 /** Why a session ended, as the person who was signed out reads it. */
 const END_REASONS = {
     replaced: "Your account signed in somewhere else.",
@@ -100,6 +111,7 @@ const conn = () => {
             user_tag TEXT,
             avatar TEXT,                        -- Discord avatar hash
             perms TEXT NOT NULL DEFAULT '{}',   -- { page: "view" | "edit" }
+            grants TEXT NOT NULL DEFAULT '[]',  -- keys of GRANTS (JSON)
             note TEXT NOT NULL DEFAULT '',
             added_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
@@ -138,6 +150,8 @@ const conn = () => {
     const cols = c.pragma("table_info(staff)").map((col) => col.name);
     if (!cols.includes("roles")) c.exec("ALTER TABLE staff ADD COLUMN roles TEXT");
     if (!cols.includes("roles_at")) c.exec("ALTER TABLE staff ADD COLUMN roles_at INTEGER");
+    // …and before grants: nobody had one.
+    if (!cols.includes("grants")) c.exec("ALTER TABLE staff ADD COLUMN grants TEXT NOT NULL DEFAULT '[]'");
     made = c;
     return c;
 };
@@ -236,26 +250,46 @@ const cleanPerms = (perms) => {
     return out;
 };
 
+// A grant goes with its page: taking the page away takes the grant too.
+const parseGrants = (json, perms) => {
+    let g = [];
+    try { g = JSON.parse(json || "[]"); } catch { /* treat as none */ }
+    return Array.isArray(g) ? GRANTS.map((x) => x.key).filter((k) => g.includes(k) && perms[GRANT_PAGE[k]]) : [];
+};
+
+const cleanGrants = (grants, perms) => {
+    if (!Array.isArray(grants)) throw httpError(400, "grants must be a list");
+    for (const k of grants) if (!GRANT_PAGE[k]) throw httpError(400, `Unknown grant "${k}"`);
+    return GRANTS.map((x) => x.key).filter((k) => grants.includes(k) && perms[GRANT_PAGE[k]]);
+};
+
 const PAGE_LABEL = Object.fromEntries(PAGES.map((p) => [p.key, p.label]));
-const describePerms = (perms) =>
+const describePerms = (perms, grants = []) =>
     Object.entries(perms)
-        .map(([k, v]) => `${PAGE_LABEL[k] || k} (${v})`)
+        .map(([k, v]) => {
+            const extra = GRANTS.filter((g) => g.page === k && grants.includes(g.key)).map((g) => ` + ${g.label.toLowerCase()}`);
+            return `${PAGE_LABEL[k] || k} (${v}${extra.join("")})`;
+        })
         .join(", ") || "no pages";
 const who = (s) => `**${s?.userTag || s?.userId}**`;
 
-const rowToStaff = (r) =>
-    r && {
+const rowToStaff = (r) => {
+    if (!r) return r;
+    const perms = parsePerms(r.perms);
+    return {
         userId: r.user_id,
         userTag: r.user_tag || null,
         avatar: r.avatar || null,
-        perms: parsePerms(r.perms),
+        perms,
+        grants: parseGrants(r.grants, perms),
         note: r.note || "",
         addedAt: r.added_at,
         updatedAt: r.updated_at,
         lastLoginAt: r.last_login_at || null,
     };
+};
 
-const getStaff = (userId) => rowToStaff(conn().prepare("SELECT * FROM staff WHERE user_id = ?").get(String(userId)));
+const getStaff =(userId) => rowToStaff(conn().prepare("SELECT * FROM staff WHERE user_id = ?").get(String(userId)));
 
 const keepRoles = (userId, roles) =>
     conn().prepare("UPDATE staff SET roles = ?, roles_at = ? WHERE user_id = ?").run(JSON.stringify(roles || []), now(), String(userId));
@@ -288,31 +322,35 @@ const list = () =>
             return { ...rowToStaff(r), online: s ? { id: s.id, since: s.created_at, lastSeenAt: s.last_seen_at, ip: s.ip, ua: s.ua } : null };
         });
 
-const add = async ({ userId, perms, note }) => {
+const add = async ({ userId, perms, grants, note }) => {
     const id = String(userId || "").trim();
     if (!SNOWFLAKE.test(id)) throw httpError(400, "Enter the person's Discord user ID");
     if (getStaff(id)) throw httpError(409, "This person already has panel access");
     const p = cleanPerms(perms || {});
+    const g = cleanGrants(grants || [], p);
     // Their name, when the panel's Discord bot can look it up; the login fills it in otherwise.
     let tag = null;
     try { tag = (await require("./discordBus").userTag(id)) || null; } catch { /* unknown user or bus down */ }
     const t = now();
     conn()
-        .prepare("INSERT INTO staff (user_id, user_tag, perms, note, added_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(id, tag, JSON.stringify(p), String(note || "").slice(0, 300), t, t);
+        .prepare("INSERT INTO staff (user_id, user_tag, perms, grants, note, added_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .run(id, tag, JSON.stringify(p), JSON.stringify(g), String(note || "").slice(0, 300), t, t);
     const added = getStaff(id);
-    panelLog.add("owner", `Owner gave ${who(added)} (\`${id}\`) panel access — ${describePerms(p)}`);
+    panelLog.add("owner", `Owner gave ${who(added)} (\`${id}\`) panel access — ${describePerms(p, g)}`);
     return added;
 };
 
-const update = (userId, { perms, note } = {}) => {
+const update = (userId, { perms, grants, note } = {}) => {
     const cur = getStaff(userId);
     if (!cur) throw httpError(404, "Not a staff member");
     const p = perms !== undefined ? cleanPerms(perms) : cur.perms;
+    const g = cleanGrants(grants !== undefined ? grants : cur.grants, p);
     const n = note !== undefined ? String(note).slice(0, 300) : cur.note;
-    conn().prepare("UPDATE staff SET perms = ?, note = ?, updated_at = ? WHERE user_id = ?").run(JSON.stringify(p), n, now(), cur.userId);
-    if (JSON.stringify(p) !== JSON.stringify(cur.perms)) {
-        panelLog.add("owner", `Owner changed the pages of ${who(cur)}: ${describePerms(cur.perms)} → ${describePerms(p)}`);
+    conn()
+        .prepare("UPDATE staff SET perms = ?, grants = ?, note = ?, updated_at = ? WHERE user_id = ?")
+        .run(JSON.stringify(p), JSON.stringify(g), n, now(), cur.userId);
+    if (JSON.stringify(p) !== JSON.stringify(cur.perms) || JSON.stringify(g) !== JSON.stringify(cur.grants)) {
+        panelLog.add("owner", `Owner changed the pages of ${who(cur)}: ${describePerms(cur.perms, cur.grants)} → ${describePerms(p, g)}`);
     }
     return getStaff(cur.userId);
 };
@@ -397,6 +435,9 @@ const can = (staff, page, method = "GET") => {
     if (!level) return false;
     return level === "edit" || ["GET", "HEAD", "OPTIONS"].includes(String(method).toUpperCase());
 };
+
+/** Does this staff member hold `grant` (a key of GRANTS)? Never without its page. */
+const has = (staff, grant) => !!GRANT_PAGE[grant] && !!staff?.perms?.[GRANT_PAGE[grant]] && !!staff?.grants?.includes(grant);
 
 // ── Audit ────────────────────────────────────────────────────────────────────
 
@@ -637,6 +678,7 @@ const start = () => {
 
 module.exports = {
     PAGES,
+    GRANTS,
     END_REASONS,
     SESSION_TTL_MS,
     getSettings,
@@ -652,6 +694,7 @@ module.exports = {
     kick,
     authenticate,
     can,
+    has,
     audit,
     auditLog,
     authorizeUrl,

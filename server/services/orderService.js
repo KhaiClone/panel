@@ -108,6 +108,15 @@ const getStats = async () => {
     return { ...statsFor(orders), bySeller };
 };
 
+/** getStats() for someone not allowed the shop's income: the counts, no revenue. */
+const withoutRevenue = (stats) => {
+    const strip = ({ revenue, ...rest }) => rest;
+    return {
+        ...strip(stats),
+        bySeller: Object.fromEntries(Object.entries(stats.bySeller || {}).map(([id, s]) => [id, strip(s)])),
+    };
+};
+
 const act = async (cmd, message, orderId) => {
     // A Deco Gift order is finished by ArnTo-Auto's staff channel, which hands the
     // gift links over first — Done here would close it with nothing delivered.
@@ -129,4 +138,4 @@ const cancelOrder = async (orderId) => {
     return act("order.cancel", "Order cancelled", orderId);
 };
 
-module.exports = { SELLERS, onPanel, statsFor, listOrders, getStats, completeOrder, cancelOrder };
+module.exports = { SELLERS, onPanel, statsFor, listOrders, getStats, withoutRevenue, completeOrder, cancelOrder };
