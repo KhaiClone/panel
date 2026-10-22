@@ -11,8 +11,10 @@ const nodeService = require("./nodeService");
 //  Prepare issues the target's certificates ahead of time, so HTTPS is there
 //  the moment the panel arrives.
 //
-//  Record: { domain, nodeId, sslEnabled, addedAt } under "panel_domains".
+//  Record: { domain, nodeId, sslEnabled, addedAt, primary? } under "panel_domains".
 //  sslEnabled mirrors what the node reports (a certificate on its disk).
+//  primary marks the node's address of choice (at most one per node); without
+//  it the oldest domain is the address — so records from before it still work.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const KEY = "panel_domains";
@@ -34,9 +36,19 @@ const normalize = async (nodeId) => {
     return n;
 };
 
-/** Oldest first, so "the first domain of a node" is stable. */
+/**
+ * The primary first, then oldest first, so "the first domain of a node" is
+ * stable. Before the owner could pick, the only way to change it was removing
+ * and re-adding the older names (2026-10-22, thunderbolt.io.vn → khaidev.work.gd).
+ */
 const ofNode = (rows, nodeId) =>
-    rows.filter((d) => d.nodeId === nodeId).sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+    rows
+        .filter((d) => d.nodeId === nodeId)
+        .sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0) || (a.addedAt || 0) - (b.addedAt || 0));
+
+/** Pure: the domain each node is opened at → Set of domains. */
+const primaries = (rows) =>
+    new Set([...new Set(rows.map((d) => d.nodeId))].map((id) => ofNode(rows, id)[0].domain));
 
 /**
  * Where people open the panel: the first domain of the node it runs on
@@ -168,6 +180,28 @@ const remove = async (domain) => {
 };
 
 /**
+ * Make `domain` its node's primary: the address the panel is opened at while
+ * it runs on that node. The flag leaves the node's other domains. The node's
+ * own vhost does not change (all its domains serve or all redirect), but when
+ * it runs the panel the address moves, so the other nodes' redirects follow.
+ */
+const setPrimary = async (domain) => {
+    const rows = await list();
+    const entry = rows.find((d) => d.domain === domain);
+    if (!entry) throw httpError(404, "Domain not found");
+    const before = await currentUrl();
+    const next = rows.map((d) => {
+        if (d.nodeId !== entry.nodeId) return d;
+        const copy = { ...d };
+        delete copy.primary;
+        return d.domain === domain ? { ...copy, primary: true } : copy;
+    });
+    await db.set(KEY, next);
+    await resyncIfAddressChanged(before, entry.nodeId);
+    return next.find((d) => d.domain === domain);
+};
+
+/**
  * Drop every domain of a node that is leaving the panel → the domains dropped.
  * Never the panel's own node, so the panel's address stays what it was. Its
  * vhost and certificates are the node's uninstall's business.
@@ -195,4 +229,4 @@ const issueCert = async (domain, email = null) => {
     return (await list()).find((d) => d.domain === domain);
 };
 
-module.exports = { KEY, list, normalize, ofNode, publicUrl, currentUrl, planSites, sync, add, remove, forgetNode, issueCert };
+module.exports = { KEY, list, normalize, ofNode, primaries, publicUrl, currentUrl, planSites, sync, add, remove, setPrimary, forgetNode, issueCert };

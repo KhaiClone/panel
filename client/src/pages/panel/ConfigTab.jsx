@@ -11,7 +11,8 @@ import Section from "./Section";
 // ── PanelDomainsSection ───────────────────────────────────────────────────────
 // Each domain belongs to the node its DNS points at, for good. On the node that
 // runs the panel it serves the panel; on the others it redirects to it — so a
-// move changes no DNS (server/services/panelDomains.js).
+// move changes no DNS (server/services/panelDomains.js). A node with several
+// domains is opened at its primary one; Make primary picks it.
 
 function PanelDomainsSection() {
     const [data, setData] = useState(null); // { domains, nodes, panelNodeId, publicUrl }
@@ -20,6 +21,7 @@ function PanelDomainsSection() {
     const [adding, setAdding] = useState(false);
     const [sslLoading, setSslLoading] = useState({});
     const [deleteConfirm, setDeleteConfirm] = useState(null);
+    const [primaryConfirm, setPrimaryConfirm] = useState(null); // the domain row
     const [error, setError] = useState("");
 
     const fetchDomains = useCallback(async () => {
@@ -57,6 +59,16 @@ function PanelDomainsSection() {
         } finally { setDeleteConfirm(null); }
     };
 
+    const handlePrimary = async (domain) => {
+        setError("");
+        try {
+            await api.post(`/panel/domains/${encodeURIComponent(domain)}/primary`, {}, { timeout: 90_000 });
+            await fetchDomains();
+        } catch (err) {
+            setError(err.response?.data?.error || "Failed to set the primary domain");
+        } finally { setPrimaryConfirm(null); }
+    };
+
     const handleSSL = async (domain) => {
         setSslLoading((s) => ({ ...s, [domain]: true })); setError("");
         try {
@@ -71,6 +83,15 @@ function PanelDomainsSection() {
         return <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>{error || "Loading…"}</div>;
     }
     const { domains, nodes } = data;
+    const perNode = domains.reduce((m, d) => ({ ...m, [d.nodeId]: (m[d.nodeId] || 0) + 1 }), {});
+    const primaryMessage = (d) => {
+        const where = d.isPanelNode
+            ? `"${d.domain}" becomes the panel's address: the other nodes and the launcher will send people there.`
+            : `"${d.domain}" becomes the address of ${d.nodeName || "its node"} — used once the panel runs there.`;
+        return d.sslEnabled
+            ? where
+            : `${where}\n\nIt has no SSL certificate yet, so the panel would be opened over plain http. Enable SSL first unless you mean it.`;
+    };
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -83,11 +104,22 @@ function PanelDomainsSection() {
                     onCancel={() => setDeleteConfirm(null)}
                 />
             )}
+            {primaryConfirm && (
+                <ConfirmModal
+                    title={`Make "${primaryConfirm.domain}" primary`}
+                    message={primaryMessage(primaryConfirm)}
+                    confirmText="Make primary"
+                    danger={!primaryConfirm.sslEnabled}
+                    onConfirm={() => handlePrimary(primaryConfirm.domain)}
+                    onCancel={() => setPrimaryConfirm(null)}
+                />
+            )}
 
             <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
                 Give every node that may host the panel its own domain, pointing at that node for good. The domains of the node
                 running the panel serve it; the others redirect to it. Moving the panel changes no DNS — and Prepare, on the
-                Recovery tab, issues the new node's certificates in advance. The panel is at <a href={data.publicUrl} className="mono">{data.publicUrl}</a>.
+                Recovery tab, issues the new node's certificates in advance. A node with several domains is opened at its primary
+                one. The panel is at <a href={data.publicUrl} className="mono">{data.publicUrl}</a>.
             </p>
 
             <form onSubmit={handleAdd} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -135,6 +167,19 @@ function PanelDomainsSection() {
                                     {d.nodeName || "unknown node"} · {d.isPanelNode ? "serves the panel" : "redirects to the panel"}
                                 </div>
                             </div>
+                            {perNode[d.nodeId] > 1 && (d.isPrimary ? (
+                                <StatusBadge tone="accent" title="The address this node is opened at">Primary</StatusBadge>
+                            ) : (
+                                <button
+                                    onClick={() => setPrimaryConfirm(d)}
+                                    className="btn-ghost btn-sm"
+                                    style={{ flexShrink: 0 }}
+                                    title="Open this node at this domain instead"
+                                >
+                                    <Icon name="check" size={14} />
+                                    Make primary
+                                </button>
+                            ))}
                             {d.sslEnabled ? (
                                 <StatusBadge tone="success">SSL</StatusBadge>
                             ) : (

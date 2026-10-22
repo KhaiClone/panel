@@ -183,8 +183,14 @@ router.get("/domains", async (req, res, next) => {
         const panelNodeId = nodeService.panelNodeId();
         const here = nodes.find((n) => n._id === panelNodeId) || null;
         const names = new Map(nodes.map((n) => [n._id, n.name]));
+        const primary = panelDomains.primaries(rows);
         res.json({
-            domains: rows.map((d) => ({ ...d, nodeName: names.get(d.nodeId) || null, isPanelNode: d.nodeId === panelNodeId })),
+            domains: rows.map((d) => ({
+                ...d,
+                nodeName: names.get(d.nodeId) || null,
+                isPanelNode: d.nodeId === panelNodeId,
+                isPrimary: primary.has(d.domain),
+            })),
             nodes: nodes.map((n) => ({ _id: n._id, name: n.name, host: n.host, isPanelNode: n._id === panelNodeId })),
             panelNodeId,
             publicUrl: panelDomains.publicUrl(rows, here),
@@ -203,6 +209,21 @@ router.post("/domains", async (req, res, next) => {
         const entry = await panelDomains.add({ domain: req.body?.domain, nodeId: req.body?.nodeId });
         console.log(`[Panel] Domain added: ${entry.domain} (node ${entry.nodeId})`);
         res.json(entry);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/panel/domains/:domain/primary
+ * The node's address while it runs the panel (else its oldest domain).
+ */
+router.post("/domains/:domain/primary", async (req, res, next) => {
+    try {
+        const domain = decodeURIComponent(req.params.domain);
+        await panelDomains.setPrimary(domain);
+        console.log(`[Panel] Primary domain: ${domain}`);
+        res.json({ ok: true, domain, publicUrl: await panelDomains.currentUrl() });
     } catch (err) {
         next(err);
     }
