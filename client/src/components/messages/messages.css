@@ -35,7 +35,8 @@ ol.dp-list { list-style: decimal; }
 .dp-time { background: rgba(255, 255, 255, 0.06); border-radius: 3px; padding: 0 2px; }
 .dp-spoiler { background: #1e1f22; color: transparent; border-radius: 3px; transition: color 0.1s; cursor: pointer; }
 .dp-spoiler:hover { color: inherit; background: rgba(255, 255, 255, 0.1); }
-.dp-emoji { width: 1.375em; height: 1.375em; vertical-align: -0.3em; object-fit: contain; }
+/* inline: Tailwind's preflight makes every img a block, which broke the line at each emoji. */
+.dp-emoji { display: inline; width: 1.375em; height: 1.375em; vertical-align: -0.3em; object-fit: contain; }
 
 .dp-embed { max-width: 520px; background: #2b2d31; border-left: 4px solid #1e1f22; border-radius: 4px; padding: 8px 16px 16px 12px; margin-top: 2px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .dp-embed-grid { display: flex; gap: 16px; }
