@@ -70,8 +70,9 @@ const DEFAULTS = {
     lastError: null,
 
     // Per node: state (state, version, configSha, lastSyncAt, error) plus the
-    // one per-node choice, tokenerEnabled — false turns spotify-tokener off there.
-    nodes: {}, // nodeId → { state, version, configSha, lastSyncAt, error, tokenerEnabled }
+    // two per-node choices: enabled — false turns Lavalink itself off there —
+    // and tokenerEnabled — false turns spotify-tokener off there.
+    nodes: {}, // nodeId → { state, version, configSha, lastSyncAt, error, enabled, tokenerEnabled }
 };
 
 const _bad = (message) => {
@@ -204,6 +205,12 @@ const setNodeState = async (nodeId, patch = {}) => {
     await db.set(KEY, { ...stored, nodes });
 };
 
+/**
+ * Whether Lavalink is switched on for one node. On unless turned off by hand —
+ * a node added later starts out on, like every node did before the switch.
+ */
+const nodeEnabled = (settings, nodeId) => settings?.nodes?.[nodeId]?.enabled !== false;
+
 /** Forget a node's state — called when the node itself is deleted. */
 const forgetNode = async (nodeId) => {
     const stored = (await db.get(KEY)) || {};
@@ -213,4 +220,4 @@ const forgetNode = async (nodeId) => {
     await db.set(KEY, { ...stored, nodes });
 };
 
-module.exports = { KEY, DEFAULTS, get, update, setMeta, setNodeState, forgetNode, redacted };
+module.exports = { KEY, DEFAULTS, get, update, setMeta, setNodeState, nodeEnabled, forgetNode, redacted };

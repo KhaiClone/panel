@@ -1168,6 +1168,16 @@ another VPS.
 - **Per-node switch.** Each node card has an on/off switch for the tokener, on
   by default. Off removes the panel's own tokener on that node at once, without
   touching Lavalink; on starts it (if Lavalink runs) and proves it with a token.
+- **Lavalink on/off per node.** Every row in the Node table has an **On** switch,
+  on by default. Off (asks first — every music bot on that node loses audio)
+  stops Lavalink and its tokener there and keeps them off: the row reads *Off*,
+  Sync all and the 02:00 update pass the node by (reported as skipped, not
+  failed), and Start / Restart / Rollback / Install / Update / Sync answer 409
+  until it is switched back on. Stop still works, for a node that is off but
+  still running. Nothing is uninstalled. On writes the current config (the node
+  missed every sync while off), then starts Lavalink if it is installed. The
+  switch is saved even when the node cannot be reached; "Nodes running" counts
+  only the nodes that are on.
 
 Agent env (all optional):
 
@@ -1189,6 +1199,7 @@ SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 | `POST` | `/api/lavalink/nodes/:id/install` | First-time setup (or clean reinstall) |
 | `POST` | `/api/lavalink/nodes/:id/update` | Bring one node to the latest release |
 | `POST` | `/api/lavalink/nodes/:id/sync` | Push the config to one node |
+| `POST` | `/api/lavalink/nodes/:id/enabled` | Per-node Lavalink switch (`{ enabled }`) |
 | `POST` | `/api/lavalink/nodes/:id/tokener` | Per-node spotify-tokener switch (`{ enabled }`) |
 | `POST` | `/api/lavalink/nodes/:id/:action` | `start` · `stop` · `restart` · `rollback` |
 | `GET` | `/api/lavalink/nodes/:id/logs` | That node's Lavalink logs |

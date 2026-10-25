@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client";
-import { EmptyState, Icon, Modal, Notice, PageHeader, StatCard, StatusBadge } from "../components/ui";
+import { EmptyState, Icon, Modal, Notice, PageHeader, StatCard, StatusBadge, Toggle } from "../components/ui";
 import LiveLog from "../components/LiveLog";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +15,9 @@ import LiveLog from "../components/LiveLog";
 //  Two tabs: Node — a table, one row per node, that opens into its controls and
 //  a live log — and Config, the shared config. Status refreshes itself every
 //  30s while the page is visible; logs stream as they are written.
+//
+//  Each row has an On switch: off stops Lavalink on that node and keeps it off
+//  (no sync, no 02:00 update, no Start) until it is switched back on.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Downloading a ~100MB jar, restarting the JVM and waiting for its health check
@@ -37,6 +40,7 @@ const STATE_META = {
     "java-too-old": { label: "Java too old", color: "var(--danger)" },
     "agent-outdated": { label: "Agent outdated", color: "var(--warning)" },
     "node-offline": { label: "Node offline", color: "var(--danger)" },
+    disabled: { label: "Off", color: "var(--text-dim)" },
 };
 
 const NOT_INSTALLED = ["not-installed", "java-missing", "java-too-old"];
@@ -184,6 +188,16 @@ const tokenerNote = (t) => {
     return "";
 };
 
+/** " 1 node is turned off and was skipped (x)." after a sync, or "" when none was. */
+const skippedNote = (sync) => {
+    const skipped = sync?.skipped || [];
+    if (!skipped.length) return "";
+    const names = skipped.map((s) => s.nodeName).join(", ");
+    return skipped.length === 1
+        ? ` ${names} is turned off and was skipped.`
+        : ` ${skipped.length} nodes are turned off and were skipped (${names}).`;
+};
+
 // ── Node table ───────────────────────────────────────────────────────────────
 
 /**
@@ -198,9 +212,12 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
     const [which, setWhich] = useState("lavalink");
     const live = n.live || {};
     const running = live.status === "online";
-    const notInstalled = NOT_INSTALLED.includes(n.state);
+    const off = n.enabled === false;
+    // A node that is off reports "disabled" whatever is on disk.
+    const notInstalled = NOT_INSTALLED.includes(n.state) || (off && n.online && n.installed === false);
     const enabled = n.tokenerEnabled !== false;
-    const tv = wantsTokener ? tokenerView(n.tokener, enabled, running) : null;
+    // The tokener follows Lavalink, so a node that is off has nothing to show.
+    const tv = wantsTokener && !off ? tokenerView(n.tokener, enabled, running) : null;
     const tokenerHasLog = wantsTokener && Boolean(n.tokener?.managed || n.tokener?.foreignPm2);
     const source = tokenerHasLog ? which : "lavalink";
     const src = `/api/lavalink/nodes/${n.nodeId}/logs/stream?which=${source}&lines=200`;
@@ -209,7 +226,18 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
     return (
         <div style={{ padding: "16px 18px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                {notInstalled ? (
+                {off ? (
+                    <>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                            Lavalink is turned off on this node — use the On switch to turn it back on.
+                        </span>
+                        {running && (
+                            <button className="btn-ghost btn-sm" disabled={!!busy} onClick={() => onAction("stop", "Stop")}>
+                                <Icon name="stop" size={14} /> Stop
+                            </button>
+                        )}
+                    </>
+                ) : notInstalled ? (
                     <button className="btn-primary btn-sm" disabled={!!busy || !n.online} onClick={() => onAction("install", "Install")}>
                         Install Lavalink
                     </button>
@@ -318,11 +346,14 @@ function NodeDetail({ n, busy, wantsTokener, onAction, onTokener }) {
     );
 }
 
-function NodeRows({ n, open, onToggle, cols, wantsTokener, ...detail }) {
+function NodeRows({ n, open, onToggle, cols, wantsTokener, onSwitch, ...detail }) {
     const live = n.live || {};
     const running = live.status === "online";
+    const off = n.enabled === false;
     const tv = wantsTokener ? tokenerView(n.tokener, n.tokenerEnabled !== false, running) : null;
     const onKeyDown = (e) => {
+        // Enter / Space on the On switch belongs to the switch, not the row.
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             onToggle();
@@ -379,10 +410,19 @@ function NodeRows({ n, open, onToggle, cols, wantsTokener, ...detail }) {
                     {running ? live.restarts ?? 0 : "—"}
                 </td>
                 {wantsTokener && (
-                    <td className="hide-mobile" style={{ color: tv.color, whiteSpace: "nowrap", fontSize: 12 }}>
-                        {n.online && n.state !== "agent-outdated" ? tv.short : "—"}
+                    <td className="hide-mobile" style={{ color: off ? "var(--text-dim)" : tv.color, whiteSpace: "nowrap", fontSize: 12 }}>
+                        {n.online && n.state !== "agent-outdated" && !off ? tv.short : "—"}
                     </td>
                 )}
+                <td>
+                    {/* Toggle keeps its click to itself, so the row does not open. */}
+                    <Toggle
+                        checked={!off}
+                        disabled={!!detail.busy || n.state === "agent-outdated"}
+                        onChange={onSwitch}
+                        title={`Lavalink on ${n.nodeName}: ${off ? "off" : "on"}`}
+                    />
+                </td>
             </tr>
             {open && (
                 <tr className="row-detail">
@@ -414,6 +454,7 @@ export default function LavalinkPage() {
     const [showYaml, setShowYaml] = useState(false);
     const [yaml, setYaml] = useState("");
     const [switchPrompt, setSwitchPrompt] = useState(null); // { dropped: [] }
+    const [offPrompt, setOffPrompt] = useState(null); // the node row about to be turned off
 
     const busyRef = useRef(null);
     busyRef.current = busy;
@@ -548,7 +589,7 @@ export default function LavalinkPage() {
             const failed = data.sync.results.filter((r) => !r.ok);
             return failed.length
                 ? `Saved. Sync failed on ${failed.length} node(s): ${failed.map((f) => f.nodeName).join(", ")}`
-                : `Saved and synced ${data.sync.results.length} node(s).`;
+                : `Saved and synced ${data.sync.results.length} node(s).${skippedNote(data.sync)}`;
         });
 
     /**
@@ -616,7 +657,7 @@ export default function LavalinkPage() {
             const failed = data.results.filter((r) => !r.ok);
             return failed.length
                 ? `Failed on ${failed.length} node(s): ${failed.map((f) => f.nodeName).join(", ")}`
-                : `Synced ${data.results.length} node(s).`;
+                : `Synced ${data.results.length} node(s).${skippedNote(data)}`;
         });
 
     const nodeAction = (node, action, label) =>
@@ -625,6 +666,28 @@ export default function LavalinkPage() {
             if (data.ok === false) throw new Error(data.error || "Failed");
             if (data.health && data.health.ok === false) return `${node.nodeName}: not answering /version yet (${data.health.error})`;
             return `${node.nodeName}: ${label} done.${tokenerNote(data.tokener)}`;
+        });
+
+    /**
+     * The per-node Lavalink switch. The server saves it even when the node
+     * cannot be reached, so the table is re-read on failure too — otherwise the
+     * switch would show the old position over a choice already stored.
+     */
+    const switchLavalink = (node, enabled) =>
+        run(`Turning Lavalink ${enabled ? "on" : "off"} — ${node.nodeName}…`, async () => {
+            setOffPrompt(null);
+            const { data } = await api.post(`/lavalink/nodes/${node.nodeId}/enabled`, { enabled }, LONG);
+            if (data.ok === false) {
+                await loadStatus().catch(() => {});
+                throw new Error(`${node.nodeName}: ${data.error || "Failed"}`);
+            }
+            if (!enabled) return `${node.nodeName}: Lavalink turned off${data.stopped ? " and stopped" : ""}.`;
+            if (data.note) return `${node.nodeName}: turned on. ${data.note} — open the row and press Install.`;
+            if (data.alreadyRunning) return `${node.nodeName}: turned on — Lavalink was already running.${tokenerNote(data.tokener)}`;
+            if (data.health && data.health.ok === false) {
+                return `${node.nodeName}: turned on, but not answering /version yet (${data.health.error})`;
+            }
+            return `${node.nodeName}: Lavalink turned on and started.${tokenerNote(data.tokener)}`;
         });
 
     const toggleTokener = (node, enabled) =>
@@ -653,7 +716,11 @@ export default function LavalinkPage() {
         : SOURCES;
     const nodes = status?.nodes || [];
     const wantsTokener = Boolean(eff.tokenerPort);
-    const runningCount = nodes.filter((n) => n.live?.status === "online").length;
+    // Nodes switched off are listed but not counted: "2/3 running" for a node
+    // turned off on purpose would read as one that fell over.
+    const onNodes = nodes.filter((n) => n.enabled !== false);
+    const offCount = nodes.length - onNodes.length;
+    const runningCount = onNodes.filter((n) => n.live?.status === "online").length;
     const driftCount = nodes.filter((n) => n.state === "config-drift").length;
     // A node that answers /v4/stats contributes a number; one that does not
     // contributes nothing, and the total says "not readable" rather than a
@@ -661,8 +728,9 @@ export default function LavalinkPage() {
     const withStats = nodes.filter((n) => n.stats);
     const totalPlayers = withStats.length ? withStats.reduce((a, n) => a + (n.stats.players ?? 0), 0) : null;
     const playingPlayers = withStats.reduce((a, n) => a + (n.stats.playingPlayers ?? 0), 0);
-    // The fleet version is only meaningful when every running node agrees.
-    const versions = [...new Set(nodes.filter((n) => n.version).map((n) => n.version))];
+    // The fleet version is only meaningful when every running node agrees. A
+    // node that is off skips the 02:00 update, so its jar does not count.
+    const versions = [...new Set(onNodes.filter((n) => n.version).map((n) => n.version))];
     const fleetVersion = versions.length === 1 ? versions[0] : versions.length ? "mixed" : null;
     const newerRelease = release?.version && fleetVersion && release.version !== fleetVersion;
     const needsJava = nodes.filter((n) => n.state === "java-missing" || n.state === "java-too-old");
@@ -671,6 +739,7 @@ export default function LavalinkPage() {
         ? nodes.filter(
               (n) =>
                   n.online &&
+                  n.enabled !== false &&
                   n.tokenerEnabled !== false &&
                   n.tokener &&
                   !n.tokener.external &&
@@ -679,7 +748,7 @@ export default function LavalinkPage() {
           )
         : [];
     const chromeArches = [...new Set(needsChrome.map((n) => (n.tokener.arch === "arm64" ? "arm64" : "x64")))];
-    const cols = wantsTokener ? 8 : 7;
+    const cols = wantsTokener ? 9 : 8;
 
     return (
         <div className="fade-in page-compact">
@@ -735,8 +804,17 @@ export default function LavalinkPage() {
             <div className="stat-grid" style={{ marginBottom: 16 }}>
                 <StatCard
                     label="Nodes running"
-                    value={`${runningCount}/${nodes.length}`}
-                    tone={nodes.length && runningCount === nodes.length ? "success" : runningCount ? "warning" : "danger"}
+                    value={`${runningCount}/${onNodes.length}`}
+                    hint={offCount ? `${offCount} turned off` : undefined}
+                    tone={
+                        !onNodes.length
+                            ? undefined
+                            : runningCount === onNodes.length
+                              ? "success"
+                              : runningCount
+                                ? "warning"
+                                : "danger"
+                    }
                 />
                 <StatCard
                     label="Player"
@@ -820,6 +898,7 @@ export default function LavalinkPage() {
                                         <th className="hide-mobile">Uptime</th>
                                         <th className="hide-mobile">Restart</th>
                                         {wantsTokener && <th className="hide-mobile">Tokener</th>}
+                                        <th>On</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -834,6 +913,8 @@ export default function LavalinkPage() {
                                             busy={busy}
                                             onAction={(action, label) => nodeAction(n, action, label)}
                                             onTokener={(enabled) => toggleTokener(n, enabled)}
+                                            // Off cuts audio for every bot on that node, so it asks first.
+                                            onSwitch={(on) => (on ? switchLavalink(n, true) : setOffPrompt(n))}
                                         />
                                     ))}
                                 </tbody>
@@ -841,7 +922,8 @@ export default function LavalinkPage() {
                         </div>
                     )}
                     <p style={{ margin: "8px 2px 0", fontSize: 11, color: "var(--text-dim)" }}>
-                        Click a node to open its controls and live log.
+                        Click a node to open its controls and live log. The On switch turns Lavalink on or off for that
+                        node only.
                     </p>
                 </div>
             )}
@@ -1104,6 +1186,32 @@ export default function LavalinkPage() {
                         </button>
                         <button className="btn-danger" style={{ flex: 1 }} disabled={!!busy} onClick={confirmSwitchToForm}>
                             Switch anyway
+                        </button>
+                    </div>
+                </Modal>
+            )}
+            {offPrompt && (
+                <Modal title={`Turn off Lavalink on ${offPrompt.nodeName}?`} onClose={() => setOffPrompt(null)}>
+                    <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--text-muted)" }}>
+                        Lavalink{wantsTokener ? " and its Spotify tokener stop" : " stops"} on this node now, and every music bot
+                        connected to it <strong style={{ color: "var(--danger)" }}>loses audio</strong>
+                        {offPrompt.stats?.players ? ` (${offPrompt.stats.players} player(s) right now)` : ""}.
+                    </p>
+                    <p style={{ margin: "0 0 14px", fontSize: 12, color: "var(--text-dim)" }}>
+                        It stays off until you switch it back on: Sync, the 02:00 auto-update and Start skip this node.
+                        Nothing is uninstalled — turning it on syncs the config and starts it again.
+                    </p>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <button className="btn-ghost" style={{ flex: 1 }} onClick={() => setOffPrompt(null)}>
+                            Cancel
+                        </button>
+                        <button
+                            className="btn-danger"
+                            style={{ flex: 1 }}
+                            disabled={!!busy}
+                            onClick={() => switchLavalink(offPrompt, false)}
+                        >
+                            Turn off
                         </button>
                     </div>
                 </Modal>

@@ -67,8 +67,14 @@ const assetFor = (release, libc) =>
 //  Status
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Nodes the panel should manage Lavalink on — every enabled node. */
+/**
+ * Nodes the panel should manage Lavalink on — every enabled node. A node whose
+ * Lavalink switch is off is still one of them: the page lists it with the
+ * switch, and only the actions that would run Lavalink pass it by.
+ */
 const managedNodes = async () => (await nodeService.getNodes()).filter((n) => n.enabled !== false);
+
+const _offError = (node) => `Lavalink is turned off on "${node.name}" — turn it on first`;
 
 /**
  * Turn one agent's raw /lavalink/status into the state the UI shows.
@@ -85,10 +91,12 @@ const _stateOf = (raw, inSync) => {
 };
 
 const statusOfNode = async (node, desiredSha, eff = null, settings = null) => {
+    const enabled = store.nodeEnabled(settings, node._id);
     const base = {
         nodeId: node._id,
         nodeName: node.name,
         host: node.host,
+        enabled,
         tokenerEnabled: settings?.nodes?.[node._id]?.tokenerEnabled !== false,
     };
     try {
@@ -112,6 +120,22 @@ const statusOfNode = async (node, desiredSha, eff = null, settings = null) => {
                 });
                 stats = r?.stats ?? null;
             } catch { /* a node that will not answer /v4/stats is still worth listing */ }
+        }
+
+        // Switched off: "disabled" is the whole story — no drift or Java warning
+        // for a node nobody wants Lavalink on. Still running means the stop did
+        // not land (node unreachable at the time, or started by hand since).
+        if (!enabled) {
+            const stillRunning = raw.live?.status === "online";
+            return {
+                ...base,
+                online: true,
+                state: "disabled",
+                inSync,
+                stats,
+                ...raw,
+                error: stillRunning ? "Turned off in the panel but still running on the node — press Stop" : null,
+            };
         }
 
         return { ...base, online: true, state: _stateOf(raw, inSync), inSync, stats, ...raw };
@@ -157,6 +181,10 @@ const statusAll = async () => {
  */
 const syncNode = async (node, { settings, yaml, restart = true } = {}) => {
     const s = settings || (await store.get());
+    // Switched off: no file is written either — turning it back on syncs first.
+    if (!store.nodeEnabled(s, node._id)) {
+        return { nodeId: node._id, nodeName: node.name, ok: false, disabled: true, error: _offError(node) };
+    }
     const content = yaml || renderYaml(s);
     // The health check after a restart must use the port and password the file
     // being pushed actually declares, not the ones the form happens to hold.
@@ -187,8 +215,17 @@ const syncAll = async ({ restart = true } = {}) => {
     const yaml = renderYaml(settings);
     const nodes = await managedNodes();
     const results = [];
-    for (const node of nodes) results.push(await syncNode(node, { settings, yaml, restart }));
-    return { sha: sha256(yaml), results };
+    const skipped = [];
+    for (const node of nodes) {
+        // Passed by, not failed: "sync failed on 1 node" for a node switched off
+        // on purpose would be a false alarm on every save.
+        if (!store.nodeEnabled(settings, node._id)) {
+            skipped.push({ nodeId: node._id, nodeName: node.name, state: "disabled" });
+            continue;
+        }
+        results.push(await syncNode(node, { settings, yaml, restart }));
+    }
+    return { sha: sha256(yaml), results, skipped };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,6 +243,7 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
     const settings = await store.get();
     const eff = effective(settings);
     if (!settings.enabled) return { nodeId: node._id, nodeName: node.name, ok: false, skipped: "Lavalink is disabled in the panel settings" };
+    if (!store.nodeEnabled(settings, node._id)) return { nodeId: node._id, nodeName: node.name, ok: false, error: _offError(node) };
 
     const rel = release || (await latestRelease());
 
@@ -272,6 +310,7 @@ const installOnNode = async (node, { release = null, start = true } = {}) => {
 const updateNode = async (node, release) => {
     const settings = await store.get();
     const eff = effective(settings);
+    if (!store.nodeEnabled(settings, node._id)) return { nodeId: node._id, nodeName: node.name, ok: false, error: _offError(node) };
 
     let libc = "glibc";
     let installed = null;
@@ -339,6 +378,13 @@ const updateNode = async (node, release) => {
 const control = async (node, action) => {
     const settings = await store.get();
     const eff = effective(settings);
+    // Stop stays available: it is how a node that is off but still running
+    // (the stop did not land when it was switched off) gets cleaned up.
+    if (action !== "stop" && !store.nodeEnabled(settings, node._id)) {
+        const e = new Error(_offError(node));
+        e.status = 409;
+        throw e;
+    }
     const data =
         action === "stop"
             ? {}
@@ -371,6 +417,61 @@ const setTokener = async (node, enabled) => {
     } catch (err) {
         const error = err.status === 404 ? "This node's agent is too old for spotify-tokener — update it first" : err.message;
         return { ...base, ok: false, error };
+    }
+};
+
+/**
+ * The per-node Lavalink switch. Off stops Lavalink — and its tokener, which
+ * follows it — on that node now, and keeps it off: Sync, the 02:00 update and
+ * Start / Restart / Install all pass the node by until it is turned back on.
+ * The agent's stop also saves pm2's dump, so a reboot brings it back stopped;
+ * if anything ever starts it again, the status says so ("still running").
+ *
+ * On writes the current config first — the node missed every sync while it was
+ * off — then starts Lavalink if it is installed. A node without it is left as
+ * it is; the page offers Install.
+ *
+ * The switch is saved even when the node cannot be reached: the choice is the
+ * operator's, and the page shows a node that is off but still running.
+ */
+const setEnabled = async (node, enabled) => {
+    const on = Boolean(enabled);
+    await store.setNodeState(node._id, { enabled: on });
+    const base = { nodeId: node._id, nodeName: node.name, enabled: on };
+
+    let raw;
+    try {
+        raw = await nodeService.agentRequest(node, "get", "/lavalink/status", { timeout: STATUS_TIMEOUT });
+    } catch (err) {
+        const reason = err.status === 404 ? "this node's agent is too old for Lavalink" : err.message;
+        return { ...base, ok: false, error: `Saved, but the node could not be reached (${reason}) — nothing changed on it` };
+    }
+    const running = raw.live?.status === "online";
+
+    if (!on) {
+        // pm2 status "stopped" also covers "never registered", and pm2 refuses
+        // to stop a process it does not know — so only ask when there is one.
+        if (!raw.live?.status || raw.live.status === "stopped") return { ...base, ok: true, stopped: false };
+        try {
+            await nodeService.agentRequest(node, "post", "/lavalink/stop", { data: {}, timeout: 180_000 });
+            await store.setNodeState(node._id, { state: "disabled" });
+            return { ...base, ok: true, stopped: true };
+        } catch (err) {
+            return { ...base, ok: false, error: `Saved, but stopping Lavalink failed: ${err.message}` };
+        }
+    }
+
+    if (!raw.installed) return { ...base, ok: true, started: false, note: "Lavalink is not installed on this node yet" };
+
+    const sync = await syncNode(node, { restart: true });
+    if (!sync.ok) return { ...base, ok: false, error: `Turned on, but the config sync failed: ${sync.error}` };
+    if (running) return { ...base, ok: true, started: false, alreadyRunning: true, tokener: sync.tokener ?? null };
+
+    try {
+        const r = await control(node, "start");
+        return { ...base, ok: true, started: true, health: r.health ?? null, tokener: r.tokener ?? null };
+    } catch (err) {
+        return { ...base, ok: false, error: `Turned on, but Lavalink did not start: ${err.message}` };
     }
 };
 
@@ -408,6 +509,7 @@ module.exports = {
     installOnNode,
     updateNode,
     control,
+    setEnabled,
     setTokener,
     logs,
     streamLogs,

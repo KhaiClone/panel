@@ -34,8 +34,12 @@ const cmpVersion = (a, b) => {
     return 0;
 };
 
-/** States that cannot take an update — reported, never retried into a failure. */
-const SKIP_STATES = new Set(["node-offline", "agent-outdated", "java-missing", "java-too-old"]);
+/**
+ * States that cannot take an update — reported, never retried into a failure.
+ * "disabled" is a node whose Lavalink switch is off: it gets the new jar when
+ * someone turns it back on and presses Update, not at 02:00.
+ */
+const SKIP_STATES = new Set(["node-offline", "agent-outdated", "java-missing", "java-too-old", "disabled"]);
 
 /**
  * One full pass: resolve the latest release, then bring every node up to it.
