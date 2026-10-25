@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../api/client";
-import { usePageAccess } from "../context/AuthContext";
+import { useAuth, usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import DecoGiftOrderModal from "../components/DecoGiftOrderModal";
 import { DataTable, EmptyState, Icon, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
@@ -12,6 +12,18 @@ const STATUS = {
     cancelled: { label: "Cancelled", tone: "danger" },
 };
 const st = (s) => STATUS[s] || { label: s || "—", tone: "neutral" };
+
+const VERB = { done: "complete", cancel: "cancel", delete: "delete" };
+
+const confirmMessage = (action, order) => {
+    if (action === "done") {
+        return `Product: ${order.name}\nPrice: ${money(order.price)}\n\nThe bot will DM the buyer, post a notice in the ticket, add to their spend total and assign the buyer role — same as pressing ✅ on Discord.`;
+    }
+    if (action === "cancel") {
+        return `Product: ${order.name}\n\nThe bot will DM the buyer about the cancellation and post a notice in the ticket — same as pressing ❌ on Discord.`;
+    }
+    return `Product: ${order.name}\nPrice: ${money(order.price)} · ${st(order.status).label}\n\nThe order is removed everywhere it counts: this list, the shop's monthly statistics, the buyer's order history${order.status === "completed" ? " and spend total" : ""}, and its message in the waiting list. The buyer is not told — same as /order-remove on Discord. This cannot be undone.`;
+};
 
 const SELLERS = [
     { id: "all", label: "All sellers" },
@@ -55,6 +67,7 @@ function SellerCard({ data }) {
 
 export default function OrdersPage() {
     const { canEdit } = usePageAccess("orders");
+    const { isOwner } = useAuth(); // deleting rewrites revenue and history: owner only
     const [orders, setOrders] = useState([]);
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -95,10 +108,11 @@ export default function OrdersPage() {
         setConfirm(null);
         setBusy(order.orderId);
         try {
-            await api.post(`/shop/orders/${order.orderId}/${action}`);
+            if (action === "delete") await api.delete(`/shop/orders/${order.orderId}`);
+            else await api.post(`/shop/orders/${order.orderId}/${action}`);
             await fetchData();
         } catch (err) {
-            alert(err.response?.data?.error || `Could not ${action === "done" ? "complete" : "cancel"} the order`);
+            alert(err.response?.data?.error || `Could not ${VERB[action]} the order`);
         } finally {
             setBusy(null);
         }
@@ -193,6 +207,8 @@ export default function OrdersPage() {
                     <DataTable flush minWidth={720} columns={["Order ID", "Product", "Buyer", "Seller", { label: "Price", align: "right" }, "Date", "Status", ""]}>
                         {paged.map((o) => {
                             const s = st(o.status);
+                            const canAct = canEdit && o.status === "pending" && o.source !== "decoGift";
+                            const canDelete = isOwner && o.source !== "decoGift";
                             return (
                                 <tr key={o._id || o.orderId}>
                                     <td className="mono nowrap">{o.orderId}</td>
@@ -218,14 +234,23 @@ export default function OrdersPage() {
                                                 <Icon name="gift" size={14} /> Deco Gift · Discord
                                             </span>
                                         )}
-                                        {canEdit && o.status === "pending" && o.source !== "decoGift" && (
+                                        {(canAct || canDelete) && (
                                             <div className="row-actions">
-                                                <button className="btn-success btn-sm" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
-                                                    {busy === o.orderId ? "Working…" : "Complete"}
-                                                </button>
-                                                <button className="btn-ghost btn-sm is-danger" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "cancel" })}>
-                                                    Cancel
-                                                </button>
+                                                {canAct && (
+                                                    <>
+                                                        <button className="btn-success btn-sm" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
+                                                            {busy === o.orderId ? "Working…" : "Complete"}
+                                                        </button>
+                                                        <button className="btn-ghost btn-sm is-danger" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "cancel" })}>
+                                                            Cancel
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {canDelete && (
+                                                    <button className="btn-ghost btn-icon btn-sm is-danger" title="Delete order" aria-label={`Delete order ${o.orderId}`} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "delete" })}>
+                                                        <Icon name="trash" size={14} />
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                     </td>
@@ -255,13 +280,9 @@ export default function OrdersPage() {
 
             {confirm && (
                 <ConfirmModal
-                    title={confirm.action === "done" ? `Complete order "${confirm.order.orderId}"?` : `Cancel order "${confirm.order.orderId}"?`}
-                    message={
-                        confirm.action === "done"
-                            ? `Product: ${confirm.order.name}\nPrice: ${money(confirm.order.price)}\n\nThe bot will DM the buyer, post a notice in the ticket, add to their spend total and assign the buyer role — same as pressing ✅ on Discord.`
-                            : `Product: ${confirm.order.name}\n\nThe bot will DM the buyer about the cancellation and post a notice in the ticket — same as pressing ❌ on Discord.`
-                    }
-                    confirmText={confirm.action === "done" ? "Complete" : "Cancel order"}
+                    title={`${VERB[confirm.action][0].toUpperCase()}${VERB[confirm.action].slice(1)} order "${confirm.order.orderId}"?`}
+                    message={confirmMessage(confirm.action, confirm.order)}
+                    confirmText={{ done: "Complete", cancel: "Cancel order", delete: "Delete order" }[confirm.action]}
                     danger={confirm.action !== "done"}
                     onConfirm={doAction}
                     onCancel={() => setConfirm(null)}

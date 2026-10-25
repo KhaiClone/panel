@@ -287,6 +287,10 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
   thường — Quest lẻ + gói tháng, từng mốc Badge, từng bậc gift / tổ hợp bundle; áp cho CTV đang hoạt
   động trên trang Resellers ở cả 4 nơi (Quest, Badge, Deco Gift trên Discord, Deco Gift tạo trên web);
   để trống = giá thường. Đơn ticket vẫn theo kênh giá CTV của owner.
+- **Xoá đơn shop** (2026-10-26): xoá được đơn ở **mọi trạng thái** (trừ Deco Gift — Auto quản), không báo
+  khách; xoá = gỡ khỏi `orders`, `monthlyOrders` (thống kê tháng), lịch sử + `spent` của buyer, bảo hành
+  /server, tin waiting-list — một hàm `deleteOrder` của Shop cho cả `/order-remove` lẫn panel (bus
+  `order.delete`). Nút Delete trên trang Orders: **owner only**.
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +
   nút Reload (1 lần/10 phút cho mọi người); Sent giữ 3 ngày.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.

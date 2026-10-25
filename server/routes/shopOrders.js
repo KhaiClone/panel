@@ -47,6 +47,20 @@ router.post("/orders/:orderId/cancel", async (req, res, next) => {
     }
 });
 
+/**
+ * DELETE /api/shop/orders/:orderId — any status, owner only: it rewrites the
+ * shop's revenue and history and cannot be undone (Discord: /order-remove,
+ * Administrator only).
+ */
+router.delete("/orders/:orderId", async (req, res, next) => {
+    if (req.auth?.kind !== "owner") return res.status(403).json({ error: "Only the owner can delete orders" });
+    try {
+        res.json(await orderService.deleteOrder(req.params.orderId));
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ── Deco Gift orders made here, for buyers who paid in a ticket ──────────────
 // ArnTo-Auto records them as paid (services/decorGiftService.js createByHand).
 

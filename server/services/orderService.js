@@ -1,13 +1,15 @@
 const sharedStore = require("./sharedStore");
 const discordBus = require("./discordBus");
+const panelLog = require("./panelLog");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Shop orders for the panel's Orders page.
 //
 //  `orders` (and the nextOrderId counter) is shared data owned by ArnTo-Shop:
-//  listing and stats read the panel's copy. Done / Cancel need the shop's
-//  Discord client (edit the order message, DM the buyer, post in the ticket),
-//  so they go to the shop over the Discord bus. The panel never calls the shop.
+//  listing and stats read the panel's copy. Done / Cancel / Delete need the
+//  shop's Discord client (edit the order message, DM the buyer, post in the
+//  ticket) or its own data, so they go to the shop over the Discord bus. The
+//  panel never calls the shop.
 //  Shapes are the shop's former api/ordersApi.js, unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -138,4 +140,30 @@ const cancelOrder = async (orderId) => {
     return act("order.cancel", "Order cancelled", orderId);
 };
 
-module.exports = { SELLERS, onPanel, statsFor, listOrders, getStats, withoutRevenue, completeOrder, cancelOrder };
+// Same style as the pages (client/src/utils/format.js money): "1,000,000 VND".
+const vnd = (n) => `${Number(n || 0).toLocaleString("en-US")} VND`;
+
+/**
+ * Delete an order, whatever its status (owner only — routes/shopOrders.js; on
+ * Discord it is /order-remove). The shop does it (order.delete): besides the
+ * record here it holds what else counts the order — the monthly statistics
+ * (/thongke and the 1st-of-month report read its own monthlyOrders list), the
+ * buyer's history and spend, the waiting-list message. Removing the record here
+ * alone would leave all of that behind. The buyer is not told.
+ */
+const deleteOrder = async (orderId) => {
+    requirePanel();
+    const stored = sharedStore.run("orders", "findOne", { query: { orderId: String(orderId) } });
+    if (!stored) throw Object.assign(new Error("Order not found"), { status: 404 });
+    if (stored.source === "decoGift") {
+        throw Object.assign(new Error("Deco Gift orders cannot be deleted: ArnTo-Auto runs them"), { status: 409 });
+    }
+    if (!discordBus.canHandle(owner(), "order.delete")) {
+        throw Object.assign(new Error('ArnTo-Shop has not announced "order.delete" on the Discord bus — update and restart it'), { status: 503 });
+    }
+    const order = await discordBus.request(owner(), "order.delete", { orderId: String(orderId) }, { timeoutMs: 45_000 });
+    panelLog.add("owner", `Owner deleted order \`${stored.orderId}\` — ${stored.name} · ${vnd(stored.price)} · ${stored.status}`);
+    return { message: "Order deleted", order: enrich(order) };
+};
+
+module.exports = { SELLERS, onPanel, statsFor, listOrders, getStats, withoutRevenue, completeOrder, cancelOrder, deleteOrder };
