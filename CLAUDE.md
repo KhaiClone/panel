@@ -291,6 +291,9 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
   khách; xoá = gỡ khỏi `orders`, `monthlyOrders` (thống kê tháng), lịch sử + `spent` của buyer, bảo hành
   /server, tin waiting-list — một hàm `deleteOrder` của Shop cho cả `/order-remove` lẫn panel (bus
   `order.delete`). Nút Delete trên trang Orders: **owner only**.
+- **Forms** (2026-10-27): trang Forms quản **toàn bộ** `/form` của ArnTo-assistant (nội dung, ô nhập, câu nhắc
+  selfbot, role được xem, số ngày giữ); thông tin khách nhập chỉ nằm ở bot, không lên panel. Câu nhắc: assistant
+  gửi `$rq <base64url>` rồi xoá, selfbot giải mã và gửi đúng câu đó. Settings (role xem, số ngày) = owner only.
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +
   nút Reload (1 lần/10 phút cho mọi người); Sent giữ 3 ngày.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.

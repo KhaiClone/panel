@@ -12,6 +12,11 @@ import "./messages.css";
 /** { roles: Map(id → { name, color }), channels: Map(id → { name }) } of the server the message goes to. */
 const Lookup = createContext({ roles: new Map(), channels: new Map() });
 
+/** For a page drawing <Markdown> on its own (the Forms page): mentions by the server's names. */
+export function PreviewLookup({ roles = [], channels = [], children }) {
+    return <Lookup.Provider value={{ roles: new Map(roles.map((r) => [r.id, r])), channels: new Map(channels.map((c) => [c.id, c])) }}>{children}</Lookup.Provider>;
+}
+
 const TIME_STYLES = {
     t: { hour: "2-digit", minute: "2-digit" },
     T: { hour: "2-digit", minute: "2-digit", second: "2-digit" },

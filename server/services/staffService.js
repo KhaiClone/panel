@@ -62,6 +62,7 @@ const PAGES = [
     { key: "stock", label: "Stock", section: "Shop" },
     { key: "vouchers", label: "Vouchers", section: "Shop" },
     { key: "ticketMenus", label: "Ticket Menus", section: "Shop" },
+    { key: "forms", label: "Forms", section: "Shop" },
     { key: "supporters", label: "Supporters", section: "Shop" },
     { key: "resellers", label: "Resellers", section: "Shop" },
     { key: "messages", label: "Messages", section: "Shop" },
