@@ -4,6 +4,7 @@ import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import MessageEditor, { Fold, IconBtn } from "../components/messages/MessageEditor";
 import ImageLinks from "../components/messages/ImageLinks";
+import useFileDrop from "../components/messages/useFileDrop";
 import { MessagePreview } from "../components/messages/DiscordPreview";
 import { emptyDraft, fileName, fromJson, isEmptyDraft, isImage, onlyLinkButtons, picturesOf, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatusBadge } from "../components/ui";
@@ -459,7 +460,7 @@ function FilesFold({ m, own, onAdd, onRemove, onToggleKeep, onImages }) {
                 </button>
             </div>
             <span className="dh-hint">
-                Up to {MAX_FILES} files, {MAX_BYTES / 1048576} MB together (Discord itself takes 10 MB on a server without boosts). A picture added by its link shows under the content with no embed needed; the panel downloads it when the message is sent. A picture can also go inside an embed: copy its attachment:// name into the embed's image. Uploaded files are not kept when the page reloads; pictures by link are.
+                Up to {MAX_FILES} files, {MAX_BYTES / 1048576} MB together (Discord itself takes 10 MB on a server without boosts). Paste a picture (Ctrl+V) or drop files anywhere on the message to add them. A picture added by its link shows under the content with no embed needed; the panel downloads it when the message is sent. A picture can also go inside an embed: copy its attachment:// name into the embed's image. Uploaded files are not kept when the page reloads; pictures by link are.
             </span>
         </Fold>
     );
@@ -467,8 +468,9 @@ function FilesFold({ m, own, onAdd, onRemove, onToggleKeep, onImages }) {
 
 function MessageStrip({ m, i, count, open, onToggle, files, webhook, roles, channels, editorKey, canEdit, onPatch, onMove, onDuplicate, onRemove, onSetLink, onUnlink, onDeleteOnDiscord, onAddFiles, onRemoveFile, onToggleKeep }) {
     const head = snippet(toApi(m.draft), 60);
+    const drop = useFileDrop(onAddFiles);
     return (
-        <div className="dh-message">
+        <div className={`dh-message${drop.over ? " dh-drop" : ""}`} {...drop.props}>
             <div className="dh-message-head" onClick={() => onToggle(!open)}>
                 <Icon name={open ? "chevronDown" : "chevronRight"} size={18} />
                 <span className="dh-message-title">

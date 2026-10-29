@@ -216,7 +216,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.strictEqual(s.bot, "assistant");
         assert.strictEqual(s.botName, "ArnTo-assistant");
         assert.strictEqual(s.busReady, true);
-        assert.deepStrictEqual(s.can, { targets: true, send: true, edit: true, remove: true, fetch: true, images: true });
+        assert.deepStrictEqual(s.can, { targets: true, send: true, edit: true, remove: true, fetch: true, images: true, files: true });
     });
 
     await test("map: loaded from the bot once a day — opening the page never asks it", async () => {
@@ -443,6 +443,89 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         }
         assert.strictEqual(bus.requests.length, n + 1);
         assert.strictEqual(bus.requests.at(-1).payload.keepAttachments, undefined, "no list from the page: its files stay as they are");
+    });
+
+    await test("uploaded files: held for the bot, fetched over its gateway with its key, never on the bus", async () => {
+        const express = require("express");
+        const { external } = require("../server/routes/messages");
+        const app = express();
+        app.use((req, res, next) => {
+            req.apiCaller = { botId: req.get("x-bot") || null }; // apiKeyMiddleware's work
+            next();
+        });
+        app.use("/api/external/messages", external);
+        const server = await new Promise((r) => {
+            const s = app.listen(0, "127.0.0.1", () => r(s));
+        });
+        const base = `http://127.0.0.1:${server.address().port}/api/external/messages/files`;
+        const get = (id, bot = "assistant") => fetch(`${base}/${id}`, { headers: bot ? { "x-bot": bot } : {} });
+        const upload = (name, bytes, mimetype = "image/png") => ({ originalname: name, mimetype, size: bytes, buffer: Buffer.alloc(bytes, 9) });
+        const FILE_MSG = "1300000000000000004";
+        try {
+            // The "bot" fetches its files while the command is out, like the assistant does.
+            const seen = [];
+            bus.answer["message.send"] = async (p) => {
+                for (const f of p.files) {
+                    const other = await get(f.id, "someone-else");
+                    seen.push({ name: f.name, other: other.status });
+                    const res = await get(f.id);
+                    seen.push({ name: f.name, status: res.status, type: res.headers.get("content-type"), bytes: (await res.arrayBuffer()).byteLength });
+                }
+                return where(FILE_MSG);
+            };
+            const row = await messages.send(
+                { channelId: CH, message: { content: "Bảng giá" }, files: [{ name: "Bảng giá.png" }, { name: "menu.pdf" }] },
+                owner,
+                [upload("B?ng gi?.png", 1200), upload("menu.pdf", 300, "application/pdf")],
+            );
+            const req = bus.requests.at(-1);
+            assert.deepStrictEqual(req.payload.files.map((f) => [f.name, f.size]), [["Bang_gia.png", 1200], ["menu.pdf", 300]], "only names, sizes and ids ride the bus");
+            assert.ok(!JSON.stringify(req.payload).includes("CQkJ"), "no bytes in the command");
+            assert.strictEqual(req.opts.timeoutMs, 40_000);
+            assert.deepStrictEqual(seen, [
+                { name: "Bang_gia.png", other: 404 },
+                { name: "Bang_gia.png", status: 200, type: "image/png", bytes: 1200 },
+                { name: "menu.pdf", other: 404 },
+                { name: "menu.pdf", status: 200, type: "application/pdf", bytes: 300 },
+            ]);
+            assert.strictEqual((await get(req.payload.files[0].id)).status, 404, "gone once the bot has answered");
+            assert.strictEqual((await get(req.payload.files[0].id, null)).status, 404, "a key without a project gets nothing");
+            assert.match(logs.at(-1).text, / · 2 files/);
+            assert.strictEqual(row.message.content, "Bảng giá");
+
+            // Files alone are a message; limits hold with pictures by link counted in.
+            bus.answer["message.send"] = () => where("1300000000000000005");
+            await messages.send({ channelId: CH, message: { content: "" } }, owner, [upload("a.png", 10)]);
+            await rejects(() => messages.send({ channelId: CH, message: { content: "x", images: [{ url: "https://a.b/c.png" }] } }, owner, Array.from({ length: 10 }, (_, i) => upload(`${i}.png`, 1))), 400, /11 files/);
+            await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, owner, [upload("big.png", 26 * 1024 * 1024)]), 400, /MB together/);
+
+            // A refused command lets its files go at once; a slow answer keeps them for the bot.
+            bus.answer["message.send"] = new Error("The bot cannot send messages in #thông-báo");
+            await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, owner, [upload("a.png", 10)]), undefined);
+            assert.strictEqual((await get(bus.requests.at(-1).payload.files[0].id)).status, 404);
+            bus.answer["message.send"] = Object.assign(new Error("timeout"), { status: 504 });
+            await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, owner, [upload("late.png", 10)]), 504);
+            assert.strictEqual((await get(bus.requests.at(-1).payload.files[0].id)).status, 200, "the bot may still take it");
+
+            // Edit: uploads are added next to the kept files.
+            bus.answer["message.edit"] = (p) => ({ ...where(p.messageId), components: [], attachments: [{ id: "1600000000000000020", filename: "a.png" }, { id: "1600000000000000021", filename: "b.png" }], warnings: [] });
+            const e = await messages.edit({ channelId: CH, messageId: FILE_MSG, message: { content: "" }, keepAttachments: ["1600000000000000020"], files: [{ name: "b.png" }] }, owner, [upload("b.png", 5)]);
+            assert.deepStrictEqual(bus.requests.at(-1).payload.files.map((f) => f.name), ["b.png"]);
+            assert.strictEqual(e.attachments.length, 2);
+
+            // An older bot cannot fetch them: refused before the bus.
+            const n = bus.requests.length;
+            bus.canHandle = false;
+            try {
+                await rejects(() => messages.send({ channelId: CH, message: { content: "x" } }, owner, [upload("a.png", 10)]), 503, /cannot take uploaded files yet/);
+                await rejects(() => messages.edit({ channelId: CH, messageId: FILE_MSG, message: { content: "x" } }, owner, [upload("a.png", 10)]), 503, /cannot take uploaded files yet/);
+            } finally {
+                bus.canHandle = true;
+            }
+            assert.strictEqual(bus.requests.length, n);
+        } finally {
+            server.close();
+        }
     });
 
     await test("delete: marked deleted with who; already gone counts as deleted", async () => {

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import MessageEditor, { Fold, IconBtn } from "../components/messages/MessageEditor";
 import ImageLinks from "../components/messages/ImageLinks";
+import useFileDrop from "../components/messages/useFileDrop";
 import { MessagePreview } from "../components/messages/DiscordPreview";
-import { LIMITS, emptyDraft, fromJson, isEmptyDraft, isImage, onlyLinkButtons, picturesOf, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
+import { LIMITS, emptyDraft, fileName, fromJson, isEmptyDraft, isImage, onlyLinkButtons, picturesOf, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,13 +20,17 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBa
 //  checks the message against Discord's limits and asks the bot to post it. Sent keeps what went out (edit / copy / delete
 //  later); Saved keeps messages to reuse. Pictures are added by their link
 //  (Attachments): the bot downloads them and posts them under the content,
-//  once it has announced message.images. The logic is in
+//  once it has announced message.images. Files are uploaded, pasted (Ctrl+V)
+//  or dropped on the message: the panel holds them until the bot fetches them
+//  (message.files) — they are not kept when the page reloads. The logic is in
 //  server/services/botMessages.js, the bot's side in ArnTo-assistant
 //  functions/botMessage.js.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STORE = "messages.compose.v1";
 const SLOW = { timeout: 45_000 }; // the bus answers within 30 s, or the server says so
+const UPLOAD = { timeout: 120_000 };
+const MAX_BYTES = 25 * 1024 * 1024; // uploaded files together (services/botMessages.js)
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
 const ago = (ts) => {
     const min = Math.max(0, Math.round((Date.now() - ts) / 60_000));
@@ -164,7 +169,7 @@ function MapLine({ targets, loading, onReload, canReload }) {
 }
 
 /** The top of the editor, Discohook-style: the tools, where to send, Send, the options. */
-function SendBar({ status, targets, targetsError, loadingTargets, onReload, draft, options, setOptions, editing, onSend, onSaveEdit, onLink, onJson, onSave, savedRef, onClear, busy, result, canEdit }) {
+function SendBar({ status, targets, targetsError, loadingTargets, onReload, draft, uploads, options, setOptions, editing, onSend, onSaveEdit, onLink, onJson, onSave, savedRef, onClear, busy, result, canEdit }) {
     const guilds = targets?.guilds || [];
     const guildId = editing ? editing.guildId : options.guildId;
     const guild = guilds.find((g) => g.id === guildId) || null;
@@ -172,7 +177,7 @@ function SendBar({ status, targets, targetsError, loadingTargets, onReload, draf
     const channel = guild?.channels?.find((c) => c.id === channelId) || null;
     const report = pingReport({ draft, options, guild, channel, editing: !!editing });
     const setMention = (k, v) => setOptions({ ...options, mentions: { ...options.mentions, [k]: v } });
-    const empty = isEmptyDraft(draft) && !editing?.keep?.length;
+    const empty = isEmptyDraft(draft) && !editing?.keep?.length && !uploads.length;
     const pingSummary = [options.mentions.everyone && "@everyone", options.mentions.roles && "roles", options.mentions.users && "members"].filter(Boolean).join(", ") || "nobody";
 
     return (
@@ -307,14 +312,20 @@ function SendBar({ status, targets, targetsError, loadingTargets, onReload, draf
     );
 }
 
-/** The message's files: the ones it has (an edit: keep or remove each) and pictures added by link. */
-function AttachmentsFold({ draft, editing, botName, canImages, onImages, onToggleKeep }) {
+/**
+ * The message's files: the ones it has (an edit: keep or remove each), files
+ * uploaded here (not kept on a reload) and pictures added by link.
+ */
+function AttachmentsFold({ draft, editing, uploads, botName, canImages, canFiles, onImages, onToggleKeep, onAddFiles, onRemoveFile }) {
+    const input = useRef(null);
     const own = editing?.attachments || [];
     const kept = own.filter((a) => editing.keep.includes(a.id));
     const images = draft.images || [];
-    const count = kept.length + images.length;
+    const count = kept.length + uploads.length + images.length;
+    const bytes = uploads.reduce((n, f) => n + f.size, 0);
+    const summary = [bytes ? fmtSize(bytes) : "", images.length ? `${images.length} by link` : ""].filter(Boolean).join(" · ");
     return (
-        <Fold title={`Attachments (${count}/${LIMITS.files})`} summary={images.length ? `${images.length} by link` : ""} defaultOpen={count > 0}>
+        <Fold title={`Attachments (${count}/${LIMITS.files})`} summary={summary} defaultOpen={count > 0}>
             {own.map((a) => {
                 const on = editing.keep.includes(a.id);
                 return (
@@ -334,14 +345,45 @@ function AttachmentsFold({ draft, editing, botName, canImages, onImages, onToggl
                     </div>
                 );
             })}
+            {uploads.map((f) => (
+                <div key={f.id} className="dh-file">
+                    {f.image ? <img src={f.url} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4 }} /> : <Icon name="fileText" size={15} />}
+                    <span className="dh-file-name" title={f.file.name}>
+                        {f.name}
+                    </span>
+                    <span className="dh-count">{fmtSize(f.size)}</span>
+                    <IconBtn icon="trash" danger title="Remove" onClick={() => onRemoveFile(f.id)} />
+                </div>
+            ))}
             <ImageLinks
                 images={images}
                 onChange={onImages}
                 room={LIMITS.files - count}
-                taken={own.map((a) => a.filename)}
+                taken={[...own.map((a) => a.filename), ...uploads.map((f) => f.name)]}
                 disabled={canImages ? "" : `${botName} cannot attach pictures yet — update it (Pull & Update) and restart it.`}
             />
-            <span className="dh-hint">A picture added by its link shows under the content, with no embed needed. {botName} downloads it when the message is sent, so the link must open the picture itself (PNG, JPEG, GIF or WebP).</span>
+            <input
+                ref={input}
+                type="file"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                    onAddFiles([...e.target.files]);
+                    e.target.value = "";
+                }}
+            />
+            {canFiles ? (
+                <div>
+                    <button type="button" className="dh-btn primary" disabled={count >= LIMITS.files} onClick={() => input.current?.click()}>
+                        Add File
+                    </button>
+                </div>
+            ) : (
+                <span className="dh-hint">{botName} cannot take uploaded files yet — update it (Pull &amp; Update) and restart it. Pictures by link work without it.</span>
+            )}
+            <span className="dh-hint">
+                Up to {LIMITS.files} files, {MAX_BYTES / 1048576} MB together (Discord itself takes 10 MB on a server without boosts).{canFiles ? " Paste a picture (Ctrl+V) or drop files anywhere on the message to add them; uploaded files are not kept when the page reloads." : ""} A picture added by its link shows under the content, with no embed needed: {botName} downloads it when the message is sent, so the link must open the picture itself (PNG, JPEG, GIF or WebP).
+            </span>
         </Fold>
     );
 }
@@ -468,7 +510,7 @@ function SaveModal({ current, onClose, onSave, busy }) {
                 }}
                 style={{ display: "flex", flexDirection: "column", gap: 12 }}
             >
-                <Field label="Name" hint="The message, the channel and the ping settings are saved together.">
+                <Field label="Name" hint="The message, the channel, the ping settings and pictures added by link are saved together. Uploaded files are not.">
                     <input className="input" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="Weekly announcement" autoFocus />
                 </Field>
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
@@ -626,8 +668,14 @@ export default function MessagesPage() {
 
     const [modal, setModal] = useState(null); // "link" | "json" | "save"
     const [confirm, setConfirm] = useState(null); // { title, message, confirmText, danger, run }
+    const [uploads, setUploads] = useState([]); // [{ id, file, name, url, image, size }] — never stored
 
     useEffect(() => writeStore({ draft, options, editing, savedRef }), [draft, options, editing, savedRef]);
+
+    // Picture previews live as object URLs: let them go with the page.
+    const uploadsRef = useRef(uploads);
+    uploadsRef.current = uploads;
+    useEffect(() => () => uploadsRef.current.forEach((f) => URL.revokeObjectURL(f.url)), []);
 
     // ── Loading ──
     const loadStatus = useCallback(async () => {
@@ -716,9 +764,50 @@ export default function MessagesPage() {
 
     const guild = (targets?.guilds || []).find((g) => g.id === (editing ? editing.guildId : options.guildId)) || null;
 
+    // ── Uploaded files ──
+    const dropUploads = () =>
+        setUploads((list) => {
+            list.forEach((f) => URL.revokeObjectURL(f.url));
+            return [];
+        });
+
+    const addFiles = (list) => {
+        if (!status?.can?.files) return alert(`${status?.botName || "ArnTo-assistant"} cannot take uploaded files yet — update it (Pull & Update) and restart it.`);
+        const kept = editing?.attachments ? editing.keep.length : 0;
+        const linked = draft.images || [];
+        const room = LIMITS.files - kept - linked.length - uploads.length;
+        if (list.length > room) alert(`At most ${LIMITS.files} files per message — ${list.length - Math.max(room, 0)} left out.`);
+        const taken = new Set([...uploads.map((f) => f.name), ...(editing?.attachments || []).map((a) => a.filename), ...linked.map((x) => x.name)]);
+        const add = [];
+        let bytes = uploads.reduce((n, f) => n + f.size, 0);
+        for (const file of list.slice(0, Math.max(room, 0))) {
+            if (bytes + file.size > MAX_BYTES) {
+                alert(`${file.name} does not fit — at most ${MAX_BYTES / 1048576} MB of files per message.`);
+                continue;
+            }
+            let name = fileName(file.name, uploads.length + add.length);
+            for (let n = 2; taken.has(name); n++) name = fileName(file.name, 0).replace(/(\.[^.]*)?$/, `-${n}$1`);
+            taken.add(name);
+            bytes += file.size;
+            add.push({ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, file, name, url: URL.createObjectURL(file), image: isImage(name, file.type), size: file.size });
+        }
+        if (add.length) setUploads((list) => [...list, ...add]);
+        return undefined;
+    };
+
+    const removeUpload = (id) =>
+        setUploads((list) => {
+            const gone = list.find((f) => f.id === id);
+            if (gone) URL.revokeObjectURL(gone.url);
+            return list.filter((f) => f.id !== id);
+        });
+
+    const drop = useFileDrop(addFiles, { disabled: !canEdit });
+
     // ── Editor content ──
     const replaceDraft = (next, { keepEditing = false } = {}) => {
         setDraft(next);
+        dropUploads();
         if (!keepEditing) setEditing(null);
         setEditorKey((k) => k + 1);
         setResult(null);
@@ -762,11 +851,20 @@ export default function MessagesPage() {
     // ── Actions ──
     const body = () => ({ message: toApi(draft), mentions: options.mentions });
 
+    /** JSON, or multipart (payload + files) when files were uploaded. */
+    const post = (path, payload) => {
+        if (!uploads.length) return api.post(path, payload, SLOW);
+        const form = new FormData();
+        form.append("payload", JSON.stringify({ ...payload, files: uploads.map((f) => ({ name: f.name })) }));
+        uploads.forEach((f) => form.append("files", f.file, f.name));
+        return api.post(path, form, UPLOAD);
+    };
+
     const doSend = async (channel) => {
         setBusy("send");
         setResult(null);
         try {
-            const { data } = await api.post("/messages/send", { channelId: channel.id, ...body(), silent: options.silent, publish: options.publish }, SLOW);
+            const { data } = await post("/messages/send", { channelId: channel.id, ...body(), silent: options.silent, publish: options.publish });
             setResult({
                 tone: data.warnings?.length ? "warning" : "success",
                 text: `Sent to #${data.channelName || channel.name}${data.published ? " and published" : ""}.`,
@@ -800,14 +898,11 @@ export default function MessagesPage() {
         setBusy("edit");
         setResult(null);
         try {
-            const { data } = await api.post(
-                "/messages/edit",
-                { channelId: editing.channelId, messageId: editing.messageId, ...body(), ...(editing.attachments ? { keepAttachments: editing.keep } : {}) },
-                SLOW,
-            );
-            // The pictures added by link are files of the message now.
+            const { data } = await post("/messages/edit", { channelId: editing.channelId, messageId: editing.messageId, ...body(), ...(editing.attachments ? { keepAttachments: editing.keep } : {}) });
+            // The uploads and the pictures added by link are files of the message now.
             if (Array.isArray(data.attachments)) setEditing((e) => e && { ...e, attachments: data.attachments, keep: data.attachments.map((a) => a.id) });
             setDraft((d) => ({ ...d, images: [] }));
+            dropUploads();
             setResult({ tone: data.warnings?.length ? "warning" : "success", text: "Saved — the message on Discord is updated.", url: data.url, warnings: data.warnings });
         } catch (err) {
             setResult({ tone: "danger", text: errMsg(err, "Could not save the changes") });
@@ -908,9 +1003,10 @@ export default function MessagesPage() {
     const previewFiles = useMemo(
         () => [
             ...(editing?.attachments || []).filter((a) => editing.keep.includes(a.id)).map((a) => ({ name: a.filename, url: a.url, image: isImage(a.filename, a.contentType), size: a.size })),
+            ...uploads.map((f) => ({ name: f.name, url: f.url, image: f.image, size: f.size })),
             ...(draft.images || []).map((x) => ({ name: x.name, url: x.url, image: true })),
         ],
-        [draft, editing],
+        [draft, editing, uploads],
     );
     const toggleKeep = (id) => setEditing((e) => e && { ...e, keep: e.keep.includes(id) ? e.keep.filter((x) => x !== id) : [...e.keep, id] });
 
@@ -967,6 +1063,7 @@ export default function MessagesPage() {
                             loadingTargets={loadingTargets}
                             onReload={reloadTargets}
                             draft={draft}
+                            uploads={uploads}
                             options={options}
                             setOptions={setOptions}
                             editing={editing}
@@ -981,7 +1078,7 @@ export default function MessagesPage() {
                             result={result}
                             canEdit={canEdit}
                         />
-                        <div className="dh-message">
+                        <div className={`dh-message${drop.over ? " dh-drop" : ""}`} {...drop.props}>
                             <div className="dh-message-head" onClick={() => setFolded(!folded)}>
                                 <Icon name={folded ? "chevronRight" : "chevronDown"} size={18} />
                                 <span className="dh-message-title">
@@ -1033,10 +1130,14 @@ export default function MessagesPage() {
                                             <AttachmentsFold
                                                 draft={draft}
                                                 editing={editing}
+                                                uploads={uploads}
                                                 botName={status?.botName || "ArnTo-assistant"}
                                                 canImages={!!status?.can?.images}
+                                                canFiles={!!status?.can?.files}
                                                 onImages={(images) => setDraft((d) => ({ ...d, images }))}
                                                 onToggleKeep={toggleKeep}
+                                                onAddFiles={addFiles}
+                                                onRemoveFile={removeUpload}
                                             />
                                         }
                                         footer={

@@ -94,6 +94,8 @@ select.dh-input { height: 36px; padding: 0 10px; cursor: pointer; }
 .dh-message-head > svg { color: var(--dh-muted); flex-shrink: 0; }
 .dh-message-title { font-size: 18px; font-weight: 600; color: var(--dh-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .dh-message-body { display: flex; flex-direction: column; gap: 10px; }
+/* A file dragged over a message (useFileDrop.js) */
+.dh-message.dh-drop { outline: 2px dashed var(--dh-blurple); outline-offset: -4px; background: rgba(88, 101, 242, 0.08); }
 
 /* ── Cards: an embed (its colour on the left), a row of buttons ── */
 .dh-card { position: relative; border-radius: 8px; background: var(--dh-card); border: 1px solid var(--dh-card-border); padding: 8px 8px 8px 12px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); }

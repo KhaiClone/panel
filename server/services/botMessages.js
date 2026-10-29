@@ -19,6 +19,8 @@ const imageLinks = require("./imageLinks");
 //    message.images    no command: announced by a bot that attaches pictures
 //                      from links (`images` in send / edit, the message's files
 //                      in fetch) — an older one would post the text without them
+//    message.files     no command: announced by a bot that fetches the files
+//                      uploaded (or pasted) on the page — see Uploaded files below
 //
 //  The server map is ONE copy for everyone, kept in shared.sqlite. The panel
 //  asks the bot for it once a day, and when someone presses Reload — at most
@@ -60,6 +62,7 @@ const CMD = {
     remove: "message.delete",
     fetch: "message.fetch",
     images: "message.images",
+    files: "message.files",
 };
 const SNOWFLAKE = /^\d{17,20}$/;
 const LIMIT = {
@@ -90,6 +93,9 @@ const SENT_LIST_MAX = 500;
 const MAX_DRAFTS = 200;
 const MAX_DRAFT_BYTES = 64 * 1024;
 const SUPPRESS_NOTIFICATIONS = 1 << 12;
+const FILES_MAX = imageLinks.MAX_IMAGES; // Discord's files per message, uploads and links together
+const FILES_BYTES = imageLinks.MAX_BYTES;
+const FILE_KEEP_MS = SEND_WINDOW_MS + 60_000; // past that the bot refuses the command anyway
 
 const httpError = (status, message, extra) => Object.assign(new Error(message), { status }, extra);
 const bad = (message) => httpError(400, message);
@@ -404,6 +410,53 @@ const needImages = (bot, msg) => {
     }
 };
 
+// ── Uploaded files ───────────────────────────────────────────────────────────
+// Files uploaded or pasted on the page cannot ride the bus: the command would
+// keep their bytes in shared.sqlite's outbox and in every backup, and the
+// panel's bot uploads at most 10 MB into #api. They wait here, in memory, and
+// the command carries only { id, name, size }; the bot fetches each one over
+// its node's gateway with its own key (GET /api/external/messages/files/:id —
+// bot → panel, never the other way). Only the bot the command went to may read
+// one. A file goes once the bot has answered, or once the command's deadline
+// has passed (a bot that sees it later refuses it) — a slow answer keeps them.
+
+const waiting = new Map(); // id → { bot, name, type, buffer, size }
+
+/** multer's files + the names the page gave them (multer reads names as latin1) → checked files. */
+const uploadsOf = (files = [], names = []) => {
+    if (files.length > FILES_MAX) throw bad(`${files.length} files — Discord allows ${FILES_MAX} per message`);
+    const total = files.reduce((n, f) => n + (f.size || f.buffer?.length || 0), 0);
+    if (total > FILES_BYTES) throw bad(`The files are ${(total / 1048576).toFixed(1)} MB together — at most ${FILES_BYTES / 1048576} MB`);
+    return files.map((f, i) => ({ name: imageLinks.fileName(names?.[i]?.name || names?.[i] || f.originalname, i), type: f.mimetype || null, buffer: f.buffer, size: f.size || f.buffer?.length || 0 }));
+};
+
+const needFiles = (bot, n) => {
+    if (n && !discordBus.canHandle(bot, CMD.files)) {
+        throw httpError(503, "ArnTo-assistant cannot take uploaded files yet — update it (Pull & Update) and restart it, or add the pictures by link");
+    }
+};
+
+/** Keep the files for `bot` → what the command carries. */
+const hold = (bot, files) =>
+    files.map((f) => {
+        const id = crypto.randomUUID();
+        waiting.set(id, { bot, ...f });
+        setTimeout(() => waiting.delete(id), FILE_KEEP_MS).unref?.();
+        return { id, name: f.name, size: f.size };
+    });
+const letGo = (refs) => refs.forEach((r) => waiting.delete(r.id));
+
+/** The bot's GET: one of the files held for it. */
+const fileFor = (id, botId) => {
+    const f = waiting.get(String(id || ""));
+    if (!f || !botId || f.bot !== botId) throw httpError(404, "That file is no longer waiting — send the message again from the panel");
+    return f;
+};
+
+const filesTotal = (n) => {
+    if (n > FILES_MAX) throw bad(`${n} files — Discord allows ${FILES_MAX} per message`);
+};
+
 const status = async (auth) => {
     const bot = discordBus.handlerOf(CMD.send);
     let botName = null;
@@ -689,7 +742,8 @@ const pingText = (msg, opts) => {
     return out.length ? ` · mentions ${out.join(", ")}` : "";
 };
 
-const imagesText = (msg) => (msg.images ? ` · ${msg.images.length} image${msg.images.length === 1 ? "" : "s"}` : "");
+const count = (n, word) => (n ? ` · ${n} ${word}${n === 1 ? "" : "s"}` : "");
+const attachText = (msg, files = []) => count(msg.images?.length || 0, "image") + count(files.length, "file");
 
 /** keepAttachments from the page: the ids of the message's files to keep — absent: leave its files alone. */
 const keepIdsOf = (v) => (Array.isArray(v) ? [...new Set(v.map(String).filter((x) => SNOWFLAKE.test(x)))] : undefined);
@@ -700,15 +754,19 @@ const logLine = (actor, verb, where, link, extra = "") =>
 /**
  * Post a message. → the Sent row, plus the bot's `warnings` (a ping that could
  * not happen, a publish that failed). On a slow bot: 504 and the row stays
- * pending — it settles from the bus when the answer comes.
+ * pending — it settles from the bus when the answer comes. uploads: multer's
+ * files, named by `files` ([{ name }]).
  */
-const send = async ({ channelId, message, ...rest } = {}, auth) => {
+const send = async ({ channelId, message, files: names, ...rest } = {}, auth, uploads = []) => {
     const ch = String(channelId || "");
     if (!SNOWFLAKE.test(ch)) throw bad("Pick a channel");
-    const msg = normalizeMessage(message);
+    const uploaded = uploadsOf(uploads, names);
+    const msg = normalizeMessage(message, { files: uploaded.length });
+    filesTotal(uploaded.length + (msg.images?.length || 0));
     const opts = normalizeOptions(rest);
     const bot = handler(CMD.send);
     needImages(bot, msg);
+    needFiles(bot, uploaded.length);
     const viewer = await checkChannel(auth, ch);
     const actor = actorOf(auth);
     const id = crypto.randomUUID();
@@ -721,22 +779,26 @@ const send = async ({ channelId, message, ...rest } = {}, auth) => {
         .run(id, place.guildId || null, place.guildName || null, ch, place.channelName || null, json(msg), json(opts), json(actor), now);
     prune();
 
+    const files = hold(bot, uploaded);
     let res;
     try {
         res = await discordBus.request(
             bot,
             CMD.send,
-            { channelId: ch, message: msg, ...opts, ...(viewer ? { viewer } : {}), notAfter: now + SEND_WINDOW_MS },
-            // The bot downloads the pictures first.
-            { timeoutMs: msg.images ? 40_000 : 30_000, onQueued: (busId) => conn().prepare("UPDATE bot_messages SET bus_id = ? WHERE id = ?").run(busId, id) },
+            { channelId: ch, message: msg, ...(files.length ? { files } : {}), ...opts, ...(viewer ? { viewer } : {}), notAfter: now + SEND_WINDOW_MS },
+            // The bot fetches the files and pictures first.
+            { timeoutMs: msg.images || files.length ? 40_000 : 30_000, onQueued: (busId) => conn().prepare("UPDATE bot_messages SET bus_id = ? WHERE id = ?").run(busId, id) },
         );
     } catch (err) {
         if (err.status === 504) {
+            // The files wait until the deadline: the bot may still take the command.
             throw httpError(504, "ArnTo-assistant has not answered yet. The message is listed under Sent as waiting; the bot still posts it if it sees the command within 10 minutes.", { id });
         }
+        letGo(files);
         conn().prepare("UPDATE bot_messages SET status = 'failed', error = ? WHERE id = ?").run(String(err.message).slice(0, 500), id);
         throw err;
     }
+    letGo(files);
     conn()
         .prepare(
             "UPDATE bot_messages SET status = 'sent', message_id = ?, guild_id = ?, guild_name = ?, channel_name = ?, error = NULL WHERE id = ?",
@@ -744,7 +806,7 @@ const send = async ({ channelId, message, ...rest } = {}, auth) => {
         .run(res?.messageId || null, res?.guildId || place.guildId || null, res?.guildName || place.guildName || null, res?.channelName || place.channelName || null, id);
     const row = rowToSent(getRow(id));
     const warned = (res?.warnings || []).length ? ` · ⚠️ ${res.warnings.join("; ")}` : "";
-    logLine(actor, "sent", row, row.url, pingText(msg, opts) + imagesText(msg) + (opts.silent ? " · silent" : "") + (res?.published ? " · published" : "") + warned);
+    logLine(actor, "sent", row, row.url, pingText(msg, opts) + attachText(msg, files) + (opts.silent ? " · silent" : "") + (res?.published ? " · published" : "") + warned);
     return { ...row, warnings: res?.warnings || [], published: !!res?.published };
 };
 
@@ -759,25 +821,35 @@ const refOf = ({ channelId, messageId } = {}) => {
  * Change a message the bot sent. A message that is not in Sent yet (opened by
  * its link) is added to it. Editing never pings again — Discord only notifies
  * when a message is first posted. keepAttachments: the ids of its files to
- * keep (the rest go) — absent, its files stay as they are; images are added.
+ * keep (the rest go) — absent, its files stay as they are; uploads and images
+ * are added.
  */
-const edit = async ({ channelId, messageId, message, keepAttachments, ...rest } = {}, auth) => {
+const edit = async ({ channelId, messageId, message, keepAttachments, files: names, ...rest } = {}, auth, uploads = []) => {
     const ref = refOf({ channelId, messageId });
     const keep = keepIdsOf(keepAttachments);
-    const msg = normalizeMessage(message, { edit: true, files: keep ? keep.length : 0 });
-    const files = (keep?.length || 0) + (msg.images?.length || 0);
-    if (files > imageLinks.MAX_IMAGES) throw bad(`${files} files — Discord allows ${imageLinks.MAX_IMAGES} per message`);
+    const uploaded = uploadsOf(uploads, names);
+    const msg = normalizeMessage(message, { edit: true, files: (keep ? keep.length : 0) + uploaded.length });
+    filesTotal((keep?.length || 0) + uploaded.length + (msg.images?.length || 0));
     const opts = normalizeOptions(rest);
     const bot = handler(CMD.edit);
     needImages(bot, msg);
+    needFiles(bot, uploaded.length);
     const viewer = await checkChannel(auth, ref.channelId);
     const actor = actorOf(auth);
-    const res = await discordBus.request(
-        bot,
-        CMD.edit,
-        { ...ref, message: msg, mentions: opts.mentions, ...(keep ? { keepAttachments: keep } : {}), ...(viewer ? { viewer } : {}), notAfter: Date.now() + SEND_WINDOW_MS },
-        { timeoutMs: msg.images ? 40_000 : 30_000 },
-    );
+    const files = hold(bot, uploaded);
+    let res;
+    try {
+        res = await discordBus.request(
+            bot,
+            CMD.edit,
+            { ...ref, message: msg, ...(files.length ? { files } : {}), mentions: opts.mentions, ...(keep ? { keepAttachments: keep } : {}), ...(viewer ? { viewer } : {}), notAfter: Date.now() + SEND_WINDOW_MS },
+            { timeoutMs: msg.images || files.length ? 40_000 : 30_000 },
+        );
+    } catch (err) {
+        if (err.status !== 504) letGo(files); // a slow bot may still take the command
+        throw err;
+    }
+    letGo(files);
     const now = Date.now();
     const cur = byMessage(ref.messageId);
     // What Discord now holds: the buttons left alone come back from the bot, and
@@ -801,7 +873,7 @@ const edit = async ({ channelId, messageId, message, keepAttachments, ...rest } 
         prune();
     }
     const row = rowToSent(byMessage(ref.messageId));
-    logLine(actor, "edited", row, row.url, imagesText(msg));
+    logLine(actor, "edited", row, row.url, attachText(msg, files));
     return { ...row, ...(Array.isArray(res?.attachments) ? { attachments: res.attachments } : {}), warnings: res?.warnings || [] };
 };
 
@@ -914,6 +986,9 @@ module.exports = {
     createDraft,
     updateDraft,
     deleteDraft,
+    fileFor,
+    FILES_MAX,
+    FILES_BYTES,
     // for the Webhooks page (services/webhookMessages.js)
     actorOf,
     actorText,

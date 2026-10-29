@@ -147,6 +147,8 @@ app.use("/api/external/forms", apiKeyMiddleware, require("./routes/forms").exter
 app.use("/api/external/supporters", apiKeyMiddleware, require("./routes/supporters").external);
 // ArnTo-Shop's CTVs (resellers): /ctv-new, /ctv-remove (services/resellerService.js).
 app.use("/api/external/resellers", apiKeyMiddleware, require("./routes/resellers").external);
+// ArnTo-assistant fetches the files uploaded on the Messages page (services/botMessages.js).
+app.use("/api/external/messages", apiKeyMiddleware, require("./routes/messages").external);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -170,7 +172,7 @@ app.use("/api/forms", pageAuth("forms"), require("./routes/forms").panel);
 app.use("/api/supporters", pageAuth("supporters"), require("./routes/supporters").panel);
 app.use("/api/resellers", pageAuth("resellers"), require("./routes/resellers").panel);
 // Compose a message and have ArnTo-assistant post it (services/botMessages.js).
-app.use("/api/messages", pageAuth("messages"), require("./routes/messages"));
+app.use("/api/messages", pageAuth("messages"), require("./routes/messages").panel);
 // Discohook-style messages through the shop server's webhooks (services/webhookMessages.js).
 app.use("/api/webhooks", pageAuth("webhooks"), require("./routes/webhooks"));
 // Who else may use the panel, and which pages (owner only).
