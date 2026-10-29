@@ -5,6 +5,7 @@ const panelLog = require("./panelLog");
 const lifecycle = require("./lifecycle");
 const agentCrypto = require("./agentCrypto");
 const messages = require("./botMessages");
+const imageLinks = require("./imageLinks");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Webhooks — Discohook on the panel, without pasting webhook URLs.
@@ -28,7 +29,9 @@ const messages = require("./botMessages");
 //  Tokens travel sealed (PanelBus.seal → discordBus.request opens them) and are
 //  kept AES-GCM-encrypted with JWT_SECRET; the browser never gets one. Posting,
 //  editing, deleting and reading a message once its webhook is known are plain
-//  calls to Discord's webhook API from the panel — no bot in between.
+//  calls to Discord's webhook API from the panel — no bot in between. Pictures
+//  added by link (`images`) are downloaded by the panel (imageLinks.js) and go
+//  out as files, after the ones uploaded from the page.
 //
 //  A webhook made by another app (another bot, Discohook's bot…) is listed but
 //  cannot be used: Discord does not give its token to the bot.
@@ -535,17 +538,7 @@ const placeOf = (channel, input = {}) => {
 };
 
 /** Same rule on both sides (the page shows the result): ASCII letters, digits, _ - . — what attachment:// can name. */
-const fileName = (name, i) => {
-    const s = String(name || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/đ/g, "d")
-        .replace(/Đ/g, "D")
-        .replace(/[^\w.-]+/g, "_")
-        .replace(/^[._]+/, "")
-        .slice(-100);
-    return s || `file-${i + 1}`;
-};
+const { fileName } = imageLinks;
 
 /** multer's files + the names the page gave them (multer reads names as latin1). */
 const filesOf = (files = [], names = []) => {
@@ -553,6 +546,14 @@ const filesOf = (files = [], names = []) => {
     const total = files.reduce((n, f) => n + (f.size || f.buffer?.length || 0), 0);
     if (total > FILES_BYTES) throw bad(`The files are ${(total / 1048576).toFixed(1)} MB together — at most ${FILES_BYTES / 1048576} MB`);
     return files.map((f, i) => ({ name: fileName(names[i]?.name || names[i] || f.originalname, i), type: f.mimetype, buffer: f.buffer, size: f.size || f.buffer?.length || 0 }));
+};
+
+/** The message's picture links, downloaded within what the uploaded files leave of FILES_BYTES. */
+const linkedFiles = (msg, files) =>
+    msg.images ? imageLinks.downloadAll(msg.images, { maxBytes: FILES_BYTES - files.reduce((n, f) => n + f.size, 0) }) : [];
+
+const filesCount = (n) => {
+    if (n > FILES_MAX) throw bad(`${n} files — Discord allows ${FILES_MAX} per message`);
 };
 
 const allowedMentions = (m) => ({ parse: [...(m.users ? ["users"] : []), ...(m.roles ? ["roles"] : []), ...(m.everyone ? ["everyone"] : [])] });
@@ -629,16 +630,19 @@ const logLine = (actor, text) => panelLog.add(actor.kind === "staff" ? "staff" :
 
 /**
  * Post one message through a webhook. input: { webhookId, threadId?, threadName?,
- * message, username?, avatarUrl?, mentions, silent, suppressEmbeds, files: [names] }.
+ * message (with its images by link), username?, avatarUrl?, mentions, silent,
+ * suppressEmbeds, files: [names] }.
  */
 const send = async (input = {}, uploads = [], auth) => {
     const { w, scan, channel } = webhookFor(auth, input.webhookId);
-    const files = filesOf(uploads, input.files);
-    const msg = messages.normalizeMessage(input.message, { attachments: true, files: files.length });
+    const uploaded = filesOf(uploads, input.files);
+    const msg = messages.normalizeMessage(input.message, { attachments: true, files: uploaded.length });
+    filesCount(uploaded.length + (msg.images?.length || 0));
     const opts = optionsOf(input);
     const profile = profileOf(input);
     const place = placeOf(channel, input);
     const actor = messages.actorOf(auth);
+    const files = [...uploaded, ...(await linkedFiles(msg, uploaded))];
     const flags = (opts.silent ? FLAG.silent : 0) | (opts.suppressEmbeds ? FLAG.suppressEmbeds : 0);
     const body = {
         ...(msg.content ? { content: msg.content } : {}),
@@ -676,18 +680,21 @@ const refOf = (input = {}) => {
 
 /**
  * Change a message its webhook sent. keepAttachments: the ids of its files to
- * keep (the rest go); new files are added. The name and picture cannot change
- * (Discord keeps the ones it was posted with), and an edit pings nobody.
+ * keep (the rest go); new files (uploaded, or images by link) are added. The
+ * name and picture cannot change (Discord keeps the ones it was posted with),
+ * and an edit pings nobody.
  */
 const edit = async (input = {}, uploads = [], auth) => {
     const { w, scan, channel } = webhookFor(auth, input.webhookId);
     const ref = refOf(input);
-    const files = filesOf(uploads, input.files);
+    const uploaded = filesOf(uploads, input.files);
     const keepIds = [...new Set((Array.isArray(input.keepAttachments) ? input.keepAttachments : []).map(String).filter((x) => SNOWFLAKE.test(x)))];
-    if (keepIds.length + files.length > FILES_MAX) throw bad(`${keepIds.length + files.length} files — Discord allows ${FILES_MAX} per message`);
-    const msg = messages.normalizeMessage(input.message, { edit: true, attachments: true, files: keepIds.length + files.length });
+    filesCount(keepIds.length + uploaded.length);
+    const msg = messages.normalizeMessage(input.message, { edit: true, attachments: true, files: keepIds.length + uploaded.length });
+    filesCount(keepIds.length + uploaded.length + (msg.images?.length || 0));
     const opts = optionsOf(input);
     const actor = messages.actorOf(auth);
+    const files = [...uploaded, ...(await linkedFiles(msg, uploaded))];
     const body = {
         content: msg.content || "",
         embeds: msg.embeds,
@@ -701,7 +708,13 @@ const edit = async (input = {}, uploads = [], auth) => {
     const now = Date.now();
     const read = readMessage(res);
     const cur = byMessage(ref.messageId);
-    const payload = { ...(parse(cur?.payload) || {}), message: { ...msg, components: msg.components === null ? read.message.components : msg.components }, attachments: read.attachments };
+    const before = parse(cur?.payload) || {};
+    const message = { ...msg, components: msg.components === null ? read.message.components : msg.components };
+    // The links its pictures came from: the earlier ones whose file is still on it, then the new ones.
+    const images = imageLinks.stillOn(before.message?.images, read.attachments, msg.images);
+    if (images) message.images = images;
+    else delete message.images;
+    const payload = { ...before, message, attachments: read.attachments };
     if (!payload.username && res.author?.username && res.author.username !== w.name) payload.username = res.author.username;
     if (cur) {
         conn().prepare("UPDATE webhook_messages SET status = 'sent', payload = ?, options = ?, edited_by = ?, edited_at = ? WHERE id = ?").run(json(payload), json(opts), json(actor), now, cur.id);

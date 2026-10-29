@@ -3,6 +3,7 @@ const sharedStore = require("./sharedStore");
 const discordBus = require("./discordBus");
 const panelLog = require("./panelLog");
 const lifecycle = require("./lifecycle");
+const imageLinks = require("./imageLinks");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Messages — compose a message Discohook-style on the panel, pick a channel,
@@ -15,6 +16,9 @@ const lifecycle = require("./lifecycle");
 //    message.edit      change a message the bot sent (here or anywhere)
 //    message.delete    delete one
 //    message.fetch     read a message by its link, to edit it or copy it
+//    message.images    no command: announced by a bot that attaches pictures
+//                      from links (`images` in send / edit, the message's files
+//                      in fetch) — an older one would post the text without them
 //
 //  The server map is ONE copy for everyone, kept in shared.sqlite. The panel
 //  asks the bot for it once a day, and when someone presses Reload — at most
@@ -55,6 +59,7 @@ const CMD = {
     edit: "message.edit",
     remove: "message.delete",
     fetch: "message.fetch",
+    images: "message.images",
 };
 const SNOWFLAKE = /^\d{17,20}$/;
 const LIMIT = {
@@ -337,12 +342,14 @@ const componentsOf = (rows) => {
 };
 
 /**
- * The editor's message → exactly what Discord takes: { content?, embeds, components }.
+ * The editor's message → exactly what Discord takes: { content?, embeds, components },
+ * plus `images` ([{ url, name }], pictures to attach from their links) when it has any.
  * Throws 400 with the first thing Discord would refuse. `components: null` (an
  * edit only) means "leave the message's buttons as they are" — used for a
  * message whose buttons run the bot's own features.
- * Webhooks: `attachments` lets embed pictures name a sent file (attachment://…),
- * and a message with `files` may have no text or embed at all.
+ * Webhooks: `attachments` lets embed pictures name a sent file (attachment://…).
+ * A message with `files` (uploaded, or kept on an edit) or images may have no
+ * text or embed at all.
  */
 const normalizeMessage = (input, { edit = false, attachments = false, files = 0 } = {}) => {
     if (!input || typeof input !== "object") throw bad("No message");
@@ -355,8 +362,9 @@ const normalizeMessage = (input, { edit = false, attachments = false, files = 0 
     if (total > LIMIT.embedTotal) throw bad(`The embeds hold ${total} characters together — Discord allows ${LIMIT.embedTotal}`);
     const keep = edit && input.components === null;
     const components = keep ? null : componentsOf(input.components == null ? [] : input.components);
-    if (!content && !embeds.length && !files) throw bad("The message is empty — write some content or add an embed");
-    return { ...(content ? { content } : {}), embeds, components };
+    const images = imageLinks.imagesOf(input.images);
+    if (!content && !embeds.length && !files && !images.length) throw bad("The message is empty — write some content, add an embed or an image");
+    return { ...(content ? { content } : {}), embeds, components, ...(images.length ? { images } : {}) };
 };
 
 const bool = (v, dflt) => (v == null ? dflt : v === true || v === "true" || v === 1);
@@ -387,6 +395,13 @@ const handler = (cmd) => {
     if (!bot) throw httpError(503, `No bot has announced "${cmd}" — update ArnTo-assistant (Pull & Update) and restart it`);
     if (!discordBus.status().ready) throw httpError(503, "The panel's Discord bus is not ready — try again in a moment");
     return bot;
+};
+
+/** Pictures go only to a bot that attaches them — an older one would post the text alone. */
+const needImages = (bot, msg) => {
+    if (msg.images && !discordBus.canHandle(bot, CMD.images)) {
+        throw httpError(503, "ArnTo-assistant cannot attach images yet — update it (Pull & Update) and restart it, or remove the images");
+    }
 };
 
 const status = async (auth) => {
@@ -674,6 +689,11 @@ const pingText = (msg, opts) => {
     return out.length ? ` · mentions ${out.join(", ")}` : "";
 };
 
+const imagesText = (msg) => (msg.images ? ` · ${msg.images.length} image${msg.images.length === 1 ? "" : "s"}` : "");
+
+/** keepAttachments from the page: the ids of the message's files to keep — absent: leave its files alone. */
+const keepIdsOf = (v) => (Array.isArray(v) ? [...new Set(v.map(String).filter((x) => SNOWFLAKE.test(x)))] : undefined);
+
 const logLine = (actor, verb, where, link, extra = "") =>
     panelLog.add(actor.kind === "staff" ? "staff" : "owner", `📨 ${actorText(actor)} ${verb} a message in **#${where.channelName || where.channelId}**${where.guildName ? ` (${where.guildName})` : ""}${extra}${link ? ` — ${link}` : ""}`);
 
@@ -688,6 +708,7 @@ const send = async ({ channelId, message, ...rest } = {}, auth) => {
     const msg = normalizeMessage(message);
     const opts = normalizeOptions(rest);
     const bot = handler(CMD.send);
+    needImages(bot, msg);
     const viewer = await checkChannel(auth, ch);
     const actor = actorOf(auth);
     const id = crypto.randomUUID();
@@ -706,7 +727,8 @@ const send = async ({ channelId, message, ...rest } = {}, auth) => {
             bot,
             CMD.send,
             { channelId: ch, message: msg, ...opts, ...(viewer ? { viewer } : {}), notAfter: now + SEND_WINDOW_MS },
-            { timeoutMs: 30_000, onQueued: (busId) => conn().prepare("UPDATE bot_messages SET bus_id = ? WHERE id = ?").run(busId, id) },
+            // The bot downloads the pictures first.
+            { timeoutMs: msg.images ? 40_000 : 30_000, onQueued: (busId) => conn().prepare("UPDATE bot_messages SET bus_id = ? WHERE id = ?").run(busId, id) },
         );
     } catch (err) {
         if (err.status === 504) {
@@ -722,7 +744,7 @@ const send = async ({ channelId, message, ...rest } = {}, auth) => {
         .run(res?.messageId || null, res?.guildId || place.guildId || null, res?.guildName || place.guildName || null, res?.channelName || place.channelName || null, id);
     const row = rowToSent(getRow(id));
     const warned = (res?.warnings || []).length ? ` · ⚠️ ${res.warnings.join("; ")}` : "";
-    logLine(actor, "sent", row, row.url, pingText(msg, opts) + (opts.silent ? " · silent" : "") + (res?.published ? " · published" : "") + warned);
+    logLine(actor, "sent", row, row.url, pingText(msg, opts) + imagesText(msg) + (opts.silent ? " · silent" : "") + (res?.published ? " · published" : "") + warned);
     return { ...row, warnings: res?.warnings || [], published: !!res?.published };
 };
 
@@ -736,25 +758,34 @@ const refOf = ({ channelId, messageId } = {}) => {
 /**
  * Change a message the bot sent. A message that is not in Sent yet (opened by
  * its link) is added to it. Editing never pings again — Discord only notifies
- * when a message is first posted.
+ * when a message is first posted. keepAttachments: the ids of its files to
+ * keep (the rest go) — absent, its files stay as they are; images are added.
  */
-const edit = async ({ channelId, messageId, message, ...rest } = {}, auth) => {
+const edit = async ({ channelId, messageId, message, keepAttachments, ...rest } = {}, auth) => {
     const ref = refOf({ channelId, messageId });
-    const msg = normalizeMessage(message, { edit: true });
+    const keep = keepIdsOf(keepAttachments);
+    const msg = normalizeMessage(message, { edit: true, files: keep ? keep.length : 0 });
+    const files = (keep?.length || 0) + (msg.images?.length || 0);
+    if (files > imageLinks.MAX_IMAGES) throw bad(`${files} files — Discord allows ${imageLinks.MAX_IMAGES} per message`);
     const opts = normalizeOptions(rest);
     const bot = handler(CMD.edit);
+    needImages(bot, msg);
     const viewer = await checkChannel(auth, ref.channelId);
     const actor = actorOf(auth);
     const res = await discordBus.request(
         bot,
         CMD.edit,
-        { ...ref, message: msg, mentions: opts.mentions, ...(viewer ? { viewer } : {}), notAfter: Date.now() + SEND_WINDOW_MS },
-        { timeoutMs: 30_000 },
+        { ...ref, message: msg, mentions: opts.mentions, ...(keep ? { keepAttachments: keep } : {}), ...(viewer ? { viewer } : {}), notAfter: Date.now() + SEND_WINDOW_MS },
+        { timeoutMs: msg.images ? 40_000 : 30_000 },
     );
     const now = Date.now();
-    // What Discord now holds: the buttons left alone come back from the bot.
-    const stored = msg.components === null ? { ...msg, components: res?.components || [] } : msg;
     const cur = byMessage(ref.messageId);
+    // What Discord now holds: the buttons left alone come back from the bot, and
+    // the pictures are the earlier links whose file is still on it plus the new ones.
+    const stored = { ...msg, ...(msg.components === null ? { components: res?.components || [] } : {}) };
+    const images = imageLinks.stillOn(parse(cur?.payload)?.images, res?.attachments, msg.images);
+    if (images) stored.images = images;
+    else delete stored.images;
     if (cur) {
         conn()
             .prepare(
@@ -770,8 +801,8 @@ const edit = async ({ channelId, messageId, message, ...rest } = {}, auth) => {
         prune();
     }
     const row = rowToSent(byMessage(ref.messageId));
-    logLine(actor, "edited", row, row.url);
-    return { ...row, warnings: res?.warnings || [] };
+    logLine(actor, "edited", row, row.url, imagesText(msg));
+    return { ...row, ...(Array.isArray(res?.attachments) ? { attachments: res.attachments } : {}), warnings: res?.warnings || [] };
 };
 
 /** Delete a message the bot sent. One that is already gone counts as deleted. */

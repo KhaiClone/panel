@@ -28,6 +28,7 @@ const discordBus = require("../server/services/discordBus");
 const panelLog = require("../server/services/panelLog");
 const messages = require("../server/services/botMessages");
 const hooks = require("../server/services/webhookMessages");
+const imageLinks = require("../server/services/imageLinks");
 
 // ── The shop server ──────────────────────────────────────────────────────────
 const GUILD = "1103736775815471257"; // staffService's default staff server
@@ -240,6 +241,60 @@ const rejects = async (fn, status, re) => {
         // The bot's own Messages page still takes http(s) pictures only.
         await rejects(() => messages.normalizeMessage({ embeds: [{ title: "x", image: { url: "attachment://a.png" } }] }), 400, /must start with/);
         assert.strictEqual(hooks.fileName("Ảnh sản phẩm (1).PNG", 0), "Anh_san_pham_1_.PNG");
+    });
+
+    await test("images by link: downloaded by the panel, sent after the uploads, kept as links", async () => {
+        // The downloader itself is checked in imageLinks.test.js; here it hands back bytes.
+        const real = imageLinks.downloadAll;
+        const asked = [];
+        imageLinks.downloadAll = async (images, opts) => {
+            asked.push({ images, opts });
+            if (images.some((x) => x.url.includes("broken"))) throw Object.assign(new Error(`Image 1 (${images[0].name}): the link answered HTTP 404`), { status: 400 });
+            return images.map((x) => ({ name: x.name, type: "image/png", buffer: Buffer.alloc(30, 2), size: 30 }));
+        };
+        try {
+            calls.length = 0;
+            reply = () => posted("1500000000000000010", CH, { attachments: [{ id: "1600000000000000011", filename: "menu.pdf", url: "u1" }, { id: "1600000000000000012", filename: "banner.png", url: "u2" }] });
+            const row = await hooks.send(
+                { webhookId: WH, message: { content: "Tết", images: [{ url: "https://cdn.example/banner.png", name: "banner.png" }] }, files: [{ name: "menu.pdf" }] },
+                [file("menu.pdf", 100, "application/pdf")],
+                owner,
+            );
+            const c = calls[0];
+            assert.deepStrictEqual(c.files.map((f) => [f.field, f.name, f.size]), [["files[0]", "menu.pdf", 100], ["files[1]", "banner.png", 30]]);
+            assert.deepStrictEqual(c.body.attachments, [{ id: 0, filename: "menu.pdf" }, { id: 1, filename: "banner.png" }]);
+            assert.ok(!("images" in c.body), "the links never reach Discord");
+            assert.strictEqual(asked[0].opts.maxBytes, hooks.FILES_BYTES - 100, "the uploads' bytes come off the budget");
+            assert.deepStrictEqual(row.message.images, [{ url: "https://cdn.example/banner.png", name: "banner.png" }]);
+            assert.match(logs.at(-1).text, / · 2 files/);
+
+            // A picture alone is a message; one that fails stops the send before Discord.
+            calls.length = 0;
+            reply = () => posted("1500000000000000011");
+            await hooks.send({ webhookId: WH, message: { images: [{ url: "https://cdn.example/x.png" }] } }, [], owner);
+            await rejects(() => hooks.send({ webhookId: WH, message: { images: [{ url: "https://cdn.example/broken.png" }] } }, [], owner), 400, /Image 1 \(broken\.png\): the link answered HTTP 404/);
+            await rejects(() => hooks.send({ webhookId: WH, message: { images: [{ url: "https://cdn.example/a.png" }] } }, Array.from({ length: 10 }, (_, i) => file(`${i}.png`)), owner), 400, /11 files/);
+            assert.strictEqual(calls.length, 1);
+
+            // Edit: kept files + a new picture; the links of the pictures still on it stay.
+            calls.length = 0;
+            reply = () => ({ status: 200, body: { id: "1500000000000000010", channel_id: CH, content: "Tết", embeds: [], components: [], attachments: [{ id: "1600000000000000012", filename: "banner.png", url: "u2" }, { id: "1600000000000000013", filename: "sale.png", url: "u3" }] } });
+            const e = await hooks.edit(
+                { webhookId: WH, messageId: "1500000000000000010", message: { content: "Tết", images: [{ url: "https://cdn.example/sale.png", name: "sale.png" }] }, keepAttachments: ["1600000000000000012"], mentions: { everyone: false, roles: false, users: false } },
+                [],
+                owner,
+            );
+            assert.deepStrictEqual(calls[0].body.attachments, [{ id: "1600000000000000012" }, { id: 0, filename: "sale.png" }]);
+            assert.deepStrictEqual(calls[0].files.map((f) => f.name), ["sale.png"]);
+            assert.deepStrictEqual(e.message.images.map((x) => x.name), ["banner.png", "sale.png"]);
+            await rejects(
+                () => hooks.edit({ webhookId: WH, messageId: "1500000000000000010", message: { content: "x", images: [{ url: "https://cdn.example/a.png" }] }, keepAttachments: Array.from({ length: 10 }, (_, i) => `16000000000000002${i}`) }, [], owner),
+                400,
+                /11 files/,
+            );
+        } finally {
+            imageLinks.downloadAll = real;
+        }
     });
 
     await test("threads and forum posts", async () => {

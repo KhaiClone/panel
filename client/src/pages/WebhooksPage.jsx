@@ -3,8 +3,9 @@ import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import MessageEditor, { Fold, IconBtn } from "../components/messages/MessageEditor";
+import ImageLinks from "../components/messages/ImageLinks";
 import { MessagePreview } from "../components/messages/DiscordPreview";
-import { emptyDraft, fromJson, isEmptyDraft, onlyLinkButtons, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
+import { emptyDraft, fileName, fromJson, isEmptyDraft, isImage, onlyLinkButtons, picturesOf, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, SearchInput, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,20 +72,6 @@ const threadIdOf = (s) => {
     if (m) return m[1];
     return SNOWFLAKE.test(t) ? t : undefined;
 };
-
-/** The same rule as the server: what attachment:// can name (ASCII letters, digits, _ - .). */
-const fileName = (name, i) => {
-    const s = String(name || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/đ/g, "d")
-        .replace(/Đ/g, "D")
-        .replace(/[^\w.-]+/g, "_")
-        .replace(/^[._]+/, "")
-        .slice(-100);
-    return s || `file-${i + 1}`;
-};
-const isImage = (name, type) => (type ? type.startsWith("image/") : /\.(png|jpe?g|gif|webp|avif)$/i.test(name || ""));
 
 /** Only the link buttons of a message's rows (the rest belong to a bot). */
 const linkRowsOnly = (rows) =>
@@ -409,14 +396,16 @@ function ProfileFold({ m, webhook, onChange }) {
     );
 }
 
-function FilesFold({ m, own, onAdd, onRemove, onToggleKeep }) {
+function FilesFold({ m, own, onAdd, onRemove, onToggleKeep, onImages }) {
     const input = useRef(null);
     const kept = (m.ref?.attachments || []).filter((a) => m.ref.keep.includes(a.id));
-    const count = kept.length + own.length;
+    const images = m.draft.images || [];
+    const count = kept.length + own.length + images.length;
     const bytes = own.reduce((n, f) => n + f.size, 0);
     const copy = (name) => navigator.clipboard?.writeText(`attachment://${name}`);
+    const summary = [bytes ? fmtSize(bytes) : "", images.length ? `${images.length} by link` : ""].filter(Boolean).join(" · ");
     return (
-        <Fold title={`Attachments (${count}/${MAX_FILES})`} summary={bytes ? fmtSize(bytes) : ""} defaultOpen={count > 0}>
+        <Fold title={`Attachments (${count}/${MAX_FILES})`} summary={summary} defaultOpen={count > 0}>
             {(m.ref?.attachments || []).map((a) => {
                 const on = m.ref.keep.includes(a.id);
                 return (
@@ -447,6 +436,13 @@ function FilesFold({ m, own, onAdd, onRemove, onToggleKeep }) {
                     <IconBtn icon="trash" danger title="Remove" onClick={() => onRemove(f.id)} />
                 </div>
             ))}
+            <ImageLinks
+                images={images}
+                onChange={onImages}
+                room={MAX_FILES - kept.length - own.length - images.length}
+                taken={[...own.map((f) => f.name), ...(m.ref?.attachments || []).map((a) => a.filename)]}
+                copyable
+            />
             <input
                 ref={input}
                 type="file"
@@ -463,7 +459,7 @@ function FilesFold({ m, own, onAdd, onRemove, onToggleKeep }) {
                 </button>
             </div>
             <span className="dh-hint">
-                Up to {MAX_FILES} files, {MAX_BYTES / 1048576} MB together (Discord itself takes 10 MB on a server without boosts). A picture can go inside an embed: copy its attachment:// name into the embed's image. Files are not kept when the page reloads.
+                Up to {MAX_FILES} files, {MAX_BYTES / 1048576} MB together (Discord itself takes 10 MB on a server without boosts). A picture added by its link shows under the content with no embed needed; the panel downloads it when the message is sent. A picture can also go inside an embed: copy its attachment:// name into the embed's image. Uploaded files are not kept when the page reloads; pictures by link are.
             </span>
         </Fold>
     );
@@ -515,7 +511,7 @@ function MessageStrip({ m, i, count, open, onToggle, files, webhook, roles, chan
                         extra={
                             <>
                                 <ProfileFold m={m} webhook={webhook} onChange={onPatch} />
-                                <FilesFold m={m} own={files[m.key] || []} onAdd={onAddFiles} onRemove={onRemoveFile} onToggleKeep={onToggleKeep} />
+                                <FilesFold m={m} own={files[m.key] || []} onAdd={onAddFiles} onRemove={onRemoveFile} onToggleKeep={onToggleKeep} onImages={(images) => onPatch({ draft: { ...m.draft, images } })} />
                             </>
                         }
                         footer={
@@ -644,7 +640,7 @@ const fromBackup = (text) => {
     if (list.length > MAX_MESSAGES) throw new Error(`${list.length} messages — at most ${MAX_MESSAGES}`);
     return list.map((x) => {
         const d = x?.data || x || {};
-        return { msg: { content: d.content || "", embeds: d.embeds || [], components: d.components || [] }, username: d.username || "", avatarUrl: d.avatar_url || "", reference: typeof x?.reference === "string" ? x.reference : null };
+        return { msg: { content: d.content || "", embeds: d.embeds || [], components: d.components || [], images: d.images || [] }, username: d.username || "", avatarUrl: d.avatar_url || "", reference: typeof x?.reference === "string" ? x.reference : null };
     });
 };
 
@@ -714,7 +710,7 @@ function SaveModal({ current, onClose, onSave, busy }) {
                 }}
                 style={{ display: "flex", flexDirection: "column", gap: 12 }}
             >
-                <Field label="Name" hint="The messages, the webhook and the options are saved together. Files are not, and messages being edited are saved as new ones.">
+                <Field label="Name" hint="The messages, the webhook, the options and pictures added by link are saved together. Uploaded files are not, and messages being edited are saved as new ones.">
                     <input className="input" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="Weekly sale" autoFocus />
                 </Field>
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
@@ -1144,9 +1140,10 @@ export default function WebhooksPage() {
         const m = doc.messages.find((x) => x.key === key);
         const own = files[key] || [];
         const kept = m?.ref ? m.ref.keep.length : 0;
-        const room = MAX_FILES - kept - own.length;
+        const linked = m?.draft.images || [];
+        const room = MAX_FILES - kept - own.length - linked.length;
         if (list.length > room) alert(`At most ${MAX_FILES} files per message — ${list.length - Math.max(room, 0)} left out.`);
-        const taken = new Set([...own.map((f) => f.name), ...(m?.ref?.attachments || []).map((a) => a.filename)]);
+        const taken = new Set([...own.map((f) => f.name), ...(m?.ref?.attachments || []).map((a) => a.filename), ...linked.map((x) => x.name)]);
         const add = [];
         let bytes = own.reduce((n, f) => n + f.size, 0);
         for (const file of list.slice(0, Math.max(room, 0))) {
@@ -1309,6 +1306,7 @@ export default function WebhooksPage() {
                         }),
                     );
                     const { data } = await api.post("/webhooks/edit", form, UPLOAD);
+                    // Its pictures by link are files of the message now, listed with the kept ones.
                     updates[m.key] = { ref: { ...m.ref, attachments: data.attachments || [], keep: (data.attachments || []).map((a) => a.id) } };
                     out.push({ n, tone: "success", text: "saved.", url: data.url });
                 } else {
@@ -1340,7 +1338,7 @@ export default function WebhooksPage() {
                 stopped = true;
             }
         }
-        setMessages((list) => list.map((m) => (updates[m.key] ? { ...m, ref: updates[m.key].ref } : m)));
+        setMessages((list) => list.map((m) => (updates[m.key] ? { ...m, ref: updates[m.key].ref, draft: { ...m.draft, images: [] } } : m)));
         Object.keys(updates).forEach(dropFiles);
         setResults(out);
         setBusy(null);
@@ -1373,7 +1371,11 @@ export default function WebhooksPage() {
                 const row = rows.get(m.key);
                 if (!row) return m;
                 const w = webhookOf(row.webhookId);
-                return { ...m, ref: refOf({ ...row, webhook: { id: row.webhookId, name: row.webhookName }, author: { username: row.username || row.webhookName, avatar: row.avatarUrl || w?.avatar || null } }) };
+                return {
+                    ...m,
+                    ref: refOf({ ...row, webhook: { id: row.webhookId, name: row.webhookName }, author: { username: row.username || row.webhookName, avatar: row.avatarUrl || w?.avatar || null } }),
+                    draft: { ...m.draft, images: [] }, // they are files of the message now
+                };
             }),
         );
         rows.forEach((_, key) => dropFiles(key));
@@ -1467,6 +1469,7 @@ export default function WebhooksPage() {
                 const list = [
                     ...(m.ref?.attachments || []).filter((a) => m.ref.keep.includes(a.id)).map((a) => ({ name: a.filename, url: a.url, image: isImage(a.filename, a.contentType), size: a.size })),
                     ...(files[m.key] || []).map((f) => ({ name: f.name, url: f.url, image: f.image, size: f.size })),
+                    ...(m.draft.images || []).map((x) => ({ name: x.name, url: x.url, image: true })),
                 ];
                 const byName = new Map(list.map((f) => [f.name, f.url]));
                 const used = new Set();
@@ -1673,7 +1676,11 @@ export default function WebhooksPage() {
                     }}
                     onCopy={(res) => {
                         try {
-                            copyMessageFrom(res.message, { ...(res.kind === "webhook" || res.kind === "gone" ? { username: res.author?.username || "", avatarUrl: res.author?.avatar || "" } : {}), key: linkFor });
+                            // Its pictures come along by their Discord links (good for about a day).
+                            copyMessageFrom(
+                                { ...res.message, images: picturesOf(res.attachments).slice(0, MAX_FILES) },
+                                { ...(res.kind === "webhook" || res.kind === "gone" ? { username: res.author?.username || "", avatarUrl: res.author?.avatar || "" } : {}), key: linkFor },
+                            );
                         } catch (err) {
                             alert(err.message);
                         }

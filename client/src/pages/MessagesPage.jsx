@@ -3,8 +3,9 @@ import api from "../api/client";
 import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import MessageEditor, { Fold, IconBtn } from "../components/messages/MessageEditor";
+import ImageLinks from "../components/messages/ImageLinks";
 import { MessagePreview } from "../components/messages/DiscordPreview";
-import { emptyDraft, fromJson, isEmptyDraft, onlyLinkButtons, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
+import { LIMITS, emptyDraft, fromJson, isEmptyDraft, isImage, onlyLinkButtons, picturesOf, pingsOf, snippet, toApi, toEditor } from "../components/messages/format";
 import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBadge } from "../components/ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,7 +17,9 @@ import { DataTable, EmptyState, Field, Icon, Modal, Notice, PageHeader, StatusBa
 //  the panel loads from the bot once a day — or with Reload, at most once every
 //  10 minutes for everyone — so opening the page never asks the bot. The panel
 //  checks the message against Discord's limits and asks the bot to post it. Sent keeps what went out (edit / copy / delete
-//  later); Saved keeps messages to reuse. The logic is in
+//  later); Saved keeps messages to reuse. Pictures are added by their link
+//  (Attachments): the bot downloads them and posts them under the content,
+//  once it has announced message.images. The logic is in
 //  server/services/botMessages.js, the bot's side in ArnTo-assistant
 //  functions/botMessage.js.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,7 +35,8 @@ const ago = (ts) => {
     return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 };
 const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—");
-const defaultOptions = () => ({ guildId: null, channelId: null, mentions: { everyone: true, roles: true, users: true }, silent: false, publish: false });
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const defaultOptions =() => ({ guildId: null, channelId: null, mentions: { everyone: true, roles: true, users: true }, silent: false, publish: false });
 
 const readStore = () => {
     try {
@@ -168,7 +172,7 @@ function SendBar({ status, targets, targetsError, loadingTargets, onReload, draf
     const channel = guild?.channels?.find((c) => c.id === channelId) || null;
     const report = pingReport({ draft, options, guild, channel, editing: !!editing });
     const setMention = (k, v) => setOptions({ ...options, mentions: { ...options.mentions, [k]: v } });
-    const empty = isEmptyDraft(draft);
+    const empty = isEmptyDraft(draft) && !editing?.keep?.length;
     const pingSummary = [options.mentions.everyone && "@everyone", options.mentions.roles && "roles", options.mentions.users && "members"].filter(Boolean).join(", ") || "nobody";
 
     return (
@@ -300,6 +304,45 @@ function SendBar({ status, targets, targetsError, loadingTargets, onReload, draf
                 </div>
             )}
         </div>
+    );
+}
+
+/** The message's files: the ones it has (an edit: keep or remove each) and pictures added by link. */
+function AttachmentsFold({ draft, editing, botName, canImages, onImages, onToggleKeep }) {
+    const own = editing?.attachments || [];
+    const kept = own.filter((a) => editing.keep.includes(a.id));
+    const images = draft.images || [];
+    const count = kept.length + images.length;
+    return (
+        <Fold title={`Attachments (${count}/${LIMITS.files})`} summary={images.length ? `${images.length} by link` : ""} defaultOpen={count > 0}>
+            {own.map((a) => {
+                const on = editing.keep.includes(a.id);
+                return (
+                    <div key={a.id} className="dh-file" style={on ? undefined : { opacity: 0.5 }}>
+                        <Icon name={isImage(a.filename, a.contentType) ? "eye" : "fileText"} size={15} />
+                        <a href={a.url} target="_blank" rel="noreferrer" className="dh-file-name" style={on ? undefined : { textDecoration: "line-through" }}>
+                            {a.filename}
+                        </a>
+                        <span className="dh-count">{a.size ? fmtSize(a.size) : ""}</span>
+                        {on ? (
+                            <IconBtn icon="x" title="Remove it from the message when saving" onClick={() => onToggleKeep(a.id)} />
+                        ) : (
+                            <button type="button" className="dh-btn secondary" style={{ height: 26, minWidth: 0, padding: "0 10px", fontSize: 13 }} onClick={() => onToggleKeep(a.id)}>
+                                Keep
+                            </button>
+                        )}
+                    </div>
+                );
+            })}
+            <ImageLinks
+                images={images}
+                onChange={onImages}
+                room={LIMITS.files - count}
+                taken={own.map((a) => a.filename)}
+                disabled={canImages ? "" : `${botName} cannot attach pictures yet — update it (Pull & Update) and restart it.`}
+            />
+            <span className="dh-hint">A picture added by its link shows under the content, with no embed needed. {botName} downloads it when the message is sent, so the link must open the picture itself (PNG, JPEG, GIF or WebP).</span>
+        </Fold>
     );
 }
 
@@ -698,6 +741,9 @@ export default function MessagesPage() {
             messageId: res.messageId,
             url: res.url,
             lockedComponents: res.keepsComponents ? res.message.components : null,
+            // Its files, to keep or remove — null from a bot too old to list them (they stay as they are).
+            attachments: Array.isArray(res.attachments) ? res.attachments : null,
+            keep: (res.attachments || []).map((a) => a.id),
         });
         if (res.sent?.options?.mentions) setOptions((o) => ({ ...o, mentions: res.sent.options.mentions }));
         setSavedRef(null);
@@ -754,7 +800,14 @@ export default function MessagesPage() {
         setBusy("edit");
         setResult(null);
         try {
-            const { data } = await api.post("/messages/edit", { channelId: editing.channelId, messageId: editing.messageId, ...body() }, SLOW);
+            const { data } = await api.post(
+                "/messages/edit",
+                { channelId: editing.channelId, messageId: editing.messageId, ...body(), ...(editing.attachments ? { keepAttachments: editing.keep } : {}) },
+                SLOW,
+            );
+            // The pictures added by link are files of the message now.
+            if (Array.isArray(data.attachments)) setEditing((e) => e && { ...e, attachments: data.attachments, keep: data.attachments.map((a) => a.id) });
+            setDraft((d) => ({ ...d, images: [] }));
             setResult({ tone: data.warnings?.length ? "warning" : "success", text: "Saved — the message on Discord is updated.", url: data.url, warnings: data.warnings });
         } catch (err) {
             setResult({ tone: "danger", text: errMsg(err, "Could not save the changes") });
@@ -852,6 +905,14 @@ export default function MessagesPage() {
         if (draft.components === null) msg.components = editing?.lockedComponents || [];
         return msg;
     }, [draft, editing]);
+    const previewFiles = useMemo(
+        () => [
+            ...(editing?.attachments || []).filter((a) => editing.keep.includes(a.id)).map((a) => ({ name: a.filename, url: a.url, image: isImage(a.filename, a.contentType), size: a.size })),
+            ...(draft.images || []).map((x) => ({ name: x.name, url: x.url, image: true })),
+        ],
+        [draft, editing],
+    );
+    const toggleKeep = (id) => setEditing((e) => e && { ...e, keep: e.keep.includes(id) ? e.keep.filter((x) => x !== id) : [...e.keep, id] });
 
     const notReady = status && (!status.bot || !status.can.send);
     const compose = tab === "compose";
@@ -866,7 +927,7 @@ export default function MessagesPage() {
         <div className={`fade-in page${compose ? " dh-page" : ""}`} style={compose ? undefined : { maxWidth: 1500, display: "flex", flexDirection: "column", gap: 16 }}>
             <PageHeader
                 title="Messages"
-                description={<>Write a message like on Discohook — content, embeds, link buttons — pick a channel, and {status?.botName || "ArnTo-assistant"} posts it, pinging roles or @everyone if you allow it.</>}
+                description={<>Write a message like on Discohook — content, embeds, pictures by link, link buttons — pick a channel, and {status?.botName || "ArnTo-assistant"} posts it, pinging roles or @everyone if you allow it.</>}
             />
 
             {statusError && <Notice tone="danger">{statusError}</Notice>}
@@ -968,6 +1029,16 @@ export default function MessagesPage() {
                                         onChange={setDraft}
                                         roles={guild?.roles || []}
                                         channels={guild?.channels || []}
+                                        extra={
+                                            <AttachmentsFold
+                                                draft={draft}
+                                                editing={editing}
+                                                botName={status?.botName || "ArnTo-assistant"}
+                                                canImages={!!status?.can?.images}
+                                                onImages={(images) => setDraft((d) => ({ ...d, images }))}
+                                                onToggleKeep={toggleKeep}
+                                            />
+                                        }
                                         footer={
                                             editing ? (
                                                 <button type="button" className="dh-btn secondary" onClick={stopEditing} title="Keep the text as a new message">
@@ -985,7 +1056,7 @@ export default function MessagesPage() {
                         </div>
                     </div>
                     <div className="dh-pane dh-preview">
-                        <MessagePreview msg={preview} bot={targets?.bot} roles={guild?.roles || []} channels={guild?.channels || []} edited={!!editing} />
+                        <MessagePreview msg={preview} bot={targets?.bot} roles={guild?.roles || []} channels={guild?.channels || []} edited={!!editing} files={previewFiles} />
                     </div>
                 </div>
             )}
@@ -1006,7 +1077,15 @@ export default function MessagesPage() {
 
             {tab === "saved" && <SavedTab drafts={drafts} loading={draftsLoading} error={draftsError} canEdit={canEdit} currentId={savedRef?.id} onLoad={openDraft} onDelete={removeDraft} />}
 
-            {modal === "link" && <LinkModal onClose={() => setModal(null)} onEdit={startEditing} onCopy={(res) => copyToEditor(res.message, { channelId: res.channelId, guildId: res.guildId })} canEdit={canEdit} />}
+            {modal === "link" && (
+                <LinkModal
+                    onClose={() => setModal(null)}
+                    onEdit={startEditing}
+                    // Its pictures come along by their Discord links (good for about a day).
+                    onCopy={(res) => copyToEditor({ ...res.message, images: picturesOf(res.attachments).slice(0, LIMITS.files) }, { channelId: res.channelId, guildId: res.guildId })}
+                    canEdit={canEdit}
+                />
+            )}
             {modal === "json" && (
                 <JsonModal
                     draft={draft}

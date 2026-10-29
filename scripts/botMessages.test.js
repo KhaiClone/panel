@@ -216,7 +216,7 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.strictEqual(s.bot, "assistant");
         assert.strictEqual(s.botName, "ArnTo-assistant");
         assert.strictEqual(s.busReady, true);
-        assert.deepStrictEqual(s.can, { targets: true, send: true, edit: true, remove: true, fetch: true });
+        assert.deepStrictEqual(s.can, { targets: true, send: true, edit: true, remove: true, fetch: true, images: true });
     });
 
     await test("map: loaded from the bot once a day — opening the page never asks it", async () => {
@@ -399,6 +399,50 @@ const where = (messageId, extra = {}) => ({ guildId: GUILD, guildName: "ArnTo Sh
         assert.strictEqual(adopted.sentAt, 1_700_000_000_000, "its own time");
         assert.deepStrictEqual(adopted.message.components, [{ type: 1, components: [{ type: 2, style: 1, custom_id: "buy" }] }], "what Discord now holds");
         await rejects(() => messages.edit({ channelId: CH, messageId: "x", message: { content: "x" } }, owner), 400);
+    });
+
+    await test("images by link: the bot attaches them; one that cannot is never sent any", async () => {
+        const PIC = "1600000000000000001";
+        const IMG = "1300000000000000003";
+        const img = (n) => ({ url: `https://cdn.example/${n}.png?x=1`, name: `${n}.png` });
+        bus.answer["message.send"] = (p) => where(IMG);
+        const row = await messages.send({ channelId: CH, message: { content: "", images: [img("banner"), { url: "https://i.imgur.com/abc" }] } }, owner);
+        const sent = bus.requests.at(-1);
+        assert.deepStrictEqual(sent.payload.message.images, [img("banner"), { url: "https://i.imgur.com/abc", name: "abc.png" }], "a picture alone is a message");
+        assert.strictEqual(sent.opts.timeoutMs, 40_000, "the bot downloads them first");
+        assert.deepStrictEqual(row.message.images.length, 2, "Sent keeps the links (a copy brings them along)");
+        assert.match(logs.at(-1).text, / · 2 images/);
+        await rejects(() => messages.send({ channelId: CH, message: { images: [{ url: "javascript:alert(1)" }] } }, owner), 400, /Image 1 must start with https/);
+        await rejects(() => messages.send({ channelId: CH, message: { images: Array.from({ length: 11 }, (_, i) => img(i)) } }, owner), 400, /11 images/);
+
+        // Edit: keep one file (abc.png goes), add a picture. Sent keeps the links
+        // of the files still on it, then the new one.
+        bus.answer["message.edit"] = (p) => ({ ...where(p.messageId), components: [], attachments: [{ id: PIC, filename: "banner.png", url: "https://cdn.discordapp.com/b.png" }, { id: "1600000000000000002", filename: "new.png", url: "u" }], warnings: [] });
+        const e = await messages.edit({ channelId: CH, messageId: IMG, message: { content: "Tết", images: [img("new")] }, keepAttachments: [PIC, "nope"] }, owner);
+        const req = bus.requests.at(-1).payload;
+        assert.deepStrictEqual(req.keepAttachments, [PIC], "ids only");
+        assert.deepStrictEqual(req.message.images, [img("new")]);
+        assert.deepStrictEqual(e.attachments.map((a) => a.filename), ["banner.png", "new.png"], "the page gets the message's files back");
+        assert.deepStrictEqual(e.message.images, [img("banner"), img("new")]);
+        assert.match(logs.at(-1).text, /Owner edited a message .* · 1 image/);
+        await rejects(() => messages.edit({ channelId: CH, messageId: IMG, message: { content: "x", images: [img("a")] }, keepAttachments: Array.from({ length: 10 }, (_, i) => `16000000000000001${String(i).padStart(2, "0")}`) }, owner), 400, /11 files/);
+        // Only kept files, no text: still a message.
+        await messages.edit({ channelId: CH, messageId: IMG, message: { content: "" }, keepAttachments: [PIC] }, owner);
+        await rejects(() => messages.edit({ channelId: CH, messageId: IMG, message: { content: "" }, keepAttachments: [] }, owner), 400, /empty/);
+
+        // A bot that has not announced message.images would drop them: refused before the bus.
+        const n = bus.requests.length;
+        bus.canHandle = false;
+        try {
+            await rejects(() => messages.send({ channelId: CH, message: { content: "x", images: [img("a")] } }, owner), 503, /cannot attach images yet/);
+            await rejects(() => messages.edit({ channelId: CH, messageId: IMG, message: { content: "x", images: [img("a")] } }, owner), 503, /cannot attach images yet/);
+            const plain = await messages.edit({ channelId: CH, messageId: IMG, message: { content: "text only" } }, owner);
+            assert.strictEqual(plain.message.content, "text only", "text alone still goes to an older bot");
+        } finally {
+            bus.canHandle = true;
+        }
+        assert.strictEqual(bus.requests.length, n + 1);
+        assert.strictEqual(bus.requests.at(-1).payload.keepAttachments, undefined, "no list from the page: its files stay as they are");
     });
 
     await test("delete: marked deleted with who; already gone counts as deleted", async () => {
