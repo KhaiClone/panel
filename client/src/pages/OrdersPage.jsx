@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import api from "../api/client";
 import { useAuth, usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import DecoGiftOrderModal from "../components/DecoGiftOrderModal";
-import { DataTable, EmptyState, Icon, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
-import { money } from "../utils/format";
+import { DataTable, EmptyState, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
+import { fmtNum, money } from "../utils/format";
 
 const STATUS = {
     pending:   { label: "Pending",   tone: "warning" },
@@ -30,6 +30,18 @@ const SELLERS = [
     { id: "427399742906040333", label: "ArnTo" },
     { id: "871329074046435338", label: "KhaiDev" },
 ];
+
+const SOURCES = { decoGift: "Deco Gift — sold by ArnTo-Auto" };
+
+// Statistics periods: "2026-10", "2026" or "all". Months are Vietnam's (UTC+7),
+// like the server's (orderService getStats) and the shop's /thongke.
+const thisMonth = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7);
+const monthName = (m, opts = { month: "long", year: "numeric" }) => new Date(`${m}-01T00:00:00`).toLocaleDateString("en-GB", opts);
+const periodName = (p) => (p === "all" ? "All time" : p.length === 4 ? p : monthName(p));
+const modeOf = (p) => (p === "all" ? "all" : p.length === 4 ? "year" : "month");
+
+const fullDate = (ts) =>
+    ts ? new Date(ts).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
 function Metric({ label, value, tone }) {
     return (
@@ -65,6 +77,168 @@ function SellerCard({ data }) {
     );
 }
 
+/** Month / Year / All time, and which one. `months` = every month with a figure, newest first. */
+function PeriodPicker({ period, months, onChange }) {
+    const mode = modeOf(period);
+    const years = [...new Set(months.map((m) => m.slice(0, 4)))];
+    const list = mode === "month" ? months : years;
+    const i = list.indexOf(period);
+    const switchTo = (m) => {
+        if (m === mode) return;
+        if (m === "all") return onChange("all");
+        if (m === "year") return onChange(mode === "month" ? period.slice(0, 4) : years[0]);
+        // To months: the latest one of the year being looked at.
+        onChange((mode === "year" && months.find((k) => k.startsWith(period))) || months[0]);
+    };
+    return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div className="tab-bar">
+                {[["month", "Month"], ["year", "Year"], ["all", "All time"]].map(([k, label]) => (
+                    <button key={k} className={`tab-item ${mode === k ? "active" : ""}`} onClick={() => switchTo(k)}>
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {mode !== "all" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <button className="btn-ghost btn-icon btn-sm" title={`Previous ${mode}`} disabled={i < 0 || i >= list.length - 1} onClick={() => onChange(list[i + 1])}>
+                        <Icon name="chevronLeft" />
+                    </button>
+                    <select className="input" style={{ width: "auto" }} value={period} onChange={(e) => onChange(e.target.value)} aria-label={mode === "month" ? "Month" : "Year"}>
+                        {list.map((k) => <option key={k} value={k}>{periodName(k)}</option>)}
+                    </select>
+                    <button className="btn-ghost btn-icon btn-sm" title={`Next ${mode}`} disabled={i <= 0} onClick={() => onChange(list[i - 1])}>
+                        <Icon name="chevronRight" />
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** A year by month, or all time by year. A row opens that month / year. */
+function Breakdown({ rows, period, onPick }) {
+    const byMonth = period !== "all";
+    const withRevenue = rows.some((r) => r.revenue !== undefined);
+    const bar = (r) => (withRevenue ? r.revenue : r.total);
+    const top = Math.max(1, ...rows.map(bar));
+    return (
+        <div>
+            <p className="section-title" style={{ margin: "0 0 10px" }}>{byMonth ? `${period} by month` : "By year"}</p>
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                <DataTable
+                    flush
+                    minWidth={640}
+                    columns={[
+                        byMonth ? "Month" : "Year",
+                        { label: "Orders", align: "right" },
+                        { label: "Pending", align: "right" },
+                        { label: "Completed", align: "right" },
+                        { label: "Cancelled", align: "right" },
+                        { label: "Buyers", align: "right" },
+                        ...(withRevenue ? [{ label: "Revenue", align: "right" }] : []),
+                    ]}
+                >
+                    {rows.map((r) => (
+                        <tr key={r.key} title={`Show ${periodName(r.key)}`} style={{ cursor: "pointer", color: r.total ? undefined : "var(--text-dim)" }} onClick={() => onPick(r.key)}>
+                            <td className="nowrap" style={{ fontWeight: 500 }}>{byMonth ? monthName(r.key, { month: "long" }) : r.key}</td>
+                            {["total", "pending", "completed", "cancelled", "buyers", ...(withRevenue ? ["revenue"] : [])].map((k) => (
+                                <td key={k} className="mono num">
+                                    {k === "revenue" ? money(r.revenue) : fmtNum(r[k])}
+                                    {k === (withRevenue ? "revenue" : "total") && bar(r) > 0 && (
+                                        <div style={{ height: 3, borderRadius: 2, background: "var(--accent)", opacity: 0.7, width: `${(bar(r) / top) * 100}%`, marginLeft: "auto", marginTop: 4 }} />
+                                    )}
+                                </td>
+                            ))}
+                        </tr>
+                    ))}
+                </DataTable>
+            </div>
+        </div>
+    );
+}
+
+/** What /info-order shows on Discord, and the rest of the record. */
+function OrderModal({ order, canAct, canDelete, busy, onAction, onBuyerOrders, onClose }) {
+    const s = st(order.status);
+    const [copied, setCopied] = useState(false);
+    const copyId = async () => {
+        try {
+            await navigator.clipboard.writeText(order.buyerId);
+            setCopied(true);
+        } catch { /* clipboard blocked — the ID is selectable */ }
+    };
+    const rows = [
+        ["Status", <StatusBadge key="s" tone={s.tone}>{s.label}</StatusBadge>],
+        ["Product", order.name],
+        ["Price", <span key="p" className="mono">{money(order.price)}</span>],
+        [
+            "Buyer",
+            <div key="b">
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {order.buyerTag || <span style={{ color: "var(--text-dim)" }}>Unknown tag</span>}
+                    {order.reseller === true && <StatusBadge tone="accent" title="Bought by a reseller">Reseller</StatusBadge>}
+                </div>
+                <div className="cell-sub" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span className="mono">{order.buyerId}</span>
+                    <button type="button" className="btn-ghost btn-icon btn-sm" style={{ width: 22, height: 22, border: "none" }} title={copied ? "Copied" : "Copy user ID"} onClick={copyId}>
+                        <Icon name={copied ? "check" : "copy"} size={12} />
+                    </button>
+                </div>
+            </div>,
+        ],
+        ["Seller", order.sellerName],
+        ["Ordered", fullDate(order.orderDate)],
+        ["Source", SOURCES[order.source] || order.source || "Ticket"],
+        order.externalId && ["Payment", <span key="x" className="mono">{order.externalId}</span>],
+        order.items?.length > 0 && [
+            "Items",
+            <ul key="i" style={{ margin: 0, paddingLeft: 18 }}>
+                {order.items.map((it, n) => (
+                    <li key={n}>
+                        {it.name}
+                        {Number.isFinite(it.price) && <span className="mono" style={{ color: "var(--text-dim)" }}> · {money(it.price)}</span>}
+                    </li>
+                ))}
+            </ul>,
+        ],
+    ].filter(Boolean);
+
+    return (
+        <Modal title={`Order ${order.orderId}`} onClose={onClose} width={520}>
+            <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: "10px 16px", fontSize: 13, alignItems: "baseline" }}>
+                {rows.map(([label, value]) => (
+                    <div key={label} style={{ display: "contents" }}>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{label}</div>
+                        <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>{value}</div>
+                    </div>
+                ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 20 }}>
+                <button className="btn-ghost btn-sm" onClick={() => onBuyerOrders(order.buyerId)}>
+                    <Icon name="orders" size={14} /> This buyer's orders
+                </button>
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                    {order.status === "pending" && order.source === "decoGift" && (
+                        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Approve or cancel it in ArnTo-Auto's Deco Gift staff channel on Discord</span>
+                    )}
+                    {canAct && (
+                        <>
+                            <button className="btn-success btn-sm" disabled={busy} onClick={() => onAction("done")}>Complete</button>
+                            <button className="btn-ghost btn-sm is-danger" disabled={busy} onClick={() => onAction("cancel")}>Cancel</button>
+                        </>
+                    )}
+                    {canDelete && (
+                        <button className="btn-ghost btn-sm is-danger" disabled={busy} onClick={() => onAction("delete")}>
+                            <Icon name="trash" size={14} /> Delete
+                        </button>
+                    )}
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
 export default function OrdersPage() {
     const { canEdit } = usePageAccess("orders");
     const { isOwner } = useAuth(); // deleting rewrites revenue and history: owner only
@@ -80,22 +254,27 @@ export default function OrdersPage() {
     const [newDecoGift, setNewDecoGift] = useState(false);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
+    const [period, setPeriod] = useState(thisMonth); // statistics: "2026-10" | "2026" | "all"
+    const periodRef = useRef(period);
+    const [openId, setOpenId] = useState(null); // order shown in the details dialog
+
+    const loadStats = useCallback(async () => {
+        const { data } = await api.get("/shop/orders/stats", { params: { period: periodRef.current } });
+        // An answer for a period picked before the last click is dropped.
+        if ((data.period || "all") === periodRef.current) setStats(data);
+    }, []);
 
     const fetchData = useCallback(async () => {
         try {
-            const [ordersRes, statsRes] = await Promise.all([
-                api.get("/shop/orders"),
-                api.get("/shop/orders/stats"),
-            ]);
+            const [ordersRes] = await Promise.all([api.get("/shop/orders"), loadStats()]);
             setOrders(ordersRes.data.orders || []);
-            setStats(statsRes.data);
             setError("");
         } catch (err) {
             setError(err.response?.data?.error || "Could not connect to ArnTo-Shop");
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [loadStats]);
 
     useEffect(() => {
         fetchData();
@@ -103,13 +282,21 @@ export default function OrdersPage() {
         return () => clearInterval(int);
     }, [fetchData]);
 
+    const pickPeriod = (p) => {
+        periodRef.current = p;
+        setPeriod(p);
+        loadStats().catch((err) => setError(err.response?.data?.error || "Could not load the statistics"));
+    };
+
     const doAction = async () => {
         const { order, action } = confirm;
         setConfirm(null);
         setBusy(order.orderId);
         try {
-            if (action === "delete") await api.delete(`/shop/orders/${order.orderId}`);
-            else await api.post(`/shop/orders/${order.orderId}/${action}`);
+            if (action === "delete") {
+                await api.delete(`/shop/orders/${order.orderId}`);
+                setOpenId(null);
+            } else await api.post(`/shop/orders/${order.orderId}/${action}`);
             await fetchData();
         } catch (err) {
             alert(err.response?.data?.error || `Could not ${VERB[action]} the order`);
@@ -137,6 +324,13 @@ export default function OrdersPage() {
     const safePage = Math.min(page, totalPages);
     const paged = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
 
+    // Who may do what to an order — the table row and the details dialog alike.
+    const canActOn = (o) => canEdit && o.status === "pending" && o.source !== "decoGift";
+    const canDeleteOrder = (o) => isOwner && o.source !== "decoGift";
+    // The live record (the list refreshes every 15 s); gone once it is deleted.
+    const opened = openId && orders.find((o) => o.orderId === openId);
+    const statsStale = stats && (stats.period || "all") !== period;
+
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 20 }}>
             <PageHeader
@@ -153,27 +347,43 @@ export default function OrdersPage() {
 
             {error && <Notice tone="danger">{error}</Notice>}
 
-            {/* Aggregate stats (all sellers). The server leaves revenue out for
-                staff without the "See revenue" grant (Panel Settings → Staff). */}
+            {/* Statistics for the picked month / year / all time (orders placed
+                in it). The server leaves revenue out for staff without the
+                "See revenue" grant (Panel Settings → Staff). */}
             {stats && (
-                <div className="stat-grid">
-                    <StatCard label="Total orders" value={stats.total} />
-                    <StatCard label="Pending" value={stats.pending} tone="warning" />
-                    <StatCard label="Completed" value={stats.completed} tone="success" />
-                    <StatCard label="Cancelled" value={stats.cancelled} tone="danger" />
-                    {stats.revenue !== undefined && <StatCard label="Revenue" value={money(stats.revenue)} />}
-                </div>
-            )}
-
-            {/* Per-seller breakdown */}
-            {stats?.bySeller && Object.keys(stats.bySeller).length > 0 && (
-                <div>
-                    <p className="section-title" style={{ margin: "0 0 10px" }}>By seller</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
-                        {Object.entries(stats.bySeller).map(([id, data]) => (
-                            <SellerCard key={id} data={data} />
-                        ))}
+                <div style={{ display: "flex", flexDirection: "column", gap: 20, opacity: statsStale ? 0.55 : 1, transition: "opacity .15s" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                        <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>{periodName(period)}</h2>
+                        <PeriodPicker period={period} months={stats.months || [thisMonth()]} onChange={pickPeriod} />
                     </div>
+
+                    {/* Revenue takes two columns: a year's or all time's amount
+                        ("81,898,000 VND") does not fit in one. */}
+                    <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+                        <StatCard label="Total orders" value={fmtNum(stats.total)} hint={`${fmtNum(stats.buyers)} buyer${stats.buyers === 1 ? "" : "s"}`} />
+                        <StatCard label="Pending" value={fmtNum(stats.pending)} tone="warning" />
+                        <StatCard label="Completed" value={fmtNum(stats.completed)} tone="success" />
+                        <StatCard label="Cancelled" value={fmtNum(stats.cancelled)} tone="danger" />
+                        {stats.revenue !== undefined && (
+                            <div style={{ gridColumn: "span 2", display: "grid" }}>
+                                <StatCard label="Revenue" value={money(stats.revenue)} hint="Completed orders" />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Per-seller breakdown */}
+                    {stats.bySeller && Object.keys(stats.bySeller).length > 0 && (
+                        <div>
+                            <p className="section-title" style={{ margin: "0 0 10px" }}>By seller</p>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+                                {Object.entries(stats.bySeller).map(([id, data]) => (
+                                    <SellerCard key={id} data={data} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {stats.breakdown?.length > 0 && <Breakdown rows={stats.breakdown} period={stats.period || "all"} onPick={pickPeriod} />}
                 </div>
             )}
 
@@ -207,11 +417,21 @@ export default function OrdersPage() {
                     <DataTable flush minWidth={720} columns={["Order ID", "Product", "Buyer", "Seller", { label: "Price", align: "right" }, "Date", "Status", ""]}>
                         {paged.map((o) => {
                             const s = st(o.status);
-                            const canAct = canEdit && o.status === "pending" && o.source !== "decoGift";
-                            const canDelete = isOwner && o.source !== "decoGift";
+                            const canAct = canActOn(o);
+                            const canDelete = canDeleteOrder(o);
                             return (
                                 <tr key={o._id || o.orderId}>
-                                    <td className="mono nowrap">{o.orderId}</td>
+                                    <td className="mono nowrap">
+                                        <button
+                                            type="button"
+                                            className="mono"
+                                            title="Show order details"
+                                            style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--accent-hover)", cursor: "pointer" }}
+                                            onClick={() => setOpenId(o.orderId)}
+                                        >
+                                            {o.orderId}
+                                        </button>
+                                    </td>
                                     <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</td>
                                     <td className="nowrap">
                                         {o.buyerTag || <span className="mono" style={{ color: "var(--text-dim)", fontSize: 11 }}>{o.buyerId}</span>}
@@ -234,25 +454,26 @@ export default function OrdersPage() {
                                                 <Icon name="gift" size={14} /> Deco Gift · Discord
                                             </span>
                                         )}
-                                        {(canAct || canDelete) && (
-                                            <div className="row-actions">
-                                                {canAct && (
-                                                    <>
-                                                        <button className="btn-success btn-sm" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
-                                                            {busy === o.orderId ? "Working…" : "Complete"}
-                                                        </button>
-                                                        <button className="btn-ghost btn-sm is-danger" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "cancel" })}>
-                                                            Cancel
-                                                        </button>
-                                                    </>
-                                                )}
-                                                {canDelete && (
-                                                    <button className="btn-ghost btn-icon btn-sm is-danger" title="Delete order" aria-label={`Delete order ${o.orderId}`} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "delete" })}>
-                                                        <Icon name="trash" size={14} />
+                                        <div className="row-actions">
+                                            <button className="btn-ghost btn-icon btn-sm" title="Order details" aria-label={`Details of order ${o.orderId}`} onClick={() => setOpenId(o.orderId)}>
+                                                <Icon name="eye" size={14} />
+                                            </button>
+                                            {canAct && (
+                                                <>
+                                                    <button className="btn-success btn-sm" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "done" })}>
+                                                        {busy === o.orderId ? "Working…" : "Complete"}
                                                     </button>
-                                                )}
-                                            </div>
-                                        )}
+                                                    <button className="btn-ghost btn-sm is-danger" disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "cancel" })}>
+                                                        Cancel
+                                                    </button>
+                                                </>
+                                            )}
+                                            {canDelete && (
+                                                <button className="btn-ghost btn-icon btn-sm is-danger" title="Delete order" aria-label={`Delete order ${o.orderId}`} disabled={busy === o.orderId} onClick={() => setConfirm({ order: o, action: "delete" })}>
+                                                    <Icon name="trash" size={14} />
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             );
@@ -286,6 +507,23 @@ export default function OrdersPage() {
                     danger={confirm.action !== "done"}
                     onConfirm={doAction}
                     onCancel={() => setConfirm(null)}
+                />
+            )}
+
+            {opened && !confirm && (
+                <OrderModal
+                    order={opened}
+                    canAct={canActOn(opened)}
+                    canDelete={canDeleteOrder(opened)}
+                    busy={busy === opened.orderId}
+                    onAction={(action) => setConfirm({ order: opened, action })}
+                    onBuyerOrders={(buyerId) => {
+                        setOpenId(null);
+                        setStatusFilter("all");
+                        setSellerFilter("all");
+                        setSearch(buyerId);
+                    }}
+                    onClose={() => setOpenId(null)}
                 />
             )}
 

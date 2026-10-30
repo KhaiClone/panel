@@ -19,10 +19,14 @@ router.get("/orders", async (req, res, next) => {
     }
 });
 
-/** GET /api/shop/orders/stats — without `revenue` (overall and per seller) unless allowed */
+/**
+ * GET /api/shop/orders/stats?period=2026-10 | 2026 | all — the orders placed in
+ * that month / year (Vietnam time) or ever; without `revenue` (overall, per
+ * seller and per breakdown row) unless allowed.
+ */
 router.get("/orders/stats", async (req, res, next) => {
     try {
-        const stats = await orderService.getStats();
+        const stats = await orderService.getStats({ period: req.query.period });
         res.json(hasGrant(req.auth, "orders.revenue") ? stats : orderService.withoutRevenue(stats));
     } catch (err) {
         next(err);

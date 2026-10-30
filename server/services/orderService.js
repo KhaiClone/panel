@@ -102,12 +102,77 @@ const listOrders = async ({ status, sellerId } = {}) => {
     return { orders: orders.map(enrich) };
 };
 
-const getStats = async () => {
+// ── Statistics by period ─────────────────────────────────────────────────────
+// A period is a month ("2026-10"), a year ("2026") or all time (null). Months
+// and years are Vietnam's (UTC+7) whatever the node's clock says, like the
+// shop's /thongke and its report on the 1st: an order placed at 00:30 on the
+// 1st belongs to the new month. An order counts in the period it was PLACED in,
+// with its status of today — revenue is its completed orders, as on Discord.
+
+const VN_OFFSET = 7 * 3600_000;
+const PERIOD = /^\d{4}(-(0[1-9]|1[0-2]))?$/;
+
+/** "YYYY-MM" of a timestamp, in Vietnam; null for an order without a date. */
+const monthOf = (ts) => {
+    const n = Number(ts);
+    return n > 0 ? new Date(n + VN_OFFSET).toISOString().slice(0, 7) : null;
+};
+
+const periodArg = (v) => {
+    if (v === undefined || v === null || v === "" || v === "all") return null;
+    if (!PERIOD.test(String(v))) throw Object.assign(new Error('period must be "all", a year like 2026 or a month like 2026-10'), { status: 400 });
+    return String(v);
+};
+
+const inPeriod = (order, period) => !period || (monthOf(order.orderDate) || "").startsWith(period);
+
+/** Every month from the first order's to this one, newest first — what the page can pick. */
+const monthsSince = (orders) => {
+    const now = monthOf(Date.now());
+    const first = orders.reduce((m, o) => {
+        const k = monthOf(o.orderDate);
+        return k && k < m ? k : m;
+    }, now);
+    const out = [];
+    const d = new Date(`${now}-01T00:00:00Z`);
+    while (d.toISOString().slice(0, 7) >= first) {
+        out.push(d.toISOString().slice(0, 7));
+        d.setUTCMonth(d.getUTCMonth() - 1);
+    }
+    return out;
+};
+
+/**
+ * The period cut one level finer, oldest first: a year by month, all time by
+ * year. Rows run from the first order to today — no empty future months. A month
+ * has none: the page lists its orders.
+ */
+const breakdownOf = (orders, period, months) => {
+    if (period?.length === 7) return [];
+    const keys = period
+        ? months.filter((k) => k.startsWith(period)).reverse()
+        : [...new Set(months.map((k) => k.slice(0, 4)))].reverse();
+    const groups = new Map(keys.map((k) => [k, []]));
+    for (const o of orders) {
+        const m = monthOf(o.orderDate);
+        groups.get(m && (period ? m : m.slice(0, 4)))?.push(o);
+    }
+    return keys.map((key) => ({ key, ...statsFor(groups.get(key)) }));
+};
+
+/**
+ * { …counts, revenue, bySeller, period, months, breakdown } for `period` (see
+ * above; missing = all time). `months` is every month the page may pick.
+ */
+const getStats = async ({ period } = {}) => {
     requirePanel();
-    const orders = sharedStore.run("orders", "get");
+    const p = periodArg(period);
+    const all = sharedStore.run("orders", "get");
+    const orders = all.filter((o) => inPeriod(o, p));
+    const months = monthsSince(all);
     const bySeller = {};
     for (const [id, name] of Object.entries(SELLERS)) bySeller[id] = { name, ...statsFor(orders.filter((o) => o.sellerId === id)) };
-    return { ...statsFor(orders), bySeller };
+    return { ...statsFor(orders), bySeller, period: p, months, breakdown: breakdownOf(orders, p, months) };
 };
 
 /** getStats() for someone not allowed the shop's income: the counts, no revenue. */
@@ -116,6 +181,7 @@ const withoutRevenue = (stats) => {
     return {
         ...strip(stats),
         bySeller: Object.fromEntries(Object.entries(stats.bySeller || {}).map(([id, s]) => [id, strip(s)])),
+        ...(stats.breakdown ? { breakdown: stats.breakdown.map(strip) } : {}),
     };
 };
 
