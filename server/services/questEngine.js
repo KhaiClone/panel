@@ -59,15 +59,23 @@ function _throwIfExpired(quest, name) {
         throw _stalled(`"${name}" expired at ${exp}`);
 }
 
-function _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed }) {
+// What the last progress request got back, for the skip line. The loops swallow
+// network errors (and the video loop odd answers) to keep going, so a stall used to
+// say nothing about why — embeo._. sat at 0s through 7 quests on 2026-10-31 with
+// no clue whether Discord, the proxy or the account was at fault.
+const _answerOf = (res) => `HTTP ${res.status}: ${JSON.stringify(res.data ?? "").slice(0, 200)}`;
+const _failureOf = (err) => `request failed: ${String(err?.message ?? err).slice(0, 200)}`;
+
+function _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed, lastAnswer = null }) {
     const now = Date.now();
+    const why = lastAnswer ? ` — last answer: ${lastAnswer}` : "";
     if (now - lastProgressAt > NO_PROGRESS_TIMEOUT_MS)
         throw _stalled(
-            `"${name}" made no progress for ${Math.round((now - lastProgressAt) / 60000)} min at ${done}/${needed}s`,
+            `"${name}" made no progress for ${Math.round((now - lastProgressAt) / 60000)} min at ${done}/${needed}s${why}`,
         );
     if (now - startedAt > maxRunMs)
         throw _stalled(
-            `"${name}" still not done after ${Math.round(maxRunMs / 60000)} min (${done}/${needed}s)`,
+            `"${name}" still not done after ${Math.round(maxRunMs / 60000)} min (${done}/${needed}s)${why}`,
         );
 }
 
@@ -574,7 +582,8 @@ class QuestAutocompleter {
         const startedAt = Date.now();
         const maxRunMs = needed * 2000 + 10 * 60_000;
         let lastDone = done,
-            lastProgressAt = startedAt;
+            lastProgressAt = startedAt,
+            lastAnswer = null;
 
         while (done < needed) {
             this._throwIfAborted();
@@ -589,7 +598,9 @@ class QuestAutocompleter {
                     if (res.status === 200) {
                         if (res.data.completed_at) return;
                         done = Math.min(needed, done + 7);
+                        lastAnswer = null;
                     } else if (res.status === 429) {
+                        lastAnswer = _answerOf(res);
                         await sleep((res.data?.retry_after ?? 5) + 1);
                         // `continue` skips the check at the bottom of the loop, so a
                         // permanent rate-limit needs its own way out.
@@ -599,19 +610,24 @@ class QuestAutocompleter {
                             maxRunMs,
                             done,
                             needed,
+                            lastAnswer,
                         });
                         continue;
+                    } else {
+                        // Not logged here: this loop posts every second.
+                        lastAnswer = _answerOf(res);
                     }
                 } catch (err) {
                     // Never swallow control-flow errors — that is what kept this loop alive.
                     if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
+                    lastAnswer = _failureOf(err);
                 }
             }
             if (done > lastDone) {
                 lastDone = done;
                 lastProgressAt = Date.now();
             }
-            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
+            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed, lastAnswer });
             if (Date.now() - lastLog > 30000) {
                 this._log(`   "${name}": ${Math.round(done)}/${needed}s`);
                 this._emitProgress(qid, name, done, needed);
@@ -640,7 +656,8 @@ class QuestAutocompleter {
         const startedAt = Date.now();
         const maxRunMs = needed * 2000 + 10 * 60_000; // 900s -> 40 phút
         let lastDone = done,
-            lastProgressAt = startedAt;
+            lastProgressAt = startedAt,
+            lastAnswer = null;
 
         while (done < needed) {
             this._throwIfAborted();
@@ -654,27 +671,29 @@ class QuestAutocompleter {
                 if (res.status === 200) {
                     done = res.data.progress?.[taskType]?.value ?? done;
                     if (res.data.completed_at || done >= needed) break;
+                    lastAnswer = `HTTP 200, progress ${res.data.progress?.[taskType]?.value ?? "missing"}`;
                 } else if (res.status === 429) {
+                    lastAnswer = _answerOf(res);
                     await sleep((res.data?.retry_after ?? 10) + 1);
                     // `continue` skips the check at the bottom of the loop, so a
                     // permanent rate-limit needs its own way out.
-                    _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
+                    _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed, lastAnswer });
                     continue;
                 } else {
                     // This branch used to fall through silently — that was the livelock.
-                    this._log(
-                        `⚠ "${name}" heartbeat HTTP ${res.status}: ${JSON.stringify(res.data ?? "").slice(0, 200)}`,
-                    );
+                    lastAnswer = _answerOf(res);
+                    this._log(`⚠ "${name}" heartbeat ${lastAnswer}`);
                 }
             } catch (err) {
                 // Never swallow control-flow errors — that is what kept this loop alive.
                 if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
+                lastAnswer = _failureOf(err);
             }
             if (done > lastDone) {
                 lastDone = done;
                 lastProgressAt = Date.now();
             }
-            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
+            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed, lastAnswer });
             if (Date.now() - lastLog > 30000) {
                 this._log(`   "${name}": ${Math.round(done)}/${needed}s`);
                 this._emitProgress(qid, name, done, needed);
@@ -704,7 +723,8 @@ class QuestAutocompleter {
         const startedAt = Date.now();
         const maxRunMs = needed * 2000 + 10 * 60_000;
         let lastDone = done,
-            lastProgressAt = startedAt;
+            lastProgressAt = startedAt,
+            lastAnswer = null;
 
         while (done < needed) {
             this._throwIfAborted();
@@ -718,26 +738,28 @@ class QuestAutocompleter {
                 if (res.status === 200) {
                     done = res.data.progress?.PLAY_ACTIVITY?.value ?? done;
                     if (res.data.completed_at || done >= needed) break;
+                    lastAnswer = `HTTP 200, progress ${res.data.progress?.PLAY_ACTIVITY?.value ?? "missing"}`;
                 } else if (res.status === 429) {
+                    lastAnswer = _answerOf(res);
                     await sleep((res.data?.retry_after ?? 10) + 1);
                     // `continue` skips the check at the bottom of the loop, so a
                     // permanent rate-limit needs its own way out.
-                    _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
+                    _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed, lastAnswer });
                     continue;
                 } else {
-                    this._log(
-                        `⚠ "${name}" activity heartbeat HTTP ${res.status}: ${JSON.stringify(res.data ?? "").slice(0, 200)}`,
-                    );
+                    lastAnswer = _answerOf(res);
+                    this._log(`⚠ "${name}" activity heartbeat ${lastAnswer}`);
                 }
             } catch (err) {
                 // Never swallow control-flow errors — that is what kept this loop alive.
                 if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
+                lastAnswer = _failureOf(err);
             }
             if (done > lastDone) {
                 lastDone = done;
                 lastProgressAt = Date.now();
             }
-            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed });
+            _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed, lastAnswer });
             if (Date.now() - lastLog > 30000) {
                 this._log(`   "${name}": ${Math.round(done)}/${needed}s`);
                 this._emitProgress(qid, name, done, needed);
