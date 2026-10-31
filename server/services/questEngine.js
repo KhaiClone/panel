@@ -66,6 +66,13 @@ function _throwIfExpired(quest, name) {
 const _answerOf = (res) => `HTTP ${res.status}: ${JSON.stringify(res.data ?? "").slice(0, 200)}`;
 const _failureOf = (err) => `request failed: ${String(err?.message ?? err).slice(0, 200)}`;
 
+// No answer at all for this long inside one quest = the egress route (proxy) is down,
+// not the quest. Skipping quest after quest at 5 min each spent the rest of a pass on
+// a dead proxy (embeo._., 2026-10-31: "Proxy connection ended before receiving CONNECT
+// response" for 11 min). The loop throws `egressDown` instead; the caller ends the
+// account's run, gives the lease back as failed (a fresh IP) and runs it once more.
+const EGRESS_DOWN_MS = 60_000;
+
 function _throwIfStalled(name, { lastProgressAt, startedAt, maxRunMs, done, needed, lastAnswer = null }) {
     const now = Date.now();
     const why = lastAnswer ? ` — last answer: ${lastAnswer}` : "";
@@ -372,6 +379,7 @@ class QuestAutocompleter {
         // completion loop, not just the gap between two quests.
         this.abort = opts.abort ?? null;
         this.completedIds = new Set();
+        this._unreachableSince = null;
         this._cachedChannelId = null;
         this._lastFetched = null;
     }
@@ -385,6 +393,19 @@ class QuestAutocompleter {
             e.aborted = true;
             throw e;
         }
+    }
+    /** A progress request got no HTTP answer (axios gives no response); throws
+     *  `egressDown` once that has lasted EGRESS_DOWN_MS. Any answer clears it. */
+    _throwIfUnreachable(err) {
+        if (!axios.isAxiosError(err) || err.response) return;
+        const now = Date.now();
+        this._unreachableSince ??= now;
+        if (now - this._unreachableSince < EGRESS_DOWN_MS) return;
+        const e = new Error(
+            `Discord unreachable for ${Math.round((now - this._unreachableSince) / 1000)}s: ${String(err.message).slice(0, 200)}`,
+        );
+        e.egressDown = true;
+        throw e;
     }
     _emit(event) {
         if (this.onEvent) {
@@ -540,7 +561,7 @@ class QuestAutocompleter {
                 await this._completeAchievement(quest);
         } catch (err) {
             // A stalled quest is this quest's problem, not the account's: skip it and
-            // move on. invalidToken / aborted still bubble up to the caller's loop.
+            // move on. invalidToken / aborted / egressDown still bubble up to the caller's loop.
             if (!err?.questStalled) throw err;
             this.completedIds.add(quest.id); // don't retry it in the same session
             this._log(`⏭ Skipped ${err.message}`);
@@ -584,6 +605,7 @@ class QuestAutocompleter {
         let lastDone = done,
             lastProgressAt = startedAt,
             lastAnswer = null;
+        this._unreachableSince = null;
 
         while (done < needed) {
             this._throwIfAborted();
@@ -594,6 +616,7 @@ class QuestAutocompleter {
                     const res = await this.api.post(`/quests/${qid}/video-progress`, {
                         timestamp: Math.min(needed, done + 7 + Math.random()),
                     });
+                    this._unreachableSince = null;
                     _throwIfUnauthorized(res, "Video progress failed");
                     if (res.status === 200) {
                         if (res.data.completed_at) return;
@@ -621,6 +644,7 @@ class QuestAutocompleter {
                     // Never swallow control-flow errors — that is what kept this loop alive.
                     if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
                     lastAnswer = _failureOf(err);
+                    this._throwIfUnreachable(err);
                 }
             }
             if (done > lastDone) {
@@ -658,6 +682,7 @@ class QuestAutocompleter {
         let lastDone = done,
             lastProgressAt = startedAt,
             lastAnswer = null;
+        this._unreachableSince = null;
 
         while (done < needed) {
             this._throwIfAborted();
@@ -667,6 +692,7 @@ class QuestAutocompleter {
                     application_id: applicationId,
                     terminal: false,
                 });
+                this._unreachableSince = null;
                 _throwIfUnauthorized(res, "Heartbeat failed");
                 if (res.status === 200) {
                     done = res.data.progress?.[taskType]?.value ?? done;
@@ -688,6 +714,7 @@ class QuestAutocompleter {
                 // Never swallow control-flow errors — that is what kept this loop alive.
                 if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
                 lastAnswer = _failureOf(err);
+                this._throwIfUnreachable(err);
             }
             if (done > lastDone) {
                 lastDone = done;
@@ -725,6 +752,7 @@ class QuestAutocompleter {
         let lastDone = done,
             lastProgressAt = startedAt,
             lastAnswer = null;
+        this._unreachableSince = null;
 
         while (done < needed) {
             this._throwIfAborted();
@@ -734,6 +762,7 @@ class QuestAutocompleter {
                     stream_key: streamKey,
                     terminal: false,
                 });
+                this._unreachableSince = null;
                 _throwIfUnauthorized(res, "Activity heartbeat failed");
                 if (res.status === 200) {
                     done = res.data.progress?.PLAY_ACTIVITY?.value ?? done;
@@ -754,6 +783,7 @@ class QuestAutocompleter {
                 // Never swallow control-flow errors — that is what kept this loop alive.
                 if (err?.invalidToken || err?.questStalled || err?.aborted) throw err;
                 lastAnswer = _failureOf(err);
+                this._throwIfUnreachable(err);
             }
             if (done > lastDone) {
                 lastDone = done;

@@ -262,8 +262,16 @@ async function _fail(rec, failure, { notify = true } = {}) {
     if (notify && failure.status === "token_dead") _webhook(rec, { type: "status", status: "token_dead" });
 }
 
-/** One subscriber: enroll everything, then complete every quest. */
-async function _runAccount(rec, abort) {
+// Seconds before an account whose egress route died runs again (end of the pass),
+// so a rotating proxy has a moment to come back on its fresh IP.
+const EGRESS_RETRY_DELAY_SEC = 60;
+
+/**
+ * One subscriber: enroll everything, then complete every quest. `retry` in the result:
+ * the egress route died mid-run (`egressDown`) and `canRetry` allowed one more go —
+ * nothing is recorded as failed, the caller runs the account again.
+ */
+async function _runAccount(rec, abort, { canRetry = false } = {}) {
     const token = _decrypt(rec);
     if (!token) {
         const failure = { status: "token_dead", error: "Could not decrypt the stored token (secret changed?)." };
@@ -277,6 +285,7 @@ async function _runAccount(rec, abort) {
     let ok = false;
     let completed = 0;
     let started = false;
+    let retry = false;
     let failure = null; // { status, error } when this account's pass failed
     activeIds.set(rec.accountId, rec.username);
     try {
@@ -353,7 +362,13 @@ async function _runAccount(rec, abort) {
     } catch (e) {
         if (e?.aborted) {
             // Stopped (pause / Stop / panel move) — not the egress route's fault.
-        } else if (isInvalidTokenError(e)) {
+        } else if (e?.egressDown && canRetry) {
+            // The route died, not the account: the lease goes back as failed (a fresh
+            // IP) and runBatch runs this account again after the others.
+            egressFailed = true;
+            retry = true;
+            console.warn(`[Monthly] ${rec.username}: ${e.message} — running it again at the end of the pass`);
+        } else if (!e?.egressDown && isInvalidTokenError(e)) {
             failure = { status: "token_dead", error: TOKEN_DEAD_TEXT };
         } else {
             egressFailed = true;
@@ -368,7 +383,7 @@ async function _runAccount(rec, abort) {
         if (failure) await _fail(rec, failure);
         else if (started) questService.emitExternalEvent(rec.accountId, { type: "status", status: "monthly", error: null });
     }
-    return { ok, completed, failure };
+    return { ok, completed, failure, retry };
 }
 
 /**
@@ -381,16 +396,25 @@ async function runBatch(abort = { stopped: false }, { accountIds = null, progres
     if (accountIds) accts = accts.filter((r) => accountIds.includes(r.accountId));
     Object.assign(progress, { total: accts.length, done: 0, processed: 0, completed: 0, failed: [] });
 
+    // Every account once; one whose egress route died is queued again at the end, once.
+    const queue = accts.map((rec) => ({ rec, retried: false, notBefore: 0 }));
     let next = 0;
     const worker = async () => {
-        while (!abort.stopped && next < accts.length) {
-            const rec = accts[next++];
-            const r = await _runAccount(rec, abort);
-            progress.done++;
-            if (r.ok) progress.processed++;
+        while (!abort.stopped && next < queue.length) {
+            const item = queue[next++];
+            const { rec } = item;
+            if (item.notBefore > Date.now()) await _gap((item.notBefore - Date.now()) / 1000, abort);
+            if (abort.stopped) break;
+            const r = await _runAccount(rec, abort, { canRetry: !item.retried });
             progress.completed += r.completed;
-            if (r.failure) progress.failed.push({ accountId: rec.accountId, username: rec.username, ...r.failure });
-            if (next < accts.length) await _gap(settings.accountDelaySec, abort);
+            if (r.retry) {
+                queue.push({ rec, retried: true, notBefore: Date.now() + EGRESS_RETRY_DELAY_SEC * 1000 });
+            } else {
+                progress.done++;
+                if (r.ok) progress.processed++;
+                if (r.failure) progress.failed.push({ accountId: rec.accountId, username: rec.username, ...r.failure });
+            }
+            if (next < queue.length) await _gap(settings.accountDelaySec, abort);
         }
     };
     const workers = Math.max(1, Math.min(settings.concurrency, accts.length));

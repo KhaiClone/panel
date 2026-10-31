@@ -396,7 +396,11 @@ function startRetentionSweep() {
 }
 
 // ── Run loop ─────────────────────────────────────────────────────────────────────
-function _launch(accountId, resolved, record, lease = null) {
+// Seconds before a run whose egress route died (questEngine `egressDown`) starts
+// again, once, on a fresh lease — a rotating proxy has a moment to come back.
+const EGRESS_RETRY_DELAY_SEC = 60;
+
+function _launch(accountId, resolved, record, lease = null, attempt = 1) {
     if (lease) leases.set(accountId, lease);
     const abort = { stopped: false };
     const completer = new QuestAutocompleter(resolved.api, {
@@ -406,9 +410,43 @@ function _launch(accountId, resolved, record, lease = null) {
     });
     const entry = { abort, completer, done: null };
     running.set(accountId, entry);
-    entry.done = _runLoop(accountId, completer, abort, record).catch((err) => {
+    entry.done = _runLoop(accountId, completer, abort, record, attempt).catch((err) => {
         console.error(`[Quest] ${resolved.username} loop crash:`, err.message);
     });
+}
+
+/**
+ * Start a stored "running" account: lease, resolve, loop (restore() and the egress
+ * retry). False when it could not start — the record then says why.
+ */
+async function _resume(rec, attempt = 1) {
+    const token = _decrypt(rec);
+    if (!token) {
+        await _setStatus(rec.accountId, "token_dead", {
+            error: "Could not decrypt the stored token (secret changed?).",
+        });
+        return false;
+    }
+    const lease = await proxyPool.acquire(token);
+    const resolved = await resolveDiscordAccount(token, lease.agent);
+    if (!resolved.ok) {
+        lease.release({ failed: !resolved.invalidToken });
+        await _setStatus(rec.accountId, resolved.invalidToken ? "token_dead" : "error", {
+            error: resolved.reason,
+        });
+        return false;
+    }
+    _launch(rec.accountId, resolved, rec, lease, attempt);
+    return true;
+}
+
+/** The second go after `egressDown` — unless the account was stopped, removed,
+ *  restarted or paused meanwhile (the resume picks a paused one up). */
+async function _retryAfterEgressDown(accountId) {
+    const rec = await _getRec(accountId);
+    if (!rec || rec.status !== "running" || running.has(accountId)) return;
+    if ((await questSettings.get()).paused) return;
+    await _resume(rec, 2);
 }
 
 /**
@@ -441,7 +479,7 @@ function pauseAll() {
     return ids.length;
 }
 
-async function _runLoop(accountId, completer, abort, record) {
+async function _runLoop(accountId, completer, abort, record, attempt = 1) {
     const mode = record.mode;
     const selected = new Set((record.selectedQuestIds ?? []).map(String));
     _publish(accountId, { type: "status", status: "running" });
@@ -531,7 +569,18 @@ async function _runLoop(accountId, completer, abort, record) {
         // pause → resume), which this one must not unregister.
         if (err?.aborted || abort.stopped) return;
         running.delete(accountId);
-        if (isInvalidTokenError(err)) {
+        if (err?.egressDown && attempt === 1) {
+            // The route died, not the account: a fresh IP (lease back as failed) and
+            // one more go. The record stays "running", so a restart meanwhile resumes it.
+            _releaseLease(accountId, { failed: true });
+            console.warn(`[Quest] ${record.username}: ${err.message} — running it again in ${EGRESS_RETRY_DELAY_SEC}s`);
+            const retry = lifecycle.guard(() =>
+                _retryAfterEgressDown(accountId).catch((e) =>
+                    console.warn(`[Quest] ${record.username} retry error: ${e.message}`),
+                ),
+            );
+            setTimeout(retry, EGRESS_RETRY_DELAY_SEC * 1000).unref?.();
+        } else if (!err?.egressDown && isInvalidTokenError(err)) {
             _releaseLease(accountId);
             await _setStatus(accountId, "token_dead", {
                 error: "Discord rejected the token (invalid or expired).",
@@ -573,27 +622,8 @@ async function restore() {
             waiting++;
             continue;
         }
-        const token = _decrypt(rec);
-        if (!token) {
-            await _setStatus(rec.accountId, "token_dead", {
-                error: "Could not decrypt the stored token (secret changed?).",
-            });
-            continue;
-        }
         try {
-            const lease = await proxyPool.acquire(token);
-            const resolved = await resolveDiscordAccount(token, lease.agent);
-            if (!resolved.ok) {
-                lease.release({ failed: !resolved.invalidToken });
-                await _setStatus(
-                    rec.accountId,
-                    resolved.invalidToken ? "token_dead" : "error",
-                    { error: resolved.reason },
-                );
-                continue;
-            }
-            _launch(rec.accountId, resolved, rec, lease);
-            restored++;
+            if (await _resume(rec)) restored++;
         } catch (e) {
             console.warn(`[Quest] restore ${rec.username} error: ${e.message}`);
         }

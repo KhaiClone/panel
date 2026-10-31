@@ -3,14 +3,21 @@
  * Checks the skip line of a stalled quest (server/services/questEngine.js): every
  * progress loop (video, game heartbeat, activity) says what its last request got back
  * — an HTTP answer, a network failure, or a 200 that did not move the counter — so a
- * "made no progress" skip shows why. Discord is a fake api object; sleep() is the only
- * timer the loops use, so a fake clock jumps through the 5-minute stall timeout.
+ * "made no progress" skip shows why. A lost connection (axios error, no answer) for a
+ * minute is not a skip: the loop throws `egressDown` so the caller re-runs the account
+ * on a fresh IP. Discord is a fake api object; sleep() is the only timer the loops use,
+ * so a fake clock jumps through the timeouts. Plain Errors stand for request failures
+ * that are not a lost connection.
  * Run:  node scripts/questStall.test.js
  */
 
 const path = require("path");
 const assert = require("assert");
+const { AxiosError } = require("axios");
 const { QuestAutocompleter } = require(path.join(__dirname, "..", "server", "services", "questEngine"));
+
+// What axios throws when the proxy drops the connection: an AxiosError with no response.
+const lost = (msg = "Proxy connection ended before receiving CONNECT response") => new AxiosError(msg, "ECONNRESET");
 
 // ── Fake clock ───────────────────────────────────────────────────────────────
 let now = Date.UTC(2026, 9, 31, 12);
@@ -80,7 +87,7 @@ const test = async (name, fn) => {
         assert.match(result.reason, /last answer: HTTP 200, progress missing$/);
     });
 
-    await test("game heartbeat: a network failure is the reason (was swallowed silently)", async () => {
+    await test("game heartbeat: a failed request is the reason (was swallowed silently)", async () => {
         const { result } = await run("PLAY_ON_DESKTOP", 900, () => new Error("read ECONNRESET"));
         assert.match(result.reason, /at 0\/900s — last answer: request failed: read ECONNRESET$/);
     });
@@ -105,7 +112,7 @@ const test = async (name, fn) => {
         assert.ok(!logs.some((l) => l.startsWith("⚠")));
     });
 
-    await test("video: a network failure is the reason", async () => {
+    await test("video: a failed request is the reason", async () => {
         const { result } = await run("WATCH_VIDEO_ON_MOBILE", 102, () => new Error("timeout of 20000ms exceeded"));
         assert.match(result.reason, /last answer: request failed: timeout of 20000ms exceeded$/);
     });
@@ -117,7 +124,7 @@ const test = async (name, fn) => {
         assert.match(result.reason, /at 21\/179s — last answer: HTTP 500: "x"$/);
     });
 
-    await test("activity: a network failure is the reason", async () => {
+    await test("activity: a failed request is the reason", async () => {
         const { result } = await run("PLAY_ACTIVITY", 600, () => new Error("connect ECONNREFUSED"));
         assert.match(result.reason, /at 0\/600s — last answer: request failed: connect ECONNREFUSED$/);
     });
@@ -130,6 +137,52 @@ const test = async (name, fn) => {
         });
         assert.deepStrictEqual(result, { skipped: false });
         assert.ok(events.some((e) => e.type === "quest_done"));
+    });
+
+    console.log("questEngine — the egress route is down");
+
+    const down = (task, target, answer) =>
+        run(task, target, answer).then(
+            () => assert.fail("expected egressDown"),
+            (err) => err,
+        );
+
+    await test("game heartbeat: no answer for a minute throws egressDown, not a skip", async () => {
+        const started = now;
+        const err = await down("PLAY_ON_DESKTOP", 900, () => lost());
+        assert.strictEqual(err.egressDown, true);
+        assert.strictEqual(err.questStalled, undefined);
+        assert.strictEqual(err.message, "Discord unreachable for 60s: Proxy connection ended before receiving CONNECT response");
+        assert.ok(now - started < 2 * 60_000, "well before the 5-minute stall");
+    });
+
+    await test("video: no answer for a minute throws egressDown", async () => {
+        const err = await down("WATCH_VIDEO", 179, () => lost("timeout of 20000ms exceeded"));
+        assert.strictEqual(err.egressDown, true);
+        assert.match(err.message, /^Discord unreachable for 6\ds: timeout of 20000ms exceeded$/);
+    });
+
+    await test("activity: no answer for a minute throws egressDown", async () => {
+        const err = await down("PLAY_ACTIVITY", 600, () => lost());
+        assert.strictEqual(err.egressDown, true);
+    });
+
+    await test("an answer now and then keeps it a quest problem: skipped, not egressDown", async () => {
+        const { result } = await run("PLAY_ON_DESKTOP", 900, (p, n) =>
+            n % 3 ? lost() : { status: 200, data: { progress: { PLAY_ON_DESKTOP: { value: 0 } } } },
+        );
+        assert.strictEqual(result.skipped, true);
+        assert.match(result.reason, /made no progress/);
+    });
+
+    await test("an answer starts the minute over", async () => {
+        // Lost at 0s and 20s, an answer at 40s, lost from 60s on: down at 120s, not 60s.
+        const started = now;
+        const err = await down("PLAY_ON_DESKTOP", 900, (p, n) =>
+            n === 3 ? { status: 200, data: { progress: { PLAY_ON_DESKTOP: { value: 0 } } } } : lost(),
+        );
+        assert.match(err.message, /^Discord unreachable for 60s/);
+        assert.ok(now - started >= 120_000, `${(now - started) / 1000}s`);
     });
 
     console.log(failures ? `\n${failures} failing` : "\nall passed");
