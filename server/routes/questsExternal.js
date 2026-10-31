@@ -64,13 +64,17 @@ router.get("/", async (req, res, next) => {
     }
 });
 
-/** POST /monthly { token, months, ref, webhookUrl } — activate/extend a monthly plan */
+/**
+ * POST /monthly { token, months, ref, webhookUrl, expiresAt? } — activate/extend a
+ * monthly plan. `expiresAt` moves in a plan arnto-auto had to run itself (months is
+ * then ignored; the time left until expiresAt is added instead).
+ */
 router.post("/monthly", async (req, res, next) => {
     try {
-        const { token, months, ref, webhookUrl } = req.body || {};
+        const { token, months, ref, webhookUrl, expiresAt } = req.body || {};
         if (!token) return res.status(400).json({ error: "token required" });
         res.status(201).json(
-            await questMonthly.activate({ token, months, ref, webhookUrl, webhookBotId: req.apiCaller?.botId ?? null }),
+            await questMonthly.activate({ token, months, ref, webhookUrl, expiresAt, webhookBotId: req.apiCaller?.botId ?? null }),
         );
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });

@@ -119,7 +119,22 @@ function _webhook(rec, event) {
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────────
-async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = null }) {
+/**
+ * Activate or extend a plan: `months` whole months go on top of an active plan (or
+ * start now). `expiresAt` hands over a plan that ran somewhere else instead — when
+ * this call failed at payment time, arnto-auto ran the plan itself and moves it here
+ * later. Its time left (until expiresAt) is added the same way, so the buyer keeps
+ * the exact end date. An older panel ignores expiresAt, which is why the caller also
+ * sends `months` rounded up.
+ */
+async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = null, expiresAt = null }) {
+    const untilMs = expiresAt == null ? null : new Date(expiresAt).getTime();
+    if (untilMs !== null && !(untilMs > Date.now())) {
+        const e = new Error("expiresAt must be a date in the future.");
+        e.vi = "Hạn gói (expiresAt) không hợp lệ hoặc đã qua.";
+        e.status = 400;
+        throw e;
+    }
     const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
     if (!resolved.ok) {
         const e = new Error(resolved.reason);
@@ -127,11 +142,14 @@ async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = nul
         e.status = resolved.invalidToken ? 401 : 502;
         throw e;
     }
-    const m = Math.max(0, parseInt(months, 10) || 0);
+    const m = untilMs === null ? Math.max(0, parseInt(months, 10) || 0) : 0;
     const accountId = resolved.accountId;
     const existing = await db.findOne(MODEL, { accountId });
-    const base = _isActive(existing) ? new Date(existing.monthlyExpiresAt).getTime() : Date.now();
-    const monthlyExpiresAt = new Date(base + m * MONTH_MS).toISOString();
+    // Time left is taken after Discord answered, so a slow resolve costs the buyer nothing.
+    const now = Date.now();
+    const base = _isActive(existing) ? new Date(existing.monthlyExpiresAt).getTime() : now;
+    const added = untilMs === null ? m * MONTH_MS : Math.max(0, untilMs - now);
+    const monthlyExpiresAt = new Date(base + added).toISOString();
     const rec = {
         accountId,
         username: resolved.username,

@@ -67,6 +67,7 @@ stub("services/questEngine", {
         if (token === "down") {
             return { ok: false, invalidToken: false, reason: "Could not reach Discord: ECONNRESET", reasonVi: "Không kết nối được Discord: ECONNRESET" };
         }
+        if (token === "moved") return { ok: true, api: { token }, accountId: "444", username: "moved" };
         return { ok: true, api: { token }, accountId: "111", username: "khai" };
     },
     isInvalidTokenError: (e) => !!e?.invalidToken,
@@ -269,6 +270,49 @@ const test = async (name, fn) => {
         const errors = await db.get("quest_monthly_outcome");
         assert.ok(!errors["222"]);
         assert.ok(errors["333"]);
+    });
+
+    console.log("questMonthly — a plan moved in from arnto-auto (expiresAt)");
+    const DAY = 24 * 60 * 60 * 1000;
+
+    await test("a new plan ends exactly at expiresAt, months ignored", async () => {
+        const until = new Date(Date.now() + 21 * DAY).toISOString();
+        const res = await post("/external/monthly", { token: "moved", months: 1, ref: "buyer2", expiresAt: until });
+        assert.strictEqual(res.status, 201);
+        assert.strictEqual(res.body.monthlyExpiresAt, until);
+        assert.strictEqual(res.body.months, 0);
+        const rec = await db.findOne("quest_monthly", { accountId: "444" });
+        assert.strictEqual(rec.monthlyExpiresAt, until);
+        assert.strictEqual(rec.ref, "buyer2");
+    });
+
+    await test("on an active plan the time left is added on top", async () => {
+        const before = new Date((await db.findOne("quest_monthly", { accountId: "111" })).monthlyExpiresAt).getTime();
+        const t0 = Date.now();
+        const res = await post("/external/monthly", { token: "good", months: 1, expiresAt: new Date(t0 + 10 * DAY).toISOString() });
+        const t1 = Date.now();
+        assert.strictEqual(res.status, 201);
+        const after = new Date(res.body.monthlyExpiresAt).getTime();
+        // before + (until − now), where "now" is somewhere between t0 and t1.
+        assert.ok(after <= before + 10 * DAY && after >= before + 10 * DAY - (t1 - t0), `${after - before}`);
+    });
+
+    await test("a past or unreadable expiresAt is refused and changes nothing", async () => {
+        const rec = await db.findOne("quest_monthly", { accountId: "444" });
+        for (const expiresAt of [new Date(Date.now() - DAY).toISOString(), "soon"]) {
+            const res = await post("/external/monthly", { token: "moved", months: 1, expiresAt });
+            assert.strictEqual(res.status, 400);
+            assert.match(res.body.error, /Hạn gói/); // arnto-auto gets the Vietnamese text
+        }
+        assert.strictEqual((await db.findOne("quest_monthly", { accountId: "444" })).monthlyExpiresAt, rec.monthlyExpiresAt);
+        await assert.rejects(questMonthly.activate({ token: "moved", expiresAt: "soon" }), /must be a date in the future/);
+    });
+
+    await test("without expiresAt, months still work as before", async () => {
+        const before = new Date((await db.findOne("quest_monthly", { accountId: "444" })).monthlyExpiresAt).getTime();
+        const res = await post("/external/monthly", { token: "moved", months: 2 });
+        assert.strictEqual(res.body.months, 2);
+        assert.strictEqual(new Date(res.body.monthlyExpiresAt).getTime(), before + 60 * DAY);
     });
 
     server.close();
