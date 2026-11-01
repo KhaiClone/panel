@@ -18,6 +18,8 @@ import ProxiesPage from "./pages/ProxiesPage";
 import NodeDetailPage from "./pages/NodeDetailPage";
 import OrdersPage from "./pages/OrdersPage";
 import BuyersPage from "./pages/BuyersPage";
+import TranscriptsPage from "./pages/TranscriptsPage";
+import TranscriptView from "./pages/TranscriptView";
 import StockPage from "./pages/StockPage";
 import VouchersPage from "./pages/VouchersPage";
 import SupportersPage from "./pages/SupportersPage";
@@ -110,6 +112,8 @@ export default function App() {
                             <Route path="nodes/:id"     element={<NodeDetailPage />} />
                             <Route path="orders"        element={<OrdersPage />} />
                             <Route path="buyers"        element={<BuyersPage />} />
+                            <Route path="transcripts"   element={<TranscriptsPage />} />
+                            <Route path="transcripts/:id" element={<TranscriptView />} />
                             <Route path="stock"         element={<StockPage />} />
                             <Route path="vouchers"      element={<VouchersPage />} />
                             <Route path="supporters"    element={<SupportersPage />} />

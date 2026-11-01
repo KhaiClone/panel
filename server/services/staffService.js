@@ -60,6 +60,7 @@ const DEFAULT_ROLE_ID = "1134354122867482716";
 const PAGES = [
     { key: "orders", label: "Orders", section: "Shop" },
     { key: "buyers", label: "Buyers", section: "Shop" },
+    { key: "transcripts", label: "Transcripts", section: "Shop" },
     { key: "stock", label: "Stock", section: "Shop" },
     { key: "vouchers", label: "Vouchers", section: "Shop" },
     { key: "ticketMenus", label: "Ticket Menus", section: "Shop" },

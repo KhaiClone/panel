@@ -17,6 +17,7 @@ const I = {
     proxyPool:  <Icon name="proxyPool" />,
     orders:     <Icon name="orders" />,
     buyers:     <Icon name="users" />,
+    transcripts: <Icon name="archive" />,
     stock:      <Icon name="stock" />,
     voucher:    <Icon name="voucher" />,
     supporters: <Icon name="supporters" />,
@@ -49,6 +50,7 @@ const NAV_SECTIONS = [
         items: [
             { to: "/orders",       label: "Orders",       icon: I.orders },
             { to: "/buyers",       label: "Buyers",       icon: I.buyers },
+            { to: "/transcripts",  label: "Transcripts",  icon: I.transcripts },
             { to: "/stock",        label: "Stock",        icon: I.stock },
             { to: "/vouchers",     label: "Vouchers",     icon: I.voucher },
             { to: "/ticket-menus", label: "Ticket Menus", icon: I.menus },
@@ -109,6 +111,7 @@ const DETAIL_PAGES = [
     { prefix: "/sites/",  parent: "/sites",   title: "Site Detail" },
     { prefix: "/nodes/",  parent: "/systems", title: "Server Detail" },
     { prefix: "/quests/", parent: "/quests",  title: "Quest Account" },
+    { prefix: "/transcripts/", parent: "/transcripts", title: "Transcript" },
 ];
 
 const NOTIF_TYPE_COLOR = {

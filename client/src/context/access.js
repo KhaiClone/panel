@@ -5,6 +5,7 @@
 export const STAFF_PAGES = [
     { key: "orders", path: "/orders" },
     { key: "buyers", path: "/buyers" },
+    { key: "transcripts", path: "/transcripts" },
     { key: "stock", path: "/stock" },
     { key: "vouchers", path: "/vouchers" },
     { key: "ticketMenus", path: "/ticket-menus" },

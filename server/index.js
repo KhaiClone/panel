@@ -149,6 +149,8 @@ app.use("/api/external/supporters", apiKeyMiddleware, require("./routes/supporte
 app.use("/api/external/resellers", apiKeyMiddleware, require("./routes/resellers").external);
 // ArnTo-assistant fetches the files uploaded on the Messages page (services/botMessages.js).
 app.use("/api/external/messages", apiKeyMiddleware, require("./routes/messages").external);
+// ArnTo-Shop lists its transcript channel for the Transcripts page (services/transcriptService.js).
+app.use("/api/external/transcripts", apiKeyMiddleware, require("./routes/transcripts").external);
 app.use("/api/external", apiKeyMiddleware, externalRoutes);
 app.use("/api/tags", authMiddleware, tagRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -159,6 +161,9 @@ app.use("/api/join", require("./routes/join"));
 app.use("/api/node-removal", require("./routes/nodeRemoval"));
 app.use("/api/shop", pageAuth("orders"), shopOrderRoutes);
 app.use("/api/buyers", pageAuth("buyers"), require("./routes/buyers"));
+// The ticket transcripts; /view is the frame's, keyed by a view ticket instead of the login (routes/transcripts.js).
+app.use("/api/transcripts/view", require("./routes/transcripts").viewer);
+app.use("/api/transcripts", pageAuth("transcripts"), require("./routes/transcripts").panel);
 app.use("/api/decors", pageAuth("decors"), decorRoutes);
 // Public, read-only: the decor site's live data (routes/decorsPublic.js).
 app.use("/api/public/decors", require("./routes/decorsPublic"));
