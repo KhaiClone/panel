@@ -3,6 +3,8 @@ import api from "../api/client";
 import { useAuth, usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import DecoGiftOrderModal from "../components/DecoGiftOrderModal";
+// Statistics periods ("2026-10", "2026", "all"), Vietnam's months — shared with the Buyers page.
+import PeriodPicker, { thisMonth, monthName, periodName } from "../components/PeriodPicker";
 import { DataTable, EmptyState, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 import { fmtNum, money } from "../utils/format";
 
@@ -38,13 +40,6 @@ const SOURCES = {
     autoQuestMonthly: "Auto Quest monthly plan — run by the panel",
     autoBadge: "Auto Badge — run by the panel",
 };
-
-// Statistics periods: "2026-10", "2026" or "all". Months are Vietnam's (UTC+7),
-// like the server's (orderService getStats) and the shop's /thongke.
-const thisMonth = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 7);
-const monthName = (m, opts = { month: "long", year: "numeric" }) => new Date(`${m}-01T00:00:00`).toLocaleDateString("en-GB", opts);
-const periodName = (p) => (p === "all" ? "All time" : p.length === 4 ? p : monthName(p));
-const modeOf = (p) => (p === "all" ? "all" : p.length === 4 ? "year" : "month");
 
 const fullDate = (ts) =>
     ts ? new Date(ts).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -84,44 +79,6 @@ function SellerCard({ data }) {
 }
 
 /** Month / Year / All time, and which one. `months` = every month with a figure, newest first. */
-function PeriodPicker({ period, months, onChange }) {
-    const mode = modeOf(period);
-    const years = [...new Set(months.map((m) => m.slice(0, 4)))];
-    const list = mode === "month" ? months : years;
-    const i = list.indexOf(period);
-    const switchTo = (m) => {
-        if (m === mode) return;
-        if (m === "all") return onChange("all");
-        if (m === "year") return onChange(mode === "month" ? period.slice(0, 4) : years[0]);
-        // To months: the latest one of the year being looked at.
-        onChange((mode === "year" && months.find((k) => k.startsWith(period))) || months[0]);
-    };
-    return (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <div className="tab-bar">
-                {[["month", "Month"], ["year", "Year"], ["all", "All time"]].map(([k, label]) => (
-                    <button key={k} className={`tab-item ${mode === k ? "active" : ""}`} onClick={() => switchTo(k)}>
-                        {label}
-                    </button>
-                ))}
-            </div>
-            {mode !== "all" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <button className="btn-ghost btn-icon btn-sm" title={`Previous ${mode}`} disabled={i < 0 || i >= list.length - 1} onClick={() => onChange(list[i + 1])}>
-                        <Icon name="chevronLeft" />
-                    </button>
-                    <select className="input" style={{ width: "auto" }} value={period} onChange={(e) => onChange(e.target.value)} aria-label={mode === "month" ? "Month" : "Year"}>
-                        {list.map((k) => <option key={k} value={k}>{periodName(k)}</option>)}
-                    </select>
-                    <button className="btn-ghost btn-icon btn-sm" title={`Next ${mode}`} disabled={i <= 0} onClick={() => onChange(list[i - 1])}>
-                        <Icon name="chevronRight" />
-                    </button>
-                </div>
-            )}
-        </div>
-    );
-}
-
 /** A year by month, or all time by year. A row opens that month / year. */
 function Breakdown({ rows, period, onPick }) {
     const byMonth = period !== "all";

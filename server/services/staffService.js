@@ -59,6 +59,7 @@ const DEFAULT_ROLE_ID = "1134354122867482716";
 /** The pages staff can be given. Keys are what routes and the client use. */
 const PAGES = [
     { key: "orders", label: "Orders", section: "Shop" },
+    { key: "buyers", label: "Buyers", section: "Shop" },
     { key: "stock", label: "Stock", section: "Shop" },
     { key: "vouchers", label: "Vouchers", section: "Shop" },
     { key: "ticketMenus", label: "Ticket Menus", section: "Shop" },
@@ -81,7 +82,8 @@ const LEVELS = new Set(["view", "edit"]);
  * need the page to run orders, but its totals are the shop's income.
  */
 const GRANTS = [
-    { key: "orders.revenue", page: "orders", label: "See revenue", hint: "The revenue totals, overall and per seller" },
+    // Also what each buyer spent on the Buyers page (routes/buyers.js) — the same income.
+    { key: "orders.revenue", page: "orders", label: "See revenue", hint: "The revenue totals, overall and per seller, and what each buyer spent (Buyers)" },
 ];
 const GRANT_PAGE = Object.fromEntries(GRANTS.map((g) => [g.key, g.page]));
 

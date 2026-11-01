@@ -16,6 +16,7 @@ const I = {
     key:        <Icon name="key" />,
     proxyPool:  <Icon name="proxyPool" />,
     orders:     <Icon name="orders" />,
+    buyers:     <Icon name="users" />,
     stock:      <Icon name="stock" />,
     voucher:    <Icon name="voucher" />,
     supporters: <Icon name="supporters" />,
@@ -47,6 +48,7 @@ const NAV_SECTIONS = [
         label: "Shop",
         items: [
             { to: "/orders",       label: "Orders",       icon: I.orders },
+            { to: "/buyers",       label: "Buyers",       icon: I.buyers },
             { to: "/stock",        label: "Stock",        icon: I.stock },
             { to: "/vouchers",     label: "Vouchers",     icon: I.voucher },
             { to: "/ticket-menus", label: "Ticket Menus", icon: I.menus },

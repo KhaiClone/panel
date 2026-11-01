@@ -158,6 +158,7 @@ app.use("/api/join", require("./routes/join"));
 // Public: a removed node's uninstall reporting back (token-guarded, see routes/nodeRemoval.js).
 app.use("/api/node-removal", require("./routes/nodeRemoval"));
 app.use("/api/shop", pageAuth("orders"), shopOrderRoutes);
+app.use("/api/buyers", pageAuth("buyers"), require("./routes/buyers"));
 app.use("/api/decors", pageAuth("decors"), decorRoutes);
 // Public, read-only: the decor site's live data (routes/decorsPublic.js).
 app.use("/api/public/decors", require("./routes/decorsPublic"));

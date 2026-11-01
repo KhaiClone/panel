@@ -4,6 +4,7 @@
 // member who opens any other URL is sent to their first page.
 export const STAFF_PAGES = [
     { key: "orders", path: "/orders" },
+    { key: "buyers", path: "/buyers" },
     { key: "stock", path: "/stock" },
     { key: "vouchers", path: "/vouchers" },
     { key: "ticketMenus", path: "/ticket-menus" },

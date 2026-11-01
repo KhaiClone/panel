@@ -77,11 +77,16 @@ const tagOf = (buyerId) => {
     return t?.tag ?? null;
 };
 
+/** A buyer's tag from the cache (null until looked up), starting the lookups still owed. */
+const buyerTag = (buyerId) => {
+    const tag = tagOf(buyerId);
+    if (pendingTags.size) resolveTags().catch(() => {});
+    return tag;
+};
+
 const enrich = (order) => {
     if (!order) return order;
-    const out = { ...order, sellerName: SELLERS[order.sellerId] || order.sellerId, buyerTag: tagOf(order.buyerId) };
-    if (pendingTags.size) resolveTags().catch(() => {});
-    return out;
+    return { ...order, sellerName: SELLERS[order.sellerId] || order.sellerId, buyerTag: buyerTag(order.buyerId) };
 };
 
 const statsFor = (orders) => ({
@@ -241,4 +246,20 @@ const deleteOrder = async (orderId) => {
     return { message: "Order deleted", order: enrich(order) };
 };
 
-module.exports = { SELLERS, onPanel, statsFor, listOrders, getStats, withoutRevenue, completeOrder, cancelOrder, deleteOrder };
+module.exports = {
+    SELLERS,
+    onPanel,
+    requirePanel,
+    buyerTag,
+    monthOf,
+    monthsSince,
+    periodArg,
+    inPeriod,
+    statsFor,
+    listOrders,
+    getStats,
+    withoutRevenue,
+    completeOrder,
+    cancelOrder,
+    deleteOrder,
+};
