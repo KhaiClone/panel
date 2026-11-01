@@ -7,7 +7,9 @@
  * DB model `quest_accounts` (one record per Discord account):
  *   { _id, accountId, username, tokenEncrypted, tokenIv, tokenTag,
  *     mode: "all" | "select", selectedQuestIds: [], status, completedCount,
- *     error, addedAt, updatedAt, retentionExpiresAt }
+ *     error, addedAt, updatedAt, retentionExpiresAt,
+ *     openOrders: [externalId], priceLater: { externalId, buyerId, at, baseCount } | null }
+ *   (openOrders / priceLater: its orders in the shop's books — see autoShopOrders)
  * status: "running" | "done" | "stopped" | "token_dead" | "error"
  * While Auto Quest is paused (questSettings) a "running" record is not looping; the
  * API shows it as "paused" and restore() launches it on the resume.
@@ -34,6 +36,8 @@ const proxyPool = require("./proxyPool");
 const questSettings = require("./questSettings");
 const lifecycle = require("./lifecycle");
 const callbacks = require("./callbackService");
+const shopOrders = require("./autoShopOrders");
+const pricingStore = require("./pricingStore");
 
 const MODEL = "quest_accounts";
 const { isEnrolled, isCompleted, isCompletable } = _fields;
@@ -190,6 +194,46 @@ async function _updateRec(accountId, patch) {
 async function _setStatus(accountId, status, extra = {}) {
     await _updateRec(accountId, { status, ...extra });
     _publish(accountId, { type: "status", status, ...extra });
+    if (status === "done") await _closeOrders(await _getRec(accountId), "completed");
+}
+
+// ── The shop's books (autoShopOrders) ────────────────────────────────────────────
+// A record is an account, and orders come and go on it. `openOrders` are the shop
+// orders (externalIds) its run still owes; `priceLater` is one whose price is only
+// known once the run lists its quests — added by hand, or from an ArnTo-Auto that
+// does not say what was paid — opened at run_start at the regular per-quest price.
+// A finished run completes them; removing the account (or the retention sweep)
+// before that cancels them. A start without a payment while an order is open is
+// that order going on (the buyer sent a fresh token), and a resume is never a new
+// order.
+
+/** Open the price-later order for `quests` quests (none → nothing to charge). */
+async function _openPriceLater(rec, quests, want = "pending") {
+    const later = rec?.priceLater;
+    if (!later || !(quests > 0)) return rec;
+    const { autoQuest } = await pricingStore.getPricing();
+    await shopOrders.open({
+        externalId: later.externalId,
+        source: shopOrders.SOURCE.quest,
+        buyerId: later.buyerId,
+        name: shopOrders.questName(quests),
+        price: quests * autoQuest.pricePerItem,
+        orderDate: later.at,
+        want,
+    });
+    return _updateRec(rec.accountId, { priceLater: null, openOrders: [...(rec.openOrders || []), later.externalId] });
+}
+
+async function _closeOrders(rec, want) {
+    if (!rec) return;
+    // A run that finished before its quests were ever listed (failed pre-scan):
+    // priced by what it completed.
+    if (want === "completed" && rec.priceLater) {
+        rec = await _openPriceLater(rec, (rec.completedCount ?? 0) - (rec.priceLater.baseCount ?? 0), "completed");
+    }
+    if (!rec.openOrders?.length && !rec.priceLater) return;
+    if (await _getRec(rec.accountId)) await _updateRec(rec.accountId, { openOrders: [], priceLater: null });
+    for (const id of rec.openOrders || []) await shopOrders.settle(id, want);
 }
 
 /** Public account view (no token material). */
@@ -262,7 +306,21 @@ async function previewToken(token) {
  * mode "all"  → run every available quest.
  * mode "select" → run only selectedQuestIds.
  */
-async function startAccount({ token, mode = "all", selectedQuestIds = [], webhookUrl, webhookBotId = null, ref }) {
+/**
+ * `order` ({ id, price, reseller } — autoShopOrders.orderArg): ArnTo-Auto's payment
+ * for this run. `manual`: added by hand on /quests. `resume`: the same order again.
+ */
+async function startAccount({
+    token,
+    mode = "all",
+    selectedQuestIds = [],
+    webhookUrl,
+    webhookBotId = null,
+    ref,
+    order = null,
+    manual = false,
+    resume = false,
+}) {
     // Paused: the order is stored like any other and waits for the resume, which
     // launches it via restore(). Nothing runs yet, so no lease either.
     const { paused } = await questSettings.get();
@@ -286,6 +344,32 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
     const hookBotId = webhookUrl || webhookBotId ? webhookBotId : (existing?.webhookBotId ?? null);
     const hookRef = ref ?? existing?.webhookRef ?? null;
     if (hookUrl || hookBotId) webhooks.set(accountId, { url: hookUrl, botId: hookBotId, ref: hookRef, username: resolved.username });
+
+    // The shop's books: a paid order opens now; anything else that is not a resume
+    // and finds no order open becomes one priced at run_start.
+    const buyerId = hookRef || accountId;
+    let openOrders = existing?.openOrders ?? [];
+    let priceLater = existing?.priceLater ?? null;
+    if (order) {
+        const externalId = `quest:${order.id}`;
+        await shopOrders.open({
+            externalId,
+            source: shopOrders.SOURCE.quest,
+            buyerId,
+            name: shopOrders.questName(mode === "select" ? cleanIds.length : 0),
+            price: order.price,
+            reseller: order.reseller,
+        });
+        if (!openOrders.includes(externalId)) openOrders = [...openOrders, externalId];
+    } else if (!resume && !openOrders.length && !priceLater) {
+        priceLater = {
+            externalId: `quest:${manual ? "manual" : "auto"}:${accountId}:${Date.now()}`,
+            buyerId,
+            at: Date.now(),
+            baseCount: existing?.completedCount ?? 0,
+        };
+    }
+
     const record = {
         accountId,
         username: resolved.username,
@@ -302,6 +386,8 @@ async function startAccount({ token, mode = "all", selectedQuestIds = [], webhoo
         updatedAt: Date.now(),
         // Each new run restarts the one-week clock; nothing survives past it.
         retentionExpiresAt: Date.now() + RETENTION_MS,
+        openOrders,
+        priceLater,
     };
     if (existing) await db.findOneAndUpdate(MODEL, { accountId }, record);
     else await db.create(MODEL, record);
@@ -329,7 +415,7 @@ async function resumeAccount(accountId) {
     if (running.has(accountId)) throw _httpError("The account is already running.", 409);
     const token = _decrypt(rec);
     if (!token) throw _httpError("Could not decrypt the token (secret changed?).", 409);
-    return startAccount({ token, mode: rec.mode, selectedQuestIds: rec.selectedQuestIds ?? [] });
+    return startAccount({ token, mode: rec.mode, selectedQuestIds: rec.selectedQuestIds ?? [], resume: true });
 }
 
 /** Give the account's egress route back to the pool. Safe to call twice. */
@@ -358,9 +444,11 @@ async function stopAccount(accountId) {
 async function removeAccount(accountId) {
     _stopLoop(accountId);
     liveState.delete(accountId);
-    await db.findOneAndDelete(MODEL, { accountId });
+    const rec = await db.findOneAndDelete(MODEL, { accountId });
     _publish(accountId, { type: "removed" });
     webhooks.delete(accountId);
+    // Gone before its run finished: its orders never completed.
+    await _closeOrders(rec, "cancelled");
     return true;
 }
 
@@ -517,7 +605,12 @@ async function _runLoop(accountId, completer, abort, record, attempt = 1) {
                     queued.push({ questId: String(s.id), name: s.name, taskType: s.taskType ?? null });
                 }
             }
-            if (queued.length) _dispatchWebhook(accountId, { type: "run_start", quests: queued });
+            if (queued.length) {
+                _dispatchWebhook(accountId, { type: "run_start", quests: queued });
+                await _openPriceLater(await _getRec(accountId), queued.length).catch((e) =>
+                    console.warn(`[Quest] ${record.username}: shop order not opened: ${e.message}`),
+                );
+            }
         }
     } catch {
         // A failed pre-scan is non-fatal — the main loop below re-fetches anyway.

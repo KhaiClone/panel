@@ -26,6 +26,8 @@ const questSettings = require("./questSettings");
 const proxyPool = require("./proxyPool");
 const lifecycle = require("./lifecycle");
 const callbacks = require("./callbackService");
+const shopOrders = require("./autoShopOrders");
+const pricingStore = require("./pricingStore");
 const {
     QuestAutocompleter,
     resolveDiscordAccount,
@@ -126,8 +128,13 @@ function _webhook(rec, event) {
  * later. Its time left (until expiresAt) is added the same way, so the buyer keeps
  * the exact end date. An older panel ignores expiresAt, which is why the caller also
  * sends `months` rounded up.
+ *
+ * Each purchase is also a completed order in the shop's books (autoShopOrders):
+ * `order` ({ id, price, reseller }) is ArnTo-Auto's payment; without one (added by
+ * hand on /quests, or an older ArnTo-Auto) it counts months × the regular monthly
+ * price. A plan handed over with expiresAt was bought before — no order.
  */
-async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = null, expiresAt = null }) {
+async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = null, expiresAt = null, order = null, manual = false }) {
     const untilMs = expiresAt == null ? null : new Date(expiresAt).getTime();
     if (untilMs !== null && !(untilMs > Date.now())) {
         const e = new Error("expiresAt must be a date in the future.");
@@ -144,6 +151,8 @@ async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = nul
     }
     const m = untilMs === null ? Math.max(0, parseInt(months, 10) || 0) : 0;
     const accountId = resolved.accountId;
+    // The one-time backfill estimates the plans already here: it must not see this one.
+    await shopOrders.ready();
     const existing = await db.findOne(MODEL, { accountId });
     // Time left is taken after Discord answered, so a slow resolve costs the buyer nothing.
     const now = Date.now();
@@ -166,6 +175,19 @@ async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = nul
     else await db.create(MODEL, rec);
     // The token just resolved, so an old token error no longer applies.
     await _setOutcome(accountId, null);
+    if (order || (untilMs === null && m > 0)) {
+        const { autoQuest } = await pricingStore.getPricing();
+        await shopOrders.open({
+            externalId: order ? `questMonthly:${order.id}` : `questMonthly:${manual ? "manual" : "auto"}:${accountId}:${now}`,
+            source: shopOrders.SOURCE.monthly,
+            buyerId: rec.ref || accountId,
+            name: shopOrders.monthlyName(Math.max(1, m)),
+            price: order ? order.price : m * autoQuest.monthlyPrice,
+            reseller: order?.reseller === true,
+            orderDate: now,
+            want: "completed", // a plan is complete when paid
+        });
+    }
     return { accountId, username: resolved.username, monthlyExpiresAt, months: m };
 }
 

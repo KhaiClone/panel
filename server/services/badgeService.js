@@ -30,6 +30,9 @@
  *     Discord trả 404, tính là 0 (badgeReader.readSelf). Đọc được hay không phải
  *     biết TRƯỚC khi hiện QR (check/quote).
  *
+ * Mỗi đơn (kể cả đơn tay) cũng là một đơn `arnto_N` trong sổ của ArnTo-Shop, seller
+ * KhaiDev — autoShopOrders.js; mở lúc tạo đơn, đóng ở _patch.
+ *
  * DB model `badge_orders` — xem _shape() ở cuối file.
  */
 
@@ -42,6 +45,7 @@ const pricingStore = require("./pricingStore");
 const resellers = require("./resellerService");
 const proxyPool = require("./proxyPool");
 const callbacks = require("./callbackService");
+const shopOrders = require("./autoShopOrders");
 
 const MODEL = "badge_orders";
 const ACCOUNTS = "badge_accounts";
@@ -121,8 +125,28 @@ async function _get(orderId) {
     return db.findOne(MODEL, { orderId });
 }
 
+// Đơn trong sổ của shop (autoShopOrders): gửi xong hay bị tịch thu là tiền đã
+// thu → completed; hoàn tiền / huỷ → cancelled. Mọi lần đổi trạng thái đều đi
+// qua _patch nên móc ở đây là đủ.
+const SHOP_STATE = { sent: "completed", forfeited: "completed", refund_due: "cancelled", cancelled: "cancelled" };
+
 async function _patch(orderId, data) {
-    return db.findOneAndUpdate(MODEL, { orderId }, { ...data, updatedAt: Date.now() });
+    const out = await db.findOneAndUpdate(MODEL, { orderId }, { ...data, updatedAt: Date.now() });
+    if (SHOP_STATE[data.status]) await shopOrders.settle(`badge:${orderId}`, SHOP_STATE[data.status]);
+    return out;
+}
+
+/** Mở đơn trong sổ của shop, TRƯỚC khi chạy — để lần đổi trạng thái đầu tiên có chỗ ghi. */
+function _openShopOrder(order, price) {
+    return shopOrders.open({
+        externalId: `badge:${order.orderId}`,
+        source: shopOrders.SOURCE.badge,
+        buyerId: (order.source === "manual" ? null : order.ref) || order.accountId,
+        name: shopOrders.badgeName(order.badgeKey, order.tierName),
+        price,
+        reseller: order.reseller === true,
+        orderDate: order.paidAt || order.createdAt,
+    });
 }
 
 /** Game đã claim của một account, gộp qua mọi đơn — để hai badge không đụng nhau. */
@@ -352,6 +376,7 @@ async function createOrder({
     };
 
     await db.create(MODEL, order);
+    await _openShopOrder(order, q.price);
     _dispatch(order, { type: "order_created", status: "paid" });
     // Chạy nền: người gọi không phải chờ hết cả lượt gửi.
     processOrder(order.orderId).catch(() => {});
@@ -485,6 +510,8 @@ async function createManualOrder(
     };
 
     await db.create(MODEL, order);
+    // Đơn tay không thu tiền, nhưng vẫn vào sổ của shop theo giá thường của mốc (người dùng, 2026-11-01).
+    await _openShopOrder(order, shopOrders.badgeBasePrice(pricing, badgeKey, tierKey));
     _dispatch(order, { type: "order_created", status: "paid" });
     processOrder(order.orderId).catch(() => {});
     return _shape(order);

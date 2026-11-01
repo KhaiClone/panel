@@ -31,7 +31,13 @@ const SELLERS = [
     { id: "871329074046435338", label: "KhaiDev" },
 ];
 
-const SOURCES = { decoGift: "Deco Gift — sold by ArnTo-Auto" };
+// An order with a source was sold — and is finished — by that system, not here.
+const SOURCES = {
+    decoGift: "Deco Gift — sold by ArnTo-Auto",
+    autoQuest: "Auto Quest — run by the panel",
+    autoQuestMonthly: "Auto Quest monthly plan — run by the panel",
+    autoBadge: "Auto Badge — run by the panel",
+};
 
 // Statistics periods: "2026-10", "2026" or "all". Months are Vietnam's (UTC+7),
 // like the server's (orderService getStats) and the shop's /thongke.
@@ -222,6 +228,9 @@ function OrderModal({ order, canAct, canDelete, busy, onAction, onBuyerOrders, o
                     {order.status === "pending" && order.source === "decoGift" && (
                         <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Approve or cancel it in ArnTo-Auto's Deco Gift staff channel on Discord</span>
                     )}
+                    {order.status === "pending" && order.source && order.source !== "decoGift" && (
+                        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Completes by itself when the panel finishes it</span>
+                    )}
                     {canAct && (
                         <>
                             <button className="btn-success btn-sm" disabled={busy} onClick={() => onAction("done")}>Complete</button>
@@ -325,8 +334,8 @@ export default function OrdersPage() {
     const paged = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
 
     // Who may do what to an order — the table row and the details dialog alike.
-    const canActOn = (o) => canEdit && o.status === "pending" && o.source !== "decoGift";
-    const canDeleteOrder = (o) => isOwner && o.source !== "decoGift";
+    const canActOn = (o) => canEdit && o.status === "pending" && !o.source;
+    const canDeleteOrder = (o) => isOwner && !o.source;
     // The live record (the list refreshes every 15 s); gone once it is deleted.
     const opened = openId && orders.find((o) => o.orderId === openId);
     const statsStale = stats && (stats.period || "all") !== period;

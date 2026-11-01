@@ -185,13 +185,18 @@ const withoutRevenue = (stats) => {
     };
 };
 
+// Orders with a `source` were sold by a system that also finishes them. A Deco
+// Gift order is finished by ArnTo-Auto's staff channel, which hands the gift
+// links over first — Done here would close it with nothing delivered. Auto Quest
+// and Auto Badge orders follow the panel's own records (autoShopOrders.js).
+const RUN_BY = {
+    decoGift: "Deco Gift orders are approved or cancelled in ArnTo-Auto's staff channel on Discord",
+};
+const RUN_BY_PANEL = "Auto Quest and Auto Badge orders complete or cancel themselves when the panel finishes them";
+
 const act = async (cmd, message, orderId) => {
-    // A Deco Gift order is finished by ArnTo-Auto's staff channel, which hands the
-    // gift links over first — Done here would close it with nothing delivered.
     const stored = sharedStore.run("orders", "findOne", { query: { orderId: String(orderId) } });
-    if (stored?.source === "decoGift") {
-        throw Object.assign(new Error("Deco Gift orders are approved or cancelled in ArnTo-Auto's staff channel on Discord"), { status: 409 });
-    }
+    if (stored?.source) throw Object.assign(new Error(RUN_BY[stored.source] || RUN_BY_PANEL), { status: 409 });
     const order = await discordBus.request(owner(), cmd, { orderId: String(orderId) }, { timeoutMs: 45_000 });
     return { message, order: enrich(order) };
 };
@@ -221,8 +226,12 @@ const deleteOrder = async (orderId) => {
     requirePanel();
     const stored = sharedStore.run("orders", "findOne", { query: { orderId: String(orderId) } });
     if (!stored) throw Object.assign(new Error("Order not found"), { status: 404 });
-    if (stored.source === "decoGift") {
-        throw Object.assign(new Error("Deco Gift orders cannot be deleted: ArnTo-Auto runs them"), { status: 409 });
+    if (stored.source) {
+        const msg =
+            stored.source === "decoGift"
+                ? "Deco Gift orders cannot be deleted: ArnTo-Auto runs them"
+                : "Auto Quest and Auto Badge orders cannot be deleted: the panel keeps them in step with its own records";
+        throw Object.assign(new Error(msg), { status: 409 });
     }
     if (!discordBus.canHandle(owner(), "order.delete")) {
         throw Object.assign(new Error('ArnTo-Shop has not announced "order.delete" on the Discord bus — update and restart it'), { status: 503 });

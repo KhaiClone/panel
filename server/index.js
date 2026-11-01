@@ -223,6 +223,8 @@ const startBackgroundServices = () => {
     setInterval(lifecycle.guard(() => panelLease.claimAll().catch(() => {})), 5 * 60 * 1000);
     // Commands to the bots go through Discord, never over the network.
     require("./services/discordBus").start().catch((e) => console.error("[Bus] start failed:", e.message));
+    // Auto Quest / Auto Badge orders kept in the shop's books (+ the one-time backfill).
+    require("./services/autoShopOrders").start();
     // The public decor site's data snapshot follows the shared decor data.
     require("./services/decorSitePublisher").start();
     // Decors: bundle gift prices go by composition — the old sum-keyed ones are moved once.

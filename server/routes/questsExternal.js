@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const questService = require("../services/questService");
 const questMonthly = require("../services/questMonthly");
+const { orderArg } = require("../services/autoShopOrders");
 
 // Mounted at /api/external/quests behind apiKeyMiddleware (PANEL_API_KEY or a
 // project key). This is how ArnTo-Auto delegates quest execution to the panel: it
@@ -23,14 +24,17 @@ router.post("/preview", async (req, res, next) => {
 });
 
 /**
- * POST /start { token, mode, selectedQuestIds, webhookUrl, ref }
+ * POST /start { token, mode, selectedQuestIds, webhookUrl, ref, order? }
  * Start (or update) running quests for an account. `webhookUrl` receives quest
  * events (quest_start/quest_done/status/removed) with the opaque `ref` echoed back.
+ * `order` { id, price, reseller? }: the payment this run is for — it goes into the
+ * shop's books at that price (services/autoShopOrders.js).
  */
 router.post("/start", async (req, res, next) => {
     try {
         const { token, mode, selectedQuestIds, webhookUrl, ref } = req.body || {};
         if (!token) return res.status(400).json({ error: "token required" });
+        const order = orderArg(req.body?.order);
         res.status(201).json(
             await questService.startAccount({
                 token,
@@ -39,6 +43,7 @@ router.post("/start", async (req, res, next) => {
                 webhookUrl,
                 webhookBotId: req.apiCaller?.botId ?? null,
                 ref,
+                order,
             }),
         );
     } catch (err) {
@@ -65,16 +70,17 @@ router.get("/", async (req, res, next) => {
 });
 
 /**
- * POST /monthly { token, months, ref, webhookUrl, expiresAt? } — activate/extend a
+ * POST /monthly { token, months, ref, webhookUrl, expiresAt?, order? } — activate/extend a
  * monthly plan. `expiresAt` moves in a plan arnto-auto had to run itself (months is
- * then ignored; the time left until expiresAt is added instead).
+ * then ignored; the time left until expiresAt is added instead). `order` as in /start.
  */
 router.post("/monthly", async (req, res, next) => {
     try {
         const { token, months, ref, webhookUrl, expiresAt } = req.body || {};
         if (!token) return res.status(400).json({ error: "token required" });
+        const order = orderArg(req.body?.order);
         res.status(201).json(
-            await questMonthly.activate({ token, months, ref, webhookUrl, expiresAt, webhookBotId: req.apiCaller?.botId ?? null }),
+            await questMonthly.activate({ token, months, ref, webhookUrl, expiresAt, order, webhookBotId: req.apiCaller?.botId ?? null }),
         );
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.vi ?? err.message });

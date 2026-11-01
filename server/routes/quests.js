@@ -162,6 +162,8 @@ router.post("/preview", async (req, res, next) => {
  * bot can tell whose token this is (and DM them). mode "monthly" activates a monthly
  * plan instead of an immediate run. Its quest events go to the project that
  * handles "quest.event" on the Discord bus (arnto-auto), which tells the owner.
+ * Added by hand, it still counts in the shop's books at the regular price
+ * (services/autoShopOrders.js).
  */
 router.post("/start", async (req, res, next) => {
     try {
@@ -180,6 +182,7 @@ router.post("/start", async (req, res, next) => {
                     ref: ownerRef,
                     webhookUrl,
                     webhookBotId,
+                    manual: true,
                 }),
             );
         }
@@ -191,6 +194,7 @@ router.post("/start", async (req, res, next) => {
                 ref: ownerRef,
                 webhookUrl,
                 webhookBotId,
+                manual: true,
             }),
         );
     } catch (err) {

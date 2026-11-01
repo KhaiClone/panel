@@ -299,6 +299,12 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
   Quest lẻ: đăng lúc đã trả tiền, mỗi quest một dòng ⏳→✅; quest tháng: 1 tin mỗi lượt chạy. Badge giữ mọi DM.
   Deco Gift không vào waiting-list của Shop nữa (Auto gửi link tin feed làm `statusUrl`). Log admin quest/badge và
   kênh staff Deco Gift giữ nguyên. Feed khách thấy: không tiền, không Nitro, không link gift.
+- **Đơn auto vào Orders** (2026-11-01): mọi đơn Auto Quest (lẻ + tháng) và Auto Badge — kể cả đơn thêm tay trên
+  /quests, /badges (tính **giá thường**, người mua = acc nếu không có ref) — là đơn Shop `arnto_N`, seller **KhaiDev**,
+  `source` autoQuest / autoQuestMonthly / autoBadge. Panel giữ sổ (`autoShopOrders.js`, outbox qua bus `order.record`),
+  Shop ghi im lặng (không waiting-list, không DM; role vẫn cấp khi hoàn tất). Tiền tính **lúc xong đơn** (tháng: lúc
+  trả); badge tịch thu = completed, hoàn/huỷ = cancelled. Đơn có `source` không Done/Cancel/Delete/Edit tay. Đơn cũ:
+  badge ghi đủ, quest tháng ước từ gói còn trên panel, **quest lẻ cũ bỏ** (không có giá).
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +
   nút Reload (1 lần/10 phút cho mọi người); Sent giữ 3 ngày.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.
