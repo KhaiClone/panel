@@ -294,6 +294,11 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Forms** (2026-10-27): trang Forms quản **toàn bộ** `/form` của ArnTo-assistant (nội dung, ô nhập, câu nhắc
   selfbot, role được xem, số ngày giữ); thông tin khách nhập chỉ nằm ở bot, không lên panel. Câu nhắc: assistant
   gửi `$rq <base64url>` rồi xoá, selfbot giải mã và gửi đúng câu đó. Settings (role xem, số ngày) = owner only.
+- **Feed đơn auto** (2026-11-01): Auto Quest, Auto Badge, Deco Gift = **1 tin mỗi đơn** trong một kênh chung,
+  sửa tại chỗ theo trạng thái, gửi bằng **webhook** của ArnTo-Auto (`ORDER_FEED_WEBHOOK_URL`), không phải bot đăng.
+  Quest lẻ: đăng lúc đã trả tiền, mỗi quest một dòng ⏳→✅; quest tháng: 1 tin mỗi lượt chạy. Badge giữ mọi DM.
+  Deco Gift không vào waiting-list của Shop nữa (Auto gửi link tin feed làm `statusUrl`). Log admin quest/badge và
+  kênh staff Deco Gift giữ nguyên. Feed khách thấy: không tiền, không Nitro, không link gift.
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +
   nút Reload (1 lần/10 phút cho mọi người); Sent giữ 3 ngày.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.

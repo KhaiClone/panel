@@ -102,10 +102,12 @@ const liveState = new Map();
 const webhooks = new Map();
 
 // Forward meaningful events to the account's webhook (arnto-auto → notify the buyer).
+// run_start lists every quest a run is about to do, once — arnto-auto posts them all
+// as waiting in its order feed and ticks each off on quest_done.
 function _dispatchWebhook(accountId, event) {
     const hook = webhooks.get(accountId);
     if (!hook?.url && !hook?.botId) return;
-    if (!["quest_start", "quest_done", "status", "removed"].includes(event.type)) return;
+    if (!["run_start", "quest_start", "quest_done", "status", "removed"].includes(event.type)) return;
     // Address and x-api-key follow the project that registered it (callbackService).
     callbacks.send(hook.url, hook.botId, {
         ...event,
@@ -487,13 +489,15 @@ async function _runLoop(accountId, completer, abort, record, attempt = 1) {
     // Pre-scan: enroll everything we intend to run, then show every quest that will
     // run as a "pending" card up front — so the panel loads the FULL set immediately
     // instead of one-by-one. Enroll is idempotent, so the loop below re-enrolling is
-    // harmless. quest_pending is not forwarded to the arnto webhook (see _dispatchWebhook).
+    // harmless. quest_pending is not forwarded to the arnto webhook (see _dispatchWebhook):
+    // the whole set goes there as one run_start instead.
     try {
         let scan = await completer.fetchQuests();
         if (scan.length && !abort.stopped) {
             if (mode === "select") await completer.enrollSelected([...selected]);
             else await completer.autoAccept(scan);
             scan = await completer.fetchQuests();
+            const queued = [];
             for (const q of scan) {
                 if (
                     isEnrolled(q) &&
@@ -510,8 +514,10 @@ async function _runLoop(accountId, completer, abort, record, attempt = 1) {
                         needed: s.needed,
                         media: s.media,
                     });
+                    queued.push({ questId: String(s.id), name: s.name, taskType: s.taskType ?? null });
                 }
             }
+            if (queued.length) _dispatchWebhook(accountId, { type: "run_start", quests: queued });
         }
     } catch {
         // A failed pre-scan is non-fatal — the main loop below re-fetches anyway.

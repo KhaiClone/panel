@@ -270,8 +270,11 @@ const EGRESS_RETRY_DELAY_SEC = 60;
  * One subscriber: enroll everything, then complete every quest. `retry` in the result:
  * the egress route died mid-run (`egressDown`) and `canRetry` allowed one more go —
  * nothing is recorded as failed, the caller runs the account again.
+ * arnto-auto hears run_start (every quest about to run), quest_done, then run_end —
+ * all with the pass's `runId`, so its order feed keeps one message per account per
+ * pass, and the run again after an egress retry lands in the same message.
  */
-async function _runAccount(rec, abort, { canRetry = false } = {}) {
+async function _runAccount(rec, abort, { canRetry = false, runId = null } = {}) {
     const token = _decrypt(rec);
     if (!token) {
         const failure = { status: "token_dead", error: "Could not decrypt the stored token (secret changed?)." };
@@ -286,6 +289,7 @@ async function _runAccount(rec, abort, { canRetry = false } = {}) {
     let completed = 0;
     let started = false;
     let retry = false;
+    let announced = false; // arnto-auto was told about this pass (run_start / quest_done)
     let failure = null; // { status, error } when this account's pass failed
     activeIds.set(rec.accountId, rec.username);
     try {
@@ -319,6 +323,7 @@ async function _runAccount(rec, abort, { canRetry = false } = {}) {
         if (scan.length) {
             await completer.autoAccept(scan);
             scan = await completer.fetchQuests();
+            const queued = [];
             for (const q of scan) {
                 if (isEnrolled(q) && !isCompleted(q) && isCompletable(q)) {
                     const s = summarizeQuest(q);
@@ -330,7 +335,12 @@ async function _runAccount(rec, abort, { canRetry = false } = {}) {
                         needed: s.needed,
                         media: s.media,
                     });
+                    queued.push({ questId: String(s.id), name: s.name, taskType: s.taskType ?? null });
                 }
+            }
+            if (queued.length) {
+                _webhook(rec, { type: "run_start", runId, quests: queued });
+                announced = true;
             }
         }
 
@@ -355,7 +365,8 @@ async function _runAccount(rec, abort, { canRetry = false } = {}) {
                 const r = await completer.processQuest(q);
                 if (r?.skipped) continue;
                 completed++;
-                _webhook(rec, { type: "quest_done", questName: getQuestName(q), taskType: getTaskType(q) });
+                _webhook(rec, { type: "quest_done", runId, questId: String(q.id), questName: getQuestName(q), taskType: getTaskType(q) });
+                announced = true;
             }
         }
         ok = true;
@@ -382,6 +393,12 @@ async function _runAccount(rec, abort, { canRetry = false } = {}) {
         // this account's pass is over, finished or stopped.
         if (failure) await _fail(rec, failure);
         else if (started) questService.emitExternalEvent(rec.accountId, { type: "status", status: "monthly", error: null });
+        // The pass is over for this account. Not when it will run again (retry: same
+        // runId), was stopped (the next pass starts a new message), or the token died
+        // (token_dead says so already).
+        if (announced && !retry && !abort.stopped && failure?.status !== "token_dead") {
+            _webhook(rec, { type: "run_end", runId, completed, ok: ok && !failure });
+        }
     }
     return { ok, completed, failure, retry };
 }
@@ -398,6 +415,8 @@ async function runBatch(abort = { stopped: false }, { accountIds = null, progres
 
     // Every account once; one whose egress route died is queued again at the end, once.
     const queue = accts.map((rec) => ({ rec, retried: false, notBefore: 0 }));
+    // Names this pass to arnto-auto (run_start / quest_done / run_end).
+    const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     let next = 0;
     const worker = async () => {
         while (!abort.stopped && next < queue.length) {
@@ -405,7 +424,7 @@ async function runBatch(abort = { stopped: false }, { accountIds = null, progres
             const { rec } = item;
             if (item.notBefore > Date.now()) await _gap((item.notBefore - Date.now()) / 1000, abort);
             if (abort.stopped) break;
-            const r = await _runAccount(rec, abort, { canRetry: !item.retried });
+            const r = await _runAccount(rec, abort, { canRetry: !item.retried, runId });
             progress.completed += r.completed;
             if (r.retry) {
                 queue.push({ rec, retried: true, notBefore: Date.now() + EGRESS_RETRY_DELAY_SEC * 1000 });
