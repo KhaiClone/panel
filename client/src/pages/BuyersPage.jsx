@@ -15,6 +15,28 @@ const STATUS = {
     cancelled: { label: "Cancelled", tone: "danger" },
 };
 const st = (s) => STATUS[s] || { label: s || "—", tone: "neutral" };
+
+// What the ranking can go by (server: buyerService SORTS); `money` ones need "See revenue".
+const SORTS = [
+    { key: "spent", label: "Spent", money: true },
+    { key: "completed", label: "Completed orders" },
+    { key: "orders", label: "All orders" },
+    { key: "average", label: "Average per order", money: true },
+    { key: "recent", label: "Latest order" },
+];
+const SELLERS = [
+    { id: "all", label: "All sellers" },
+    { id: "871329074046435338", label: "KhaiDev" },
+    { id: "427399742906040333", label: "ArnTo" },
+];
+const SOURCES = [
+    { key: "all", label: "All kinds" },
+    { key: "ticket", label: "Ticket orders" },
+    { key: "autoQuest", label: "Auto Quest" },
+    { key: "autoQuestMonthly", label: "Auto Quest monthly" },
+    { key: "autoBadge", label: "Auto Badge" },
+    { key: "decoGift", label: "Deco Gift" },
+];
 const day = (ts) => (ts ? new Date(ts).toLocaleDateString("en-GB") : "—");
 const plural = (n, word) => `${fmtNum(n)} ${word}${n === 1 ? "" : "s"}`;
 
@@ -121,7 +143,11 @@ function BuyerModal({ buyerId, onClose }) {
 
 export default function BuyersPage() {
     const [period, setPeriod] = useState("all"); // "all" | "2026" | "2026-10" | "2026-10-05_2026-10-20"
-    const periodRef = useRef(period);
+    // Ranking: { sort, seller, source, resellers }. sort null = the server's default
+    // (spend with "See revenue", completed orders without).
+    const [view, setView] = useState({ sort: null, seller: "all", source: "all", resellers: false });
+    const query = useRef({ period, ...view });
+    const seq = useRef(0);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -131,15 +157,19 @@ export default function BuyersPage() {
     const [openId, setOpenId] = useState(null);
 
     const load = useCallback(async () => {
+        const mine = ++seq.current;
+        const { period, sort, seller, source, resellers } = query.current;
         try {
-            const { data } = await api.get("/buyers", { params: { period: periodRef.current } });
-            // An answer for a period picked before the last click is dropped.
-            if (data.period === periodRef.current) setData(data);
+            const params = { period, seller, source, ...(sort ? { sort } : {}), ...(resellers ? { resellers: 1 } : {}) };
+            const { data } = await api.get("/buyers", { params });
+            // An answer to anything but the last request is dropped.
+            if (mine !== seq.current) return;
+            setData(data);
             setError("");
         } catch (err) {
-            setError(err.response?.data?.error || "Could not load the buyers");
+            if (mine === seq.current) setError(err.response?.data?.error || "Could not load the buyers");
         } finally {
-            setLoading(false);
+            if (mine === seq.current) setLoading(false);
         }
     }, []);
 
@@ -150,20 +180,36 @@ export default function BuyersPage() {
     }, [load]);
 
     const pickPeriod = (p) => {
-        periodRef.current = p;
+        query.current = { ...query.current, period: p };
         setPeriod(p);
+        load();
+    };
+    const pickView = (patch) => {
+        const next = { ...view, ...patch };
+        query.current = { ...query.current, ...next };
+        setView(next);
         load();
     };
 
     const buyers = data?.buyers || [];
     const q = search.trim().toLowerCase();
     const visible = q ? buyers.filter((b) => b.buyerId.includes(q) || b.tag?.toLowerCase().includes(q)) : buyers;
-    useEffect(() => { setPage(1); }, [search, pageSize, period]);
+    useEffect(() => { setPage(1); }, [search, pageSize, period, view]);
     const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
     const safePage = Math.min(page, totalPages);
     const paged = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
-    const stale = data && data.period !== period;
+    // The figures on screen answer an earlier choice until the new answer comes.
+    const stale =
+        data &&
+        (data.period !== period ||
+            (view.sort && data.sort !== view.sort) ||
+            (data.seller || "all") !== view.seller ||
+            (data.source || "all") !== view.source ||
+            !!data.resellers !== view.resellers);
     const showMoney = !!data?.money;
+    const sorts = SORTS.filter((s) => showMoney || !s.money);
+    const sortKey = view.sort || data?.sort || (showMoney ? "spent" : "completed");
+    const filtered = view.seller !== "all" || view.source !== "all" || view.resellers;
 
     return (
         <div className="fade-in page" style={{ maxWidth: 1400, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -192,10 +238,29 @@ export default function BuyersPage() {
                 </div>
             )}
 
+            {/* The ranking: what it goes by, and which orders count. Seller and kind
+                change the numbers themselves, not just the order of the rows. */}
+            <div className="toolbar">
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-dim)" }}>
+                    Rank by
+                    <select className="input" style={{ width: "auto" }} value={sortKey} onChange={(e) => pickView({ sort: e.target.value })} aria-label="Rank by">
+                        {sorts.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                    </select>
+                </label>
+                <select className="input" style={{ width: "auto" }} value={view.seller} onChange={(e) => pickView({ seller: e.target.value })} aria-label="Seller">
+                    {SELLERS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+                <select className="input" style={{ width: "auto" }} value={view.source} onChange={(e) => pickView({ source: e.target.value })} aria-label="Kind of order">
+                    {SOURCES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+                <button type="button" className={`chip ${view.resellers ? "active" : ""}`} aria-pressed={view.resellers} onClick={() => pickView({ resellers: !view.resellers })}>
+                    Resellers only
+                </button>
+            </div>
             <div className="toolbar">
                 <SearchInput value={search} onChange={setSearch} placeholder="Search buyer or Discord ID…" style={{ flex: "1 1 220px", maxWidth: 340 }} />
                 <span className="toolbar-count">
-                    {visible.length} / {buyers.length} · ranked by {showMoney ? "spend" : "completed orders"}
+                    {visible.length} / {buyers.length} · ranked by {(SORTS.find((s) => s.key === (data?.sort || sortKey))?.label || "").toLowerCase()}
                 </span>
             </div>
 
@@ -204,8 +269,8 @@ export default function BuyersPage() {
             ) : visible.length === 0 ? (
                 <EmptyState
                     icon="users"
-                    title={buyers.length ? "No buyer matches" : "No buyers in this period"}
-                    description={buyers.length ? "Try another name or ID." : "Pick another month, year or range."}
+                    title={buyers.length ? "No buyer matches" : filtered ? "No buyers with these filters" : "No buyers in this period"}
+                    description={buyers.length ? "Try another name or ID." : filtered ? "Try another seller, kind of order or period." : "Pick another month, year or range."}
                 />
             ) : (
                 <div className="card" style={{ padding: 0, overflow: "hidden", opacity: stale ? 0.55 : 1, transition: "opacity .15s" }}>
@@ -219,7 +284,7 @@ export default function BuyersPage() {
                             { label: "Pending", align: "right" },
                             { label: "Completed", align: "right" },
                             { label: "Cancelled", align: "right" },
-                            ...(showMoney ? [{ label: "Spent", align: "right" }] : []),
+                            ...(showMoney ? [{ label: "Spent", align: "right" }, { label: "Avg / order", align: "right" }] : []),
                             "Last order",
                             "",
                         ]}
@@ -235,6 +300,7 @@ export default function BuyersPage() {
                                 <td className="mono num">{fmtNum(b.completed)}</td>
                                 <td className="mono num">{fmtNum(b.cancelled)}</td>
                                 {showMoney && <td className="mono num">{money(b.spent)}</td>}
+                                {showMoney && <td className="mono num">{b.completed ? money(b.average) : "—"}</td>}
                                 <td className="muted nowrap">{day(b.lastOrder)}</td>
                                 <td className="actions">
                                     <button

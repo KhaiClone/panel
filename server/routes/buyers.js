@@ -7,10 +7,16 @@ const { hasGrant } = require("../middleware/auth");
 // Amounts go only to the owner and staff holding "orders.revenue" (the Orders
 // page's "See revenue"): the buyers' spend is the shop's income again.
 
-/** GET /api/buyers?period=2026-10 | 2026 | all | 2026-10-05_2026-10-20 — buyers in that period, ranked */
+/**
+ * GET /api/buyers?period=2026-10 | 2026 | all | 2026-10-05_2026-10-20
+ *   &sort=spent|completed|orders|average|recent &seller=<id>|all
+ *   &source=ticket|autoQuest|autoQuestMonthly|autoBadge|decoGift|all &resellers=1
+ * — buyers in that period, ranked.
+ */
 router.get("/", async (req, res, next) => {
     try {
-        res.json(await buyerService.list({ period: req.query.period, money: hasGrant(req.auth, "orders.revenue") }));
+        const { period, sort, seller, source, resellers } = req.query;
+        res.json(await buyerService.list({ period, sort, seller, source, resellers, money: hasGrant(req.auth, "orders.revenue") }));
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);

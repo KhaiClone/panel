@@ -184,6 +184,9 @@ const row = (list, id) => list.buyers.find((b) => b.buyerId === id);
             assert.ok(!JSON.stringify(staff.body).includes("revenue") && !JSON.stringify(staff.body).includes("spent"));
             const one = await get(`/api/buyers/${B}`);
             assert.ok(!JSON.stringify(one.body).includes("price"));
+            assert.strictEqual((await get("/api/buyers?sort=spent")).status, 403);
+            const recent = await get(`/api/buyers?sort=recent&seller=${KHAIDEV}&source=ticket`);
+            assert.deepStrictEqual([recent.status, recent.body.sort, recent.body.seller, recent.body.source], [200, "recent", KHAIDEV, "ticket"]);
 
             auth = { kind: "staff", grants: ["orders.revenue"] };
             assert.strictEqual((await get("/api/buyers?period=all")).body.totals.revenue, 664_000);
@@ -191,6 +194,53 @@ const row = (list, id) => list.buyers.find((b) => b.buyerId === id);
         } finally {
             server.close();
         }
+    });
+
+    console.log("ranking choices and filters");
+
+    await test("rank by all orders, average per completed order or latest order", async () => {
+        const by = async (sort, money = true) => (await buyerService.list({ period: "all", sort, money })).buyers.map((b) => b.buyerId);
+        assert.deepStrictEqual(await by("orders"), [C, A, B]); // A and C have 4 orders: C completed more
+        assert.deepStrictEqual(await by("average"), [B, A, C]);
+        assert.deepStrictEqual(await by("recent"), [C, A, B]);
+        assert.deepStrictEqual(await by("completed"), [C, A, B]);
+        const avg = await buyerService.list({ period: "all", sort: "average", money: true });
+        assert.strictEqual(row(avg, A).average, 53_333);
+        assert.strictEqual(avg.sort, "average");
+        assert.deepStrictEqual(await by("orders", false), [C, A, B]);
+    });
+
+    await test("a ranking by money needs money; an unknown sort, seller or kind is 400", async () => {
+        await assert.rejects(buyerService.list({ period: "all", sort: "spent" }), (e) => e.status === 403);
+        await assert.rejects(buyerService.list({ period: "all", sort: "average" }), (e) => e.status === 403);
+        await assert.rejects(buyerService.list({ period: "all", sort: "loudest", money: true }), (e) => e.status === 400);
+        await assert.rejects(buyerService.list({ period: "all", seller: "123", money: true }), (e) => e.status === 400);
+        await assert.rejects(buyerService.list({ period: "all", source: "robux", money: true }), (e) => e.status === 400);
+    });
+
+    await test("one seller: only that seller's orders count, totals too", async () => {
+        const k = await buyerService.list({ period: "all", seller: KHAIDEV, money: true });
+        assert.deepStrictEqual(k.buyers.map((b) => [b.buyerId, b.spent, b.total]), [[B, 500_000, 1], [A, 50_000, 1]]);
+        assert.deepStrictEqual(k.totals, { buyers: 2, orders: 2, pending: 0, completed: 2, cancelled: 0, revenue: 550_000 });
+        assert.strictEqual(k.seller, KHAIDEV);
+    });
+
+    await test("one kind of order: ticket orders (no source) or one auto kind", async () => {
+        const D = "700000000000000004";
+        sharedStore.run("orders", "create", { data: order(D, vn(2025, 11, 10), "completed", 100_000) }, SHOP);
+        sharedStore.run("orders", "create", { data: { ...order(D, vn(2025, 11, 11), "completed", 50_000), source: "autoBadge" } }, SHOP);
+        const badge = await buyerService.list({ period: "all", source: "autoBadge", money: true });
+        assert.deepStrictEqual(badge.buyers.map((b) => [b.buyerId, b.spent]), [[D, 50_000]]);
+        const ticket = await buyerService.list({ period: "all", source: "ticket", money: true });
+        assert.strictEqual(row(ticket, D).spent, 100_000);
+        assert.strictEqual(ticket.totals.orders, 11);
+    });
+
+    await test("resellers only: just the active resellers, ranked among themselves", async () => {
+        const r = await buyerService.list({ period: "all", resellers: "1", money: true });
+        assert.deepStrictEqual(r.buyers.map((b) => [b.buyerId, b.rank]), [[C, 1]]);
+        assert.deepStrictEqual(r.totals, { buyers: 1, orders: 4, pending: 0, completed: 4, cancelled: 0, revenue: 4_000 });
+        assert.strictEqual(r.resellers, true);
     });
 
     console.log(failures ? `\n${failures} failing` : "\nall passed");
