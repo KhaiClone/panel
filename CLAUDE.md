@@ -309,6 +309,11 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
   (giờ VN, đơn tính theo ngày đặt). Số liệu tính từ `orders` trên panel (giống Orders), **không** từ `buyers` của Shop.
   Trang staff riêng `buyers`; tiền chỉ hiện với owner/staff có "See revenue" (`orders.revenue`), không có thì xếp
   hạng theo số đơn hoàn tất và không gửi số tiền nào.
+- **Transcripts** (2026-11-02): trang /transcripts = danh mục kênh transcript của Shop để tìm (số ticket, khách, lý do,
+  mã đơn, kỳ theo ngày đóng). File **ở nguyên trên Discord**; panel chỉ giữ danh mục, không lưu chat. Mở file **qua bus
+  Shop** (`transcript.get`, kết quả sealed) — người dùng chọn cách này thay vì cho bot panel vào server shop. Panel
+  stream các mảnh gzip cho trình duyệt, trang xem chạy với CSP `sandbox` (origin null), URL mang vé xem 15 phút
+  (không bao giờ là token đăng nhập).
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +
   nút Reload (1 lần/10 phút cho mọi người); Sent giữ 3 ngày.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.
