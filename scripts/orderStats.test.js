@@ -158,6 +158,19 @@ const test = async (name, fn) => {
         }
     });
 
+    await test("a range of days: both ends included, Vietnam time, no breakdown", async () => {
+        // 30 Sep (its 23:30 order) to 15 Oct: the September order, 1 Oct 00:30 and the 15 Oct one.
+        const r = await orderService.getStats({ period: "2025-09-30_2025-10-15" });
+        assert.deepStrictEqual([r.period, r.total, r.completed, r.cancelled, r.revenue], ["2025-09-30_2025-10-15", 3, 2, 1, 300_000]);
+        assert.deepStrictEqual(r.breakdown, []);
+        // One day: 31 Dec until midnight Vietnam time, not the 1 Jan 00:10 order.
+        const eve = await orderService.getStats({ period: "2025-12-31_2025-12-31" });
+        assert.deepStrictEqual([eve.total, eve.revenue, eve.bySeller[KHAIDEV].revenue], [1, 300_000, 300_000]);
+        for (const period of ["2025-10-15_2025-10-01", "2025-02-30_2025-03-01"]) {
+            await assert.rejects(orderService.getStats({ period }), (err) => err.status === 400);
+        }
+    });
+
     await test("withoutRevenue strips the breakdown rows too", async () => {
         const stripped = orderService.withoutRevenue(await orderService.getStats({ period: "2025" }));
         assert.ok(!JSON.stringify(stripped).includes("revenue"), JSON.stringify(stripped));

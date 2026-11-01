@@ -20,6 +20,7 @@ export const periodName = (p) => {
 export const modeOf = (p) => (p === "all" ? "all" : isRange(p) ? "range" : p.length === 4 ? "year" : "month");
 
 const MODES = [["month", "Month"], ["year", "Year"], ["all", "All time"]];
+const DAY_INPUT = { width: "auto", paddingTop: 6, paddingBottom: 6 };
 
 /**
  * Month / Year / All time, stepping through `months` (newest first) — plus
@@ -43,15 +44,10 @@ export default function PeriodPicker({ period, months, onChange, allowRange = fa
     // A day typed past the other end moves that end along, so the range stays valid.
     const setFrom = (d) => d && onChange(`${d}_${d > to ? d : to}`);
     const setTo = (d) => d && onChange(`${d < from ? d : from}_${d}`);
+    // The tabs come last, against the right edge, so they stay put whatever the
+    // mode: the month / year stepper or the two days open on their left.
     return (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <div className="tab-bar">
-                {(allowRange ? [...MODES, ["range", "Custom"]] : MODES).map(([k, label]) => (
-                    <button key={k} className={`tab-item ${mode === k ? "active" : ""}`} onClick={() => switchTo(k)}>
-                        {label}
-                    </button>
-                ))}
-            </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
             {(mode === "month" || mode === "year") && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <button className="btn-ghost btn-icon btn-sm" title={`Previous ${mode}`} disabled={i < 0 || i >= list.length - 1} onClick={() => onChange(list[i + 1])}>
@@ -66,12 +62,21 @@ export default function PeriodPicker({ period, months, onChange, allowRange = fa
                 </div>
             )}
             {mode === "range" && (
+                // A date field is ~4px taller than a select with the same padding;
+                // trimmed so the row — and the tabs — keep the same height.
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <input type="date" className="input" style={{ width: "auto" }} value={from} max={vnToday()} onChange={(e) => setFrom(e.target.value)} aria-label="From" />
+                    <input type="date" className="input" style={DAY_INPUT} value={from} max={vnToday()} onChange={(e) => setFrom(e.target.value)} aria-label="From" />
                     <span style={{ color: "var(--text-dim)", fontSize: 12 }}>to</span>
-                    <input type="date" className="input" style={{ width: "auto" }} value={to} max={vnToday()} onChange={(e) => setTo(e.target.value)} aria-label="To" />
+                    <input type="date" className="input" style={DAY_INPUT} value={to} max={vnToday()} onChange={(e) => setTo(e.target.value)} aria-label="To" />
                 </div>
             )}
+            <div className="tab-bar">
+                {(allowRange ? [...MODES, ["range", "Custom"]] : MODES).map(([k, label]) => (
+                    <button key={k} className={`tab-item ${mode === k ? "active" : ""}`} onClick={() => switchTo(k)}>
+                        {label}
+                    </button>
+                ))}
+            </div>
         </div>
     );
 }

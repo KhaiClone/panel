@@ -108,14 +108,17 @@ const listOrders = async ({ status, sellerId } = {}) => {
 };
 
 // ── Statistics by period ─────────────────────────────────────────────────────
-// A period is a month ("2026-10"), a year ("2026") or all time (null). Months
-// and years are Vietnam's (UTC+7) whatever the node's clock says, like the
-// shop's /thongke and its report on the 1st: an order placed at 00:30 on the
-// 1st belongs to the new month. An order counts in the period it was PLACED in,
-// with its status of today — revenue is its completed orders, as on Discord.
+// A period is a month ("2026-10"), a year ("2026"), all time (null) or a range
+// of days ("2026-10-05_2026-10-20", both ends included). Months, years and days
+// are Vietnam's (UTC+7) whatever the node's clock says, like the shop's /thongke
+// and its report on the 1st: an order placed at 00:30 on the 1st belongs to the
+// new month. An order counts in the period it was PLACED in, with its status of
+// today — revenue is its completed orders, as on Discord.
 
 const VN_OFFSET = 7 * 3600_000;
+const DAY = 86_400_000;
 const PERIOD = /^\d{4}(-(0[1-9]|1[0-2]))?$/;
+const RANGE = /^(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})$/;
 
 /** "YYYY-MM" of a timestamp, in Vietnam; null for an order without a date. */
 const monthOf = (ts) => {
@@ -130,6 +133,35 @@ const periodArg = (v) => {
 };
 
 const inPeriod = (order, period) => !period || (monthOf(order.orderDate) || "").startsWith(period);
+
+/** Midnight starting a Vietnam calendar day ("2026-10-05"), in ms; NaN if no such day. */
+const vnDayStart = (day) => {
+    const ms = Date.parse(`${day}T00:00:00Z`);
+    return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === day ? ms - VN_OFFSET : NaN;
+};
+
+/**
+ * Any period above → { key, range, has(order) }: `key` is the period as given
+ * ("all" for all time), `range` whether it is a range of days.
+ */
+const periodOf = (v) => {
+    const m = String(v ?? "").match(RANGE);
+    if (m) {
+        const from = vnDayStart(m[1]);
+        const to = vnDayStart(m[2]);
+        if (!Number.isFinite(from) || !Number.isFinite(to)) throw Object.assign(new Error("The range has a day that does not exist"), { status: 400 });
+        if (from > to) throw Object.assign(new Error("The range ends before it starts"), { status: 400 });
+        const end = to + DAY;
+        return { key: `${m[1]}_${m[2]}`, range: true, has: (o) => Number(o.orderDate) >= from && Number(o.orderDate) < end };
+    }
+    let p;
+    try {
+        p = periodArg(v);
+    } catch {
+        throw Object.assign(new Error('period must be "all", a year like 2026, a month like 2026-10 or a range like 2026-10-05_2026-10-20'), { status: 400 });
+    }
+    return { key: p || "all", range: false, has: (o) => inPeriod(o, p) };
+};
 
 /** Every month from the first order's to this one, newest first — what the page can pick. */
 const monthsSince = (orders) => {
@@ -150,7 +182,7 @@ const monthsSince = (orders) => {
 /**
  * The period cut one level finer, oldest first: a year by month, all time by
  * year. Rows run from the first order to today — no empty future months. A month
- * has none: the page lists its orders.
+ * and a range of days have none: the page lists their orders.
  */
 const breakdownOf = (orders, period, months) => {
     if (period?.length === 7) return [];
@@ -171,13 +203,14 @@ const breakdownOf = (orders, period, months) => {
  */
 const getStats = async ({ period } = {}) => {
     requirePanel();
-    const p = periodArg(period);
+    const p = periodOf(period);
+    const key = p.key === "all" ? null : p.key;
     const all = sharedStore.run("orders", "get");
-    const orders = all.filter((o) => inPeriod(o, p));
+    const orders = all.filter(p.has);
     const months = monthsSince(all);
     const bySeller = {};
     for (const [id, name] of Object.entries(SELLERS)) bySeller[id] = { name, ...statsFor(orders.filter((o) => o.sellerId === id)) };
-    return { ...statsFor(orders), bySeller, period: p, months, breakdown: breakdownOf(orders, p, months) };
+    return { ...statsFor(orders), bySeller, period: key, months, breakdown: p.range ? [] : breakdownOf(orders, key, months) };
 };
 
 /** getStats() for someone not allowed the shop's income: the counts, no revenue. */
@@ -255,6 +288,7 @@ module.exports = {
     monthsSince,
     periodArg,
     inPeriod,
+    periodOf,
     statsFor,
     listOrders,
     getStats,

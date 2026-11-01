@@ -24,42 +24,13 @@ const resellers = require("./resellerService");
 //  resellers. A ranking by spend or average needs the money too.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DAY = 86_400_000;
-const VN_OFFSET = 7 * 3600_000;
-const RANGE = /^(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})$/;
 const SNOWFLAKE = /^\d{17,20}$/;
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
-/** Midnight starting a Vietnam calendar day ("2026-10-05"), in ms; NaN if no such day. */
-const vnDayStart = (day) => {
-    const ms = Date.parse(`${day}T00:00:00Z`);
-    return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === day ? ms - VN_OFFSET : NaN;
-};
-
-/**
- * A period: "2026-10" | "2026" | "all" (as the Orders page), or a range of
- * Vietnam days "2026-10-05_2026-10-20", both ends included.
- * → { key, has(order) }
- */
-const periodOf = (v) => {
-    const range = String(v ?? "").match(RANGE);
-    if (range) {
-        const from = vnDayStart(range[1]);
-        const to = vnDayStart(range[2]);
-        if (!Number.isFinite(from) || !Number.isFinite(to)) throw httpError(400, "The range has a day that does not exist");
-        if (from > to) throw httpError(400, "The range ends before it starts");
-        const end = to + DAY;
-        return { key: `${range[1]}_${range[2]}`, has: (o) => Number(o.orderDate) >= from && Number(o.orderDate) < end };
-    }
-    let p;
-    try {
-        p = orderService.periodArg(v);
-    } catch {
-        throw httpError(400, 'period must be "all", a year like 2026, a month like 2026-10 or a range like 2026-10-05_2026-10-20');
-    }
-    return { key: p || "all", has: (o) => orderService.inPeriod(o, p) };
-};
+// A period: "2026-10" | "2026" | "all" or a range of Vietnam days
+// "2026-10-05_2026-10-20" — the Orders page's own (orderService.periodOf).
+const { periodOf } = orderService;
 
 // ── Totals per buyer ─────────────────────────────────────────────────────────
 

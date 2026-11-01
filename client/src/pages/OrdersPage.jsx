@@ -3,7 +3,8 @@ import api from "../api/client";
 import { useAuth, usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import DecoGiftOrderModal from "../components/DecoGiftOrderModal";
-// Statistics periods ("2026-10", "2026", "all"), Vietnam's months — shared with the Buyers page.
+// Statistics periods ("2026-10", "2026", "all", or a range of days "2026-10-05_2026-10-20"),
+// Vietnam's — shared with the Buyers page.
 import PeriodPicker, { thisMonth, monthName, periodName } from "../components/PeriodPicker";
 import { DataTable, EmptyState, Icon, Modal, Notice, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
 import { fmtNum, money } from "../utils/format";
@@ -78,7 +79,6 @@ function SellerCard({ data }) {
     );
 }
 
-/** Month / Year / All time, and which one. `months` = every month with a figure, newest first. */
 /** A year by month, or all time by year. A row opens that month / year. */
 function Breakdown({ rows, period, onPick }) {
     const byMonth = period !== "all";
@@ -220,7 +220,7 @@ export default function OrdersPage() {
     const [newDecoGift, setNewDecoGift] = useState(false);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(50);
-    const [period, setPeriod] = useState(thisMonth); // statistics: "2026-10" | "2026" | "all"
+    const [period, setPeriod] = useState(thisMonth); // statistics: "2026-10" | "2026" | "all" | "2026-10-05_2026-10-20"
     const periodRef = useRef(period);
     const [openId, setOpenId] = useState(null); // order shown in the details dialog
 
@@ -320,7 +320,7 @@ export default function OrdersPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 20, opacity: statsStale ? 0.55 : 1, transition: "opacity .15s" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                         <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>{periodName(period)}</h2>
-                        <PeriodPicker period={period} months={stats.months || [thisMonth()]} onChange={pickPeriod} />
+                        <PeriodPicker period={period} months={stats.months || [thisMonth()]} onChange={pickPeriod} allowRange />
                     </div>
 
                     {/* Revenue takes two columns: a year's or all time's amount
