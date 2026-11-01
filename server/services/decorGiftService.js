@@ -10,8 +10,11 @@ const resellers = require("./resellerService");
 //
 //    catalog   decors sold as Gift, priced like the decor site — read from the
 //              assistant's shared data (the panel may read every name)
-//    create    after payment: ArnTo-Shop opens a real order (arnto_N) in its
-//              waiting list, the way /new does — bus "order.create"
+//    create    after payment: ArnTo-Shop opens a real order (arnto_N) the way
+//              /new does — bus "order.create". ArnTo-Auto shows the order in its
+//              own order feed and sends that message's link (statusUrl): the
+//              shop then posts nothing in its waiting list and points the
+//              buyer's DMs there. Without one, the waiting list as before.
 //    deliver   ArnTo-assistant DMs the gift links — bus "decor.gift.deliver",
 //              SEALED so the links never sit readable in the channel or the
 //              outbox — then the shop completes the order ("order.complete")
@@ -27,6 +30,7 @@ const MAX_ITEMS = 5;
 const BUS_TIMEOUT = 45_000;
 const GIFT_LINK = /^https:\/\/discord\.gift\/[A-Za-z0-9]{8,32}$/;
 const SNOWFLAKE = /^\d{17,20}$/;
+const MESSAGE_LINK = /^https:\/\/discord\.com\/channels\/\d{17,20}\/\d{17,20}\/\d{17,20}$/;
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
@@ -146,13 +150,16 @@ const already = (err, state) => new RegExp(`already ${state}`, "i").test(String(
 
 /**
  * After payment: the shop opens the order. Idempotent on paymentId — a retry
- * after a timeout gets the order the first attempt made.
- * → { orderId, messageId, waitingUrl }
+ * after a timeout gets the order the first attempt made. `statusUrl`: the
+ * seller's own message for the order (ArnTo-Auto's order feed) — the shop's
+ * waiting list stays out of it.
+ * → { orderId, messageId, waitingUrl }   (waitingUrl = statusUrl when given)
  */
-const createOrder = async ({ paymentId, buyerId, sellerId, items, total } = {}) => {
+const createOrder = async ({ paymentId, buyerId, sellerId, items, total, statusUrl } = {}) => {
     if (!paymentId || typeof paymentId !== "string") throw httpError(400, "paymentId is required");
     if (!SNOWFLAKE.test(String(buyerId || ""))) throw httpError(400, "buyerId is required");
     if (!SNOWFLAKE.test(String(sellerId || ""))) throw httpError(400, "sellerId is required");
+    if (statusUrl && !MESSAGE_LINK.test(String(statusUrl))) throw httpError(400, "statusUrl must be a Discord message link");
     const clean = cleanItems(items);
     const price = Number(total);
     if (!(price > 0)) throw httpError(400, "total must be a positive number");
@@ -161,7 +168,16 @@ const createOrder = async ({ paymentId, buyerId, sellerId, items, total } = {}) 
     const order = await discordBus.request(
         shop("order.create"),
         "order.create",
-        { externalId: paymentId, source: SOURCE, sellerId: String(sellerId), buyerId: String(buyerId), name, price, items: clean },
+        {
+            externalId: paymentId,
+            source: SOURCE,
+            sellerId: String(sellerId),
+            buyerId: String(buyerId),
+            name,
+            price,
+            items: clean,
+            ...(statusUrl ? { statusUrl: String(statusUrl) } : {}),
+        },
         { timeoutMs: BUS_TIMEOUT },
     );
     return { orderId: order?.orderId, messageId: order?.messageId || null, waitingUrl: order?.waitingUrl || null };

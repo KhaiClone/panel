@@ -87,9 +87,10 @@ function Result({ result, buyer, onAgain, onClose }) {
                         <Icon name="gift" size={14} /> Staff card
                     </a>
                 )}
+                {/* ArnTo-Auto's order feed message (the shop's waiting list for orders opened before it) */}
                 {result.waitingUrl && (
                     <a className="btn-ghost btn-sm" href={result.waitingUrl} target="_blank" rel="noreferrer">
-                        Waiting list
+                        Order post
                     </a>
                 )}
             </div>
