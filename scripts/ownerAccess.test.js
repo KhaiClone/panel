@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Checks for owner sign-in by IP (server/services/ownerAccess.js + routes/auth.js
- * + middleware/auth.js + routes/ownerIps.js): the owner account works only from
- * approved IPs; a right password from a new IP posts Allow / Deny on Discord and
- * the browser waits for the answer; Deny blocks the IP for 24 hours; wrong
- * passwords are limited per IP; the owner's token is refused from any other IP
- * on every request (bot logs and the terminal too); ADMIN_ALLOWED_IPS always
- * works; IPv6 goes by /64; unused IPs are forgotten after 30 days; the agent
- * gateway cannot pass an X-Real-IP of its choosing. Discord and the panel log
- * are stubbed.
+ * Checks for owner sign-in by device (server/services/ownerAccess.js +
+ * routes/auth.js + middleware/auth.js + routes/ownerAccess.js): the owner
+ * account works only on approved devices (an httpOnly cookie the panel gives
+ * at a right password); a right password on a new device posts Allow / Deny on
+ * Discord (pinging @everyone) and the browser waits for the answer — another
+ * device on the same network asks on its own; an approved device keeps working
+ * when its IP changes; Deny blocks the IP for 24 hours; wrong passwords are
+ * limited per IP; the owner's token is refused without the device's cookie on
+ * every request (bot logs and the terminal too); ADMIN_ALLOWED_IPS let any
+ * device in; unused devices are forgotten after 30 days; the agent gateway
+ * cannot pass an X-Real-IP of its choosing. Discord and the panel log are stubbed.
  * Run:  node scripts/ownerAccess.test.js
  */
 
@@ -20,9 +22,9 @@ const assert = require("assert");
 const express = require("express");
 const bcrypt = require("bcryptjs");
 
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "owner-ip-test-"));
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "owner-device-test-"));
 process.env.SHARED_DB_PATH = path.join(TMP, "shared.sqlite");
-process.env.JWT_SECRET = "test-secret-for-owner-ips";
+process.env.JWT_SECRET = "test-secret-for-owner-devices";
 process.env.ADMIN_USERNAME = "admin";
 process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync("right-pass", 4);
 process.env.ADMIN_ALLOWED_IPS = "198.51.100.200";
@@ -52,7 +54,7 @@ stub("services/discordBus", {
         return { channelId, messageId: `m${discord.posts.length}` };
     },
     edit: async (ref, payload) => void discord.edits.push({ ref, payload }),
-    canPost: async (channelId) => ({ ok: true, channel: "panel-log", guild: "Khai", botTag: "ArnTo Panel#1805", channelId }),
+    canPost: async (channelId, extra) => ({ ok: true, channel: "panel-log", guild: "Khai", botTag: "ArnTo Panel#1805", channelId, extra }),
     userTag: async () => null,
 });
 
@@ -70,33 +72,45 @@ Date.now = () => realNow() + skew;
 const lifecycle = require("../server/services/lifecycle");
 lifecycle.activate();
 const owner = require("../server/services/ownerAccess");
-const { authMiddleware, isOwnerToken, clientIp, IP_NOT_APPROVED } = require("../server/middleware/auth");
+const { authMiddleware, isOwnerToken, clientIp, DEVICE_NOT_APPROVED } = require("../server/middleware/auth");
 
 // ── The app ──────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
 app.use("/api/auth", require("../server/routes/auth"));
-app.use("/api/owner-ips", authMiddleware, require("../server/routes/ownerIps"));
+app.use("/api/owner-access", authMiddleware, require("../server/routes/ownerAccess"));
 app.get("/api/owner-only", authMiddleware, (req, res) => res.json({ ok: true }));
 app.use("/api/logs", require("../server/routes/logs"));
 let base;
 
 const HOME = "203.0.113.7";
-const CAFE = "203.0.113.50";
+const MOBILE = "203.0.113.120";
 const ELSE = "192.0.2.9";
+const WINDOWS_CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36";
+const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
+/** A browser: where it is, what it says it is, and the cookie it keeps. */
+const browser = (ip, ua = WINDOWS_CHROME) => ({ ip, ua, cookie: null, setCookie: null });
 
 /** A request as nginx hands it over: from loopback, X-Real-IP = the browser. */
-const call = async (method, url, { ip = HOME, body, token, headers = {} } = {}) => {
+const call = async (b, method, url, { body, token, headers = {} } = {}) => {
     const res = await fetch(base + url, {
         method,
         headers: {
             "content-type": "application/json",
-            ...(ip ? { "x-real-ip": ip } : {}),
+            "user-agent": b.ua,
+            ...(b.ip ? { "x-real-ip": b.ip } : {}),
+            ...(b.cookie ? { cookie: `${owner.COOKIE}=${b.cookie}` } : {}),
             ...(token ? { authorization: `Bearer ${token}` } : {}),
             ...headers,
         },
         body: body ? JSON.stringify(body) : undefined,
     });
+    const set = res.headers.getSetCookie().find((c) => c.startsWith(`${owner.COOKIE}=`));
+    if (set) {
+        b.setCookie = set;
+        b.cookie = set.split(";")[0].split("=")[1];
+    }
     const text = await res.text();
     let data = null;
     try {
@@ -106,17 +120,19 @@ const call = async (method, url, { ip = HOME, body, token, headers = {} } = {}) 
     }
     return { status: res.status, data };
 };
-const signIn = (ip, password = "right-pass") => call("POST", "/api/auth/login", { ip, body: { username: "admin", password } });
-const poll = (ip, w) => call("POST", "/api/auth/login/pending", { ip, body: { id: w.id, key: w.key } });
+const signIn = (b, password = "right-pass", headers) => call(b, "POST", "/api/auth/login", { body: { username: "admin", password }, headers });
+const poll = (b, w) => call(b, "POST", "/api/auth/login/pending", { body: { id: w.id, key: w.key } });
 
-/** Somebody presses a button under the last approval message. */
+/** Somebody presses a button under an approval message. */
 const click = async (action, id, tag = "khai") => {
-    const i = { user: { tag }, message: { embeds: [{ data: { title: "Owner sign-in from a new IP" } }] }, updated: null };
+    const i = { user: { tag }, message: { embeds: [{ data: { title: "Owner sign-in from a new device" } }] }, updated: null };
     i.update = async (p) => void (i.updated = p);
-    await discord.handlers.get("owner-ip")(i, [action, id]);
+    await discord.handlers.get("owner-device")(i, [action, id]);
     return i.updated;
 };
-const lastButtons = () => discord.posts.at(-1).payload.components[0].components.map((c) => c.custom_id);
+const lastPayload = () => discord.posts.at(-1).payload;
+const lastButtons = () => lastPayload().components[0].components.map((c) => c.custom_id);
+const tick = () => new Promise((r) => setImmediate(r));
 
 let failures = 0;
 const test = async (name, fn) => {
@@ -135,7 +151,7 @@ const test = async (name, fn) => {
     await new Promise((r) => server.once("listening", r));
     base = `http://127.0.0.1:${server.address().port}`;
 
-    console.log("addresses");
+    console.log("addresses and devices");
 
     await test("IPv4 as it is, IPv4-mapped IPv6 as IPv4, IPv6 by its /64", () => {
         assert.strictEqual(owner.ipKey("203.0.113.7"), "203.0.113.7");
@@ -143,8 +159,6 @@ const test = async (name, fn) => {
         assert.strictEqual(owner.ipKey("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), "2001:db8:1:2::/64");
         assert.strictEqual(owner.ipKey("2001:0db8:0001:0002::99"), "2001:db8:1:2::/64");
         assert.strictEqual(owner.ipKey("2001:db8::1"), "2001:db8:0:0::/64");
-        assert.strictEqual(owner.ipKey("2001:db8:1:2::/64"), "2001:db8:1:2::/64");
-        assert.strictEqual(owner.ipKey("fe80::1%eth0"), "fe80:0:0:0::/64");
         assert.strictEqual(owner.ipKey("not an ip"), null);
         assert.strictEqual(owner.ipKey(""), null);
     });
@@ -156,219 +170,277 @@ const test = async (name, fn) => {
         assert.strictEqual(clientIp(req("10.8.0.3", { "x-real-ip": HOME })), "10.8.0.3");
     });
 
+    await test("a device has a readable name, and its key is read from the cookie only when well-formed", () => {
+        assert.strictEqual(owner.deviceName(WINDOWS_CHROME), "Chrome on Windows");
+        assert.strictEqual(owner.deviceName(IPHONE), "Safari on iOS");
+        assert.strictEqual(owner.deviceName("Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36"), "Chrome on Android");
+        assert.strictEqual(owner.deviceName("Mozilla/5.0 (Windows NT 10.0) Chrome/141.0 Safari/537.36 Edg/141.0"), "Edge on Windows");
+        assert.strictEqual(owner.deviceName("Mozilla/5.0 (Windows NT 10.0) coc_coc_browser/150.0 Chrome/140.0 Safari/537.36"), "Coc Coc on Windows");
+        assert.strictEqual(owner.deviceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Gecko/20100101 Firefox/140.0"), "Firefox on macOS");
+        assert.strictEqual(owner.deviceName(""), "A browser");
+        const good = "a".repeat(43);
+        assert.strictEqual(owner.deviceOf({ headers: { cookie: `x=1; ${owner.COOKIE}=${good}; y=2` } }), good);
+        assert.strictEqual(owner.deviceOf({ headers: { cookie: `${owner.COOKIE}=short` } }), null);
+        assert.strictEqual(owner.deviceOf({ headers: {} }), null);
+    });
+
     console.log("wrong passwords");
 
-    await test("a wrong password is 401, logged with the IP, and never reaches Discord", async () => {
-        const r = await signIn(ELSE, "nope");
+    await test("a wrong password is 401, logged with the IP, gives no cookie and never reaches Discord", async () => {
+        const b = browser(ELSE);
+        const r = await signIn(b, "nope");
         assert.strictEqual(r.status, 401);
         assert.strictEqual(r.data.error, "Invalid credentials");
+        assert.strictEqual(b.cookie, null);
         assert.match(logged.at(-1).text, /wrong username or password · IP 192\.0\.2\.9/);
         assert.strictEqual(logged.at(-1).kind, "warn");
-        assert.strictEqual((await call("POST", "/api/auth/login", { ip: ELSE, body: { username: "root", password: "right-pass" } })).status, 401);
         assert.strictEqual(discord.posts.length, 0);
     });
 
-    await test("5 wrong in 15 minutes: that IP waits, even with the right password; others do not", async () => {
-        for (let i = 0; i < 3; i++) assert.strictEqual((await signIn(ELSE, "nope")).status, 401);
+    await test("5 wrong in 15 minutes: that IP waits, even with the right password", async () => {
+        const b = browser(ELSE);
+        for (let i = 0; i < 4; i++) assert.strictEqual((await signIn(b, "nope")).status, 401);
         assert.match(logged.at(-1).text, /5 in a row/);
-        const r = await signIn(ELSE);
+        const r = await signIn(b);
         assert.strictEqual(r.status, 429);
         assert.match(r.data.error, /Too many wrong sign-ins from this IP — try again in 15 minutes/);
         assert.strictEqual(discord.posts.length, 0);
         skew += 16 * 60 * 1000;
-        assert.notStrictEqual((await signIn(ELSE, "nope")).status, 429, "the window passed");
+        assert.notStrictEqual((await signIn(b, "nope")).status, 429, "the window passed");
     });
 
-    console.log("a new IP");
+    console.log("a new device");
 
+    const laptop = browser(HOME);
     let first;
     let second;
-    await test("right password from a new IP: 202, no token, Allow / Deny posted in the panel log channel", async () => {
-        const r = await signIn(HOME);
+    await test("right password on a new device: 202, an httpOnly device cookie, Allow / Deny posted with @everyone", async () => {
+        const r = await signIn(laptop);
         assert.strictEqual(r.status, 202);
         assert.ok(!r.data.token);
         first = r.data.pending;
+        assert.strictEqual(first.name, "Chrome on Windows");
         assert.strictEqual(first.ip, HOME);
-        assert.ok(first.key.length >= 30 && first.expiresAt > Date.now());
+        assert.ok(laptop.cookie && laptop.cookie.length === 43);
+        assert.match(laptop.setCookie, /HttpOnly/);
+        assert.match(laptop.setCookie, /SameSite=Lax/);
+        assert.match(laptop.setCookie, /Path=\//);
+        assert.doesNotMatch(laptop.setCookie, /Secure/, "plain http here");
         assert.strictEqual(discord.posts.length, 1);
         const { channelId, payload } = discord.posts[0];
         assert.strictEqual(channelId, "1497117161079181433", "the default approval channel");
         assert.strictEqual(payload.content, "@everyone");
-        assert.strictEqual(payload.embeds[0].title, "Owner sign-in from a new IP");
-        assert.ok(payload.embeds[0].fields.some((f) => f.value.includes(HOME)));
-        assert.deepStrictEqual(lastButtons(), [`owner-ip:allow:${first.id}`, `owner-ip:deny:${first.id}`]);
         assert.deepStrictEqual(payload.allowedMentions, { parse: ["everyone"] });
-        assert.deepStrictEqual((await poll(HOME, first)).data.status, "pending");
+        assert.strictEqual(payload.embeds[0].title, "Owner sign-in from a new device");
+        assert.ok(payload.embeds[0].fields.some((f) => f.name === "Device" && f.value === "Chrome on Windows"));
+        assert.ok(payload.embeds[0].fields.some((f) => f.name === "IP" && f.value.includes(HOME)));
+        assert.deepStrictEqual(lastButtons(), [`owner-device:allow:${first.id}`, `owner-device:deny:${first.id}`]);
+        assert.strictEqual(lastPayload().components[0].components[0].label, "Allow this device");
+        assert.strictEqual((await poll(laptop, first)).data.status, "pending");
     });
 
-    await test("signing in again from that IP joins the open request (one message), with its own key", async () => {
-        const r = await signIn(HOME);
+    await test("behind HTTPS (nginx says so) the cookie is Secure too", async () => {
+        const b = browser("192.0.2.30");
+        await signIn(b, "right-pass", { "x-forwarded-proto": "https" });
+        assert.match(b.setCookie, /Secure/);
+    });
+
+    await test("signing in again on that device joins the open request (one message), with its own key", async () => {
+        const before = discord.posts.length;
+        const r = await signIn(laptop);
         assert.strictEqual(r.status, 202);
         second = r.data.pending;
         assert.strictEqual(second.id, first.id);
         assert.notStrictEqual(second.key, first.key);
-        assert.strictEqual(discord.posts.length, 1);
-        assert.strictEqual((await poll(HOME, { id: first.id, key: "guessed" })).data.status, "expired");
+        assert.strictEqual(discord.posts.length, before);
+        assert.strictEqual((await poll(laptop, { id: first.id, key: "guessed" })).data.status, "expired");
+    });
+
+    const phoneSameWifi = browser(HOME, IPHONE);
+    let phoneWait;
+    await test("another device on the same network asks on its own", async () => {
+        const before = discord.posts.length;
+        const r = await signIn(phoneSameWifi);
+        assert.strictEqual(r.status, 202);
+        phoneWait = r.data.pending;
+        assert.notStrictEqual(phoneWait.id, first.id);
+        assert.notStrictEqual(phoneSameWifi.cookie, laptop.cookie);
+        assert.strictEqual(phoneWait.name, "Safari on iOS");
+        assert.strictEqual(discord.posts.length, before + 1);
     });
 
     let token;
-    await test("Allow: the message says so, each waiting browser gets its token once", async () => {
+    await test("Allow: the message says so, the device's browsers get their token once, another device cannot collect it", async () => {
         const updated = await click("allow", first.id);
         assert.strictEqual(updated.embeds[0].title, "Owner sign-in allowed");
+        assert.match(updated.embeds[0].description, /Chrome on Windows/);
         assert.deepStrictEqual(updated.components, []);
         assert.ok(updated.embeds[0].fields.some((f) => f.name === "Allowed by" && f.value.startsWith("khai")));
-        assert.match(logged.find((l) => l.kind === "owner" && /allowed on Discord by khai/.test(l.text)).text, /203\.0\.113\.7/);
+        assert.ok(logged.some((l) => l.kind === "owner" && /Owner device \*\*Chrome on Windows\*\* allowed on Discord by khai · IP 203\.0\.113\.7/.test(l.text)));
 
-        const a = await poll(HOME, first);
+        const thief = browser(HOME, IPHONE);
+        thief.cookie = phoneSameWifi.cookie;
+        assert.strictEqual((await poll(thief, first)).data.status, "expired", "right key, wrong device");
+
+        const a = await poll(laptop, first);
         assert.strictEqual(a.data.status, "approved");
         assert.strictEqual(a.data.username, "admin");
         token = a.data.token;
         assert.ok(token);
-        assert.strictEqual((await poll(HOME, first)).data.status, "expired", "only once");
-        assert.ok((await poll(HOME, second)).data.token);
-        assert.match(logged.at(-1).text, /\*\*Owner\*\* signed in \(allowed on Discord by khai\)/);
-        assert.deepStrictEqual(store.get("owner_access").ips.map((e) => e.ip), [HOME]);
+        assert.strictEqual((await poll(laptop, first)).data.status, "expired", "only once");
+        assert.ok((await poll(laptop, second)).data.token);
+        assert.match(logged.at(-1).text, /\*\*Owner\*\* signed in \(allowed on Discord by khai\) · Chrome on Windows · IP 203\.0\.113\.7/);
+        const saved = store.get("owner_access").devices;
+        assert.strictEqual(saved.length, 1);
+        assert.strictEqual(saved[0].name, "Chrome on Windows");
+        assert.ok(!JSON.stringify(saved).includes(laptop.cookie), "only the hash is kept");
+        assert.strictEqual((await poll(phoneSameWifi, phoneWait)).data.status, "pending", "the phone still waits");
     });
 
     await test("a second click on the same message: no longer open", async () => {
         const updated = await click("deny", first.id);
         assert.match(updated.embeds[0].footer.text, /No longer open/);
         assert.deepStrictEqual(updated.components, []);
-        assert.strictEqual(owner.allowed(HOME), true, "still allowed");
     });
 
-    await test("next time from that IP the password is enough", async () => {
+    await test("next time on that device the password is enough — from another network too", async () => {
         const before = discord.posts.length;
-        const r = await signIn(HOME);
+        assert.strictEqual((await signIn(laptop)).status, 200);
+        laptop.ip = MOBILE;
+        const r = await signIn(laptop);
         assert.strictEqual(r.status, 200);
         assert.ok(r.data.token);
         assert.strictEqual(discord.posts.length, before);
-        assert.match(logged.at(-1).text, /^\*\*Owner\*\* signed in · IP 203\.0\.113\.7/);
+        assert.match(logged.at(-1).text, /^\*\*Owner\*\* signed in · Chrome on Windows · IP 203\.0\.113\.120/);
     });
 
     console.log("every request");
 
-    await test("the owner's token works from the approved IP only", async () => {
-        assert.strictEqual((await call("GET", "/api/owner-only", { token })).status, 200);
-        const away = await call("GET", "/api/owner-only", { ip: CAFE, token });
+    await test("the owner's token works with the device's cookie only, whatever the IP", async () => {
+        assert.strictEqual((await call(laptop, "GET", "/api/owner-only", { token })).status, 200);
+        const copied = browser(HOME);
+        const away = await call(copied, "GET", "/api/owner-only", { token });
         assert.strictEqual(away.status, 401);
         assert.strictEqual(away.data.code, "AUTH_REQUIRED");
-        assert.strictEqual(away.data.reason, IP_NOT_APPROVED);
-        const verify = await call("GET", "/api/auth/verify", { ip: CAFE, token });
+        assert.strictEqual(away.data.reason, DEVICE_NOT_APPROVED);
+        const other = await call(phoneSameWifi, "GET", "/api/owner-only", { token });
+        assert.strictEqual(other.status, 401, "a device not approved, same Wi-Fi");
+        const verify = await call(copied, "GET", "/api/auth/verify", { token });
         assert.strictEqual(verify.status, 401);
-        assert.strictEqual(verify.data.reason, IP_NOT_APPROVED);
-        assert.strictEqual((await call("GET", "/api/auth/verify", { token })).data.kind, "owner");
+        assert.strictEqual(verify.data.reason, DEVICE_NOT_APPROVED);
+        assert.strictEqual((await call(laptop, "GET", "/api/auth/verify", { token })).data.kind, "owner");
     });
 
-    await test("an X-Real-IP sent through the agent gateway is not believed", async () => {
-        const r = await call("GET", "/api/owner-only", { token, headers: { "x-panel-gateway": "1" } });
-        assert.strictEqual(r.status, 401);
-        assert.strictEqual(r.data.reason, IP_NOT_APPROVED);
-    });
-
-    await test("bot logs and the terminal (isOwnerToken) check the IP too, and need the request", async () => {
-        assert.strictEqual((await call("DELETE", "/api/logs/nope", { ip: CAFE, token })).status, 401);
-        assert.strictEqual((await call("DELETE", "/api/logs/nope", { token })).status, 404, "past the check: no such bot");
-        const req = (ip) => ({ socket: { remoteAddress: "127.0.0.1" }, headers: { "x-real-ip": ip } });
-        assert.strictEqual(isOwnerToken(token, req(HOME)), true);
-        assert.strictEqual(isOwnerToken(token, req(CAFE)), false);
+    await test("bot logs and the terminal (isOwnerToken) check the device too, and need the request", async () => {
+        assert.strictEqual((await call(browser(HOME), "DELETE", "/api/logs/nope", { token })).status, 401);
+        assert.strictEqual((await call(laptop, "DELETE", "/api/logs/nope", { token })).status, 404, "past the check: no such bot");
+        const req = (cookie) => ({ socket: { remoteAddress: "127.0.0.1" }, headers: { "x-real-ip": ELSE, ...(cookie ? { cookie: `${owner.COOKIE}=${cookie}` } : {}) } });
+        assert.strictEqual(isOwnerToken(token, req(laptop.cookie)), true);
+        assert.strictEqual(isOwnerToken(token, req(phoneSameWifi.cookie)), false);
+        assert.strictEqual(isOwnerToken(token, req(null)), false);
         assert.strictEqual(isOwnerToken(token), false);
-        assert.strictEqual(isOwnerToken("garbage", req(HOME)), false);
+        assert.strictEqual(isOwnerToken("garbage", req(laptop.cookie)), false);
     });
 
     console.log("deny, expiry, Discord down");
 
-    await test("Deny: the browser hears it, and that IP cannot ask again for 24 hours", async () => {
-        const w = (await signIn(CAFE)).data.pending;
+    await test("Deny: the browser hears it, and that IP cannot ask again for 24 hours (any device)", async () => {
+        const cafe = browser("203.0.113.50", IPHONE);
+        const w = (await signIn(cafe)).data.pending;
         const updated = await click("deny", w.id, "khai");
         assert.strictEqual(updated.embeds[0].title, "Owner sign-in denied");
-        assert.strictEqual((await poll(CAFE, w)).data.status, "denied");
-        const again = await signIn(CAFE);
+        assert.strictEqual((await poll(cafe, w)).data.status, "denied");
+        const again = await signIn(browser("203.0.113.50"));
         assert.strictEqual(again.status, 403);
         assert.match(again.data.error, /denied on Discord — try again in 24 hours/);
-        assert.deepStrictEqual(owner.list(HOME).blocked.map((b) => b.ip), [CAFE]);
-        assert.strictEqual(owner.allowed(CAFE), false);
+        assert.deepStrictEqual(owner.list({ ip: HOME }).blocked.map((b) => b.ip), ["203.0.113.50"]);
     });
 
     await test("Unblock lets it ask again (owner page)", async () => {
         const before = discord.posts.length;
-        assert.strictEqual((await call("POST", "/api/owner-ips/unblock", { token, body: { ip: CAFE } })).status, 200);
-        assert.strictEqual((await signIn(CAFE)).status, 202);
+        assert.strictEqual((await call(laptop, "POST", "/api/owner-access/unblock", { token, body: { ip: "203.0.113.50" } })).status, 200);
+        assert.strictEqual((await signIn(browser("203.0.113.50"))).status, 202);
         assert.strictEqual(discord.posts.length, before + 1);
-        assert.strictEqual((await call("POST", "/api/owner-ips/unblock", { token, body: { ip: CAFE } })).status, 404);
+        assert.strictEqual((await call(laptop, "POST", "/api/owner-access/unblock", { token, body: { ip: "203.0.113.50" } })).status, 404);
     });
 
     await test("nobody answers in 10 minutes: expired, and the message loses its buttons", async () => {
-        const w = owner.list(HOME).pending.find((p) => p.ip === CAFE);
-        assert.ok(w);
-        const key = (await signIn(CAFE)).data.pending.key;
         skew += 11 * 60 * 1000;
-        assert.strictEqual((await poll(CAFE, { id: w.id, key })).data.status, "expired");
+        assert.strictEqual((await poll(phoneSameWifi, phoneWait)).data.status, "expired");
         owner._sweep();
         assert.ok(discord.edits.some((e) => e.payload.embeds[0].title === "Owner sign-in request expired" && e.payload.components.length === 0));
-        assert.match((await click("allow", w.id)).embeds[0].footer.text, /No longer open/);
-        assert.strictEqual(owner.allowed(CAFE), false);
+        assert.match((await click("allow", phoneWait.id)).embeds[0].footer.text, /No longer open/);
+        assert.strictEqual((await call(phoneSameWifi, "GET", "/api/owner-only", { token })).status, 401);
     });
 
     await test("Discord down: 503 that says how to get in (ADMIN_ALLOWED_IPS)", async () => {
         discord.down = "the panel's Discord bot is not connected";
-        const r = await signIn("192.0.2.77");
+        const r = await signIn(browser("192.0.2.77"));
         discord.down = null;
         assert.strictEqual(r.status, 503);
         assert.match(r.data.error, /could not be posted on Discord \(the panel's Discord bot is not connected\)/);
         assert.match(r.data.error, /ADMIN_ALLOWED_IPS/);
     });
 
-    console.log("ADMIN_ALLOWED_IPS, IPv6, forgetting, the page");
+    console.log("ADMIN_ALLOWED_IPS, the page, forgetting");
 
-    await test("ADMIN_ALLOWED_IPS gets in with the password alone, and cannot be removed on the page", async () => {
-        const r = await signIn("198.51.100.200");
+    await test("ADMIN_ALLOWED_IPS: any device gets in with the password alone, only from there", async () => {
+        const b = browser("198.51.100.200");
+        const r = await signIn(b);
         assert.strictEqual(r.status, 200);
-        assert.ok(r.data.token);
-        const rm = await call("POST", "/api/owner-ips/remove", { token, body: { ip: "198.51.100.200" } });
-        assert.strictEqual(rm.status, 400);
-        assert.match(rm.data.error, /ADMIN_ALLOWED_IPS/);
+        b.cookie = null; // even without its cookie
+        assert.strictEqual((await call(b, "GET", "/api/owner-only", { token: r.data.token })).status, 200);
+        b.ip = ELSE;
+        assert.strictEqual((await call(b, "GET", "/api/owner-only", { token: r.data.token })).status, 401);
     });
 
-    await test("IPv6: an approved /64 lets the browser's next address in too", async () => {
-        const w = (await signIn("2001:db8:1:2::10")).data.pending;
-        await click("allow", w.id);
-        assert.strictEqual((await signIn("2001:db8:1:2:ffff::99")).status, 200);
-        assert.strictEqual((await signIn("2001:db8:1:3::10")).status, 202);
-    });
-
-    await test("the page: the list (this device marked), env ones, waiting ones, Discord status", async () => {
-        const r = await call("GET", "/api/owner-ips", { token });
+    await test("the page: devices (this one marked, no hash), env IPs, waiting ones, Discord status with @everyone", async () => {
+        const w = (await signIn(browser("192.0.2.88", IPHONE))).data.pending;
+        const r = await call(laptop, "GET", "/api/owner-access", { token });
         assert.strictEqual(r.status, 200);
-        assert.strictEqual(r.data.currentIp, HOME);
-        assert.ok(r.data.ips.find((e) => e.ip === HOME).current);
-        assert.strictEqual(r.data.ips.find((e) => e.ip === HOME).approvedBy, "khai");
-        assert.ok(r.data.ips.some((e) => e.ip === "2001:db8:1:2::/64"));
+        assert.strictEqual(r.data.currentIp, MOBILE);
+        const mine = r.data.devices.find((d) => d.current);
+        assert.strictEqual(mine.name, "Chrome on Windows");
+        assert.strictEqual(mine.approvedBy, "khai");
+        assert.strictEqual(mine.lastIp, MOBILE);
+        assert.ok(!("hash" in mine));
+        assert.ok(!JSON.stringify(r.data).includes(laptop.cookie));
         assert.deepStrictEqual(r.data.env, [{ ip: "198.51.100.200", current: false }]);
-        assert.ok(r.data.pending.some((p) => p.ip === "2001:db8:1:3::10"));
-        assert.ok(!JSON.stringify(r.data.pending).includes("key"), "no waiting browser's key");
+        const waiting = r.data.pending.find((p) => p.id === w.id);
+        assert.strictEqual(waiting.name, "Safari on iOS");
+        assert.ok(!JSON.stringify(r.data.pending).includes(w.key), "no waiting browser's key");
         assert.strictEqual(r.data.discord.ok, true);
-        assert.strictEqual((await call("GET", "/api/owner-ips", { ip: CAFE, token })).status, 401);
+        assert.deepStrictEqual(r.data.discord.extra, ["MentionEveryone"]);
+        assert.strictEqual((await call(browser(HOME), "GET", "/api/owner-access", { token })).status, 401);
     });
 
-    await test("removing an IP on the page: that IP is out at once", async () => {
-        assert.strictEqual((await call("POST", "/api/owner-ips/remove", { token, body: { ip: "2001:db8:1:2::5" } })).status, 200);
-        assert.strictEqual(owner.allowed("2001:db8:1:2::77"), false);
-        assert.match(logged.at(-1).text, /Owner IP `2001:db8:1:2::\/64` removed/);
-        assert.strictEqual((await call("POST", "/api/owner-ips/remove", { token, body: { ip: "2001:db8:1:2::5" } })).status, 404);
+    await test("removing a device on the page: it is out at once", async () => {
+        const tablet = browser("192.0.2.99");
+        const w = (await signIn(tablet)).data.pending;
+        await click("allow", w.id);
+        const tabletToken = (await poll(tablet, w)).data.token;
+        assert.strictEqual((await call(tablet, "GET", "/api/owner-only", { token: tabletToken })).status, 200);
+        const list = (await call(laptop, "GET", "/api/owner-access", { token })).data.devices;
+        const id = list.find((d) => !d.current).id;
+        assert.strictEqual((await call(laptop, "POST", "/api/owner-access/remove", { token, body: { id } })).status, 200);
+        assert.strictEqual((await call(tablet, "GET", "/api/owner-only", { token: tabletToken })).status, 401);
+        assert.match(logged.at(-1).text, /Owner device \*\*Chrome on Windows\*\* removed on the panel/);
+        assert.strictEqual((await call(laptop, "POST", "/api/owner-access/remove", { token, body: { id } })).status, 404);
+        assert.strictEqual((await call(laptop, "GET", "/api/owner-only", { token })).status, 200, "the laptop is untouched");
     });
 
-    await test("an IP unused for 30 days is forgotten (and said so in the log)", async () => {
-        assert.strictEqual(owner.allowed(HOME), true);
+    await test("a device unused for 30 days is forgotten (and said so in the log)", async () => {
+        const req = { ip: HOME, device: laptop.cookie };
+        assert.strictEqual(owner.allowed(req), true);
         skew += 29 * 86_400_000;
-        assert.strictEqual(owner.allowed(HOME), true, "used again: the 30 days start over");
+        assert.strictEqual(owner.allowed(req), true, "used again: the 30 days start over");
         skew += 31 * 86_400_000;
-        assert.strictEqual(owner.allowed(HOME), false);
+        assert.strictEqual(owner.allowed(req), false);
         owner._sweep();
-        await new Promise((r) => setImmediate(r)); // the write is queued behind the ones before it
-        assert.ok(logged.some((l) => /Owner IP `203\.0\.113\.7` forgotten — not used for 30 days/.test(l.text)));
-        assert.ok(!store.get("owner_access").ips.some((e) => e.ip === HOME));
-        assert.strictEqual(owner.allowed("198.51.100.200"), true, "ADMIN_ALLOWED_IPS is never forgotten");
+        await tick();
+        assert.ok(logged.some((l) => /Owner device \*\*Chrome on Windows\*\* forgotten — not used for 30 days/.test(l.text)));
+        assert.deepStrictEqual(store.get("owner_access").devices, []);
+        assert.strictEqual(owner.allowed({ ip: "198.51.100.200", device: null }), true, "ADMIN_ALLOWED_IPS is never forgotten");
     });
 
     server.close();

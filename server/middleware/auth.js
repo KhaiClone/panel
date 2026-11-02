@@ -7,8 +7,9 @@ const ownerAccess = require("../services/ownerAccess");
  *
  * Two kinds of token, both signed with JWT_SECRET:
  *   owner  { username }                 the .env account (routes/auth.js /login);
- *                                       counts only from an approved IP
- *                                       (services/ownerAccess.js), on every call
+ *                                       counts only with an approved device's
+ *                                       cookie (services/ownerAccess.js), on
+ *                                       every call
  *   staff  { kind: "staff", sub, sid }  a Discord login (services/staffService.js);
  *                                       sid must still be a live session row
  *
@@ -46,7 +47,7 @@ const tokenOf = (req) => {
  * The browser's address: nginx in front of the panel sets X-Real-IP. The
  * agent's gateway (127.0.0.1:4201) is local too, but it passes the caller's
  * own headers on — an X-Real-IP through it is whatever a process on that
- * machine chose to send, and the owner is let in by IP.
+ * machine chose to send, and ADMIN_ALLOWED_IPS let the owner in by IP.
  */
 const clientIp = (req) => {
     const peer = req.socket?.remoteAddress || "";
@@ -56,8 +57,11 @@ const clientIp = (req) => {
 
 const unauthorized = (message, reason) => Object.assign(new Error(message), { status: 401, reason });
 
-/** The owner's token from an IP that is not approved: sign in again (and Allow it on Discord). */
-const IP_NOT_APPROVED = "ip_not_approved";
+/** The owner's token on a device that is not approved: sign in again (and Allow it on Discord). */
+const DEVICE_NOT_APPROVED = "device_not_approved";
+
+/** What ownerAccess.allowed() looks at: the browser's device key and where it is. */
+const ownerFrom = (req) => ({ ip: clientIp(req), device: ownerAccess.deviceOf(req) });
 
 /**
  * { kind: "owner", username } | { kind: "staff", staff, session } —
@@ -84,15 +88,15 @@ const identify = (token) => {
 };
 
 /**
- * identify() for a request: the token, and for the owner the IP it comes
- * from. Throws the 401 — or a 503 while the approved IPs are still loading
- * (a restart must not sign the owner out).
+ * identify() for a request: the token, and for the owner the device it comes
+ * from. Throws the 401 — or a 503 while the approved devices are still
+ * loading (a restart must not sign the owner out).
  */
 const authenticate = (req) => {
     const who = identify(tokenOf(req));
     if (who.kind !== "owner") return who;
     if (!ownerAccess.isLoaded()) throw Object.assign(new Error("The panel is starting — try again in a moment"), { status: 503, code: "PANEL_STARTING" });
-    if (!ownerAccess.allowed(clientIp(req))) throw unauthorized("This IP is not approved for the owner account — sign in again", IP_NOT_APPROVED);
+    if (!ownerAccess.allowed(ownerFrom(req))) throw unauthorized("This device is not approved for the owner account — sign in again", DEVICE_NOT_APPROVED);
     return who;
 };
 
@@ -157,15 +161,15 @@ const hasGrant = (auth, grant) => auth?.kind === "owner" || (auth?.kind === "sta
 
 /**
  * For code that reads the token itself (terminal WebSocket, bot logs): is it
- * the owner's, from an approved IP? `req` is required — without it, no.
+ * the owner's, on an approved device? `req` is required — without it, no.
  */
 const isOwnerToken = (token, req) => {
     if (!req) return false;
     try {
-        return identify(token).kind === "owner" && ownerAccess.isLoaded() && ownerAccess.allowed(clientIp(req));
+        return identify(token).kind === "owner" && ownerAccess.isLoaded() && ownerAccess.allowed(ownerFrom(req));
     } catch {
         return false;
     }
 };
 
-module.exports = { authMiddleware, pageAuth, hasGrant, identify, authenticate, isOwnerToken, tokenOf, clientIp, AUTH_REQUIRED, FORBIDDEN, IP_NOT_APPROVED };
+module.exports = { authMiddleware, pageAuth, hasGrant, identify, authenticate, isOwnerToken, tokenOf, clientIp, AUTH_REQUIRED, FORBIDDEN, DEVICE_NOT_APPROVED };

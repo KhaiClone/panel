@@ -6,7 +6,7 @@ import api from "../api/client";
 
 // The owner signs in with the .env account; staff only with Discord (the
 // button shows once Discord login is set up under Panel Settings → Staff).
-// From an IP the owner account does not know, a right password is not enough:
+// On a device the owner account does not know, a right password is not enough:
 // the panel's bot asks on Discord (Allow / Deny) and this page waits for the
 // answer (server/services/ownerAccess.js).
 export default function Login() {
@@ -117,8 +117,8 @@ export default function Login() {
                                 <div style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid var(--accent-border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
                                 <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", margin: 0 }}>Waiting for approval on Discord</h2>
                                 <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>
-                                    Your IP <span className="mono" style={{ color: "var(--text)" }}>{waiting.ip}</span> is new for the owner account.
-                                    Press <strong>Allow this IP</strong> in the panel log channel on Discord. This page signs you in by itself.
+                                    This device (<span style={{ color: "var(--text)" }}>{waiting.name}</span>) is new for the owner account.
+                                    Press <strong>Allow this device</strong> on Discord. This page signs you in by itself.
                                 </p>
                                 <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
                                     The request expires at {new Date(waiting.expiresAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}.

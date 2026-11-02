@@ -10,10 +10,10 @@ const axios = require("axios");
 //    error    every console.error of the server (warn: every console.warn)
 //    system   panel started, moving, back to active; rollbacks; Lavalink report
 //    staff    sign-ins and sign-outs, every change staff make (owner: what the
-//             owner changed about staff, the owner's sign-ins and owner IPs)
+//             owner changed about staff, the owner's sign-ins and devices)
 //
-//  The panel's BOT posts in this channel too: the owner's sign-ins from a new
-//  IP, with Allow / Deny (services/ownerAccess.js, by channel id).
+//  The panel's BOT posts in this channel too: the owner's sign-ins on a new
+//  device, with Allow / Deny (services/ownerAccess.js, by channel id).
 //
 //  Bot expiry warnings / removals and the stock renewal reminders stay on
 //  DISCORD_ALERT_WEBHOOK — they ping buyers, so that channel may be one they

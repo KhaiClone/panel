@@ -18,8 +18,8 @@ const assert = require("assert");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "staff-test-"));
 process.env.SHARED_DB_PATH = path.join(TMP, "shared.sqlite");
 process.env.JWT_SECRET = "test-secret-for-staff-access";
-// The owner works only from an approved IP (services/ownerAccess.js); every
-// request here comes from this one. Staff are not limited by IP.
+// The owner works only on an approved device, or from ADMIN_ALLOWED_IPS
+// (services/ownerAccess.js); every request here comes from this IP. Staff are not limited.
 process.env.ADMIN_ALLOWED_IPS = "203.0.113.7";
 
 // Stand-in for server/db (discordBus and ownerAccess load it; nothing here reads bots).
@@ -316,7 +316,7 @@ const login = (userId, member, extra = {}) => {
     });
 
     await test("the terminal and bot logs take the owner's token only", () => {
-        // From the owner's approved IP (scripts/ownerAccess.test.js checks the IP side).
+        // From ADMIN_ALLOWED_IPS (scripts/ownerAccess.test.js checks the device side).
         const home = { socket: { remoteAddress: "127.0.0.1" }, headers: { "x-real-ip": "203.0.113.7" } };
         assert.strictEqual(isOwnerToken(OWNER, home), true);
         assert.strictEqual(isOwnerToken(lanToken, home), false);

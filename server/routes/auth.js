@@ -12,7 +12,7 @@ const router = express.Router();
  * Two ways in:
  *
  *  - The OWNER: ADMIN_USERNAME + ADMIN_PASSWORD_HASH in .env, full access —
- *    from an approved IP only; a new IP is allowed or denied on Discord
+ *    on an approved device only; a new device is allowed or denied on Discord
  *    (services/ownerAccess.js). To change the password, regenerate the hash
  *    and restart the panel:
  *      node -e "console.log(require('bcryptjs').hashSync('newpassword',10))"
@@ -23,16 +23,17 @@ const router = express.Router();
 const ownerToken = (username) => jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: "24h" });
 
 const signedIn = (ip, ua, how = "") =>
-    panelLog.add("owner", [`**Owner** signed in${how}`, `IP ${ip || "unknown"}`, ua && `\`${String(ua).slice(0, 120)}\``].filter(Boolean).join(" · "));
+    panelLog.add("owner", [`**Owner** signed in${how}`, ownerAccess.deviceName(ua), `IP ${ip || "unknown"}`].join(" · "));
 
 /**
  * POST /api/auth/login
- * Validates username + password against the env credentials.
+ * Validates username + password against the env credentials. A right
+ * password also (re)sets this browser's device cookie.
  * Body: { username: string, password: string }
- *   200 { token, username }            a JWT valid for 24 hours (approved IP)
- *   202 { pending: { id, key, ip, expiresAt } }
- *                                      right password, new IP: Allow / Deny is
- *                                      on Discord; poll POST /login/pending
+ *   200 { token, username }            a JWT valid for 24 hours (approved device)
+ *   202 { pending: { id, key, name, ip, expiresAt } }
+ *                                      right password, new device: Allow / Deny
+ *                                      is on Discord; poll POST /login/pending
  *   429                                too many wrong passwords from this IP
  */
 router.post("/login", async (req, res, next) => {
@@ -55,11 +56,12 @@ router.post("/login", async (req, res, next) => {
         ownerAccess.succeeded(ip);
 
         if (!ownerAccess.isLoaded()) return res.status(503).json({ error: "The panel is starting — try again in a moment" });
-        if (ownerAccess.allowed(ip)) {
+        const device = ownerAccess.ensureDevice(req, res);
+        if (ownerAccess.allowed({ ip, device })) {
             signedIn(ip, ua);
             return res.json({ token: ownerToken(username), username });
         }
-        res.status(202).json({ pending: await ownerAccess.requestApproval({ ip, ua }) });
+        res.status(202).json({ pending: await ownerAccess.requestApproval({ ip, ua, device }) });
     } catch (err) {
         if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);
@@ -70,13 +72,14 @@ router.post("/login", async (req, res, next) => {
  * POST /api/auth/login/pending { id, key }
  * The login page asks every few seconds while Allow / Deny waits on Discord:
  *   { status: "pending", expiresAt } | { status: "denied" } | { status: "expired" }
- *   { status: "approved", token, username }  — once, to the browser holding `key`
+ *   { status: "approved", token, username }  — once, to the browser holding
+ *                                              `key` and the device's cookie
  */
 router.post("/login/pending", (req, res) => {
     const { id, key } = req.body || {};
-    const r = ownerAccess.poll(id, key);
+    const r = ownerAccess.poll(id, key, ownerAccess.deviceOf(req));
     if (r.status !== "approved") return res.json(r);
-    signedIn(r.ip, req.headers["user-agent"], ` (allowed on Discord by ${r.decidedBy})`);
+    signedIn(clientIp(req), req.headers["user-agent"], ` (allowed on Discord by ${r.decidedBy})`);
     const username = process.env.ADMIN_USERNAME;
     res.json({ status: "approved", token: ownerToken(username), username });
 });
@@ -87,7 +90,7 @@ router.post("/login/pending", (req, res) => {
  *   { valid, kind: "owner", username }
  *   { valid, kind: "staff", username, userId, avatar, perms, expiresAt }
  * A 401 carries `reason` (why the session ended — or, for the owner, that the
- * IP is not approved) for the login page.
+ * device is not approved) for the login page.
  */
 router.get("/verify", (req, res) => {
     let who;

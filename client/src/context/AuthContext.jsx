@@ -57,9 +57,10 @@ export function AuthProvider({ children }) {
     }, [user?.kind]);
 
     /**
-     * The owner's sign-in. Returns null once signed in — or, from an IP the
-     * owner account does not know yet, { id, key, ip, expiresAt }: Allow / Deny
-     * waits on Discord, and the page asks pollApproval() until it is answered.
+     * The owner's sign-in. Returns null once signed in — or, on a device the
+     * owner account does not know yet, { id, key, name, ip, expiresAt }: Allow /
+     * Deny waits on Discord, and the page asks pollApproval() until it is answered.
+     * The device itself is an httpOnly cookie the server sets (ownerAccess.js).
      */
     const login = async (username, password) => {
         const res = await api.post("/auth/login", { username, password });

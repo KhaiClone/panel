@@ -57,7 +57,7 @@ const lavalinkUpdater = require("./services/lavalinkUpdater");
 //  Validate critical env vars on startup
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN_USERNAME + ADMIN_PASSWORD_HASH are the OWNER's account — full access,
-// from approved IPs only (services/ownerAccess.js; ADMIN_ALLOWED_IPS optional).
+// on approved devices only (services/ownerAccess.js; ADMIN_ALLOWED_IPS optional).
 // Staff sign in with Discord (services/staffService.js) and reach only the
 // pages the owner gave them: a mount with pageAuth("<page>") below. Every
 // other mount uses authMiddleware, which is owner-only.
@@ -184,8 +184,8 @@ app.use("/api/messages", pageAuth("messages"), require("./routes/messages").pane
 app.use("/api/webhooks", pageAuth("webhooks"), require("./routes/webhooks"));
 // Who else may use the panel, and which pages (owner only).
 app.use("/api/staff", authMiddleware, require("./routes/staff"));
-// The IPs the owner account works from (services/ownerAccess.js).
-app.use("/api/owner-ips", authMiddleware, require("./routes/ownerIps"));
+// The devices the owner account works on (services/ownerAccess.js).
+app.use("/api/owner-access", authMiddleware, require("./routes/ownerAccess"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -248,7 +248,7 @@ const startBackgroundServices = () => {
     require("./services/resellerService").start();
     // Staff access: expires sessions, re-checks the Staff role every 10 minutes.
     require("./services/staffService").start();
-    // Owner sign-in by IP: expires waiting approvals, forgets IPs unused for 30 days.
+    // Owner sign-in by device: expires waiting approvals, forgets devices unused for 30 days.
     require("./services/ownerAccess").start();
     // Messages: the server map (channels, roles) from ArnTo-assistant, once a day.
     require("./services/botMessages").start();
