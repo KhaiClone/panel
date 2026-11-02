@@ -263,8 +263,8 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Tài khoản:** một owner trong `.env`; staff = Discord OAuth, owner thêm từng người, role Staff bắt buộc
   nhưng chưa đủ; panel không bao giờ cho/lấy role Staff.
 - **Đăng nhập owner theo IP** (2026-11-02): acc owner chỉ dùng được từ IP đã duyệt, kiểm ở **mọi request** (token
-  mang sang IP khác = 401, IP đổi = phải đăng nhập lại). IP mới + đúng mật khẩu → bot panel đăng Allow/Deny vào
-  **kênh panel log** (server riêng chỉ có chủ — ai bấm cũng tính là chủ, người dùng chốt không kiểm người bấm); vẫn
+  mang sang IP khác = 401, IP đổi = phải đăng nhập lại). IP mới + đúng mật khẩu → bot panel đăng Allow/Deny **ping @everyone** vào
+  **kênh panel log `1497117161079181433`** (mặc định, `OWNER_APPROVAL_CHANNEL_ID` đổi được; server riêng chỉ có chủ — ai bấm cũng tính là chủ, người dùng chốt không kiểm người bấm); vẫn
   cần mật khẩu, sai mật khẩu không bao giờ lên Discord (5 lần/15 phút/IP). Allow = nhớ IP (quên sau 30 ngày không
   dùng; IPv6 theo /64); Deny = IP đó không xin lại được 24h. `ADMIN_ALLOWED_IPS` (`.env`) luôn vào được = lối thoát
   khi Discord/bot chết. Request qua gateway agent không được tin `X-Real-IP`. Bot panel phải ở trong server log.
