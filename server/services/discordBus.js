@@ -386,13 +386,13 @@ const edit = async ({ channelId, messageId }, payload) => {
     await (await ch.messages.fetch(String(messageId))).edit(payload);
 };
 
-/** Can the bot post (with embeds) in this channel? { ok, channel, guild, botTag, error } */
-const canPost = async (channelId) => {
+/** Can the bot post (with embeds, and `extra` permissions) in this channel? { ok, channel, guild, botTag, error } */
+const canPost = async (channelId, extra = []) => {
     const botTag = client?.user?.tag || null;
     try {
         const ch = await textChannel(channelId);
         const perms = ch.permissionsFor?.(client.user);
-        const missing = ["ViewChannel", "SendMessages", "EmbedLinks"].filter((p) => !perms?.has(p));
+        const missing = ["ViewChannel", "SendMessages", "EmbedLinks", ...extra].filter((p) => !perms?.has(p));
         return { ok: !missing.length, channel: ch.name || null, guild: ch.guild?.name || null, botTag, error: missing.length ? `the panel's bot is missing ${missing.join(", ")} there` : null };
     } catch (err) {
         return { ok: false, channel: null, guild: null, botTag, error: err.message };

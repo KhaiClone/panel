@@ -59,7 +59,6 @@ stub("services/discordBus", {
 const logged = [];
 stub("services/panelLog", {
     add: (kind, text) => logged.push({ kind, text }),
-    channel: async () => ({ channelId: "LOGCH", guildId: "G" }),
     captureConsole: () => {},
 });
 
@@ -193,11 +192,12 @@ const test = async (name, fn) => {
         assert.ok(first.key.length >= 30 && first.expiresAt > Date.now());
         assert.strictEqual(discord.posts.length, 1);
         const { channelId, payload } = discord.posts[0];
-        assert.strictEqual(channelId, "LOGCH");
+        assert.strictEqual(channelId, "1497117161079181433", "the default approval channel");
+        assert.strictEqual(payload.content, "@everyone");
         assert.strictEqual(payload.embeds[0].title, "Owner sign-in from a new IP");
         assert.ok(payload.embeds[0].fields.some((f) => f.value.includes(HOME)));
         assert.deepStrictEqual(lastButtons(), [`owner-ip:allow:${first.id}`, `owner-ip:deny:${first.id}`]);
-        assert.deepStrictEqual(payload.allowedMentions, { parse: [] });
+        assert.deepStrictEqual(payload.allowedMentions, { parse: ["everyone"] });
         assert.deepStrictEqual((await poll(HOME, first)).data.status, "pending");
     });
 

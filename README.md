@@ -199,6 +199,7 @@ nano .env
 | `ADMIN_USERNAME`         | Yes      | Panel login username — the owner (staff sign in with Discord) |
 | `ADMIN_PASSWORD_HASH`    | Yes      | bcrypt hash of that account's password (see below)            |
 | `ADMIN_ALLOWED_IPS`      | No       | IPs the owner account always works from, comma-separated (see [Owner Sign-in by IP](#-owner-sign-in-by-ip)) |
+| `OWNER_APPROVAL_CHANNEL_ID` | No    | Channel for owner sign-in approvals, instead of the default panel log channel |
 | `JWT_SECRET`             | Yes      | Long random string for signing JWTs                           |
 | `PANEL_NODE_ID`          | Yes      | `_id` of the node record this panel runs on                   |
 | `PANEL_DISCORD_TOKEN`    | No       | The panel's own Discord bot — posts commands on the bus       |
@@ -1026,10 +1027,12 @@ IPs** (`server/services/ownerAccess.js`, `server/middleware/auth.js`):
 | **Forgetting** | An approved IP unused for 30 days is dropped. IPv6 is kept by its `/64` (the browser's own address inside it changes daily). |
 | **Way back in** | `ADMIN_ALLOWED_IPS` in `.env` (comma-separated) always works and is never forgotten — when Discord or the bot is down, add your IP over SSH and restart the panel. |
 
-The panel log channel must sit in a server only the owner is in: whoever clicks is taken to be
-the owner. That channel is the one `DISCORD_PANEL_LOG_WEBHOOK` posts to, and the panel's bot
-(`PANEL_DISCORD_TOKEN`) must be in that server with *View Channel*, *Send Messages* and
-*Embed Links* — a webhook's messages cannot carry buttons that call back. **Panel Settings →
+Approvals go to channel `1497117161079181433` (the owner's panel log channel;
+`OWNER_APPROVAL_CHANNEL_ID` in `.env` picks another) and ping **@everyone**. That channel must sit
+in a server only the owner is in: whoever clicks is taken to be the owner. The panel's bot
+(`PANEL_DISCORD_TOKEN`) posts them, so it must be in that server with *View Channel*, *Send
+Messages*, *Embed Links* and *Mention @everyone* — a webhook's messages cannot carry buttons that
+call back. **Panel Settings →
 Security** shows whether approvals can be posted, the approved / `.env` / waiting / denied IPs,
 and removes or unblocks them.
 

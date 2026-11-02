@@ -23,11 +23,12 @@ const discordBus = require("./discordBus");
 //                 request (middleware/auth.js): a token copied to another
 //                 machine is worthless, and an IP that changes signs you out.
 //
-//  The panel log channel sits in the owner's own server, where nobody else
-//  is — so whoever clicks is the owner (the user's call: the clicker is not
-//  checked). It is the channel DISCORD_PANEL_LOG_WEBHOOK posts to, and the
-//  panel's bot (PANEL_DISCORD_TOKEN) must be in that server: a webhook's
-//  messages cannot carry buttons that call back.
+//  The approvals go to APPROVAL_CHANNEL_ID (the user's panel log channel;
+//  OWNER_APPROVAL_CHANNEL_ID in .env overrides it), pinging @everyone. That
+//  channel sits in the owner's own server, where nobody else is — so whoever
+//  clicks is the owner (the user's call: the clicker is not checked). The
+//  panel's bot (PANEL_DISCORD_TOKEN) posts them, so it must be in that
+//  server: a webhook's messages cannot carry buttons that call back.
 //
 //  ADMIN_ALLOWED_IPS (.env, comma-separated) are always let in and never
 //  forgotten — the way back in when Discord or the bot is down: edit .env
@@ -53,6 +54,8 @@ const FAIL_WINDOW_MS = 15 * 60 * 1000;
 const MAX_PENDING = 20;
 const MAX_WAITERS = 5;
 const BUTTON = "owner-ip";
+const APPROVAL_CHANNEL_ID = "1497117161079181433";
+const approvalChannel = () => String(process.env.OWNER_APPROVAL_CHANNEL_ID || "").trim() || APPROVAL_CHANNEL_ID;
 const COLOR = { pending: 0xf0b232, approved: 0x57f287, denied: 0xed4245, expired: 0x80848e };
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
@@ -163,7 +166,9 @@ const succeeded = (ip) => failures.delete(ipKey(ip) || String(ip));
 const ipField = (p) => ({ name: "IP", value: `\`${p.ip}\`${p.ipKey !== p.ip ? ` (kept as \`${p.ipKey}\`)` : ""}`, inline: true });
 const uaField = (p) => ({ name: "Browser", value: p.ua ? `\`${clip(p.ua, 300)}\`` : "unknown" });
 
+// @everyone so the phone rings: someone with the right password is waiting.
 const askMessage = (p) => ({
+    content: "@everyone",
     embeds: [
         {
             title: "Owner sign-in from a new IP",
@@ -184,7 +189,7 @@ const askMessage = (p) => ({
             ],
         },
     ],
-    allowedMentions: { parse: [] },
+    allowedMentions: { parse: ["everyone"] },
 });
 
 const doneMessage = (p) => {
@@ -257,8 +262,7 @@ const requestApproval = async ({ ip, ua }) => {
         decidedAt: null,
     };
     try {
-        const { channelId } = await panelLog.channel();
-        p.message = await discordBus.post(channelId, askMessage(p));
+        p.message = await discordBus.post(approvalChannel(), askMessage(p));
     } catch (err) {
         console.warn(`[Owner] Could not post the sign-in approval for ${p.ip}: ${err.message}`);
         throw httpError(
@@ -344,16 +348,8 @@ const list = (currentIp) => {
     };
 };
 
-/** Can approvals be posted right now? { ok, channel, guild, botTag, error } */
-const approvals = async () => {
-    let where;
-    try {
-        where = await panelLog.channel();
-    } catch (err) {
-        return { ok: false, error: err.message };
-    }
-    return discordBus.canPost(where.channelId);
-};
+/** Can approvals be posted (and ping @everyone) right now? { ok, channel, guild, botTag, error } */
+const approvals = () => discordBus.canPost(approvalChannel(), ["MentionEveryone"]);
 
 const remove = (ip) => {
     const key = ipKey(ip);

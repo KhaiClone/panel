@@ -33,7 +33,7 @@ function DiscordStatus({ discord }) {
             ) : (
                 <Notice tone="warning">
                     Approvals cannot be posted: {discord.error}. Until this is fixed only the IPs below get in. Invite the panel&apos;s bot to the
-                    server of the panel log channel (DISCORD_PANEL_LOG_WEBHOOK) with View Channel, Send Messages and Embed Links.
+                    server of the approval channel with View Channel, Send Messages, Embed Links and Mention @everyone.
                 </Notice>
             )}
         </Section>
