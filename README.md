@@ -198,6 +198,7 @@ nano .env
 | `NODE_ENV`               | Yes      | `production` or `development`                                 |
 | `ADMIN_USERNAME`         | Yes      | Panel login username — the owner (staff sign in with Discord) |
 | `ADMIN_PASSWORD_HASH`    | Yes      | bcrypt hash of that account's password (see below)            |
+| `ADMIN_ALLOWED_IPS`      | No       | IPs the owner account always works from, comma-separated (see [Owner Sign-in by IP](#-owner-sign-in-by-ip)) |
 | `JWT_SECRET`             | Yes      | Long random string for signing JWTs                           |
 | `PANEL_NODE_ID`          | Yes      | `_id` of the node record this panel runs on                   |
 | `PANEL_DISCORD_TOKEN`    | No       | The panel's own Discord bot — posts commands on the bus       |
@@ -221,8 +222,9 @@ node -e "const b=require('bcryptjs'); console.log(b.hashSync('YOUR_PASSWORD_HERE
 Paste the output into `ADMIN_PASSWORD_HASH` in your `.env`, then restart the panel.
 
 > **One password account: the owner.** `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` *are* the
-> owner's account, with full access. Changing the password means regenerating the hash and
-> restarting. Other people get in only as **staff** — Discord login, chosen pages only
+> owner's account, with full access — from approved IPs only (see
+> [Owner Sign-in by IP](#-owner-sign-in-by-ip)). Changing the password means regenerating the
+> hash and restarting. Other people get in only as **staff** — Discord login, chosen pages only
 > (see [Staff Access](#-staff-access)).
 
 ### 4. Create the Bots Root Directory
@@ -1010,6 +1012,33 @@ Stored in `data/shared.sqlite` (travels with a panel move): `staff`, `staff_sess
 (Discord access token sealed, dropped when the session ends; ended rows kept 90 days),
 `staff_audit` (last 5,000 rows), kv `__staff.settings`.
 
+## 🛡️ Owner Sign-in by IP
+
+The owner account (`ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH`) works only from **approved
+IPs** (`server/services/ownerAccess.js`, `server/middleware/auth.js`):
+
+| | |
+|---|---|
+| **Known IP** | The password is enough, as before. |
+| **New IP** | A right password is not: the panel's bot posts the sign-in (IP, browser) in the [panel log channel](#-panel-log-channel) with **Allow this IP** / **Deny**, and the login page waits. Allow remembers the IP and signs that browser in; Deny turns it away and the IP cannot ask again for 24 hours. Unanswered requests expire after 10 minutes. A wrong password never reaches Discord. |
+| **Every request** | The owner's token counts only from an approved IP — pages, bot logs, the terminal. A token copied elsewhere is refused, and an IP that changes signs you out (sign in again, Allow). |
+| **Wrong passwords** | 5 from one IP within 15 minutes make that IP wait; each one is a line in the panel log. |
+| **Forgetting** | An approved IP unused for 30 days is dropped. IPv6 is kept by its `/64` (the browser's own address inside it changes daily). |
+| **Way back in** | `ADMIN_ALLOWED_IPS` in `.env` (comma-separated) always works and is never forgotten — when Discord or the bot is down, add your IP over SSH and restart the panel. |
+
+The panel log channel must sit in a server only the owner is in: whoever clicks is taken to be
+the owner. That channel is the one `DISCORD_PANEL_LOG_WEBHOOK` posts to, and the panel's bot
+(`PANEL_DISCORD_TOKEN`) must be in that server with *View Channel*, *Send Messages* and
+*Embed Links* — a webhook's messages cannot carry buttons that call back. **Panel Settings →
+Security** shows whether approvals can be posted, the approved / `.env` / waiting / denied IPs,
+and removes or unblocks them.
+
+The browser's IP is nginx's `X-Real-IP` (the panel listens behind it on loopback). Requests
+through the agent gateway (`127.0.0.1:4201`) carry the caller's own headers, so their
+`X-Real-IP` is ignored — they count as the gateway's address. Stored in `data/panel.sqlite`
+(`owner_access`, travels with a panel move); waiting requests live in memory only (a restart
+drops them — sign in again).
+
 ## 📜 Panel Log Channel
 
 `DISCORD_PANEL_LOG_WEBHOOK` is the panel's own log channel — everything it has to say
@@ -1021,7 +1050,10 @@ except the customer-facing expiry / renewal alerts (`server/services/panelLog.js
 | ❌ ⚠️ | Every `console.error` / `console.warn` of the server — failed backups, bus problems, route errors… |
 | 🖥️ | System: panel started (epoch, version), moving / move abandoned, rollback staged (a backup that was sent is not logged — its message is the record); the Lavalink report too when `DISCORD_LAVALINK_WEBHOOK` is not set |
 | 👤 | Staff: sign-ins (🆕 for a new device, IP, browser), sign-outs and why, every change they make (page, request, result) |
-| 👑 | The owner's changes to staff access: added, pages changed, removed, signed out, login settings |
+| 👑 | The owner's changes to staff access: added, pages changed, removed, signed out, login settings; the owner's sign-ins (IP, browser) and owner IPs allowed, denied, removed, forgotten — a wrong owner password is a ⚠️ line |
+
+The panel's **bot** also posts in this channel: the owner's sign-ins from a new IP, with
+Allow / Deny buttons ([Owner Sign-in by IP](#-owner-sign-in-by-ip)).
 
 **Stays on `DISCORD_ALERT_WEBHOOK`:** bot expiry warnings, suspensions and removals, and the
 Stock renewal reminders — they ping buyers, so that channel may be one buyers can see. The log
@@ -1210,7 +1242,8 @@ SPOTIFY_TOKENER_CHROME_PATH=  # default: the first Chrome/Chromium found on PATH
 ## 🔒 Security Notes
 
 - The **owner** is defined entirely by `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH` in
-  `.env`; an owner JWT is full access. **Staff** tokens (`kind: "staff"`) only pass the
+  `.env`; an owner JWT is full access, but only from an approved IP — checked on every
+  request, see [Owner Sign-in by IP](#-owner-sign-in-by-ip). **Staff** tokens (`kind: "staff"`) only pass the
   routes mounted with `pageAuth(page)` for pages they hold, and only while their session
   row is live — see [Staff Access](#-staff-access)
 - The owner JWT expires after **24 hours**, a staff session after **12** — re-login after that
@@ -1315,7 +1348,10 @@ All routes require `Authorization: Bearer <token>` unless noted.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/auth/login` | Owner login — returns JWT (no auth required) |
+| `POST` | `/api/auth/login` | Owner login — JWT from an approved IP; `202 { pending }` from a new one (no auth required) |
+| `POST` | `/api/auth/login/pending` | `{ id, key }` → `pending` / `approved` + JWT / `denied` / `expired` (no auth) |
+| `GET` | `/api/owner-ips` | Approved, `.env`, waiting and denied owner IPs + whether Discord can take approvals (owner) |
+| `POST` | `/api/owner-ips/remove`, `/api/owner-ips/unblock` | `{ ip }` — stop allowing an IP / let a denied one ask again (owner) |
 | `GET` | `/api/auth/verify` | Who the token is: `{ kind: "owner" }` or `{ kind: "staff", perms, … }` |
 | `GET` | `/api/auth/discord` | `{ enabled }` — is staff (Discord) login set up (no auth) |
 | `POST` | `/api/auth/discord/start` | `{ url, state }` for Discord's authorize page (no auth) |

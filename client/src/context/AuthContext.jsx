@@ -56,10 +56,27 @@ export function AuthProvider({ children }) {
         return () => clearInterval(t);
     }, [user?.kind]);
 
+    /**
+     * The owner's sign-in. Returns null once signed in — or, from an IP the
+     * owner account does not know yet, { id, key, ip, expiresAt }: Allow / Deny
+     * waits on Discord, and the page asks pollApproval() until it is answered.
+     */
     const login = async (username, password) => {
         const res = await api.post("/auth/login", { username, password });
+        if (res.status === 202) return res.data.pending;
         localStorage.setItem("token", res.data.token);
         setUser({ kind: "owner", username: res.data.username });
+        return null;
+    };
+
+    /** "pending" | "approved" (now signed in) | "denied" | "expired" */
+    const pollApproval = async ({ id, key }) => {
+        const { data } = await api.post("/auth/login/pending", { id, key });
+        if (data.status === "approved") {
+            localStorage.setItem("token", data.token);
+            setUser({ kind: "owner", username: data.username });
+        }
+        return data.status;
     };
 
     /** Off to Discord; it comes back to /auth/discord/callback (through the launcher). */
@@ -99,7 +116,7 @@ export function AuthProvider({ children }) {
     }, [user]);
 
     return (
-        <AuthContext.Provider value={{ user, loading, isOwner: user?.kind === "owner", can, login, startDiscordLogin, finishDiscordLogin, logout }}>
+        <AuthContext.Provider value={{ user, loading, isOwner: user?.kind === "owner", can, login, pollApproval, startDiscordLogin, finishDiscordLogin, logout }}>
             {children}
         </AuthContext.Provider>
     );

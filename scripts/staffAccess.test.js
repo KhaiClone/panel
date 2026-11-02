@@ -18,10 +18,13 @@ const assert = require("assert");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "staff-test-"));
 process.env.SHARED_DB_PATH = path.join(TMP, "shared.sqlite");
 process.env.JWT_SECRET = "test-secret-for-staff-access";
+// The owner works only from an approved IP (services/ownerAccess.js); every
+// request here comes from this one. Staff are not limited by IP.
+process.env.ADMIN_ALLOWED_IPS = "203.0.113.7";
 
-// Stand-in for server/db (discordBus loads it; nothing here reads bots).
+// Stand-in for server/db (discordBus and ownerAccess load it; nothing here reads bots).
 const dbPath = require.resolve(path.join(__dirname, "..", "server", "db"));
-require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { get: async () => null, find: async () => [], findOne: async () => null } };
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { get: async () => null, set: async () => {}, find: async () => [], findOne: async () => null } };
 
 const axios = require("axios");
 const jwt = require("jsonwebtoken");
@@ -313,13 +316,15 @@ const login = (userId, member, extra = {}) => {
     });
 
     await test("the terminal and bot logs take the owner's token only", () => {
-        assert.strictEqual(isOwnerToken(OWNER), true);
-        assert.strictEqual(isOwnerToken(lanToken), false);
-        assert.strictEqual(isOwnerToken("garbage"), false);
-        assert.strictEqual(isOwnerToken(""), false);
+        // From the owner's approved IP (scripts/ownerAccess.test.js checks the IP side).
+        const home = { socket: { remoteAddress: "127.0.0.1" }, headers: { "x-real-ip": "203.0.113.7" } };
+        assert.strictEqual(isOwnerToken(OWNER, home), true);
+        assert.strictEqual(isOwnerToken(lanToken, home), false);
+        assert.strictEqual(isOwnerToken("garbage", home), false);
+        assert.strictEqual(isOwnerToken("", home), false);
         // A token signed for something else is not the owner's either.
-        assert.strictEqual(isOwnerToken(jwt.sign({ kind: "other", username: "admin" }, process.env.JWT_SECRET)), false);
-        assert.strictEqual(isOwnerToken(jwt.sign({ foo: 1 }, process.env.JWT_SECRET)), false);
+        assert.strictEqual(isOwnerToken(jwt.sign({ kind: "other", username: "admin" }, process.env.JWT_SECRET), home), false);
+        assert.strictEqual(isOwnerToken(jwt.sign({ foo: 1 }, process.env.JWT_SECRET), home), false);
     });
 
     await test("view lets GET through and stops writes", () => {
@@ -461,7 +466,8 @@ const login = (userId, member, extra = {}) => {
         const stats = (token) =>
             new Promise((resolve, reject) => {
                 const req = require("http").request(
-                    { host: "127.0.0.1", port: server.address().port, path: "/api/shop/orders/stats", agent: false, headers: { authorization: `Bearer ${token}` } },
+                    // As nginx hands it over: the browser's address in X-Real-IP.
+                    { host: "127.0.0.1", port: server.address().port, path: "/api/shop/orders/stats", agent: false, headers: { authorization: `Bearer ${token}`, "x-real-ip": "203.0.113.7" } },
                     (res) => {
                         let out = "";
                         res.on("data", (c) => (out += c));

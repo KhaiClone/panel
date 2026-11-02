@@ -333,6 +333,72 @@ const catchUpReplies = async () => {
     }
 };
 
+// ── The bot's own messages with buttons ──────────────────────────────────────
+// Outside the bus: messages the panel's bot posts for a person to click (the
+// owner's sign-in approvals, services/ownerAccess.js). A click comes back as an
+// interaction to whichever panel is active, and goes to the handler of its
+// custom_id prefix ("<prefix>:…").
+
+const buttons = new Map(); // prefix → async (interaction, rest of the custom_id split on ":")
+const onButton = (prefix, fn) => buttons.set(prefix, fn);
+
+const onInteraction = async (i) => {
+    if (!i.isButton?.()) return;
+    const [prefix, ...rest] = String(i.customId || "").split(":");
+    const fn = buttons.get(prefix);
+    if (fn) await fn(i, rest);
+};
+
+/** What Discord's refusal means for the person setting this up. */
+const postError = (err) => {
+    if (err.code === 50001 || err.code === 10003) {
+        return `the panel's bot${client?.user ? ` (${client.user.tag})` : ""} is not in that server or cannot see the channel — invite it there`;
+    }
+    if (err.code === 50013) return "the panel's bot may not post there (it needs View Channel, Send Messages and Embed Links)";
+    return err.message;
+};
+
+const textChannel = async (channelId) => {
+    if (!ready || !client) throw new Error("the panel's Discord bot is not connected");
+    let ch;
+    try {
+        ch = await client.channels.fetch(String(channelId));
+    } catch (err) {
+        throw new Error(postError(err));
+    }
+    if (!ch?.isTextBased?.()) throw new Error("that channel is not a text channel");
+    return ch;
+};
+
+/** Post { content?, embeds?, components? } as the panel's bot. → { channelId, messageId } */
+const post = async (channelId, payload) => {
+    const ch = await textChannel(channelId);
+    try {
+        const m = await ch.send(payload);
+        return { channelId: ch.id, messageId: m.id };
+    } catch (err) {
+        throw new Error(postError(err));
+    }
+};
+
+const edit = async ({ channelId, messageId }, payload) => {
+    const ch = await textChannel(channelId);
+    await (await ch.messages.fetch(String(messageId))).edit(payload);
+};
+
+/** Can the bot post (with embeds) in this channel? { ok, channel, guild, botTag, error } */
+const canPost = async (channelId) => {
+    const botTag = client?.user?.tag || null;
+    try {
+        const ch = await textChannel(channelId);
+        const perms = ch.permissionsFor?.(client.user);
+        const missing = ["ViewChannel", "SendMessages", "EmbedLinks"].filter((p) => !perms?.has(p));
+        return { ok: !missing.length, channel: ch.name || null, guild: ch.guild?.name || null, botTag, error: missing.length ? `the panel's bot is missing ${missing.join(", ")} there` : null };
+    } catch (err) {
+        return { ok: false, channel: null, guild: null, botTag, error: err.message };
+    }
+};
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
 const start = async () => {
@@ -344,6 +410,7 @@ const start = async () => {
     const { Client, GatewayIntentBits, Events } = require("discord.js");
     client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
     client.on("messageCreate", (m) => onMessage(m).catch((e) => console.warn("[Bus] reply handling:", e.message)));
+    client.on(Events.InteractionCreate, (i) => onInteraction(i).catch((e) => console.warn("[Bus] button:", e.message)));
     client.once(Events.ClientReady, async () => {
         try {
             const ch = await client.channels.fetch(channelId());
@@ -463,6 +530,10 @@ module.exports = {
     handlerOf,
     capabilities,
     userTag,
+    onButton,
+    post,
+    edit,
+    canPost,
     sign,
     verify,
     canonical,

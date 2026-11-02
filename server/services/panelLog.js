@@ -10,7 +10,10 @@ const axios = require("axios");
 //    error    every console.error of the server (warn: every console.warn)
 //    system   panel started, moving, back to active; rollbacks; Lavalink report
 //    staff    sign-ins and sign-outs, every change staff make (owner: what the
-//             owner changed about staff)
+//             owner changed about staff, the owner's sign-ins and owner IPs)
+//
+//  The panel's BOT posts here too: the owner's sign-ins from a new IP, with
+//  Allow / Deny (services/ownerAccess.js; see channel() below).
 //
 //  Bot expiry warnings / removals and the stock renewal reminders stay on
 //  DISCORD_ALERT_WEBHOOK — they ping buyers, so that channel may be one they
@@ -176,11 +179,33 @@ const captureConsole = () => {
 /** For Panel Settings → Overview. */
 const status = () => ({ configured: enabled(), set: !!url(), queued: queue.length, lastSentAt, lastError });
 
+/**
+ * The channel the webhook posts in: { channelId, guildId }. For what the
+ * panel's BOT posts there — a webhook's messages cannot carry buttons that
+ * call back (services/ownerAccess.js). Asked of Discord once per webhook URL.
+ */
+let where = null;
+const channel = async () => {
+    if (!enabled()) throw new Error("DISCORD_PANEL_LOG_WEBHOOK is not set");
+    if (where?.url === url()) return { channelId: where.channelId, guildId: where.guildId };
+    let data;
+    try {
+        ({ data } = await axios.get(url().split("?")[0], { timeout: 10_000 }));
+    } catch (err) {
+        if (err.response?.status === 404) throw new Error("the panel log webhook no longer exists on Discord");
+        throw new Error(`could not read the panel log webhook: ${err.response?.data?.message || err.message}`);
+    }
+    if (!data?.channel_id) throw new Error("the panel log webhook did not say which channel it posts in");
+    where = { url: url(), channelId: data.channel_id, guildId: data.guild_id || null };
+    return { channelId: where.channelId, guildId: where.guildId };
+};
+
 module.exports = {
     add,
     flush,
     enabled,
     status,
+    channel,
     captureConsole,
     // for tests
     _redact: redact,

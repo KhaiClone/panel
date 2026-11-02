@@ -3,52 +3,82 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const staffService = require("../services/staffService");
 const lifecycle = require("../services/lifecycle");
-const { identify, tokenOf, clientIp, AUTH_REQUIRED } = require("../middleware/auth");
+const ownerAccess = require("../services/ownerAccess");
+const panelLog = require("../services/panelLog");
+const { identify, authenticate, tokenOf, clientIp, AUTH_REQUIRED } = require("../middleware/auth");
 const router = express.Router();
 
 /**
  * Two ways in:
  *
- *  - The OWNER: ADMIN_USERNAME + ADMIN_PASSWORD_HASH in .env, full access.
- *    To change the password, regenerate the hash and restart the panel:
+ *  - The OWNER: ADMIN_USERNAME + ADMIN_PASSWORD_HASH in .env, full access —
+ *    from an approved IP only; a new IP is allowed or denied on Discord
+ *    (services/ownerAccess.js). To change the password, regenerate the hash
+ *    and restart the panel:
  *      node -e "console.log(require('bcryptjs').hashSync('newpassword',10))"
  *  - STAFF: Discord login only (services/staffService.js) — the owner adds them
  *    and picks their pages under Panel Settings → Staff. They have no password.
  */
 
+const ownerToken = (username) => jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: "24h" });
+
+const signedIn = (ip, ua, how = "") =>
+    panelLog.add("owner", [`**Owner** signed in${how}`, `IP ${ip || "unknown"}`, ua && `\`${String(ua).slice(0, 120)}\``].filter(Boolean).join(" · "));
+
 /**
  * POST /api/auth/login
  * Validates username + password against the env credentials.
- * Returns a signed JWT valid for 24 hours.
  * Body: { username: string, password: string }
+ *   200 { token, username }            a JWT valid for 24 hours (approved IP)
+ *   202 { pending: { id, key, ip, expiresAt } }
+ *                                      right password, new IP: Allow / Deny is
+ *                                      on Discord; poll POST /login/pending
+ *   429                                too many wrong passwords from this IP
  */
 router.post("/login", async (req, res, next) => {
     try {
-        const { username, password } = req.body;
+        const { username, password } = req.body || {};
 
         if (!username || !password) {
             return res.status(400).json({ error: "Username and password are required" });
         }
 
-        if (username !== process.env.ADMIN_USERNAME) {
-            return res.status(401).json({ error: "Invalid credentials" });
-        }
+        const ip = clientIp(req);
+        const ua = req.headers["user-agent"];
+        ownerAccess.checkFailures(ip);
 
-        const validPassword = await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH);
+        const validPassword = username === process.env.ADMIN_USERNAME && (await bcrypt.compare(password, process.env.ADMIN_PASSWORD_HASH));
         if (!validPassword) {
+            ownerAccess.failed(ip);
             return res.status(401).json({ error: "Invalid credentials" });
         }
+        ownerAccess.succeeded(ip);
 
-        const token = jwt.sign(
-            { username },
-            process.env.JWT_SECRET,
-            { expiresIn: "24h" },
-        );
-
-        res.json({ token, username });
+        if (!ownerAccess.isLoaded()) return res.status(503).json({ error: "The panel is starting — try again in a moment" });
+        if (ownerAccess.allowed(ip)) {
+            signedIn(ip, ua);
+            return res.json({ token: ownerToken(username), username });
+        }
+        res.status(202).json({ pending: await ownerAccess.requestApproval({ ip, ua }) });
     } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);
     }
+});
+
+/**
+ * POST /api/auth/login/pending { id, key }
+ * The login page asks every few seconds while Allow / Deny waits on Discord:
+ *   { status: "pending", expiresAt } | { status: "denied" } | { status: "expired" }
+ *   { status: "approved", token, username }  — once, to the browser holding `key`
+ */
+router.post("/login/pending", (req, res) => {
+    const { id, key } = req.body || {};
+    const r = ownerAccess.poll(id, key);
+    if (r.status !== "approved") return res.json(r);
+    signedIn(r.ip, req.headers["user-agent"], ` (allowed on Discord by ${r.decidedBy})`);
+    const username = process.env.ADMIN_USERNAME;
+    res.json({ status: "approved", token: ownerToken(username), username });
 });
 
 /**
@@ -56,13 +86,15 @@ router.post("/login", async (req, res, next) => {
  * Who the token belongs to:
  *   { valid, kind: "owner", username }
  *   { valid, kind: "staff", username, userId, avatar, perms, expiresAt }
- * A staff 401 carries `reason` (why the session ended) for the login page.
+ * A 401 carries `reason` (why the session ended — or, for the owner, that the
+ * IP is not approved) for the login page.
  */
 router.get("/verify", (req, res) => {
     let who;
     try {
-        who = identify(tokenOf(req));
+        who = authenticate(req);
     } catch (err) {
+        if (err.status === 503) return res.status(503).json({ error: err.message, code: err.code });
         return res.status(401).json({ valid: false, error: err.message, code: AUTH_REQUIRED, ...(err.reason ? { reason: err.reason } : {}) });
     }
     if (who.kind === "owner") return res.json({ valid: true, kind: "owner", username: who.username });

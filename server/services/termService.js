@@ -39,7 +39,7 @@ const attachTermServer = (httpServer) => {
         if (pathname !== "/api/term") return; // not ours — leave it alone
 
         // A shell on a VPS: the owner's token only — never a staff one.
-        if (!isOwnerToken(query.token || "")) {
+        if (!isOwnerToken(query.token || "", req)) {
             socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
             return socket.destroy();
         }

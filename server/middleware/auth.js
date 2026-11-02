@@ -1,11 +1,14 @@
 const jwt = require("jsonwebtoken");
 const staffService = require("../services/staffService");
+const ownerAccess = require("../services/ownerAccess");
 
 /**
  * Who is calling, and may they?
  *
  * Two kinds of token, both signed with JWT_SECRET:
- *   owner  { username }                 the .env account (routes/auth.js /login)
+ *   owner  { username }                 the .env account (routes/auth.js /login);
+ *                                       counts only from an approved IP
+ *                                       (services/ownerAccess.js), on every call
  *   staff  { kind: "staff", sub, sid }  a Discord login (services/staffService.js);
  *                                       sid must still be a live session row
  *
@@ -39,14 +42,22 @@ const tokenOf = (req) => {
     return (authHeader && authHeader.split(" ")[1]) || req.query?.token || null;
 };
 
-/** The browser's address: nginx in front of the panel sets X-Real-IP. */
+/**
+ * The browser's address: nginx in front of the panel sets X-Real-IP. The
+ * agent's gateway (127.0.0.1:4201) is local too, but it passes the caller's
+ * own headers on — an X-Real-IP through it is whatever a process on that
+ * machine chose to send, and the owner is let in by IP.
+ */
 const clientIp = (req) => {
     const peer = req.socket?.remoteAddress || "";
     const local = peer === "127.0.0.1" || peer === "::1" || peer === "::ffff:127.0.0.1";
-    return (local && req.headers["x-real-ip"]) || peer || null;
+    return (local && !req.headers["x-panel-gateway"] && req.headers["x-real-ip"]) || peer || null;
 };
 
 const unauthorized = (message, reason) => Object.assign(new Error(message), { status: 401, reason });
+
+/** The owner's token from an IP that is not approved: sign in again (and Allow it on Discord). */
+const IP_NOT_APPROVED = "ip_not_approved";
 
 /**
  * { kind: "owner", username } | { kind: "staff", staff, session } —
@@ -72,14 +83,29 @@ const identify = (token) => {
     return { kind: "owner", username: decoded.username };
 };
 
+/**
+ * identify() for a request: the token, and for the owner the IP it comes
+ * from. Throws the 401 — or a 503 while the approved IPs are still loading
+ * (a restart must not sign the owner out).
+ */
+const authenticate = (req) => {
+    const who = identify(tokenOf(req));
+    if (who.kind !== "owner") return who;
+    if (!ownerAccess.isLoaded()) throw Object.assign(new Error("The panel is starting — try again in a moment"), { status: 503, code: "PANEL_STARTING" });
+    if (!ownerAccess.allowed(clientIp(req))) throw unauthorized("This IP is not approved for the owner account — sign in again", IP_NOT_APPROVED);
+    return who;
+};
+
 const deny401 = (res, err) =>
-    res.status(401).json({ error: err.message, code: AUTH_REQUIRED, ...(err.reason ? { reason: err.reason } : {}) });
+    err.status === 503
+        ? res.status(503).json({ error: err.message, code: err.code })
+        : res.status(401).json({ error: err.message, code: AUTH_REQUIRED, ...(err.reason ? { reason: err.reason } : {}) });
 
 /** Owner only. */
 const authMiddleware = (req, res, next) => {
     let who;
     try {
-        who = identify(tokenOf(req));
+        who = authenticate(req);
     } catch (err) {
         return deny401(res, err);
     }
@@ -94,7 +120,7 @@ const authMiddleware = (req, res, next) => {
 const pageAuth = (page) => (req, res, next) => {
     let who;
     try {
-        who = identify(tokenOf(req));
+        who = authenticate(req);
     } catch (err) {
         return deny401(res, err);
     }
@@ -129,13 +155,17 @@ const pageAuth = (page) => (req, res, next) => {
  */
 const hasGrant = (auth, grant) => auth?.kind === "owner" || (auth?.kind === "staff" && staffService.has(auth.staff, grant));
 
-/** For code that reads the token itself (terminal WebSocket, bot logs): is it the owner's? */
-const isOwnerToken = (token) => {
+/**
+ * For code that reads the token itself (terminal WebSocket, bot logs): is it
+ * the owner's, from an approved IP? `req` is required — without it, no.
+ */
+const isOwnerToken = (token, req) => {
+    if (!req) return false;
     try {
-        return identify(token).kind === "owner";
+        return identify(token).kind === "owner" && ownerAccess.isLoaded() && ownerAccess.allowed(clientIp(req));
     } catch {
         return false;
     }
 };
 
-module.exports = { authMiddleware, pageAuth, hasGrant, identify, isOwnerToken, tokenOf, clientIp, AUTH_REQUIRED, FORBIDDEN };
+module.exports = { authMiddleware, pageAuth, hasGrant, identify, authenticate, isOwnerToken, tokenOf, clientIp, AUTH_REQUIRED, FORBIDDEN, IP_NOT_APPROVED };

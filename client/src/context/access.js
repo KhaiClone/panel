@@ -37,8 +37,12 @@ export const homeFor = (user) => {
     return STAFF_PAGES.find((p) => user.perms?.[p.key])?.path || "/no-access";
 };
 
-/** Why a staff session ended (server: staffService.END_REASONS). */
+/**
+ * Why a staff session ended (server: staffService.END_REASONS) — or why the
+ * owner was signed out (middleware/auth.js IP_NOT_APPROVED).
+ */
 export const END_REASONS = {
+    ip_not_approved: "This IP is not approved for the owner account. Sign in again and allow it on Discord.",
     replaced: "Your account signed in somewhere else, so this session was closed.",
     logout: "You signed out.",
     kicked: "The owner signed you out.",

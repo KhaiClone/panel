@@ -6,8 +6,11 @@ import api from "../api/client";
 
 // The owner signs in with the .env account; staff only with Discord (the
 // button shows once Discord login is set up under Panel Settings → Staff).
+// From an IP the owner account does not know, a right password is not enough:
+// the panel's bot asks on Discord (Allow / Deny) and this page waits for the
+// answer (server/services/ownerAccess.js).
 export default function Login() {
-    const { login, startDiscordLogin } = useAuth();
+    const { login, pollApproval, startDiscordLogin } = useAuth();
     const navigate = useNavigate();
     const [params] = useSearchParams();
     // Why the last staff session ended (api/client.js) — shown once.
@@ -27,10 +30,34 @@ export default function Login() {
     const [showPass, setShowPass] = useState(false);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [waiting, setWaiting] = useState(null); // { id, key, ip, expiresAt } while Allow / Deny waits on Discord
 
     useEffect(() => {
         api.get("/auth/discord").then((r) => setDiscordEnabled(!!r.data?.enabled)).catch(() => {});
     }, []);
+
+    useEffect(() => {
+        if (!waiting) return;
+        let stopped = false;
+        let busy = false;
+        const tick = async () => {
+            if (busy) return;
+            busy = true;
+            try {
+                const status = await pollApproval(waiting);
+                if (stopped) return;
+                if (status === "approved") navigate("/systems");
+                else if (status === "denied") { setWaiting(null); setError("This sign-in was denied on Discord."); }
+                else if (status === "expired") { setWaiting(null); setError("Nobody allowed this sign-in in time. Sign in again."); }
+            } catch {
+                /* a network blip: ask again on the next tick */
+            } finally {
+                busy = false;
+            }
+        };
+        const t = setInterval(tick, 2000);
+        return () => { stopped = true; clearInterval(t); };
+    }, [waiting, pollApproval, navigate]);
 
     const handleDiscord = async () => {
         setError("");
@@ -48,8 +75,9 @@ export default function Login() {
         setError("");
         setLoading(true);
         try {
-            await login(username, password);
-            navigate("/systems");
+            const pending = await login(username, password);
+            if (pending) setWaiting(pending);
+            else navigate("/systems");
         } catch (err) {
             setError(err.response?.data?.error || "Invalid credentials. Please try again.");
         } finally {
@@ -84,6 +112,20 @@ export default function Login() {
 
                     {/* Form card */}
                     <div className="card" style={{ padding: 24 }}>
+                        {waiting ? (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
+                                <div style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid var(--accent-border)", borderTopColor: "var(--accent)", animation: "spin 1s linear infinite" }} />
+                                <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", margin: 0 }}>Waiting for approval on Discord</h2>
+                                <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, lineHeight: 1.5 }}>
+                                    Your IP <span className="mono" style={{ color: "var(--text)" }}>{waiting.ip}</span> is new for the owner account.
+                                    Press <strong>Allow this IP</strong> in the panel log channel on Discord. This page signs you in by itself.
+                                </p>
+                                <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
+                                    The request expires at {new Date(waiting.expiresAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}.
+                                </p>
+                                <button type="button" className="btn-ghost btn-sm" onClick={() => setWaiting(null)}>Cancel</button>
+                            </div>
+                        ) : (
                         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
                             {/* Username */}
@@ -194,8 +236,9 @@ export default function Login() {
                                 )}
                             </button>
                         </form>
+                        )}
 
-                        {discordEnabled && (
+                        {discordEnabled && !waiting && (
                             <>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0", color: "var(--text-dim)", fontSize: 12 }}>
                                     <span style={{ flex: 1, height: 1, background: "var(--border)" }} />

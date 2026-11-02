@@ -14,7 +14,7 @@ const { AUTH_REQUIRED, isOwnerToken, tokenOf } = require("../middleware/auth");
  */
 router.get("/:botId", async (req, res, next) => {
     try {
-        if (!isOwnerToken(tokenOf(req))) return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED });
+        if (!isOwnerToken(tokenOf(req), req)) return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED });
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
@@ -35,7 +35,7 @@ router.get("/:botId", async (req, res, next) => {
  */
 router.get("/:botId/stream", async (req, res, next) => {
     try {
-        if (!isOwnerToken(req.query.token)) return res.status(401).end();
+        if (!isOwnerToken(req.query.token, req)) return res.status(401).end();
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).end();
@@ -76,7 +76,7 @@ router.get("/:botId/stream", async (req, res, next) => {
  */
 router.delete("/:botId", async (req, res, next) => {
     try {
-        if (!isOwnerToken(tokenOf(req))) return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED });
+        if (!isOwnerToken(tokenOf(req), req)) return res.status(401).json({ error: "Invalid token", code: AUTH_REQUIRED });
 
         const bot = await db.findOne("bots", { _id: req.params.botId });
         if (!bot) return res.status(404).json({ error: "Bot not found" });
