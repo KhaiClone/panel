@@ -130,7 +130,7 @@ người dùng nói rõ trong chat.
   Auto Badge, Auto Deco Gift.
 
 **Đăng nhập:** đúng **một** tài khoản owner = `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` trong `.env`
-(không có bảng users). Staff đăng nhập bằng Discord OAuth (redirect qua launcher), quyền none/view/edit
+(không có bảng users), chỉ dùng được từ IP đã duyệt (`ownerAccess.js`, mục 6). Staff đăng nhập bằng Discord OAuth (redirect qua launcher), quyền none/view/edit
 theo từng trang, một session mỗi người, phải giữ role Staff; audit mọi thao tác. Trang chỉ-owner mãi
 mãi: Terminal, Systems/Nodes, Panel manage, Git keys, Proxy/Proxies, Bots, Lavalink, Domains/Sites.
 
@@ -262,6 +262,12 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
   domain; chọn node đích bằng tay (không auto-election); không special-case bot ArnTo.
 - **Tài khoản:** một owner trong `.env`; staff = Discord OAuth, owner thêm từng người, role Staff bắt buộc
   nhưng chưa đủ; panel không bao giờ cho/lấy role Staff.
+- **Đăng nhập owner theo IP** (2026-11-02): acc owner chỉ dùng được từ IP đã duyệt, kiểm ở **mọi request** (token
+  mang sang IP khác = 401, IP đổi = phải đăng nhập lại). IP mới + đúng mật khẩu → bot panel đăng Allow/Deny vào
+  **kênh panel log** (server riêng chỉ có chủ — ai bấm cũng tính là chủ, người dùng chốt không kiểm người bấm); vẫn
+  cần mật khẩu, sai mật khẩu không bao giờ lên Discord (5 lần/15 phút/IP). Allow = nhớ IP (quên sau 30 ngày không
+  dùng; IPv6 theo /64); Deny = IP đó không xin lại được 24h. `ADMIN_ALLOWED_IPS` (`.env`) luôn vào được = lối thoát
+  khi Discord/bot chết. Request qua gateway agent không được tin `X-Real-IP`. Bot panel phải ở trong server log.
 - **Backup:** `.env` đi kèm mỗi backup dạng plain text (đã chấp nhận rủi ro); rollback bằng link message.
 - **Panel log:** mọi thứ vào `DISCORD_PANEL_LOG_WEBHOOK` trừ cảnh báo hết hạn/gia hạn của khách.
 - **Lavalink:** bỏ qua bản cài tay cũ; update 02:00 VN từng node; agent không cài Java.
