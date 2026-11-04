@@ -3,6 +3,7 @@ const util = require("util");
 const fs = require("fs");
 const path = require("path");
 const nodeVersions = require("./nodeVersions");
+const { projectEnv } = require("../utils/projectEnv");
 const execAsync = util.promisify(exec);
 
 // The agent owns every git operation — the panel runs no git of its own, so
@@ -38,8 +39,10 @@ const repoInfo = async (botPath) => {
 
 const pullRepo = async (botPath) => {
     try {
+        // Hooks in the project's .git run here — without the agent's key.
         const { stdout, stderr } = await execAsync(`git pull`, {
             cwd: botPath,
+            env: projectEnv(),
             timeout: GIT_TIMEOUT,
         });
         return stdout || stderr;
@@ -99,8 +102,9 @@ const installDeps = async (botPath, installCommand = undefined, nodeVersion = nu
         : `npm install --omit=dev`;
 
     // Resolve the Node version before cleaning: a failed download must not
-    // cost the project its node_modules.
-    const env = await nodeVersions.envFor(nodeVersion);
+    // cost the project its node_modules. Install scripts are the project's
+    // code: they run without the agent's key (utils/projectEnv.js).
+    const env = projectEnv(await nodeVersions.envFor(nodeVersion));
 
     cleanPackageFolder(botPath, cmd);
 

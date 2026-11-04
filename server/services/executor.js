@@ -1,6 +1,7 @@
 const fs = require("fs");
 
 const nodeService = require("./nodeService");
+const agentCrypto = require("./agentCrypto");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Executor — every bot operation, on every node, through one code path.
@@ -64,12 +65,19 @@ const buildEgressProxyConf = async (bot) => {
         if (nodeService.resolveNodeId(egressId) === nodeService.resolveNodeId(bot.nodeId)) return null;
         const node = await nodeService.getNode(egressId);
         if (!node) return null;
+        // The conf lands in the project folder, readable by the bot: never the
+        // agent key itself — only the proxy-only secret (agentCrypto.proxySecret).
+        // An agent older than 1.14.0 says nothing about it and takes only the key;
+        // an unreachable one gets the secret (the tunnel is dead until it is back).
+        const health = await nodeService.agentRequest(node, "get", "/health", { timeout: 5000 }).catch(() => null);
+        const password = health && !health.proxySecret ? node.apiKey : agentCrypto.proxySecret(node.apiKey);
+        if (password === node.apiKey) console.warn(`[Egress] ${node.name} runs an agent before 1.14.0 — bot ${bot.pm2Name} gets its agent key; update that agent`);
         return {
             type: "http",
             host: node.host,
             port: node.port,
             username: "proxy",
-            password: node.apiKey,
+            password,
         };
     } catch (err) {
         console.warn(`[Egress] bot ${bot.pm2Name} node ${egressId}: ${err.message}`);

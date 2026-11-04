@@ -1,4 +1,5 @@
 const net = require("net");
+const { proxySecret } = require("../utils/crypto");
 
 /**
  * proxy.js
@@ -13,6 +14,8 @@ const net = require("net");
  *
  * Auth: `Proxy-Authorization: Basic base64("<anything>:<AGENT_API_KEY>")`.
  *       (the panel embeds it as http://proxy:<key>@host:port)
+ *       A bot's tunnel uses proxySecret(AGENT_API_KEY) instead (utils/crypto.js):
+ *       it opens this proxy and no agent route.
  */
 function createProxy(server) {
     server.on("connect", (req, clientSocket, head) => {
@@ -65,7 +68,9 @@ function _authOk(req, key) {
     }
     const idx = decoded.indexOf(":");
     const pass = idx >= 0 ? decoded.slice(idx + 1) : decoded;
-    return pass === key;
+    // The key itself (the panel's own egress, older bot tunnels) or the
+    // proxy-only secret new bot tunnels carry (utils/crypto.js).
+    return pass === key || pass === proxySecret(key);
 }
 
 module.exports = { createProxy };

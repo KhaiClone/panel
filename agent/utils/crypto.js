@@ -40,4 +40,12 @@ const decrypt = (payload, secret) => {
     ]).toString("utf8");
 };
 
-module.exports = { encrypt, decrypt };
+/**
+ * The password a bot's egress tunnel gives the agent's CONNECT proxy. It sits
+ * in .proxychains4.conf inside the project folder, where the bot can read it —
+ * so it is a one-way derivative of AGENT_API_KEY that opens the proxy and
+ * nothing else (agent 1.14.0+; older agents take only the key itself).
+ */
+const proxySecret = (secret) => crypto.createHmac("sha256", String(secret)).update("bot-panel egress proxy").digest("hex");
+
+module.exports = { encrypt, decrypt, proxySecret };

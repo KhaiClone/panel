@@ -234,6 +234,9 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **pm2 env rò rỉ:** pm2 export cả `pm2_env` của tiến trình vào environment và CLI đọc lại — biến env
   THẮNG flag. `max_memory_restart` của agent từng đè giới hạn của mọi bot (Lavalink chết mỗi 30s).
   `runPM2()` unset `PORT`, `max_memory_restart`; thêm key rò rỉ mới vào `PM2_ENV_LEAKS`.
+  pm2 CLI còn chép **env của chính nó** vào app nó start → đến agent 1.13 mọi bot có `AGENT_API_KEY`. Lệnh
+  nào chạy code project (pm2 start, install, `git pull`, terminal) phải dùng `projectEnv()`
+  (`agent/utils/projectEnv.js`). Mật khẩu tunnel egress trong thư mục bot = `proxySecret(key)`, không bao giờ là key.
 - **Daemon pm2 cũ làm chết HTTP outbound** sau reboot, `pm2 restart` không chữa: `pm2 delete` → start lại
   với `--interpreter` tuyệt đối → `pm2 save`.
 - **Watermark ban đầu của job incremental phải lấy từ data**, không từ hằng số retention (đã mất 4 ngày

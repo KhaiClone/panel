@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const nodeVersions = require("./nodeVersions");
+const { projectEnv } = require("../utils/projectEnv");
 
 // The agent owns every PM2 operation — the panel runs no pm2 of its own.
 // Dump-corruption alerts go to the console instead of the panel's notification
@@ -28,9 +29,13 @@ const nodeVersions = require("./nodeVersions");
 const PM2_ENV_LEAKS = ["PORT", "max_memory_restart"];
 const PM2_ENV_PREFIX = PM2_ENV_LEAKS.map((v) => `-u ${v}`).join(" ");
 
+// The CLI also copies its own environment into every app it starts
+// (Common.prepareAppConf) — the agent's .env with AGENT_API_KEY in it — so it
+// runs without those variables (utils/projectEnv.js).
 const runPM2 = async (args) => {
     const { stdout, stderr } = await execAsync(
         `env ${PM2_ENV_PREFIX} pm2 ${args} --no-color`,
+        { env: projectEnv() },
     );
     return stdout || stderr;
 };
