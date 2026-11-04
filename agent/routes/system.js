@@ -12,7 +12,8 @@ const AGENT_VERSION = require("../package.json").version;
  */
 router.get("/health", (req, res) => {
     const lease = require("../services/panelLease").read();
-    res.json({ ok: true, version: AGENT_VERSION, uptime: process.uptime(), leaseEpoch: lease.epoch });
+    // proxySecret: the CONNECT proxy takes the proxy-only secret (services/proxy.js).
+    res.json({ ok: true, version: AGENT_VERSION, uptime: process.uptime(), leaseEpoch: lease.epoch, proxySecret: true });
 });
 
 let cachedStats = null;

@@ -7,6 +7,7 @@ const { isValidAgentKey } = require("../middleware/auth");
 const { resolveTarget } = require("../utils/paths");
 const { PM2_ENV_LEAKS } = require("./pm2");
 const nodeVersions = require("./nodeVersions");
+const { projectEnv } = require("../utils/projectEnv");
 
 // node-pty is the agent's only native dependency and the only one the agent can
 // live without. A missing or ABI-mismatched build must cost us the terminal
@@ -55,10 +56,10 @@ const startDir = (query) => {
 };
 
 /**
- * The agent's environment minus the pm2_env keys pm2 leaks into it. A project
- * terminal is exactly where someone types `pm2 restart <bot>`, and that pm2
- * CLI would read the agent's own max_memory_restart as configuration — see
- * PM2_ENV_LEAKS in ./pm2.
+ * The agent's environment minus the pm2_env keys pm2 leaks into it and the
+ * agent's own .env (utils/projectEnv.js). A project terminal is exactly where
+ * someone types `pm2 restart <bot>`, and that pm2 CLI would read the agent's
+ * own max_memory_restart as configuration — see PM2_ENV_LEAKS in ./pm2.
  *
  * ?nodeVersion puts the project's pinned Node first on PATH, so `npm install`
  * typed here builds for the same Node the project runs on. Only when it is
@@ -66,7 +67,7 @@ const startDir = (query) => {
  * install or start fetches it anyway.
  */
 const shellEnv = (query) => {
-    const env = { ...process.env };
+    const env = projectEnv();
     for (const key of PM2_ENV_LEAKS) delete env[key];
 
     const version = typeof query.nodeVersion === "string" ? query.nodeVersion : "";
