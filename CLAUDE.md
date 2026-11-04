@@ -274,6 +274,13 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
   Discord/bot chết. Request qua gateway agent không được tin `X-Real-IP`. Bot panel phải ở trong server log.
 - **Backup:** `.env` đi kèm mỗi backup dạng plain text (đã chấp nhận rủi ro); rollback bằng link message.
 - **Panel log:** mọi thứ vào `DISCORD_PANEL_LOG_WEBHOOK` trừ cảnh báo hết hạn/gia hạn của khách.
+- **Lockfile** (2026-11-04): `package-lock.json` của root, `agent/`, `client/` được **commit** — mọi VPS cài đúng bộ
+  version đã test (trước đó lockfile bị ignore: `npm install` trên VPS giữ nguyên gói con cũ dính lỗ hổng dù đã nâng range).
+  Mọi lệnh cài deps của chính panel/agent (`update:deps`/`install:agent` mà Rebuild chạy, update agent trong
+  `agent/routes/self.js`, `setup-agent.sh`) dùng `npm install --no-save`: cài theo lockfile, không ghi lại nó (lockfile bị
+  sửa trên VPS = `git pull` lần sau từ chối merge). Không dùng `npm ci` (xoá `node_modules` trước — Rebuild phải cài tại
+  chỗ để lỗi mạng không để panel đang chạy mất deps). Đổi dependency = `npm install <gói>` thường ở máy dev rồi commit cả
+  `package.json` lẫn `package-lock.json` của thư mục đó.
 - **Lavalink:** bỏ qua bản cài tay cũ; update 02:00 VN từng node; agent không cài Java.
 - **Auto Badge:** game badge (Game Time/Variety) BÁN CHO MỌI acc, có Nitro hay không (2026-10-21; trước đó
   chỉ Nitro), đọc bằng token chính khách, không reader; acc chưa có thành tựu nào (Discord 404 cả hai
