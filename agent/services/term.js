@@ -81,7 +81,7 @@ const shellEnv = (query) => {
 const createTermSocket = (server) => {
     if (!pty) {
         console.error(`[Agent] node-pty unavailable — /term disabled: ${ptyLoadError}`);
-        console.error("[Agent] Fix with: cd <repo>/agent && npm install --omit=dev && pm2 restart panel-agent");
+        console.error("[Agent] Fix with: cd <repo>/agent && npm install --omit=dev --no-save && pm2 restart panel-agent");
         // Still answer the upgrade, so the panel shows why the terminal is dead
         // instead of hanging on a socket nobody is listening to.
         server.on("upgrade", (req, socket) => {

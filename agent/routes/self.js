@@ -108,7 +108,10 @@ router.post("/update", async (req, res, next) => {
         const upToDate = /Already up.to.date/i.test(pullOutput);
         if (!upToDate) {
             try {
-                const { stdout, stderr } = await execAsync("npm install --omit=dev", {
+                // --no-save: package-lock.json is committed, so install exactly what
+                // it pins and never rewrite it — a modified lockfile would make the
+                // next `git pull` refuse to merge.
+                const { stdout, stderr } = await execAsync("npm install --omit=dev --no-save", {
                     cwd: AGENT_DIR,
                     timeout: 300_000,
                     maxBuffer: 10 * 1024 * 1024,

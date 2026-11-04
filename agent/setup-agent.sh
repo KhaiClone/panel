@@ -189,7 +189,9 @@ if [ -n "$REPO_COMMIT" ] && [ "$(as_user git -C "$INSTALL_DIR" rev-parse HEAD)" 
 fi
 
 cd "$INSTALL_DIR/agent"
-as_user npm install --omit=dev
+# --no-save: install what the committed package-lock.json pins, never rewrite it
+# (a modified lockfile makes the agent's next git pull refuse to merge).
+as_user npm install --omit=dev --no-save
 
 # 4. Agent .env ───────────────────────────────────────────────────────────────
 if [ ! -f .env ]; then

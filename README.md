@@ -178,11 +178,12 @@ cd /root
 git clone <this-repo-url> bot-panel
 cd bot-panel
 
-# Install server dependencies
-npm install
+# Install server dependencies (--no-save: install what the committed
+# package-lock.json pins and leave it untouched, so later `git pull`s merge)
+npm install --no-save
 
 # Install & build the React frontend
-cd client && npm install && npm run build && cd ..
+cd client && npm install --no-save && npm run build && cd ..
 ```
 
 ### 3. Configure Environment
