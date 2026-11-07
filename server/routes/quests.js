@@ -223,6 +223,24 @@ router.post("/:accountId/resume", async (req, res, next) => {
     }
 });
 
+/**
+ * POST /api/quests/:accountId/check-token { plan: "single" | "monthly", notify }
+ * Ask Discord whether the stored token still works. A dead one is recorded like a run
+ * records it; `notify: true` also tells arnto-auto, which DMs the buyer to send a new
+ * token. One account per call — the page walks the list, so no request runs long.
+ * `plan` picks the record: one account id can have a single order and a monthly plan.
+ */
+router.post("/:accountId/check-token", async (req, res, next) => {
+    try {
+        const { plan, notify } = req.body || {};
+        const svc = plan === "monthly" ? questMonthly : questService;
+        res.json(await svc.checkToken(req.params.accountId, { notify: notify === true }));
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
 /** DELETE /api/quests/:accountId — stop + delete the account (per-quest AND/OR monthly) */
 router.delete("/:accountId", async (req, res, next) => {
     try {

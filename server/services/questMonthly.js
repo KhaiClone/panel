@@ -284,6 +284,64 @@ async function _fail(rec, failure, { notify = true } = {}) {
     if (notify && failure.status === "token_dead") _webhook(rec, { type: "status", status: "token_dead" });
 }
 
+/**
+ * The "Check token" action on /quests for a subscriber — questService.tokenVerdict
+ * (one GET /users/@me, no lease). A dead token on an active plan is kept like a pass
+ * keeps one (_fail → the badge on /quests) and `notify` decides whether arnto-auto is
+ * told (it DMs the buyer to send a new token). An expired plan is only reported. A
+ * token that works clears an earlier token error, as a pass that gets through does;
+ * any other stored error stays. Same result shape as questService.checkToken.
+ */
+async function checkToken(accountId, { notify = false } = {}) {
+    const rec = await db.findOne(MODEL, { accountId });
+    if (!rec || _isPurgeable(rec)) throw _conflict("Account not found.", 404);
+    const verdict = await questService.tokenVerdict(_decrypt(rec));
+    await _outcomeChain;
+    const last = ((await db.get(OUTCOME_KEY)) || {})[accountId] ?? null;
+    const busy = isRunning(accountId);
+    const active = _isActive(rec);
+    const out = {
+        accountId,
+        username: rec.username,
+        plan: "monthly",
+        state: verdict.state,
+        reason: verdict.reason,
+        status: busy ? "running" : last && active ? last.status : active ? "monthly" : "expired",
+        notified: false,
+        note: null,
+    };
+
+    if (verdict.state === "valid") {
+        if (last?.status === "token_dead") {
+            await _setOutcome(accountId, null);
+            if (!busy) questService.emitExternalEvent(accountId, { type: "status", status: active ? "monthly" : "expired", error: null });
+            if (!busy) out.status = active ? "monthly" : "expired";
+            out.note = "The token works again — the earlier token error is cleared.";
+        }
+        return out;
+    }
+    if (verdict.state === "unknown") {
+        out.note = "Discord gave no verdict — nothing was changed.";
+        return out;
+    }
+    if (!active) {
+        out.note = "The plan has expired — nothing was changed and the buyer is not told.";
+        return out;
+    }
+
+    const canTell = !!((rec.webhookUrl || rec.webhookBotId) && rec.ref);
+    const tell = notify && canTell && !verdict.unreadable;
+    await _fail(rec, { status: "token_dead", error: `Token check: ${verdict.reason}` }, { notify: tell });
+    if (!busy) out.status = "token_dead";
+    out.notified = tell;
+    if (notify && !tell) {
+        out.note = verdict.unreadable
+            ? "The panel cannot read its own copy of the token — not the buyer's to fix, so they are not told."
+            : "No buyer is linked to this plan — nobody to tell.";
+    }
+    return out;
+}
+
 // Seconds before an account whose egress route died runs again (end of the pass),
 // so a rotating proxy has a moment to come back on its fresh IP.
 const EGRESS_RETRY_DELAY_SEC = 60;
@@ -773,6 +831,7 @@ module.exports = {
     activate,
     list,
     remove,
+    checkToken,
     listActive,
     isRunning,
     runBatch,

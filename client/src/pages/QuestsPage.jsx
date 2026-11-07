@@ -4,6 +4,7 @@ import api from "../api/client";
 import { useAuth, usePageAccess } from "../context/AuthContext";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestControl from "../components/QuestControl";
+import QuestTokenCheck from "../components/QuestTokenCheck";
 import { EmptyState, Icon, PageHeader, StatCard, StatusBadge, Toggle } from "../components/ui";
 
 // ── Shared status metadata (English) ─────────────────────────────────────────
@@ -271,6 +272,8 @@ export default function QuestsPage() {
     const [months, setMonths] = useState(1);
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState(null);
+    // "Check tokens" over every listed account (snapshot taken when it opens).
+    const [checkList, setCheckList] = useState(null);
 
     const submitAdd = async () => {
         const owner = ownerId.trim();
@@ -339,6 +342,14 @@ export default function QuestsPage() {
             </div>
 
             {/* ── Account list ── */}
+            {canEdit && accounts.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                    <button type="button" className="btn-ghost btn-sm" onClick={() => setCheckList(accounts)}>
+                        <Icon name="key" size={13} /> Check tokens
+                    </button>
+                </div>
+            )}
+            {checkList && <QuestTokenCheck accounts={checkList} onClose={() => setCheckList(null)} onChanged={reload} />}
             {accounts.length === 0 ? (
                 <EmptyState icon="quests" title="No accounts yet" description="Accounts appear here once a user starts a quest run." />
             ) : (

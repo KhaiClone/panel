@@ -157,9 +157,11 @@ function _updateLive(accountId, evt) {
     acc[evt.questId] = q;
 }
 
-function _publish(accountId, event) {
+// `webhook: false` keeps an event on the panel (live state + /quests) without telling
+// arnto-auto — a token check the admin ran without notifying the buyer.
+function _publish(accountId, event, { webhook = true } = {}) {
     _updateLive(accountId, event);
-    _dispatchWebhook(accountId, event);
+    if (webhook) _dispatchWebhook(accountId, event);
     bus.emit("event", { accountId, at: Date.now(), ...event });
 }
 
@@ -191,9 +193,9 @@ async function _updateRec(accountId, patch) {
     );
     return rec;
 }
-async function _setStatus(accountId, status, extra = {}) {
+async function _setStatus(accountId, status, extra = {}, { notify = true } = {}) {
     await _updateRec(accountId, { status, ...extra });
-    _publish(accountId, { type: "status", status, ...extra });
+    _publish(accountId, { type: "status", status, ...extra }, { webhook: notify });
     if (status === "done") await _closeOrders(await _getRec(accountId), "completed");
 }
 
@@ -450,6 +452,80 @@ async function removeAccount(accountId) {
     // Gone before its run finished: its orders never completed.
     await _closeOrders(rec, "cancelled");
     return true;
+}
+
+// ── Token check (the "Check token" action on /quests) ────────────────────────────
+const UNREADABLE_TOKEN = "Could not decrypt the stored token (secret changed?).";
+
+/**
+ * One look at whether Discord still takes a stored token: GET /users/@me through the
+ * account's usual egress. agentForKey, not acquire(): no lease, so a check never
+ * rotates a proxy a run is using, and it holds nothing afterwards.
+ *   valid   — Discord answered 200.
+ *   dead    — 401/403 (what a run treats as a dead token), or the panel's copy is
+ *             unreadable (`unreadable`: the panel's fault, not the buyer's).
+ *   unknown — no verdict (Discord or the proxy unreachable): nothing is changed.
+ * `reason` is English (stored on the record, shown on /quests) and keeps the HTTP code.
+ */
+async function tokenVerdict(token) {
+    if (!token) return { state: "dead", unreadable: true, reason: UNREADABLE_TOKEN };
+    const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
+    if (resolved.ok) return { state: "valid", reason: null, username: resolved.username };
+    return { state: resolved.invalidToken ? "dead" : "unknown", reason: resolved.reason };
+}
+
+/**
+ * Check a single-quest account's token. A dead token is recorded the way the run loop
+ * records one — the loop stops, status token_dead — and `notify` decides whether
+ * arnto-auto hears it (it DMs the buyer to send a new token and pauses the order's
+ * feed message). Off, only the panel knows. A finished run is only reported: its order
+ * is done and nothing would use the token again. A token that works changes nothing.
+ * Returns { accountId, username, plan, state, reason, status, notified, note }.
+ */
+async function checkToken(accountId, { notify = false } = {}) {
+    const rec = await _getRec(accountId);
+    if (!rec || _isExpired(rec)) throw _httpError("Account not found.", 404);
+    const verdict = await tokenVerdict(_decrypt(rec));
+    const out = {
+        accountId,
+        username: rec.username,
+        plan: "single",
+        state: verdict.state,
+        reason: verdict.reason,
+        status: _publicRec(rec).status,
+        notified: false,
+        note: null,
+    };
+
+    if (verdict.state === "valid") {
+        if (rec.status === "token_dead") out.note = "The token works again — Run again resumes the account.";
+        return out;
+    }
+    if (verdict.state === "unknown") {
+        out.note = "Discord gave no verdict — nothing was changed.";
+        return out;
+    }
+    if (rec.status === "done") {
+        out.note = "The run had already finished — nothing was changed and the buyer is not told.";
+        return out;
+    }
+
+    // Same route arnto-auto would be told by (_dispatchWebhook) — and it needs the buyer.
+    const hook = webhooks.get(accountId);
+    const canTell = !!(hook && (hook.url || hook.botId) && hook.ref);
+    const tell = notify && canTell && !verdict.unreadable;
+    // A running loop would hit the same wall on its next request; stop it now (it
+    // exits without writing, like a Stop) and return its lease.
+    _stopLoop(accountId);
+    await _setStatus(accountId, "token_dead", { error: `Token check: ${verdict.reason}` }, { notify: tell });
+    out.status = "token_dead";
+    out.notified = tell;
+    if (notify && !tell) {
+        out.note = verdict.unreadable
+            ? "The panel cannot read its own copy of the token — not the buyer's to fix, so they are not told."
+            : "No buyer is linked to this account — nobody to tell.";
+    }
+    return out;
 }
 
 // ── Retention sweep ──────────────────────────────────────────────────────────────
@@ -742,6 +818,8 @@ module.exports = {
     pauseAll,
     stopAccount,
     removeAccount,
+    checkToken,
+    tokenVerdict,
     restore,
     suspendAll,
     runningCount,

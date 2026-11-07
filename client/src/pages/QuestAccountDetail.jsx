@@ -5,6 +5,7 @@ import { usePageAccess } from "../context/AuthContext";
 import { EmptyState, Icon, Notice, PageHeader, StatCard, StatusBadge } from "../components/ui";
 import useQuestStream from "../hooks/useQuestStream";
 import QuestCard from "../components/QuestCard";
+import QuestTokenCheck from "../components/QuestTokenCheck";
 
 const STATUS = {
     running: { label: "Running", color: "var(--accent)" },
@@ -41,6 +42,7 @@ export default function QuestAccountDetail() {
     const { canEdit } = usePageAccess("quests");
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState(null);
+    const [checking, setChecking] = useState(false);
 
     const a = accounts.find((x) => x.accountId === accountId);
     const quests = Object.entries(live[accountId] || {});
@@ -123,6 +125,9 @@ export default function QuestAccountDetail() {
                                         <Icon name="play" /> {a.mode === "monthly" ? "Run now" : "Run again"}
                                     </button>
                                 )}
+                                <button className="btn-ghost" onClick={() => setChecking(true)}>
+                                    <Icon name="key" /> Check token
+                                </button>
                                 <button className="btn-danger" onClick={remove}>
                                     <Icon name="trash" /> Remove
                                 </button>
@@ -131,6 +136,7 @@ export default function QuestAccountDetail() {
                     />
                 </div>
             </div>
+            {checking && <QuestTokenCheck accounts={[a]} onClose={() => setChecking(false)} onChanged={reload} />}
 
             {msg && <Notice tone={msg.ok ? "success" : "danger"}>{msg.text}</Notice>}
             {a.error && (
