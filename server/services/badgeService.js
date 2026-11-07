@@ -116,7 +116,21 @@ function _dispatch(order, event) {
     bus.emit("event", { orderId: order.orderId, at: Date.now(), ...event });
     if (!order.webhookUrl && !order.webhookBotId) return;
     // Địa chỉ và x-api-key đi theo project đã đăng ký webhook (callbackService).
-    callbacks.send(order.webhookUrl, order.webhookBotId ?? null, { ...event, orderId: order.orderId, ref: order.ref ?? null }, "badge.event");
+    // accountId + username đi kèm mọi sự kiện để Auto ghi được tài khoản nào trong
+    // tin báo lỗi token — một khách có thể mua cho nhiều acc, mà token chết rồi thì
+    // Auto không tự hỏi Discord được acc đó là ai nữa.
+    callbacks.send(
+        order.webhookUrl,
+        order.webhookBotId ?? null,
+        {
+            ...event,
+            orderId: order.orderId,
+            ref: order.ref ?? null,
+            accountId: order.accountId ?? null,
+            username: order.username ?? null,
+        },
+        "badge.event",
+    );
 }
 
 // ── Truy cập DB ──────────────────────────────────────────────────────────────────

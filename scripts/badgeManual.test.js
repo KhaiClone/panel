@@ -399,6 +399,10 @@ const test = async (name, fn) => {
         // Auto puts this text in the buyer's "Đơn thất bại" DM.
         const ev = events.find((e) => e.type === "failed");
         assert.strictEqual(ev.error, "Token không hợp lệ hoặc đã chết");
+        // …and names the account in it: the token is dead, so Auto cannot ask Discord.
+        assert.strictEqual(ev.accountId, "2");
+        assert.strictEqual(ev.username, "rich");
+        assert.ok(events.every((e) => e.accountId === "2" && e.username === "rich"), "every event names the account");
     });
 
     await test("review outcomes and a send refused mid-way are English", async () => {
