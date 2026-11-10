@@ -144,6 +144,8 @@ app.use("/api/external/vouchers", apiKeyMiddleware, require("./routes/vouchersEx
 app.use("/api/external/ticket-menus", apiKeyMiddleware, require("./routes/ticketMenus").external);
 // ArnTo-assistant's /form: the forms it posts in tickets (services/formService.js).
 app.use("/api/external/forms", apiKeyMiddleware, require("./routes/forms").external);
+// ArnTo-assistant's /giaotay: the delivery types it hands goods over with (services/deliveryService.js).
+app.use("/api/external/deliveries", apiKeyMiddleware, require("./routes/deliveries").external);
 // ArnTo-Shop's supporters: /supporter-*, salary from /done (services/supporterService.js).
 app.use("/api/external/supporters", apiKeyMiddleware, require("./routes/supporters").external);
 // ArnTo-Shop's CTVs (resellers): /ctv-new, /ctv-remove (services/resellerService.js).
@@ -176,6 +178,7 @@ app.use("/api/stock", pageAuth("stock"), require("./routes/stock"));
 app.use("/api/vouchers", pageAuth("vouchers"), require("./routes/vouchers"));
 app.use("/api/ticket-menus", pageAuth("ticketMenus"), require("./routes/ticketMenus").panel);
 app.use("/api/forms", pageAuth("forms"), require("./routes/forms").panel);
+app.use("/api/deliveries", pageAuth("deliveries"), require("./routes/deliveries").panel);
 app.use("/api/supporters", pageAuth("supporters"), require("./routes/supporters").panel);
 app.use("/api/resellers", pageAuth("resellers"), require("./routes/resellers").panel);
 // Compose a message and have ArnTo-assistant post it (services/botMessages.js).

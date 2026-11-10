@@ -314,6 +314,12 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Forms** (2026-10-27): trang Forms quản **toàn bộ** `/form` của ArnTo-assistant (nội dung, ô nhập, câu nhắc
   selfbot, role được xem, số ngày giữ); thông tin khách nhập chỉ nằm ở bot, không lên panel. Câu nhắc: assistant
   gửi `$rq <base64url>` rồi xoá, selfbot giải mã và gửi đúng câu đó. Settings (role xem, số ngày) = owner only.
+- **Deliveries / giao tay** (2026-11-10): trang Deliveries quản các **loại hàng giao tay** của `/giaotay` (ArnTo-assistant):
+  người dùng tự soạn mọi tin bot gửi; mỗi loại là **cần xác nhận** hoặc **không cần**; luật viết một lần (tab Rules), mỗi
+  loại tick luật nó cần. Tin xác nhận, nút xác nhận và hàng đều **trong DM**; DM bị chặn → tin trong ticket kèm nút Thử
+  lại, hàng không bao giờ hiện trong ticket. Đơn chỉ nằm ở bot, giữ **số ngày đặt theo từng loại hàng** (chốt vào đơn lúc
+  gõ lệnh) rồi xoá; quá hạn mà khách chưa nhận → tin hết hạn + báo staff trong ticket. Giao hàng Kho (`/giao`) có cam kết:
+  **chưa làm**, người dùng để sau.
 - **Feed đơn auto** (2026-11-01): Auto Quest, Auto Badge, Deco Gift = **1 tin mỗi đơn** trong một kênh chung,
   sửa tại chỗ theo trạng thái, gửi bằng **webhook** của ArnTo-Auto (`ORDER_FEED_WEBHOOK_URL`), không phải bot đăng.
   Quest lẻ: đăng lúc đã trả tiền, mỗi quest một dòng ⏳→✅; quest tháng: 1 tin mỗi lượt chạy. Badge giữ mọi DM.

@@ -10,6 +10,7 @@ export const STAFF_PAGES = [
     { key: "vouchers", path: "/vouchers" },
     { key: "ticketMenus", path: "/ticket-menus" },
     { key: "forms", path: "/forms" },
+    { key: "deliveries", path: "/deliveries" },
     { key: "supporters", path: "/supporters" },
     { key: "resellers", path: "/resellers" },
     { key: "messages", path: "/messages" },
