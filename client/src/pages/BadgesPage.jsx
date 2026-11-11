@@ -17,7 +17,8 @@ import { fmtNum, money } from "../utils/format";
 //  source "manual" that runs the same way. It can only be retried or cancelled.
 //
 //  An order Discord took only part of (0 < sent < total) gets "Send the rest": it
-//  sends just the missing sessions with the order's stored token, no new read. Orders
+//  sends just the missing sessions, no new read, with a working token the panel holds
+//  for the account — the order's, or Auto Quest's once the order's is dead. Orders
 //  marked Done before 2026-11-11 could be short like that too.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ function OrderRow({ order, onAction, busy }) {
     // Same rule as badgeService._restCount: sessions Discord never took on a part-sent order.
     const rest =
         ["game_time", "game_variety"].includes(order.badgeKey) &&
-        ["sent", "manual_review", "error"].includes(order.status) &&
+        ["sent", "manual_review", "error", "token_dead"].includes(order.status) &&
         order.total > 0 && order.sent > 0 && order.sent < order.total &&
         order.plan?.hoursPerSession > 0
             ? order.total - order.sent
@@ -171,7 +172,7 @@ function OrderRow({ order, onAction, busy }) {
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     {canEdit && rest > 0 && (
-                        <span title="Sends only the missing sessions with this order's stored token. No new read, no new order.">
+                        <span title="Sends only the missing sessions, with a working token the panel holds for this account (the order's, or Auto Quest's when the order's is dead). No new read, no new order.">
                             <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "send-rest", restLabel)}>
                                 Send the rest
                             </Btn>
@@ -234,7 +235,10 @@ export default function BadgesPage() {
     const onAction = async (orderId, action, restLabel) => {
         if (
             action === "send-rest" &&
-            !window.confirm(`Send the missing ${restLabel} to this account now? Only what Discord never took is sent.`)
+            !window.confirm(
+                `Send the missing ${restLabel} to this account now? Only what Discord never took is sent, ` +
+                    "with a working token the panel holds for this account (the order's, or Auto Quest's).",
+            )
         ) {
             return;
         }

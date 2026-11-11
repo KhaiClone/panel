@@ -19,6 +19,9 @@
  *     buyer was already told is done, reported for one waiting for review
  *   - refused when nothing is missing, nothing was sent, the order is closed or running
  *   - partial again → manual_review with the running total
+ *   - the order's token is dead (.wlxa, same day): the newest working token the panel
+ *     holds for the SAME account (Auto Quest) is used; another account's never is;
+ *     all dead → token_dead, and only a buyer never told "done" hears about it
  */
 
 const path = require("path");
@@ -70,15 +73,21 @@ const GAMES = Array.from({ length: 400 }, (_, i) => ({
 let answers = [];
 let retryAfter = null;
 const posts = [];
+const postedWith = [];
 let reads = 0;
+// Which Discord account each token opens; anything else is dead (401).
+const ACCOUNT_OF = { tok: "42", "quest-new": "42", "someone-else": "99" };
 const fakeAxios = {
-    async get(url) {
+    async get(url, cfg = {}) {
         if (url.includes("discord.com/app")) return { status: 200, data: "" }; // build number → fallback
         if (url.includes("/applications/detectable")) return { status: 200, data: GAMES };
-        return { status: 200, data: { id: "42", username: "buyer", analytics_token: "at", locale: "vi" } };
+        const id = ACCOUNT_OF[cfg.headers?.authorization];
+        if (!id) return { status: 401, data: {} };
+        return { status: 200, data: { id, username: "buyer", analytics_token: "at", locale: "vi" } };
     },
-    async post(url, body) {
+    async post(url, body, cfg = {}) {
         posts.push(body.events);
+        postedWith.push(cfg.headers?.authorization);
         const status = answers.length ? answers.shift() : 204;
         if (status === "net") throw new Error("socket hang up");
         const headers = status === 429 && retryAfter ? { "retry-after": String(retryAfter) } : {};
@@ -131,6 +140,12 @@ function encrypt(token) {
     const c = crypto.createCipheriv("aes-256-gcm", key, iv);
     const enc = Buffer.concat([c.update(token, "utf8"), c.final()]);
     return { tokenEncrypted: enc.toString("base64"), tokenIv: iv.toString("base64"), tokenTag: c.getAuthTag().toString("base64") };
+}
+function decrypt(rec) {
+    const key = crypto.createHash("sha256").update(process.env.QUEST_ENC_SECRET).digest();
+    const d = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(rec.tokenIv, "base64"));
+    d.setAuthTag(Buffer.from(rec.tokenTag, "base64"));
+    return Buffer.concat([d.update(Buffer.from(rec.tokenEncrypted, "base64")), d.final()]).toString("utf8");
 }
 
 // A Game Time order: threshold in hours, overshoot 1 so need = threshold.
@@ -399,6 +414,77 @@ const test = async (name, fn) => {
             assert.strictEqual(body.error, "This order has nothing left to send");
         }
         assert.strictEqual((await call("POST", "/nope/send-rest")).status, 404);
+    });
+
+    console.log("\nbadgeService — the order's token is dead");
+
+    const DONE_SHORT = {
+        status: "token_dead",
+        error: "The token is invalid or dead",
+        sent: 80,
+        total: 100,
+        sentAt: Date.now() - 24 * 3_600_000,
+        plan: { gameCount: 3, sessionCount: 100, hoursPerSession: 2, need: 200 },
+    };
+
+    await test("uses the account's Auto Quest token instead, quietly for an order once done", async () => {
+        webhooks.length = 0;
+        posts.length = 0;
+        postedWith.length = 0;
+        await addOrder("t1", { ...encrypt("dead-badge"), ...DONE_SHORT, accountId: "42" });
+        // A dead single-quest token, an older dead monthly one, a newer working monthly one,
+        // and someone else's quest token — only the newest working one of acc 42 may be used.
+        await fakeDb.create("quest_accounts", { accountId: "42", ...encrypt("dead-quest"), updatedAt: Date.now() });
+        await fakeDb.create("quest_monthly", { accountId: "42", ...encrypt("dead-old"), updatedAt: Date.now() - 9e6 });
+        await fakeDb.create("quest_monthly", { accountId: "42", ...encrypt("quest-new"), updatedAt: Date.now() - 1e6 });
+        await fakeDb.create("quest_monthly", { accountId: "7", ...encrypt("someone-else"), updatedAt: Date.now() });
+        const { status, body } = await call("POST", "/t1/send-rest");
+        assert.strictEqual(status, 200, JSON.stringify(body));
+        const o = await settle("t1");
+        assert.strictEqual(o.status, "sent", o.error);
+        assert.deepStrictEqual([o.sent, o.total, o.error], [100, 100, null]);
+        assert.strictEqual(posts.flatMap(sessionsOf).length, 20);
+        assert.ok(postedWith.length && postedWith.every((t) => t === "quest-new"));
+        assert.strictEqual(o.restSends.at(-1).tokenFrom, "quest_monthly");
+        assert.strictEqual(webhooks.length, 0, "the buyer was told it was done before the token died");
+        // the order keeps its own (dead) token — nothing is copied between records
+        assert.strictEqual(decrypt(await fakeDb.findOne("badge_orders", { orderId: "t1" })), "dead-badge");
+    });
+
+    await test("a working token of ANOTHER account is never used", async () => {
+        webhooks.length = 0;
+        postedWith.length = 0;
+        // acc 99's own token sits in quest_accounts under acc 55's id (a mix-up)
+        await addOrder("t2", { ...encrypt("dead-badge"), ...DONE_SHORT, accountId: "55" });
+        await fakeDb.create("quest_accounts", { accountId: "55", ...encrypt("someone-else"), updatedAt: Date.now() });
+        await badgeService.sendRest("t2");
+        const o = await settle("t2");
+        assert.strictEqual(o.status, "manual_review");
+        assert.strictEqual(o.error, "No token the panel holds works for this account");
+        assert.strictEqual(postedWith.length, 0, "nothing sent");
+        assert.strictEqual(o.sent, 80);
+    });
+
+    await test("every token dead → token_dead again, nothing sent, the buyer not told", async () => {
+        webhooks.length = 0;
+        postedWith.length = 0;
+        await addOrder("t3", { ...encrypt("dead-badge"), ...DONE_SHORT, accountId: "66" });
+        await fakeDb.create("quest_monthly", { accountId: "66", ...encrypt("dead-quest-66"), updatedAt: Date.now() });
+        await badgeService.sendRest("t3");
+        const o = await settle("t3");
+        assert.strictEqual(o.status, "token_dead");
+        assert.strictEqual(o.error, "Every token the panel holds for this account is dead (2 tried)");
+        assert.strictEqual(postedWith.length, 0);
+        assert.strictEqual(webhooks.length, 0);
+    });
+
+    await test("an order never finished hears about a dead token (Vietnamese for ArnTo-Auto)", async () => {
+        webhooks.length = 0;
+        await addOrder("t4", { ...encrypt("dead-badge"), ...DONE_SHORT, sentAt: null, status: "manual_review", accountId: "77" });
+        await badgeService.sendRest("t4");
+        const o = await settle("t4");
+        assert.strictEqual(o.status, "token_dead");
+        assert.deepStrictEqual(webhooks.map((e) => [e.type, e.status, e.error]), [["failed", "token_dead", "Token không hợp lệ hoặc đã chết"]]);
     });
 
     await test("refused while the same order is running", async () => {

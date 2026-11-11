@@ -568,8 +568,8 @@ async function _openSender(order, token) {
         if (attempt > 0 && !lease.source) break;
         const sender = new BadgeSender(token, { agent: lease.agent });
         try {
-            await sender.init();
-            return { lease, sender };
+            const me = await sender.init();
+            return { lease, sender, me };
         } catch (err) {
             lease.release({ failed: Boolean(err.egressFailed) });
             if (!err.egressFailed) throw err;
@@ -939,7 +939,9 @@ async function resolveManual(orderId, action) {
 
 // ── Gửi phần còn thiếu ───────────────────────────────────────────────────────────
 
-const REST_STATUSES = new Set(["sent", "manual_review", "error"]);
+// token_dead cũng gửi bù được: token của đơn chết nhưng panel có thể giữ token mới
+// hơn của cùng acc (_storedTokens).
+const REST_STATUSES = new Set(["sent", "manual_review", "error", "token_dead"]);
 
 /**
  * Số phiên của đơn mà Discord chưa nhận. Chỉ đơn đã gửi được MỘT PHẦN (0 < sent <
@@ -955,9 +957,10 @@ function _restCount(o) {
 }
 
 /**
- * Gửi nốt các phiên Discord chưa nhận của một đơn, bằng token đã lưu trong chính
- * đơn đó: token không rời panel, không tạo đơn mới (đơn tay sẽ mở thêm một đơn
- * trong sổ Shop), không đọc lại badge.
+ * Gửi nốt các phiên Discord chưa nhận của một đơn, bằng token panel đang giữ của
+ * chính acc đó — của đơn, hoặc của Auto Quest khi token đơn đã chết (_storedTokens):
+ * token không rời panel, không tạo đơn mới (đơn tay sẽ mở thêm một đơn trong sổ
+ * Shop), không đọc lại badge.
  *
  * Không đọc lại vì badge tiered cần ~1 ngày Discord mới dựng lại: đọc ngay sau một
  * lượt gửi dở là ra số cũ, lập kế hoạch từ đó là gửi lại cả đơn. Số còn thiếu đã
@@ -967,8 +970,8 @@ function _restCount(o) {
  * không mở game mới — trừ khi acc chưa có game nào, planOrder ghi lại việc đó.
  * Game Variety lấy game mới chưa claim, mỗi game một phiên như đơn gốc.
  *
- * Đơn đã báo khách là xong ("sent") thì gửi bù im lặng — không sự kiện nào về
- * Auto. Đơn đang chờ duyệt thì báo như lần gửi đầu.
+ * Đơn đã báo khách là xong (có sentAt) thì gửi bù im lặng — không sự kiện nào về
+ * Auto. Đơn chưa từng xong thì báo như lần gửi đầu.
  *
  * Chạy nền như processOrder; trả về đơn đang ở "sending".
  */
@@ -978,8 +981,8 @@ async function sendRest(orderId) {
     if (running.has(orderId)) throw _err("This order is already running", 409);
     const rest = _restCount(order);
     if (!rest) throw _err("This order has nothing left to send");
-    const token = _decrypt(order);
-    if (!token) throw _err("Could not decrypt the stored token", 500);
+    const tokens = await _storedTokens(order);
+    if (!tokens.length) throw _err("The panel holds no readable token of this account", 400);
 
     running.add(orderId);
     try {
@@ -988,15 +991,80 @@ async function sendRest(orderId) {
         running.delete(orderId);
         throw err;
     }
-    _runRest(order, token, rest)
+    _runRest(order, tokens, rest)
         .catch((err) => _patch(orderId, { status: "manual_review", error: err.message }).catch(() => {}))
         .finally(() => running.delete(orderId));
     return _shape(await _get(orderId));
 }
 
-async function _runRest(order, token, rest) {
+// Nơi khác trong panel có thể đang giữ token của cùng tài khoản Discord, mới hơn
+// token trong đơn. Khách đổi mật khẩu thì gửi lại token cho gói Auto Quest tháng
+// đang chạy, chứ không ai gửi lại cho một đơn badge đã xong — đơn .wlxa (2026-11-11)
+// có token chết trong khi gói quest tháng của chính acc đó vẫn chạy. Cả ba nơi mã
+// hoá bằng cùng một khoá (QUEST_ENC_SECRET) nên giải được ở đây; đọc thẳng
+// collection như callbackService/autoShopOrders vẫn làm.
+const TOKEN_SOURCES = ["quest_monthly", "quest_accounts", MODEL];
+
+/**
+ * Token của acc của đơn mà panel đang giữ: token của chính đơn trước, rồi Auto Quest
+ * tháng, Auto Quest lẻ, các đơn badge khác — mới cập nhật trước. Bỏ trùng.
+ * Chỉ là ứng viên: _openWorkingSender() mới xác nhận token sống và đúng acc.
+ */
+async function _storedTokens(order) {
+    const out = [];
+    const seen = new Set();
+    const add = (rec, from) => {
+        const token = rec?.tokenEncrypted ? _decrypt(rec) : null;
+        if (!token || seen.has(token)) return;
+        seen.add(token);
+        out.push({ token, from });
+    };
+    add(order, "order");
+    for (const model of TOKEN_SOURCES) {
+        const rows = ((await db.get(model)) || [])
+            .filter((r) => String(r.accountId) === String(order.accountId))
+            .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+        for (const r of rows) add(r, model);
+    }
+    return out;
+}
+
+/**
+ * Mở BadgeSender bằng token đầu tiên còn sống MÀ /users/@me trả đúng acc của đơn.
+ * Token sống nhưng là acc khác thì không bao giờ dùng — gửi nhầm là cho không người
+ * khác. Hết ứng viên: token chết hết → lỗi invalidToken; còn lại → lỗi thường.
+ */
+async function _openWorkingSender(order, tokens) {
+    let dead = 0;
+    let lastDead = null;
+    for (const { token, from } of tokens) {
+        let opened;
+        try {
+            opened = await _openSender(order, token);
+        } catch (err) {
+            if (!err.invalidToken) throw err;
+            dead += 1;
+            lastDead = err;
+            continue;
+        }
+        if (String(opened.me?.userId) === String(order.accountId)) return { ...opened, from };
+        opened.lease.release();
+    }
+    if (dead === tokens.length && lastDead) {
+        throw _err(
+            `Every token the panel holds for this account is dead (${dead} tried)`,
+            400,
+            { invalidToken: true, vi: lastDead.vi },
+        );
+    }
+    throw _err("No token the panel holds works for this account", 409);
+}
+
+async function _runRest(order, tokens, rest) {
     const { orderId } = order;
-    const tellBuyer = order.status !== "sent";
+    // Khách đã được báo xong (đơn từng "sent", kể cả khi sau đó lượt bù rơi vào
+    // token_dead) thì gửi bù im lặng.
+    const tellBuyer = !order.sentAt;
     const hoursPerSession = order.plan.hoursPerSession;
     const claimedGameIds = await _claimedGameIds(order.accountId);
 
@@ -1024,8 +1092,9 @@ async function _runRest(order, token, rest) {
 
     let lease;
     let sender;
+    let tokenFrom;
     try {
-        ({ lease, sender } = await _openSender(order, token));
+        ({ lease, sender, from: tokenFrom } = await _openWorkingSender(order, tokens));
     } catch (err) {
         if (!err.invalidToken) throw err;
         await _patch(orderId, { status: "token_dead", error: err.message });
@@ -1075,6 +1144,8 @@ async function _runRest(order, token, rest) {
             sessions: rest,
             accepted: result.sent,
             varietySideEffect: plan.varietySideEffect ?? 0,
+            // Token lấy từ đâu: "order" | "quest_monthly" | "quest_accounts" | "badge_orders".
+            tokenFrom,
         },
     ];
 
