@@ -91,6 +91,49 @@ ${gzip}
     return config;
 };
 
+// An API with no frontend (mode "api"): nginx passes every path to the PM2 app.
+// The full-stack config needs a dist folder, and without one `try_files … /index.html`
+// loops into a 500 on every path outside /api — what pokezone-api showed on
+// 2026-11-11. X-Forwarded-For/-Proto are passed so an app behind the TLS that
+// certbot adds here can tell the client and https apart.
+const buildApiConfig = ({ port, apiPort, domain, extraConfig }) => {
+    const makeBlock = (listenPort, serverName, includeExtra = false) => {
+        const extra = includeExtra && extraConfig?.trim() ? `\n${extraConfig.trim()}\n` : "";
+        return `server {
+    listen ${listenPort};
+    server_name ${serverName};
+
+    location / {
+        proxy_pass http://127.0.0.1:${apiPort};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+${extra}
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+}`;
+    };
+
+    // Same layout as full-stack: the public port for IP:port access, port 80
+    // for the domain (custom directives go there, as in full-stack).
+    let config = makeBlock(port, "_", false) + "\n";
+    if (domain) config += "\n" + makeBlock(80, domain, true) + "\n";
+    return config;
+};
+
+/** The vhost for a website project — pure, so it is tested without nginx. */
+const buildConfig = (opts) => {
+    if (opts.mode === "static") return buildStaticConfig(opts);
+    if (opts.mode === "api") return buildApiConfig(opts);
+    return buildFullstackConfig(opts);
+};
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -102,9 +145,7 @@ ${gzip}
  * @param {Object} opts - { mode, port, apiPort, distFolder, domain, extraConfig }
  */
 const writeConfig = async (pm2Name, opts) => {
-    const content = opts.mode === "static"
-        ? buildStaticConfig(opts)
-        : buildFullstackConfig(opts);
+    const content = buildConfig(opts);
 
     const destPath = configPath(pm2Name);
     let previous = null;
@@ -395,6 +436,7 @@ const issuePanelCert = async (domain, email = null) => {
 };
 
 module.exports = {
+    buildConfig,
     writeConfig,
     removeConfig,
     configExists,

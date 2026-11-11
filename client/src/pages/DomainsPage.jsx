@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
 import { DataTable, EmptyState, Icon, PageHeader, StatusBadge } from "../components/ui";
+import { siteModeLabel } from "../utils/siteMode";
 
 export default function DomainsPage() {
     const [domains, setDomains] = useState([]);
@@ -45,7 +46,7 @@ export default function DomainsPage() {
                                 </td>
                                 <td style={{ color: "var(--text-muted)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</td>
                                 <td className="mono" style={{ color: "var(--text-dim)" }}>{d.port}</td>
-                                <td className="nowrap" style={{ color: "var(--text-muted)" }}>{d.mode === "static" ? "Static" : "Full-stack"}</td>
+                                <td className="nowrap" style={{ color: "var(--text-muted)" }}>{siteModeLabel(d.mode)}</td>
                                 <td>
                                     {d.sslEnabled
                                         ? <StatusBadge tone="success">Active</StatusBadge>

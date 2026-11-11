@@ -13,8 +13,10 @@ const validEmail = (e) => typeof e === "string" && /^[\w.+-]+@[a-zA-Z0-9.-]+$/.t
 /**
  * POST /nginx/config
  * body: { pm2Name, mode, port, apiPort, root, dir | absPath, distFolder, domain, extraConfig }
- * distFolder is always relative to the project dir; the agent resolves the
- * project dir itself so panel-side absolute paths never leak onto this VPS.
+ * mode: "static" | "fullstack" | "api" (agent 1.14.3+; older agents serve "api"
+ * as full-stack). distFolder is always relative to the project dir; the agent
+ * resolves the project dir itself so panel-side absolute paths never leak onto
+ * this VPS. An API site has no dist folder and ignores it.
  */
 router.post("/config", async (req, res, next) => {
     try {
@@ -22,6 +24,7 @@ router.post("/config", async (req, res, next) => {
         if (!validName(pm2Name)) return res.status(400).json({ error: "Valid pm2Name is required" });
         if (!dir && !absPath) return res.status(400).json({ error: "dir or absPath is required" });
         if (domain && !validDomain(domain)) return res.status(400).json({ error: "Invalid domain" });
+        if (mode === "api" && !(parseInt(apiPort) > 0)) return res.status(400).json({ error: "apiPort is required for an API site" });
 
         const distAbs = path.isAbsolute(distFolder || "")
             ? (() => { throw new Error("distFolder must be relative to the project dir"); })()

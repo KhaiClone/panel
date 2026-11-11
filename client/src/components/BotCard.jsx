@@ -4,6 +4,7 @@ import api from "../api/client";
 import ConfirmModal from "./ConfirmModal";
 import { useData } from "../context/DataContext";
 import { Icon, StatusBadge } from "./ui";
+import { siteModeLabel } from "../utils/siteMode";
 
 const STATUS = {
     online:    { tone: "success", label: "Online" },
@@ -98,7 +99,7 @@ export default function BotCard({ bot, onRefresh, selectable = false, selected =
     };
 
     const typeLabel =
-        bot.projectType === "website" ? (bot.websiteConfig?.mode === "fullstack" ? "Full-stack" : "Static")
+        bot.projectType === "website" ? siteModeLabel(bot.websiteConfig?.mode)
         : bot.projectType === "service" ? "Service"
         : null;
 

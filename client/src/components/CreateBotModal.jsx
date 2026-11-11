@@ -104,9 +104,10 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                 ? {
                       mode: form.websiteMode,
                       port: form.websitePort || undefined,
-                      apiPort: form.websiteMode === "fullstack" ? form.websiteApiPort : undefined,
+                      apiPort: hasApp ? form.websiteApiPort : undefined,
                       buildCommand: isStatic ? null : (form.buildCommand || null),
-                      distFolder: form.distFolder || (isStatic ? "." : "dist"),
+                      // An API site has no frontend to serve.
+                      distFolder: isApi ? undefined : (form.distFolder || (isStatic ? "." : "dist")),
                   }
                 : undefined;
 
@@ -153,7 +154,10 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
     const isWebsite = form.projectType === "website";
     const isService = form.projectType === "service";
     const isFullstack = isWebsite && form.websiteMode === "fullstack";
+    const isApi = isWebsite && form.websiteMode === "api";
     const isStatic = isWebsite && form.websiteMode === "static";
+    // Full-stack and API sites both run the project's app under PM2.
+    const hasApp = isFullstack || isApi;
 
     const deployLabel = isGit ? "Deploy from Git" : "Import local";
 
@@ -202,18 +206,21 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                 onChange={(v) => setForm((f) => ({
                                 ...f,
                                 websiteMode: v,
-                                distFolder: v === "static" ? "." : "dist",
+                                distFolder: v === "static" ? "." : v === "api" ? "" : "dist",
                                 installCommand: v === "static" ? "" : "npm install --omit=dev",
                             }))}
                                 options={[
                                     { key: "static", label: "Static (nginx serves dist)" },
                                     { key: "fullstack", label: "Full-stack (PM2 + nginx)" },
+                                    { key: "api", label: "API only (PM2 + nginx proxy)" },
                                 ]}
                             />
                             <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "10px 0 0" }}>
                                 {isStatic
                                     ? "nginx serves the build output directly. No running process needed."
-                                    : "PM2 runs your API server. nginx serves the frontend dist and proxies /api requests."}
+                                    : isApi
+                                        ? "PM2 runs your server. nginx passes every request to it — no frontend or dist folder needed."
+                                        : "PM2 runs your API server. nginx serves the frontend dist and proxies /api requests."}
                             </p>
                         </div>
                     )}
@@ -283,7 +290,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                                     <label className="label">Branch</label>
                                     <input className="input" placeholder="main" value={form.branch} onChange={set("branch")} />
                                 </div>
-                                {(!isWebsite || isFullstack) && (
+                                {(!isWebsite || hasApp) && (
                                     <div>
                                         <label className="label">Start Command</label>
                                         <input className="input mono" placeholder="npm start" value={form.startScript} onChange={set("startScript")} />
@@ -309,7 +316,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                             </div>
                             {(!isStatic) && (
                                 <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                                    {(!isWebsite || isFullstack) && (
+                                    {(!isWebsite || hasApp) && (
                                         <div>
                                             <label className="label">Start Command</label>
                                             <input className="input mono" placeholder="npm start" value={form.startScript} onChange={set("startScript")} />
@@ -329,43 +336,45 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                         <div style={SECTION}>
                             <h3 style={SECTION_TITLE}>Website configuration</h3>
 
-                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: isFullstack ? "1fr 1fr" : "1fr", gap: 16 }}>
+                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: hasApp ? "1fr 1fr" : "1fr", gap: 16 }}>
                                 <div>
                                     <label className="label">Public Port</label>
                                     <input className="input mono" placeholder="Auto-assign" value={form.websitePort} onChange={set("websitePort")} type="number" min="1" max="65535" />
                                     <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Leave blank to auto-assign a free port. UFW will be opened automatically.</p>
                                 </div>
-                                {isFullstack && (
+                                {hasApp && (
                                     <div>
                                         <label className="label">API Port (PM2) *</label>
-                                        <input className="input mono" placeholder="e.g. 4000" value={form.websiteApiPort} onChange={set("websiteApiPort")} type="number" min="1" max="65535" required={isFullstack} />
+                                        <input className="input mono" placeholder="e.g. 4000" value={form.websiteApiPort} onChange={set("websiteApiPort")} type="number" min="1" max="65535" required={hasApp} />
                                         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Port your API server listens on internally.</p>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: isStatic ? "1fr" : "1fr 1fr", gap: 16 }}>
+                            <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: isStatic || isApi ? "1fr" : "1fr 1fr", gap: 16 }}>
                                 {!isStatic && (
                                     <div>
                                         <label className="label">Build Command</label>
                                         <input className="input mono" placeholder="npm run build" value={form.buildCommand} onChange={set("buildCommand")} />
                                     </div>
                                 )}
-                                <div>
-                                    <label className="label">Dist Folder</label>
-                                    <input className="input mono" placeholder={isStatic ? "." : "dist"} value={form.distFolder} onChange={set("distFolder")} />
-                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-                                        {isStatic
-                                            ? 'Folder nginx serves. Use "." for the project root.'
-                                            : "Relative to project root or absolute path."}
-                                    </p>
-                                </div>
+                                {!isApi && (
+                                    <div>
+                                        <label className="label">Dist Folder</label>
+                                        <input className="input mono" placeholder={isStatic ? "." : "dist"} value={form.distFolder} onChange={set("distFolder")} />
+                                        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+                                            {isStatic
+                                                ? 'Folder nginx serves. Use "." for the project root.'
+                                                : "Relative to project root or absolute path."}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
-                            {isFullstack && (
+                            {hasApp && (
                                 <div>
                                     <label className="label">Start Command (API Server) *</label>
-                                    <input className="input mono" placeholder="node server.js" value={form.startScript} onChange={set("startScript")} required={isFullstack} />
+                                    <input className="input mono" placeholder="node server.js" value={form.startScript} onChange={set("startScript")} required={hasApp} />
                                 </div>
                             )}
                         </div>

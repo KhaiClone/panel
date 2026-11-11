@@ -34,6 +34,28 @@ const shouldAutoStop = (botId) => {
 
 // ─── Website helpers ─────────────────────────────────────────────────────────
 
+// static    — files only, no process: http-server without a domain, nginx with one
+// fullstack — PM2 runs the API; nginx serves the dist folder and proxies /api
+// api       — PM2 runs the app; nginx proxies every path to it, no dist folder
+//             (2026-11-11: pokezone-api has no frontend, and as full-stack every
+//             path outside /api was a 500 from a dist folder that does not exist)
+const WEBSITE_MODES = ["static", "fullstack", "api"];
+// The modes with a PM2 app behind nginx — a site can switch between these two.
+const APP_MODES = ["fullstack", "api"];
+
+const validPort = (p) => Number.isInteger(p) && p >= 1 && p <= 65535;
+
+/** What is wrong with a new website's config (create / import), or null. */
+const websiteConfigError = (wc) => {
+    if (!wc) return "websiteConfig is required for websites";
+    const mode = wc.mode || "static";
+    if (!WEBSITE_MODES.includes(mode)) return `Unknown website mode "${mode}"`;
+    if (mode === "fullstack" && !wc.distFolder) return "websiteConfig.distFolder is required for full-stack websites";
+    if (APP_MODES.includes(mode) && !validPort(parseInt(wc.apiPort, 10)))
+        return `websiteConfig.apiPort is required for ${mode === "api" ? "API" : "full-stack"} websites`;
+    return null;
+};
+
 /**
  * Assign a port for a website project on the target node.
  * Uses the user-supplied port or auto-assigns a free one on that node.
@@ -55,6 +77,7 @@ const assignPort = async (requestedPort, nodeId = null) => {
  *   - static, no domain → http-server via PM2 on wc.port (works with IP:port)
  *   - static, domain    → nginx on port 80 for domain access
  *   - fullstack         → nginx on wc.port (+ port 80 if domain is set)
+ *   - api               → the same, every path proxied to the app
  *
  * @param {Object} bot - Full bot record (must have pm2Name, nodeId, websiteConfig)
  */
@@ -68,7 +91,7 @@ const applyWebsiteInfra = async (bot) => {
         return;
     }
 
-    // nginx mode: static+domain (listen 80) or fullstack (listen wc.port)
+    // nginx mode: static+domain (listen 80) or fullstack/api (listen wc.port)
     await executor.nginxWriteConfig(bot, {
         mode: wc.mode,
         port: wc.port,
@@ -279,10 +302,8 @@ router.post("/", async (req, res, next) => {
             });
         }
         if (projectType === "website") {
-            if (rawWebsiteConfig?.mode !== "static" && !rawWebsiteConfig?.distFolder)
-                return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
-            if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
-                return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
+            const wcError = websiteConfigError(rawWebsiteConfig);
+            if (wcError) return res.status(400).json({ error: wcError });
         }
         if (projectType === "service" && rawServiceConfig?.port) {
             const p = parseInt(rawServiceConfig.port, 10);
@@ -350,7 +371,7 @@ router.post("/", async (req, res, next) => {
                 port,
                 apiPort: rawWebsiteConfig.apiPort ? parseInt(rawWebsiteConfig.apiPort, 10) : null,
                 buildCommand: isStaticWebsite ? null : (rawWebsiteConfig.buildCommand || null),
-                distFolder: rawWebsiteConfig.distFolder || (isStaticWebsite ? "." : "dist"),
+                distFolder: mode === "api" ? null : (rawWebsiteConfig.distFolder || (isStaticWebsite ? "." : "dist")),
                 domain: null,
                 sslEnabled: false,
             };
@@ -446,10 +467,8 @@ router.post("/import-local", async (req, res, next) => {
             });
         }
         if (projectType === "website") {
-            if (rawWebsiteConfig?.mode !== "static" && !rawWebsiteConfig?.distFolder)
-                return res.status(400).json({ error: "websiteConfig.distFolder is required for websites" });
-            if (rawWebsiteConfig.mode === "fullstack" && !rawWebsiteConfig.apiPort)
-                return res.status(400).json({ error: "websiteConfig.apiPort is required for fullstack websites" });
+            const wcError = websiteConfigError(rawWebsiteConfig);
+            if (wcError) return res.status(400).json({ error: wcError });
         }
         if (projectType === "service" && rawServiceConfig?.port) {
             const p = parseInt(rawServiceConfig.port, 10);
@@ -501,7 +520,7 @@ router.post("/import-local", async (req, res, next) => {
                 port,
                 apiPort: rawWebsiteConfig.apiPort ? parseInt(rawWebsiteConfig.apiPort, 10) : null,
                 buildCommand: mode === "static" ? null : (rawWebsiteConfig.buildCommand || null),
-                distFolder: rawWebsiteConfig.distFolder || (mode === "static" ? "." : "dist"),
+                distFolder: mode === "api" ? null : (rawWebsiteConfig.distFolder || (mode === "static" ? "." : "dist")),
                 domain: null,
                 sslEnabled: false,
             };
@@ -1009,10 +1028,12 @@ router.post("/:id/stop", async (req, res, next) => {
 
 /**
  * PUT /api/bots/:id/website-config
- * Update website infrastructure settings (port, apiPort, distFolder, buildCommand).
+ * Update website infrastructure settings (mode, port, apiPort, distFolder, buildCommand).
  * Re-applies nginx config and adjusts UFW ports automatically.
  *
- * Body: { port?, apiPort?, distFolder?, buildCommand? }
+ * Body: { mode?, port?, apiPort?, distFolder?, buildCommand? }
+ * mode switches only between "fullstack" and "api" — both a PM2 app behind
+ * nginx, so only the vhost changes. Static ↔ app would change what runs.
  */
 router.put("/:id/website-config", async (req, res, next) => {
     try {
@@ -1021,20 +1042,26 @@ router.put("/:id/website-config", async (req, res, next) => {
         if (bot.projectType !== "website") return res.status(400).json({ error: "Only website projects support this" });
 
         const wc = bot.websiteConfig;
-        const { port, apiPort, distFolder, buildCommand, extraNginxConfig } = req.body;
+        const { mode, port, apiPort, distFolder, buildCommand, extraNginxConfig } = req.body;
+
+        const newMode = mode || wc.mode;
+        if (newMode !== wc.mode && !(APP_MODES.includes(wc.mode) && APP_MODES.includes(newMode)))
+            return res.status(400).json({ error: "Only a full-stack site can switch to API only, and back" });
 
         const newPort = port ? parseInt(port, 10) : wc.port;
         if (isNaN(newPort) || newPort < 1 || newPort > 65535)
             return res.status(400).json({ error: "Invalid port" });
 
         const newApiPort = apiPort ? parseInt(apiPort, 10) : wc.apiPort;
-        if (wc.mode === "fullstack" && (!newApiPort || isNaN(newApiPort)))
-            return res.status(400).json({ error: "apiPort is required for fullstack" });
+        if (APP_MODES.includes(newMode) && !validPort(newApiPort))
+            return res.status(400).json({ error: "A valid API port is required for this mode" });
 
-        const newDistFolder = distFolder?.trim() || wc.distFolder;
+        // An API site keeps the folder it had (unused) so switching back restores
+        // it; one created as API has none, and becomes full-stack with "dist".
+        const newDistFolder = distFolder?.trim() || wc.distFolder || (newMode === "fullstack" ? "dist" : null);
         const newBuildCommand = buildCommand !== undefined ? (buildCommand.trim() || null) : wc.buildCommand;
         const newExtraNginx = extraNginxConfig !== undefined ? (extraNginxConfig.trim() || null) : (wc.extraNginxConfig || null);
-        const newWc = { ...wc, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand, extraNginxConfig: newExtraNginx };
+        const newWc = { ...wc, mode: newMode, port: newPort, apiPort: newApiPort, distFolder: newDistFolder, buildCommand: newBuildCommand, extraNginxConfig: newExtraNginx };
 
         if (wc.mode === "static" && !wc.domain) {
             // http-server mode: adjust UFW port if changed, then restart http-server
@@ -1050,7 +1077,7 @@ router.put("/:id/website-config", async (req, res, next) => {
                 await executor.ufwOpenPort(bot, newPort);
             }
             await executor.nginxWriteConfig(bot, {
-                mode: wc.mode,
+                mode: newMode,
                 port: newPort,
                 apiPort: newApiPort || null,
                 distFolder: newDistFolder,

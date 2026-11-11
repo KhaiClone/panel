@@ -10,6 +10,7 @@ import ShellTerminal from '../components/ShellTerminal';
 import NodeVersionCard from '../components/NodeVersionCard';
 import { useData } from '../context/DataContext';
 import { Icon, Notice, PageHeader, StatCard, StatusBadge, StatusIcon } from '../components/ui';
+import { runsApp, siteModeLabel, siteModeSummary } from '../utils/siteMode';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 // Same words and tones as the bot cards on the Bots page (components/BotCard.jsx)
@@ -96,6 +97,7 @@ function WebsitePanel({ bot, onRefresh }) {
 
     // Website config edit state
     const [editingConfig, setEditingConfig] = useState(false);
+    const [cfgMode, setCfgMode]             = useState(wc.mode);
     const [cfgPort, setCfgPort]             = useState(String(wc.port || ""));
     const [cfgApiPort, setCfgApiPort]       = useState(String(wc.apiPort || ""));
     const [cfgDistFolder, setCfgDistFolder] = useState(wc.distFolder || "");
@@ -154,9 +156,11 @@ function WebsitePanel({ bot, onRefresh }) {
         setSavingConfig(true); setConfigMsg(null);
         try {
             await api.put(`/bots/${bot._id}/website-config`, {
+                mode: cfgMode !== wc.mode ? cfgMode : undefined,
                 port: cfgPort || undefined,
                 apiPort: cfgApiPort || undefined,
-                distFolder: cfgDistFolder || undefined,
+                // An API site serves no dist folder; the server keeps the old one.
+                distFolder: cfgMode === "api" ? undefined : (cfgDistFolder || undefined),
                 buildCommand: cfgBuildCmd,
             });
             setConfigMsg({ type: "success", text: "Website config updated — nginx reloaded." });
@@ -168,6 +172,7 @@ function WebsitePanel({ bot, onRefresh }) {
     };
 
     const cancelEdit = () => {
+        setCfgMode(wc.mode);
         setCfgPort(String(wc.port || ""));
         setCfgApiPort(String(wc.apiPort || ""));
         setCfgDistFolder(wc.distFolder || "");
@@ -202,7 +207,7 @@ function WebsitePanel({ bot, onRefresh }) {
                 <div>
                     <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text)", margin: 0 }}>Website</h3>
                     <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                        {wc.mode === "static" ? "Static site — served by nginx" : "Full-stack — PM2 API + nginx frontend"}
+                        {siteModeSummary(wc.mode)}
                     </p>
                 </div>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
@@ -222,9 +227,9 @@ function WebsitePanel({ bot, onRefresh }) {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
                     {[
                         { label: "Public port", value: wc.port },
-                        wc.mode === "fullstack" && { label: "API port", value: wc.apiPort },
-                        { label: "Mode", value: wc.mode === "static" ? "Static" : "Full-stack" },
-                        { label: "Dist folder", value: wc.distFolder },
+                        runsApp(wc.mode) && { label: "API port", value: wc.apiPort },
+                        { label: "Mode", value: siteModeLabel(wc.mode) },
+                        wc.mode !== "api" && { label: "Dist folder", value: wc.distFolder },
                         wc.buildCommand && { label: "Build command", value: wc.buildCommand },
                         wc.domain && { label: "Domain", value: wc.domain },
                     ].filter(Boolean).map(({ label, value }) => (
@@ -240,13 +245,30 @@ function WebsitePanel({ bot, onRefresh }) {
             {editingConfig && (
                 <form onSubmit={handleSaveConfig} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20, padding: 16, background: "var(--bg-input)", borderRadius: 10, border: "1px solid var(--border)" }}>
                     <h4 style={SUBHEAD}>Edit website config</h4>
-                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: wc.mode === "fullstack" ? "1fr 1fr" : "1fr", gap: 12 }}>
+                    {runsApp(wc.mode) && (
+                        <div>
+                            <label className="label">Mode</label>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                {["fullstack", "api"].map((m) => (
+                                    <button key={m} type="button" onClick={() => setCfgMode(m)} className={`chip${cfgMode === m ? " active" : ""}`}>
+                                        {siteModeLabel(m)}
+                                    </button>
+                                ))}
+                            </div>
+                            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                                {cfgMode === "api"
+                                    ? "nginx passes every path to your server. No frontend or dist folder."
+                                    : "nginx serves the dist folder and passes /api to your server."}
+                            </p>
+                        </div>
+                    )}
+                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: runsApp(cfgMode) ? "1fr 1fr" : "1fr", gap: 12 }}>
                         <div>
                             <label className="label">Public port</label>
                             <input className="input mono" type="number" min="1" max="65535" value={cfgPort} onChange={e => setCfgPort(e.target.value)} />
                             <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>nginx listens on this port. UFW updated automatically.</p>
                         </div>
-                        {wc.mode === "fullstack" && (
+                        {runsApp(cfgMode) && (
                             <div>
                                 <label className="label">API port (PM2)</label>
                                 <input className="input mono" type="number" min="1" max="65535" value={cfgApiPort} onChange={e => setCfgApiPort(e.target.value)} />
@@ -254,12 +276,14 @@ function WebsitePanel({ bot, onRefresh }) {
                             </div>
                         )}
                     </div>
-                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                        <div>
-                            <label className="label">Dist folder *</label>
-                            <input className="input mono" value={cfgDistFolder} onChange={e => setCfgDistFolder(e.target.value)} required placeholder="client/dist" />
-                            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Relative to project root or absolute path.</p>
-                        </div>
+                    <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: cfgMode === "api" ? "1fr" : "1fr 1fr", gap: 12 }}>
+                        {cfgMode !== "api" && (
+                            <div>
+                                <label className="label">Dist folder *</label>
+                                <input className="input mono" value={cfgDistFolder} onChange={e => setCfgDistFolder(e.target.value)} required placeholder="client/dist" />
+                                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Relative to project root or absolute path.</p>
+                            </div>
+                        )}
                         <div>
                             <label className="label">Build command</label>
                             <input className="input mono" value={cfgBuildCmd} onChange={e => setCfgBuildCmd(e.target.value)} placeholder="npm run build" />

@@ -7,6 +7,7 @@ import api from "../api/client";
 import ConfirmModal from "../components/ConfirmModal";
 import NodeFilter, { matchNode } from "../components/NodeFilter";
 import { EmptyState, Icon, PageHeader, SearchInput, StatCard, StatusBadge } from "../components/ui";
+import { siteModeLabel } from "../utils/siteMode";
 
 // ── Status, as on the Bots page ──────────────────────────────────────────────
 const STATUS = {
@@ -76,7 +77,7 @@ function SiteCard({ site, onRefresh }) {
                                     {site.name}
                                 </h3>
                                 <span className="badge" style={CHIP}>
-                                    {wc.mode === "fullstack" ? "Full-stack" : "Static"}
+                                    {siteModeLabel(wc.mode)}
                                 </span>
                             </div>
                             <p className="mono" style={{ fontSize: 11, color: "var(--text-dim)", margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -238,7 +239,7 @@ export default function SitesPage() {
                     icon="sites"
                     title={sites.length === 0 ? "No sites yet" : "No matches found"}
                     description={sites.length === 0
-                        ? "Deploy your first static site or full-stack website."
+                        ? "Deploy your first static site, full-stack website or API."
                         : "Try adjusting your search or filter."}
                     action={sites.length === 0 && (
                         <button className="btn-primary" onClick={() => setShowCreate(true)}>
