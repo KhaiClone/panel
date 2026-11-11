@@ -89,4 +89,14 @@ router.post("/:orderId/resolve", async (req, res, next) => {
     }
 });
 
+/** POST /api/badges/:orderId/send-rest — gửi nốt các phiên Discord chưa nhận (chạy nền) */
+router.post("/:orderId/send-rest", async (req, res, next) => {
+    try {
+        res.json(await badgeService.sendRest(req.params.orderId));
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
 module.exports = router;

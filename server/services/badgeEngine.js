@@ -51,6 +51,23 @@ const USER_AGENT =
 const BATCH_SIZE = 50;
 const BATCH_DELAY = 300;
 
+// Batch Discord không nhận (429, 5xx, lỗi mạng) được gửi lại, nghỉ lần lượt các
+// khoảng này (429 có Retry-After thì theo nó nếu dài hơn).
+//
+// Trước 2026-11-11 batch hỏng bị bỏ qua luôn rồi đơn vẫn ghi "sent": đơn Game
+// Time Eternal của .wlxa mất 11/55 batch = 1.100 giờ mà trang báo xong, khách
+// phải tự đếm giờ mới thấy thiếu.
+//
+// Gửi lại có một rủi ro: lỗi mạng (status 0) không cho biết Discord đã nhận hay
+// chưa, nên batch đó có thể bị cộng hai lần — tối đa 50 phiên, nằm gọn trong
+// phần overshoot của đơn. Gửi lại đúng event cũ (cùng game_session_id) để nếu
+// Discord có khử trùng thì nó khử được.
+const RETRY_DELAYS = [2_000, 5_000, 15_000, 30_000];
+
+// Từng ấy batch liền nhau hỏng hết các lần thử thì dừng: Discord đang từ chối,
+// gửi tiếp chỉ đốt request. Phần chưa gửi gửi sau bằng "Send the rest".
+const MAX_FAILED_BATCHES_IN_A_ROW = 3;
+
 // Số game dùng để rải giờ cho một đơn Game Time thuần. Càng ít thì Game Variety
 // càng ít bị đẩy theo (khách khỏi được nâng cấp miễn phí), nhưng dồn 5.000h lên
 // 1 game thì trông bất thường hơn. 5 là điểm cân bằng; chỉnh được qua tham số.
@@ -334,11 +351,20 @@ class BadgeSender {
      * @param {object} opts
      * @param {object} [opts.agent]   httpsAgent từ proxyPool
      * @param {string} [opts.cookie]  header cookie đầy đủ (cf_clearance) nếu cần
+     * @param {number[]} [opts.retryDelays]  nhịp gửi lại batch hỏng (test truyền số nhỏ)
+     * @param {number} [opts.batchDelay]     nghỉ giữa hai batch
      */
-    constructor(token, { agent = null, cookie = "" } = {}) {
+    constructor(
+        token,
+        { agent = null, cookie = "", retryDelays = RETRY_DELAYS, batchDelay = BATCH_DELAY } = {},
+    ) {
         this.token = String(token).trim();
         this.agent = agent;
         this.cookie = cookie;
+        this.retryDelays = retryDelays;
+        this.batchDelay = batchDelay;
+        // Retry-After (ms) của lần post gần nhất trả 429, null nếu không có.
+        this.retryAfterMs = null;
         this.analyticsToken = null;
         this.buildNumber = null;
         // Locale thật của tài khoản, lấy ở init(). Trước đó dùng mặc định vì
@@ -503,12 +529,17 @@ class BadgeSender {
             "x-super-properties": _superProps(this.buildNumber, this.session, this.locale),
         };
         if (this.cookie) headers.cookie = this.cookie;
+        this.retryAfterMs = null;
         try {
             const res = await axios.post(
                 SCIENCE_URL,
                 { token: this.analyticsToken, events },
                 { headers, timeout: 15_000, validateStatus: () => true, ...this._proxyCfg },
             );
+            if (res.status === 429) {
+                const sec = Number(res.data?.retry_after ?? res.headers?.["retry-after"]);
+                if (Number.isFinite(sec) && sec > 0) this.retryAfterMs = Math.ceil(sec * 1000);
+            }
             return res.status;
         } catch {
             return 0;
@@ -523,36 +554,63 @@ class BadgeSender {
     /**
      * Gửi từng PHIÊN, không phải từng game. Một game có thể xuất hiện ở rất nhiều
      * phiên — đó là cách tích giờ mà không đụng vào Game Variety.
+     *
+     * `indexOffset`: phiên thứ k lùi về quá khứ (indexOffset + k) phiên. Lượt gửi
+     * phần còn thiếu của một đơn truyền vào đây để các phiên mới nằm SAU những
+     * phiên đã gửi trước đó, không chồng giờ lên chúng.
+     *
+     * Trả `sent < total` mà không `aborted` = có batch Discord không nhận sau mọi
+     * lần thử; badgeService đẩy đơn sang chờ duyệt, không bao giờ ghi là xong.
+     * `acceptedGameIds` = game nằm trong batch Discord đã nhận (để ghi claim).
      */
-    async run(plan, { onBatch = () => {} } = {}) {
+    async run(plan, { onBatch = () => {}, indexOffset = 0 } = {}) {
         if (!this.analyticsToken) await this.init();
         const sessions = plan.sessions ?? [];
         const total = sessions.length;
         let sent = 0;
         let batchNo = 0;
+        let failedInARow = 0;
+        let lastBad = null;
+        const accepted = new Set();
 
         for (let i = 0; i < total; i += BATCH_SIZE) {
             const chunk = sessions.slice(i, i + BATCH_SIZE);
             batchNo += 1;
             const events = chunk.flatMap((ses, k) =>
                 this.buildSession(ses.game, Math.round(ses.hours * 3600 * 1000), {
-                    index: i + k,
+                    index: indexOffset + i + k,
                 }),
             );
-            const status = await this.post(events);
+
+            let status = await this.post(events);
+            for (let r = 0; status !== 204 && status !== 401 && status !== 403 && r < this.retryDelays.length; r++) {
+                await sleep(Math.max(this.retryDelays[r], this.retryAfterMs ?? 0));
+                status = await this.post(events);
+            }
 
             if (status === 204) {
                 sent += chunk.length;
+                failedInARow = 0;
+                for (const ses of chunk) accepted.add(ses.game.id);
                 onBatch({ batchNo, status, sent, total, ok: true });
             } else if (status === 401 || status === 403) {
                 onBatch({ batchNo, status, sent, total, ok: false, fatal: true });
-                return { sent, total, aborted: true, status };
+                return { sent, total, aborted: true, status, acceptedGameIds: [...accepted] };
             } else {
+                lastBad = status;
+                failedInARow += 1;
                 onBatch({ batchNo, status, sent, total, ok: false });
+                if (failedInARow >= MAX_FAILED_BATCHES_IN_A_ROW) break;
             }
-            if (i + BATCH_SIZE < total) await sleep(BATCH_DELAY);
+            if (i + BATCH_SIZE < total) await sleep(this.batchDelay);
         }
-        return { sent, total, aborted: false, status: 204 };
+        return {
+            sent,
+            total,
+            aborted: false,
+            status: sent < total ? lastBad : 204,
+            acceptedGameIds: [...accepted],
+        };
     }
 }
 
@@ -613,5 +671,7 @@ module.exports = {
     setHypeSquad,
     BATCH_SIZE,
     BATCH_DELAY,
+    // Mảng dùng chung làm mặc định của BadgeSender — test thu nhỏ tại chỗ cho nhanh.
+    RETRY_DELAYS,
     GAME_TIME_SPREAD,
 };

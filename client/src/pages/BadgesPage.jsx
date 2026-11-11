@@ -15,6 +15,10 @@ import { fmtNum, money } from "../utils/format";
 //
 //  The owner can also add an account by hand (ManualBadgeModal): a free order with
 //  source "manual" that runs the same way. It can only be retried or cancelled.
+//
+//  An order Discord took only part of (0 < sent < total) gets "Send the rest": it
+//  sends just the missing sessions with the order's stored token, no new read. Orders
+//  marked Done before 2026-11-11 could be short like that too.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS = {
@@ -83,6 +87,18 @@ function OrderRow({ order, onAction, busy }) {
     const manual = order.source === "manual";
     // Same rule as badgeService._reviewable: an "error" order that sent nothing can be retried.
     const reviewable = order.status === "manual_review" || (order.status === "error" && !order.sent);
+    // Same rule as badgeService._restCount: sessions Discord never took on a part-sent order.
+    const rest =
+        ["game_time", "game_variety"].includes(order.badgeKey) &&
+        ["sent", "manual_review", "error"].includes(order.status) &&
+        order.total > 0 && order.sent > 0 && order.sent < order.total &&
+        order.plan?.hoursPerSession > 0
+            ? order.total - order.sent
+            : 0;
+    const restLabel =
+        order.badgeKey === "game_time"
+            ? `${fmtNum(Math.round(rest * order.plan?.hoursPerSession))} hours`
+            : `${fmtNum(rest)} games`;
 
     return (
         <div style={{ borderTop: "1px solid var(--border-light)", padding: "12px 0" }}>
@@ -146,12 +162,24 @@ function OrderRow({ order, onAction, busy }) {
                             {order.kind === "choice" ? "" : " · badge shows up in ~1 day"}
                         </div>
                     )}
+                    {rest > 0 && (
+                        <div style={{ fontSize: 11, color: "var(--warning)" }}>
+                            {fmtNum(rest)} sessions never sent ({restLabel})
+                        </div>
+                    )}
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    {canEdit && rest > 0 && (
+                        <span title="Sends only the missing sessions with this order's stored token. No new read, no new order.">
+                            <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "send-rest", restLabel)}>
+                                Send the rest
+                            </Btn>
+                        </span>
+                    )}
                     {canEdit && reviewable && manual && (
                         <>
-                            <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
+                            <Btn tone={rest > 0 ? "default" : "primary"} disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
                                 Retry
                             </Btn>
                             <Btn disabled={busy} onClick={() => onAction(order.orderId, "cancel")}>
@@ -161,7 +189,7 @@ function OrderRow({ order, onAction, busy }) {
                     )}
                     {canEdit && reviewable && !manual && (
                         <>
-                            <Btn tone="primary" disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
+                            <Btn tone={rest > 0 ? "default" : "primary"} disabled={busy} onClick={() => onAction(order.orderId, "retry")}>
                                 Retry
                             </Btn>
                             <Btn tone="danger" disabled={busy} onClick={() => onAction(order.orderId, "forfeit")}>
@@ -203,11 +231,18 @@ export default function BadgesPage() {
         return () => clearInterval(id);
     }, [load]);
 
-    const onAction = async (orderId, action) => {
+    const onAction = async (orderId, action, restLabel) => {
+        if (
+            action === "send-rest" &&
+            !window.confirm(`Send the missing ${restLabel} to this account now? Only what Discord never took is sent.`)
+        ) {
+            return;
+        }
         setBusy(true);
         setError("");
         try {
-            await api.post(`/badges/${orderId}/resolve`, { action });
+            if (action === "send-rest") await api.post(`/badges/${orderId}/send-rest`);
+            else await api.post(`/badges/${orderId}/resolve`, { action });
             await load();
         } catch (err) {
             setError(err.response?.data?.error || err.message);

@@ -16,6 +16,9 @@
  * Đơn tay (`source: "manual"`, owner thêm trên trang /badges, không thanh toán)
  * chạy cùng vòng đời này — khác biệt ghi ở createManualOrder().
  *
+ * Đơn mà Discord chỉ nhận một phần số phiên (sent < total) không bao giờ là "sent":
+ * nó chờ duyệt, và nút "Send the rest" gửi nốt đúng phần thiếu — sendRest().
+ *
  * NĂM QUYẾT ĐỊNH THIẾT KẾ, theo yêu cầu:
  *  1. Không có bước xác nhận riêng trước khi hiện QR — khách chọn mốc là mua luôn.
  *  2. Đọc lỗi thì KHÔNG tự tịch thu: đơn treo ở manual_review chờ duyệt tay.
@@ -533,6 +536,15 @@ async function createManualOrder(
 
 // ── Chạy đơn ─────────────────────────────────────────────────────────────────────
 
+/** Câu lỗi của một lượt gửi mà Discord không nhận hết các phiên. */
+const _shortError = (missing, total, status) =>
+    `Discord did not take ${missing} of ${total} sessions (last answer: ${status ? `HTTP ${status}` : "none"}). ` +
+    `"Send the rest" sends only those — Retry would read the account again and plan from scratch.`;
+
+/** Lượt gửi hỏng vì không có phản hồi nào (status 0) thì nhiều khả năng là đường ra. */
+const _egressLikelyBad = (result) =>
+    Boolean(result.aborted) || (result.sent < result.total && !result.status);
+
 // Số egress thử lần lượt trước khi bỏ cuộc. Mỗi egress chết tốn tối đa 15s (timeout
 // của init), nên 3 là đủ vượt qua một proxy/node hỏng mà không giữ đơn quá lâu.
 const EGRESS_ATTEMPTS = 3;
@@ -780,7 +792,7 @@ async function _process(orderId) {
         });
         return _shape(await _get(orderId));
     }
-    lease.release({ failed: result.aborted });
+    lease.release({ failed: _egressLikelyBad(result) });
 
     if (result.aborted) {
         await _patch(orderId, {
@@ -792,7 +804,25 @@ async function _process(orderId) {
         return _shape(await _get(orderId));
     }
 
-    await _addClaimedGames(order.accountId, order.username, plan.games.map((g) => g.id));
+    // Chỉ game nằm trong batch Discord đã nhận: game của batch hỏng chưa được đếm,
+    // ghi claim cho nó thì đơn Game Time sau "dùng lại" một game thật ra là mới.
+    await _addClaimedGames(
+        order.accountId,
+        order.username,
+        result.acceptedGameIds ?? plan.games.map((g) => g.id),
+    );
+
+    // Còn batch Discord không nhận sau mọi lần thử: CHƯA xong. Trước 2026-11-11
+    // chỗ này vẫn ghi "sent" — khách được báo xong trong khi thiếu 1/5 số giờ.
+    if (result.sent < result.total) {
+        await _patch(orderId, {
+            status: "manual_review",
+            sent: result.sent,
+            error: _shortError(result.total - result.sent, result.total, result.status),
+        });
+        _dispatch(order, { type: "manual_review", status: "manual_review", sent: result.sent });
+        return _shape(await _get(orderId));
+    }
 
     await _patch(orderId, {
         status: "sent",
@@ -907,6 +937,175 @@ async function resolveManual(orderId, action) {
     throw _err(`Invalid action: ${action}`);
 }
 
+// ── Gửi phần còn thiếu ───────────────────────────────────────────────────────────
+
+const REST_STATUSES = new Set(["sent", "manual_review", "error"]);
+
+/**
+ * Số phiên của đơn mà Discord chưa nhận. Chỉ đơn đã gửi được MỘT PHẦN (0 < sent <
+ * total): sent = 0 thì Retry mới đúng — chưa gửi gì nên đọc lại rồi lập kế hoạch
+ * từ đầu là chính xác. Trang /badges dùng đúng luật này để hiện nút.
+ */
+function _restCount(o) {
+    if (!o || !["game_time", "game_variety"].includes(o.badgeKey)) return 0;
+    if (!REST_STATUSES.has(o.status)) return 0;
+    if (!(o.total > 0) || !(o.sent > 0) || o.sent >= o.total) return 0;
+    if (!(o.plan?.hoursPerSession > 0)) return 0;
+    return o.total - o.sent;
+}
+
+/**
+ * Gửi nốt các phiên Discord chưa nhận của một đơn, bằng token đã lưu trong chính
+ * đơn đó: token không rời panel, không tạo đơn mới (đơn tay sẽ mở thêm một đơn
+ * trong sổ Shop), không đọc lại badge.
+ *
+ * Không đọc lại vì badge tiered cần ~1 ngày Discord mới dựng lại: đọc ngay sau một
+ * lượt gửi dở là ra số cũ, lập kế hoạch từ đó là gửi lại cả đơn. Số còn thiếu đã
+ * có sẵn trong đơn (total − sent) — gửi đúng chừng ấy phiên, cùng độ dài phiên.
+ *
+ * Game Time rải trên game đã claim của acc (đã được đếm), varietyHeadroom 0 nên
+ * không mở game mới — trừ khi acc chưa có game nào, planOrder ghi lại việc đó.
+ * Game Variety lấy game mới chưa claim, mỗi game một phiên như đơn gốc.
+ *
+ * Đơn đã báo khách là xong ("sent") thì gửi bù im lặng — không sự kiện nào về
+ * Auto. Đơn đang chờ duyệt thì báo như lần gửi đầu.
+ *
+ * Chạy nền như processOrder; trả về đơn đang ở "sending".
+ */
+async function sendRest(orderId) {
+    const order = await _get(orderId);
+    if (!order) throw _err("Order not found", 404);
+    if (running.has(orderId)) throw _err("This order is already running", 409);
+    const rest = _restCount(order);
+    if (!rest) throw _err("This order has nothing left to send");
+    const token = _decrypt(order);
+    if (!token) throw _err("Could not decrypt the stored token", 500);
+
+    running.add(orderId);
+    try {
+        await _patch(orderId, { status: "sending", error: null });
+    } catch (err) {
+        running.delete(orderId);
+        throw err;
+    }
+    _runRest(order, token, rest)
+        .catch((err) => _patch(orderId, { status: "manual_review", error: err.message }).catch(() => {}))
+        .finally(() => running.delete(orderId));
+    return _shape(await _get(orderId));
+}
+
+async function _runRest(order, token, rest) {
+    const { orderId } = order;
+    const tellBuyer = order.status !== "sent";
+    const hoursPerSession = order.plan.hoursPerSession;
+    const claimedGameIds = await _claimedGameIds(order.accountId);
+
+    const plan =
+        order.badgeKey === "game_time"
+            ? await planOrder({
+                badgeKey: "game_time",
+                threshold: rest * hoursPerSession,
+                current: 0,
+                overshoot: 1,
+                claimedGameIds,
+                varietyHeadroom: 0,
+            })
+            : await planOrder({
+                badgeKey: "game_variety",
+                threshold: rest,
+                current: 0,
+                overshoot: 1,
+                claimedGameIds,
+            });
+    // Lưới an toàn: lượt bù không bao giờ gửi nhiều phiên hơn số còn thiếu.
+    if (plan.sessions.length !== rest) {
+        throw _err(`The plan for the rest has ${plan.sessions.length} sessions, ${rest} expected`, 500);
+    }
+
+    let lease;
+    let sender;
+    try {
+        ({ lease, sender } = await _openSender(order, token));
+    } catch (err) {
+        if (!err.invalidToken) throw err;
+        await _patch(orderId, { status: "token_dead", error: err.message });
+        if (tellBuyer) _dispatch(order, { type: "failed", status: "token_dead", error: _vi(err) });
+        return;
+    }
+
+    // Phiên mới nằm SAU mọi phiên đã gửi của đơn: lượt đầu chiếm `total` phiên lùi
+    // từ lúc nó chạy, các lượt bù trước chiếm phần của chúng, cộng số phiên đã trôi
+    // qua kể từ lúc tạo đơn.
+    const sessionMs = hoursPerSession * 3_600_000;
+    const earlier = (order.restSends ?? []).reduce((n, r) => n + (r.sessions || 0), 0);
+    const indexOffset = order.total + earlier + Math.ceil((Date.now() - order.createdAt) / sessionMs);
+    const base = order.sent;
+
+    let result;
+    try {
+        result = await sender.run(plan, {
+            indexOffset,
+            onBatch: ({ sent }) => {
+                _patch(orderId, { sent: base + sent }).catch(() => {});
+            },
+        });
+    } catch (err) {
+        lease.release({ failed: true });
+        const dead = Boolean(err.invalidToken);
+        await _patch(orderId, { status: dead ? "token_dead" : "manual_review", error: err.message });
+        if (tellBuyer) {
+            _dispatch(order, dead
+                ? { type: "failed", status: "token_dead", error: _vi(err) }
+                : { type: "manual_review", status: "manual_review", sent: base });
+        }
+        return;
+    }
+    lease.release({ failed: _egressLikelyBad(result) });
+
+    await _addClaimedGames(
+        order.accountId,
+        order.username,
+        result.acceptedGameIds ?? plan.games.map((g) => g.id),
+    );
+    const sent = base + result.sent;
+    const restSends = [
+        ...(order.restSends ?? []),
+        {
+            at: Date.now(),
+            sessions: rest,
+            accepted: result.sent,
+            varietySideEffect: plan.varietySideEffect ?? 0,
+        },
+    ];
+
+    if (result.aborted || result.sent < result.total) {
+        await _patch(orderId, {
+            status: "manual_review",
+            sent,
+            restSends,
+            error: result.aborted
+                ? `Discord refused with HTTP ${result.status} after ${sent}/${order.total} sessions`
+                : _shortError(order.total - sent, order.total, result.status),
+        });
+        if (tellBuyer) _dispatch(order, { type: "manual_review", status: "manual_review", sent });
+        return;
+    }
+
+    await _patch(orderId, { status: "sent", sent: order.total, restSends, sentAt: Date.now(), error: null });
+    if (tellBuyer) {
+        _dispatch(order, {
+            type: "sent",
+            status: "sent",
+            sent: order.total,
+            total: order.total,
+            badgeKey: order.badgeKey,
+            tierName: order.tierName,
+            threshold: order.threshold,
+            unit: order.unit,
+        });
+    }
+}
+
 // ── Liệt kê ──────────────────────────────────────────────────────────────────────
 
 function _shape(o) {
@@ -981,6 +1180,7 @@ module.exports = {
     createManualOrder,
     processOrder,
     resolveManual,
+    sendRest,
     listOrders,
     getOrder,
     restoreOrders,
