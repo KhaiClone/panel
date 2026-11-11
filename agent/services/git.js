@@ -12,9 +12,43 @@ const execAsync = util.promisify(exec);
 const GIT_TIMEOUT = 120_000;
 const INSTALL_TIMEOUT = 600_000;
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  GitHub's host keys travel with the agent.
+//
+//  Clones go over SSH (git@github.com:…) and the agent runs them with no TTY,
+//  so ssh cannot ask "continue connecting (yes/no)?" — a node whose
+//  ~/.ssh/known_hosts lacks github.com fails with "Host key verification
+//  failed". That hit VPS dio 2 on 2026-11-11: its panel checkout came over
+//  HTTPS, nothing had ever SSHed to GitHub there, so it had no known_hosts at
+//  all. The Git keys page's Test (accept-new) only ever runs on the node that
+//  hosts the panel, so a fresh node had no way out from the panel.
+//
+//  Instead of trusting whatever answers on first contact, ssh also reads
+//  ../github_known_hosts (GitHub's published keys) as a global known-hosts
+//  file. StrictHostKeyChecking is left alone: an unknown or changed key is
+//  still refused, ~/.ssh/known_hosts and /etc/ssh/ssh_known_hosts* are still
+//  read, and other hosts behave exactly as before.
+//
+//  GIT_SSH_COMMAND outranks core.sshCommand — no node sets one (checked
+//  2026-11-11); one already in the agent's environment is kept as is.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GITHUB_KNOWN_HOSTS = path.join(__dirname, "..", "github_known_hosts");
+
+/** Single-quote for sh, which git runs GIT_SSH_COMMAND through. */
+const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+const GIT_SSH_COMMAND = `ssh -o ${shQuote(
+    `GlobalKnownHostsFile="${GITHUB_KNOWN_HOSTS}" /etc/ssh/ssh_known_hosts /etc/ssh/ssh_known_hosts2`,
+)}`;
+
+/** `base` plus the ssh command above, for git commands that reach a remote. */
+const sshEnv = (base = process.env) =>
+    base.GIT_SSH_COMMAND ? { ...base } : { ...base, GIT_SSH_COMMAND };
+
 const cloneRepo = async (repoUrl, targetPath, branch = "main") => {
     const cmd = `git clone -b ${branch} --depth 1 "git@github.com:${repoUrl.replace("https://github.com/", "")}" "${targetPath}"`;
-    const { stdout, stderr } = await execAsync(cmd, { timeout: GIT_TIMEOUT });
+    const { stdout, stderr } = await execAsync(cmd, { env: sshEnv(), timeout: GIT_TIMEOUT });
     return stdout || stderr;
 };
 
@@ -42,7 +76,7 @@ const pullRepo = async (botPath) => {
         // Hooks in the project's .git run here — without the agent's key.
         const { stdout, stderr } = await execAsync(`git pull`, {
             cwd: botPath,
-            env: projectEnv(),
+            env: sshEnv(projectEnv()),
             timeout: GIT_TIMEOUT,
         });
         return stdout || stderr;
@@ -115,4 +149,4 @@ const installDeps = async (botPath, installCommand = undefined, nodeVersion = nu
     return stdout || stderr;
 };
 
-module.exports = { cloneRepo, pullRepo, installDeps, cleanPackageFolder, repoInfo };
+module.exports = { cloneRepo, pullRepo, installDeps, cleanPackageFolder, repoInfo, sshEnv, GITHUB_KNOWN_HOSTS };
