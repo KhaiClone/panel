@@ -3,6 +3,7 @@ const router = express.Router();
 const customers = require("../services/customerProjects");
 const channels = require("../services/customerChannels");
 const retired = require("../services/customerRetire");
+const repos = require("../services/customerRepos");
 
 // /api/customer-projects — owner only (mounted behind authMiddleware, like
 // /api/bots: the Bots pages are owner-only for good). A project is touched
@@ -60,6 +61,23 @@ router.post("/retired/:rid/keys", retiredAction((req) => retired.retryKeys(req.p
 router.post("/retired/:rid/repo", retiredAction((req) => retired.markRepoHandled(req.params.rid)));
 /** DELETE /retired/:rid — forget the entry; nothing on Discord / GitHub changes. */
 router.delete("/retired/:rid", retiredAction((req) => retired.dismiss(req.params.rid)));
+
+// ── The customers' GitHub org (phase 4, services/customerRepos.js) ───────────
+
+/** GET /github-settings — { org, hasToken, configured } (the token never comes back). */
+router.get("/github-settings", retiredAction(() => repos.getSettings()));
+/** PUT /github-settings  { org?, token? } — checked against GitHub before it is saved. */
+router.put("/github-settings", retiredAction((req) => repos.setSettings(pick(req.body, ["org", "token"]))));
+/** GET /repos — the org's repos with who uses each, and customer projects whose repo is not there. */
+router.get("/repos", retiredAction(() => repos.overview()));
+/** POST /repos/:name/archive  { archived: true|false } */
+router.post("/repos/:name/archive", retiredAction((req) => repos.archive(req.params.name, req.body?.archived !== false)));
+/** DELETE /repos/:name  { confirm: "<the repo's name>" } — refused while a project uses it. */
+router.delete("/repos/:name", retiredAction((req) => repos.remove(req.params.name, req.body?.confirm)));
+/** POST /retired/:rid/repo/archive — archive a retired project's repo; its line is done. */
+router.post("/retired/:rid/repo/archive", retiredAction((req) => repos.archiveRetired(req.params.rid)));
+/** POST /retired/:rid/repo/delete  { confirm } — delete it instead. */
+router.post("/retired/:rid/repo/delete", retiredAction((req) => repos.deleteRetired(req.params.rid, req.body?.confirm)));
 
 /** POST /refresh — look every customer project up again now. */
 router.post("/refresh", async (req, res, next) => {
@@ -130,6 +148,9 @@ router.post("/:id/channels/link", async (req, res, next) => {
         fail(res, next)(err);
     }
 });
+
+/** POST /:id/repo/update-url — the project's repo moved into the org: point its record there. */
+router.post("/:id/repo/update-url", retiredAction((req) => repos.updateProjectUrl(req.params.id)));
 
 /** GET /:id/reusable — old channels of this bot from when it was retired (a customer back). */
 router.get("/:id/reusable", retiredAction((req) => customers.reusable(req.params.id)));

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../../api/client";
 import ConfirmModal from "../../components/ConfirmModal";
+import TypeToConfirm from "../../components/TypeToConfirm";
 import { EmptyState, Icon, Notice, StatusBadge } from "../../components/ui";
 
 // Bots → Retired: what deleted / expired customer projects left behind
 // (server/services/customerRetire.js). Webhooks and API keys went with the
-// project; channels and the repo wait for the owner. An entry leaves the list
-// once every line is done.
+// project; channels and the repo wait for the owner — the repo can be archived
+// or deleted from here once the customers' GitHub org is set up
+// (customerRepos.js). An entry leaves the list once every line is done.
 
 const fmtDate = (ts) => (ts ? new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
 const ROW = { display: "grid", gridTemplateColumns: "130px 1fr auto", gap: 12, alignItems: "center", padding: "10px 0", borderTop: "1px solid var(--border-light)" };
@@ -58,6 +60,11 @@ export default function RetiredPanel({ onCount }) {
     const [busy, setBusy] = useState(null); // `${entryId}:${action}`
     const [msg, setMsg] = useState(null);
     const [confirm, setConfirm] = useState(null); // { title, message, confirmText, danger, run }
+    const [deleting, setDeleting] = useState(null); // the entry whose repo is being deleted
+    const [github, setGithub] = useState(null); // { configured } — Archive / Delete the repo from here
+    useEffect(() => {
+        api.get("/customer-projects/github-settings").then((r) => setGithub(r.data)).catch(() => {});
+    }, []);
 
     const load = useCallback(async () => {
         try {
@@ -85,8 +92,10 @@ export default function RetiredPanel({ onCount }) {
             setMsg({ tone: "danger", text: err.response?.data?.error || "Something went wrong" });
         } finally {
             setBusy(null);
+            setDeleting(null);
         }
     };
+    const repoName = (url) => String(url || "").replace(/\.git\/?$/, "").split(/[/:]/).pop();
 
     const base = (e) => `/customer-projects/retired/${e._id}`;
     const deleteChannel = (e, kind) => {
@@ -122,6 +131,17 @@ export default function RetiredPanel({ onCount }) {
                     danger={confirm.danger}
                     onConfirm={confirm.run}
                     onCancel={() => setConfirm(null)}
+                />
+            )}
+            {deleting && (
+                <TypeToConfirm
+                    title="Delete this repo?"
+                    message={`${deleting.repo.url}, the repo of retired project "${deleting.name}", and everything in it are deleted from GitHub. GitHub usually lets an org owner restore it for 90 days; the panel cannot.`}
+                    word={repoName(deleting.repo.url)}
+                    confirmText="Delete repo"
+                    busy={busy === `${deleting._id}:repo-delete`}
+                    onConfirm={(typed) => act(deleting, "repo-delete", () => api.post(`${base(deleting)}/repo/delete`, { confirm: typed }))}
+                    onCancel={() => setDeleting(null)}
                 />
             )}
             <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
@@ -193,15 +213,36 @@ export default function RetiredPanel({ onCount }) {
                             <Row
                                 label="Repository"
                                 action={e.repo.status === "pending" && (
-                                    <button type="button" className="btn-ghost btn-sm" onClick={() => act(e, "repo", () => api.post(`${base(e)}/repo`))} disabled={isBusy}>
-                                        <Icon name="check" size={14} /> Mark as handled
-                                    </button>
+                                    <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                        {github?.configured && (
+                                            <>
+                                                <button type="button" className="btn-ghost btn-sm" disabled={isBusy}
+                                                    onClick={() => setConfirm({
+                                                        title: "Archive this repo?",
+                                                        message: `${e.repo.url} becomes read-only on GitHub (Unarchive undoes it on Bots → Repos).`,
+                                                        confirmText: "Archive",
+                                                        danger: false,
+                                                        run: () => act(e, "repo-archive", () => api.post(`${base(e)}/repo/archive`)),
+                                                    })}>
+                                                    <Icon name="archive" size={14} /> Archive
+                                                </button>
+                                                <button type="button" className="btn-danger btn-sm" disabled={isBusy} onClick={() => setDeleting(e)}>
+                                                    <Icon name="trash" size={14} /> Delete
+                                                </button>
+                                            </>
+                                        )}
+                                        <button type="button" className="btn-ghost btn-sm" onClick={() => act(e, "repo", () => api.post(`${base(e)}/repo`))} disabled={isBusy}>
+                                            <Icon name="check" size={14} /> Mark as handled
+                                        </button>
+                                    </span>
                                 )}
                             >
                                 <span className="mono" style={{ fontSize: 12, overflowWrap: "anywhere" }}>{e.repo.url}</span>
                                 {e.repo.status === "pending" && <StatusBadge tone="warning">To do</StatusBadge>}
-                                {e.repo.status === "handled" && <StatusBadge tone="success">Handled</StatusBadge>}
-                                {e.repo.status === "pending" && <span style={DIM}>Archive or delete it on GitHub, then mark it handled.</span>}
+                                {e.repo.status === "handled" && (
+                                    <StatusBadge tone="success">{e.repo.result === "archived" ? "Archived" : e.repo.result === "deleted" ? "Deleted on GitHub" : "Handled"}</StatusBadge>
+                                )}
+                                {e.repo.status === "pending" && !github?.configured && <span style={DIM}>Archive or delete it on GitHub, then mark it handled.</span>}
                             </Row>
                         )}
                     </div>

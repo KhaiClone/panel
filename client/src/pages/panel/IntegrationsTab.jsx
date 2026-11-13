@@ -9,6 +9,7 @@ import { useData } from "../../context/DataContext";
 import { Icon, StatusBadge, StatusIcon } from "../../components/ui";
 import Section from "./Section";
 import CustomerChannelsSection from "./CustomerChannelsSection";
+import GitHubReposSection from "./GitHubReposSection";
 
 // ── API keys: one per project calling /api/external ─────────────────────────
 
@@ -373,6 +374,9 @@ export default function IntegrationsTab() {
             </Section>
             <Section icon="message" title="Customer project channels" hint="Where the log and backup channels of customer projects are made">
                 <CustomerChannelsSection />
+            </Section>
+            <Section icon="gitBranch" title="Customer repos (GitHub)" hint="The organization that holds the customers' repos">
+                <GitHubReposSection />
             </Section>
         </>
     );

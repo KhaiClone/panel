@@ -6,6 +6,7 @@ const lifecycle = require("./lifecycle");
 const panelLog = require("./panelLog");
 const customerChannels = require("./customerChannels");
 const customerRetire = require("./customerRetire");
+const customerRepos = require("./customerRepos");
 const { envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +38,10 @@ const { envValue } = require("../utils/envText");
 //  Phase 3 (services/customerRetire.js): what a deleted / expired customer
 //  project leaves behind, on Bots → Retired; the same bot back gets its old
 //  channels offered again.
+//
+//  Phase 4 (services/customerRepos.js): the customers' repos in one GitHub
+//  org — Bots → Repos, archive / delete, and the repo description follows the
+//  project's name in the daily sync.
 //
 //  Some customer projects never expire — nothing here depends on expiresAt.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -237,6 +242,12 @@ const syncOne = async (bot) => {
         patch.channels = ch.channels;
         problems.push(...ch.problems);
     }
+    // Phase 4: the repo's description follows the project's name (repos are never renamed).
+    const repoProblem = await customerRepos.syncDescription(bot, {
+        projectName: merged.syncName && merged.botName ? merged.botName : bot.name,
+        buyerName: merged.buyerName,
+    });
+    if (repoProblem) problems.push(`GitHub: ${repoProblem}`);
 
     patch.checkedAt = Date.now();
     patch.lastError = problems.join(" · ") || null;

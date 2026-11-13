@@ -3,6 +3,7 @@ const db = require("../db");
 const discordBus = require("./discordBus");
 const apiKeys = require("./apiKeyService");
 const panelLog = require("./panelLog");
+const githubUrl = require("../utils/githubUrl");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Customer projects, phase 3 — what a customer project leaves behind once it
@@ -20,8 +21,9 @@ const panelLog = require("./panelLog");
 //  Everything that holds data waits for the owner: the log and backup
 //  channels are deleted only by hand — the backup channel shows a "kept until"
 //  date (30 days) as a reminder, nothing deletes it by itself — and the repo
-//  is marked handled (GitHub buttons come with phase 4). The entry leaves the
-//  list once every line is done, or when the owner dismisses it.
+//  is archived / deleted from here when it is in the customers' GitHub org
+//  (phase 4, services/customerRepos.js), or marked handled by hand. The entry
+//  leaves the list once every line is done, or when the owner dismisses it.
 //
 //  A customer who comes back with the same bot gets the old channels offered
 //  again (customerChannels.setUp with `reuse`).
@@ -249,7 +251,26 @@ const retryKeys = (rid) =>
         return answer(await put(entry));
     });
 
-/** The owner dealt with the repo themself (phase 4 adds Archive / Delete here). */
+/** Phase 4: the repo was archived / deleted from the panel (services/customerRepos.js). */
+const setRepoResult = (rid, result) =>
+    serial(async () => {
+        const entry = await get(rid);
+        entry.repo = { ...entry.repo, status: "handled", result };
+        return answer(await put(entry));
+    });
+
+/** The same, for whichever entries still wait on that repo (done from the Repos page). */
+const markRepoByKey = (repoKey, result) =>
+    serial(async () => {
+        for (const entry of await all()) {
+            const p = githubUrl.parse(entry.repo?.url);
+            if (entry.repo?.status !== "pending" || !p || githubUrl.key(p.owner, p.name) !== repoKey) continue;
+            entry.repo = { ...entry.repo, status: "handled", result };
+            await put(entry);
+        }
+    });
+
+/** The owner dealt with the repo themself on GitHub. */
 const markRepoHandled = (rid) =>
     serial(async () => {
         const entry = await get(rid);
@@ -297,7 +318,10 @@ module.exports = {
     KEEP_BACKUP_DAYS,
     retire,
     list,
+    entries: () => all(),
     get,
+    setRepoResult,
+    markRepoByKey,
     deleteChannel,
     retryWebhooks,
     retryKeys,
