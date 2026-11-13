@@ -134,11 +134,18 @@ function textChannel({ name, topic, parent, synced, g = guild }) {
     return ch;
 }
 
+// Like discord.js: without `force` the bot's cache answers. A category made
+// private by hand without the bot in it stops sending the bot updates, so the
+// cache keeps its old copy (c.cached) while Discord itself says Missing Access.
+const fetchCalls = [];
 const client = {
     channels: {
-        fetch: async (id) => {
+        fetch: async (id, opts = {}) => {
+            fetchCalls.push({ id, force: !!opts.force });
             const c = channels.get(id);
             if (!c) throw discordError(10003, "Unknown Channel");
+            if (!opts.force && c.cached) return c.cached;
+            if (opts.force && c.botHidden) throw discordError(50001, "Missing Access");
             return c;
         },
     },
@@ -251,6 +258,31 @@ const envOf = (id, key) => (envFiles[id].split("\n").find((l) => l.startsWith(`$
         assert.strictEqual(res.body.busReady, true);
         assert.deepStrictEqual(res.body.log.map((c) => [c.name, c.ok, c.public, c.count]), [["logs", true, false, 0], ["logs 2", true, false, 0]]);
         assert.strictEqual(res.body.backup[0].guildName, "Kho");
+    });
+    await check("categories are read from Discord, not the bot's stale cache (made private by hand)", async () => {
+        // The bot's cache still has the old, public copy…
+        const priv = category({ name: "was public", open: false });
+        priv.cached = { ...priv, permissionsFor: (who) => (who === EVERYONE ? perms(P("ViewChannel")) : perms(P("ViewChannel", "ManageChannels", "ManageWebhooks"))) };
+        // …but the owner made it private without the bot in it.
+        priv.botHidden = true;
+        await db.set("customer_channels_settings", { log: [priv.id], backup: [BACKUP.id] });
+        let res = await call("GET", "/api/customer-projects/channel-settings");
+        assert.strictEqual(res.body.log[0].public, undefined);
+        assert.strictEqual(res.body.log[0].ok, false);
+        assert.match(res.body.log[0].error, /cannot see this category/);
+        assert.ok(fetchCalls.filter((f) => f.id === priv.id).every((f) => f.force), "always forced");
+        // The owner adds the bot → Ready, private.
+        priv.botHidden = false;
+        res = await call("GET", "/api/customer-projects/channel-settings");
+        assert.deepStrictEqual([res.body.log[0].ok, res.body.log[0].public], [true, false]);
+        // Setting up uses the fresh copy too: the category the bot cannot see is not used.
+        priv.botHidden = true;
+        const q = await customerProject();
+        res = await call("POST", `/api/customer-projects/${q._id}/channels`, { kinds: ["log"] });
+        assert.strictEqual(res.status, 409);
+        assert.match(res.body.error, /cannot see this category/);
+        channels.delete(priv.id);
+        await db.set("customer_channels_settings", { log: [LOG1.id, LOG2.id], backup: [BACKUP.id] });
     });
     await check("saving checks every id is a category the bot can see", async () => {
         const text = textChannel({ name: "general", parent: null });

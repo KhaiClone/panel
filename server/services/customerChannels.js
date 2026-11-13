@@ -86,13 +86,24 @@ const getSettings = async () => {
     return { log: s.log?.length ? s.log : DEFAULTS.log, backup: s.backup?.length ? s.backup : DEFAULTS.backup };
 };
 
-/** What the panel's bot can do in one category. */
+/**
+ * What the panel's bot can do in one category. Read from Discord every time
+ * (force), not from the bot's cache: a category made private by hand without
+ * the bot in it is one the bot no longer gets updates for, so its cached copy
+ * kept the old, public permissions and the page went on saying "Public" after
+ * the owner had fixed it (2026-11-13). Discord now says Missing Access instead.
+ */
 const inspectCategory = async (client, id) => {
     let cat;
     try {
-        cat = await client.channels.fetch(id);
+        cat = await client.channels.fetch(id, { force: true });
     } catch (err) {
-        return { id, ok: false, error: discordCode(err) === 10003 ? "No such channel" : "The panel's bot cannot see this channel" };
+        const code = discordCode(err);
+        const error =
+            code === 10003 ? "No such channel"
+            : code === 50001 ? "The panel's bot cannot see this category — add the bot (or one of its roles) to it with View Channel"
+            : `Discord did not answer (${err.message})`;
+        return { id, ok: false, error };
     }
     if (!cat || cat.type !== ChannelType.GuildCategory) return { id, ok: false, error: "Not a category" };
     const me = cat.guild.members.me;
@@ -144,9 +155,7 @@ const setSettings = async (patch = {}) => {
         for (const id of ids) {
             if (!SNOWFLAKE.test(id)) throw _err(`"${id}" is not a Discord ID`);
             const c = await inspectCategory(client, id);
-            if (c.error === "No such channel" || c.error === "Not a category" || !c.name) {
-                throw _err(`${id}: ${c.error || "not usable"}`);
-            }
+            if (!c.name) throw _err(`${id}: ${c.error || "not usable"}`);
         }
         next[kind] = ids;
     }
@@ -174,7 +183,7 @@ const pickCategory = async (client, kind) => {
         return c.cat;
     }
     throw _err(
-        `No ${KINDS[kind].label} category has room (${problems.join("; ") || "none listed"}) — add another category in Panel Settings → Integrations`,
+        `No ${KINDS[kind].label} category can be used (${problems.join("; ") || "none listed"}) — fix it or add another category in Panel Settings → Integrations`,
         409,
     );
 };

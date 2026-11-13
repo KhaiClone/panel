@@ -25,7 +25,7 @@ function CategoryRow({ c, limit }) {
             <span className="mono" style={{ ...DIM, marginLeft: "auto" }}>{c.id}</span>
             {(c.error || c.public) && (
                 <span style={{ flexBasis: "100%", fontSize: 12, color: c.error ? "var(--danger)" : "var(--warning)" }}>
-                    {c.error || "Everyone in the server can see this category — the channels made in it would be public too. Backups hold customer data."}
+                    {c.error || "@everyone can see this category (View Channel is not denied for @everyone on it), so the channels made in it would be public too — backups hold customer data. Make the category private and keep the panel's bot in it, then press Refresh."}
                 </span>
             )}
         </div>
