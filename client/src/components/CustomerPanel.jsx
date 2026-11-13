@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "../api/client";
 import { Field, Icon, Notice, Toggle } from "./ui";
 import CustomerChannels from "./CustomerChannels";
@@ -80,9 +80,18 @@ export default function CustomerPanel({ bot, onChanged }) {
     const [msg, setMsg] = useState(null);
     const [copied, setCopied] = useState(false);
 
-    useEffect(() => {
+    // Is the panel's Discord bot connected? Asked again every 10 s while it is
+    // not: right after a restart it takes a few seconds to log in, and a page
+    // opened in that window used to keep "Refresh now" greyed out for good.
+    const loadStatus = useCallback(() => {
         api.get("/customer-projects/status").then((r) => setStatus(r.data)).catch(() => {});
     }, []);
+    useEffect(loadStatus, [loadStatus]);
+    useEffect(() => {
+        if (!status || status.busReady) return undefined;
+        const t = setInterval(loadStatus, 10_000);
+        return () => clearInterval(t);
+    }, [status, loadStatus]);
 
     // Keep the inputs on what is saved when the record changes elsewhere.
     useEffect(() => {
@@ -99,7 +108,12 @@ export default function CustomerPanel({ bot, onChanged }) {
             const { data } = await call();
             if (data?.error) setMsg({ tone: "warning", text: data.error });
             else if (expectLookup && data?.synced === false)
-                setMsg({ tone: "info", text: "Saved. The names will be looked up once the panel's Discord bot is connected." });
+                setMsg({
+                    tone: "info",
+                    text: name === "refresh"
+                        ? "The panel's Discord bot is not connected — nothing was looked up. Try again in a moment."
+                        : "Saved. The names will be looked up once the panel's Discord bot is connected.",
+                });
             else if (okText) setMsg({ tone: "success", text: okText });
             setForm(null);
             onChanged?.();
@@ -107,6 +121,7 @@ export default function CustomerPanel({ bot, onChanged }) {
             setMsg({ tone: "danger", text: err.response?.data?.error || "Something went wrong" });
         } finally {
             setBusy(null);
+            loadStatus();
         }
     };
 
@@ -244,7 +259,7 @@ export default function CustomerPanel({ bot, onChanged }) {
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        <button type="button" className="btn-ghost" onClick={refresh} disabled={!!busy || busDown}>
+                        <button type="button" className="btn-ghost" onClick={refresh} disabled={!!busy}>
                             <Icon name="refresh" size={14} /> {busy === "refresh" ? "Looking up…" : "Refresh now"}
                         </button>
                         <button type="button" className="btn-primary" onClick={save} disabled={!!busy || !dirty}>
