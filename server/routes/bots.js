@@ -10,6 +10,7 @@ const schedulerService = require("../services/schedulerService");
 const nodeService = require("../services/nodeService");
 const nodeReleases = require("../services/nodeReleases");
 const staleCopies = require("../services/staleCopies");
+const customerProjects = require("../services/customerProjects");
 const { createNotification } = require("./notifications");
 
 // ─── Restart rate limiter ───────────────────────────────────────────────────
@@ -145,6 +146,34 @@ const getProxyConf = async (bot) => {
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+// "Customer project" ticked on the New project form: body.customer =
+// { enabled: true, botUserId? }. Checked BEFORE the clone, so a wrong bot id
+// fails in a second instead of after minutes of cloning and installing.
+// → null when fine, else the error to answer with.
+const customerCheck = async (customer) => {
+    if (!customer?.enabled) return null;
+    try {
+        await customerProjects.checkBotId(customer.botUserId);
+        return null;
+    } catch (err) {
+        if (err.status) return err;
+        throw err;
+    }
+};
+
+// …and marked once the project exists. The project is already created, so a
+// failure here never undoes it: the answer carries `customerError` and the
+// owner finishes it in the project's Customer tab.
+const markCustomer = async (botRecord, customer) => {
+    if (!customer?.enabled) return botRecord;
+    try {
+        const r = await customerProjects.enable(botRecord._id, { botUserId: customer.botUserId || null });
+        return r.bot || botRecord;
+    } catch (err) {
+        return { ...botRecord, customerError: err.message };
+    }
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  List & Read
@@ -310,6 +339,8 @@ router.post("/", async (req, res, next) => {
             if (isNaN(p) || p < 1 || p > 65535)
                 return res.status(400).json({ error: "Invalid serviceConfig.port" });
         }
+        const badCustomer = await customerCheck(req.body.customer);
+        if (badCustomer) return res.status(badCustomer.status).json({ error: badCustomer.message });
 
         // Prevent duplicate botID under same buyer
         const existing = await db.findOne("bots", { buyerID, botID });
@@ -414,7 +445,7 @@ router.post("/", async (req, res, next) => {
         }
 
         console.log(`[Bots] Created ${projectType} "${name}" (${pm2Name})`);
-        res.status(201).json(botRecord);
+        res.status(201).json(await markCustomer(botRecord, req.body.customer));
     } catch (err) {
         next(err);
     }
@@ -475,6 +506,8 @@ router.post("/import-local", async (req, res, next) => {
             if (isNaN(p) || p < 1 || p > 65535)
                 return res.status(400).json({ error: "Invalid serviceConfig.port" });
         }
+        const badCustomer = await customerCheck(req.body.customer);
+        if (badCustomer) return res.status(badCustomer.status).json({ error: badCustomer.message });
 
         // The folder lives on the panel's own node. Ask that node's agent whether
         // it exists AND is inside its allowlist — a path outside BOTS/SITES_ROOT_DIR
@@ -572,7 +605,7 @@ router.post("/import-local", async (req, res, next) => {
         }
 
         console.log(`[Bots] Imported local ${projectType} "${name}" (${pm2Name}) from ${localPath}`);
-        res.status(201).json(botRecord);
+        res.status(201).json(await markCustomer(botRecord, req.body.customer));
     } catch (err) {
         next(err);
     }
@@ -597,6 +630,11 @@ router.put("/:id", async (req, res, next) => {
 
         const updates = {};
         if (name !== undefined) updates.name = name;
+        // A customer project whose name follows its bot on Discord stops following
+        // it once the owner names it by hand — the daily sync would undo the name.
+        if (name !== undefined && name !== bot.name && bot.customer?.syncName) {
+            updates.customer = { ...bot.customer, syncName: false };
+        }
         if (startScript !== undefined) updates.startScript = startScript;
         if (installCommand !== undefined) updates.installCommand = installCommand || null;
         if (groupId !== undefined) updates.groupId = groupId;

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
-import { Icon } from "./ui";
+import { Icon, Notice, Toggle } from "./ui";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -32,6 +32,10 @@ const defaultForm = {
     distFolder: ".",
     // service-only
     servicePort: "",
+    // a customer's project (server/services/customerProjects.js) — off for
+    // personal and team projects
+    customer: false,
+    customerBotId: "",
     // placement
     nodeId: "auto",
 };
@@ -73,6 +77,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
     const [nodes, setNodes] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [createdNote, setCreatedNote] = useState("");
 
     useEffect(() => {
         api.get("/groups").then((r) => setGroups(r.data)).catch(() => {});
@@ -134,6 +139,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                 // Node placement — admin + git-deployed projects (local imports
                 // physically live on the panel VPS)
                 nodeId: form.source === "git" ? form.nodeId : undefined,
+                customer: form.customer ? { enabled: true, botUserId: form.customerBotId.trim() || null } : undefined,
             };
 
             const payload = form.source === "git"
@@ -142,6 +148,11 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
 
             const { data } = await api.post(endpoint, payload);
             onCreated(data);
+            // The project exists either way; only the customer marking failed.
+            if (data.customerError) {
+                setCreatedNote(`"${data.name}" was created, but it could not be marked as a customer project: ${data.customerError} Finish it in the project's Customer tab.`);
+                return;
+            }
             onClose();
         } catch (err) {
             setError(err.response?.data?.error || "Failed to create instance");
@@ -276,6 +287,30 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     <div>
                         <label className="label">Display Name *</label>
                         <input className="input" placeholder="My Awesome Bot" value={form.name} onChange={set("name")} required />
+                    </div>
+
+                    {/* ── Customer project ─────────────────────────────── */}
+                    <div style={{ ...SECTION, gap: 12 }}>
+                        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                            <Toggle checked={form.customer} onChange={(v) => setForm((f) => ({ ...f, customer: v }))} />
+                            <span>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Customer project</span>
+                                <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                                    The panel looks up this project's bot and customer on Discord every day and names the project after its bot.
+                                    Leave it off for personal and team projects.
+                                </span>
+                            </span>
+                        </label>
+                        {form.customer && (
+                            <div>
+                                <label className="label">Bot ID</label>
+                                <input className="input mono" placeholder="The customer's bot's Discord ID" value={form.customerBotId} onChange={set("customerBotId")} pattern="\d{15,25}" title="The bot's numeric Discord ID" />
+                                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
+                                    Optional. Leave it empty to read it from the bot token later (Customer tab → Detect from token), or for a project with no bot.
+                                    The Client / Owner ID above must be the customer's Discord ID.
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     {/* ── Git Fields ────────────────────────────────────── */}
@@ -444,6 +479,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     )}
 
                     {error && <div style={{ padding: "12px 16px", borderRadius: 8, background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger-border)" }}>{error}</div>}
+                    {createdNote && <Notice tone="warning">{createdNote}</Notice>}
 
                     {loading && (
                         <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--bg-input)", color: "var(--text)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
@@ -458,10 +494,16 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
 
                     {/* Footer */}
                     <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-                        <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
-                        <button type="submit" className="btn-primary" disabled={loading}>
-                            {loading ? "Deploying..." : deployLabel}
-                        </button>
+                        {createdNote ? (
+                            <button type="button" className="btn-primary" onClick={onClose}>Close</button>
+                        ) : (
+                            <>
+                                <button type="button" className="btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
+                                <button type="submit" className="btn-primary" disabled={loading}>
+                                    {loading ? "Deploying..." : deployLabel}
+                                </button>
+                            </>
+                        )}
                     </div>
                 </form>
             </div>

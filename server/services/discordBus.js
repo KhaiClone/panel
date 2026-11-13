@@ -508,6 +508,18 @@ const userTag = async (id) => {
     return u?.tag || u?.username || null;
 };
 
+/**
+ * A Discord user by id through the panel's bot — any user, no shared server
+ * needed: { id, username, globalName, bot }, or undefined while the bus is down.
+ * Always asks Discord (force), so a renamed bot or customer shows its new name.
+ * Throws Discord's own error otherwise (code 10013 = no such user).
+ */
+const fetchUser = async (id) => {
+    if (!ready || !client) return undefined;
+    const u = await client.users.fetch(String(id), { force: true });
+    return { id: u.id, username: u.username, globalName: u.globalName || null, bot: !!u.bot };
+};
+
 const recent = (limit = 30) =>
     configured() ? table().prepare("SELECT * FROM bus ORDER BY created_at DESC LIMIT ?").all(limit).map(rowToPublic) : [];
 
@@ -530,6 +542,7 @@ module.exports = {
     handlerOf,
     capabilities,
     userTag,
+    fetchUser,
     onButton,
     post,
     edit,

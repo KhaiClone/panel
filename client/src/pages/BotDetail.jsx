@@ -8,6 +8,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import FileEditor from '../components/FileEditor';
 import ShellTerminal from '../components/ShellTerminal';
 import NodeVersionCard from '../components/NodeVersionCard';
+import CustomerPanel from '../components/CustomerPanel';
 import { useData } from '../context/DataContext';
 import { Icon, Notice, PageHeader, StatCard, StatusBadge, StatusIcon } from '../components/ui';
 import { runsApp, siteModeLabel, siteModeSummary } from '../utils/siteMode';
@@ -83,7 +84,7 @@ const BtnSpinner = () => (
     <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
 );
 
-const TABS = ['Manage', 'Resources', 'Metrics', 'Logs', 'Terminal', 'Environment', 'Files'];
+const TABS = ['Manage', 'Customer', 'Resources', 'Metrics', 'Logs', 'Terminal', 'Environment', 'Files'];
 
 // ── Website Panel ───────────────────────────────────────────────────────────
 function WebsitePanel({ bot, onRefresh }) {
@@ -409,6 +410,10 @@ export default function BotDetail() {
     const [rebuildStart, setRebuildStart] = useState(true);
 
     const [editName,           setEditName]           = useState('');
+    // The name the form was filled with: only a name the owner actually edits is
+    // sent, so a customer project renamed by the daily sync while this page is
+    // open is not renamed back (which would also stop its name sync).
+    const [loadedName,         setLoadedName]         = useState('');
     const [editExpiry,         setEditExpiry]         = useState('');
     const [editScript,         setEditScript]         = useState('');
     const [editInstallCommand, setEditInstallCommand] = useState('');
@@ -424,6 +429,7 @@ export default function BotDetail() {
             setBot(data);
             if (updateForm) {
                 setEditName(data.name);
+                setLoadedName(data.name);
                 setEditScript(data.startScript || 'npm start');
                 setEditInstallCommand(data.installCommand || '');
                 setEditGroupId(data.groupId || '');
@@ -496,7 +502,7 @@ export default function BotDetail() {
         setSavingMeta(true);
         try {
             await api.put(`/bots/${id}`, {
-                name: editName, startScript: editScript,
+                name: editName !== loadedName ? editName : undefined, startScript: editScript,
                 installCommand: editInstallCommand || null,
                 groupId: editGroupId || null, maxMemory: editMaxMemory || null,
                 currentPrice: editPrice ? Number(editPrice) : null,
@@ -566,6 +572,11 @@ export default function BotDetail() {
                             {isLocal && (
                                 <span className="badge" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
                                     <Icon name="folder" size={12} /> Local
+                                </span>
+                            )}
+                            {bot.customer?.enabled && (
+                                <span className="badge" title="A customer's project — see the Customer tab" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                                    <Icon name="user" size={12} /> Customer
                                 </span>
                             )}
                             {bot.nodeName && (
@@ -979,6 +990,11 @@ export default function BotDetail() {
                             }
                         />
                     </div>
+                )}
+
+                {/* Customer Tab — off unless the owner marks it as a customer's project */}
+                {tab === 'Customer' && (
+                    <CustomerPanel bot={bot} onChanged={() => fetchBot({ updateForm: true })} />
                 )}
 
                 {/* Environment Tab */}

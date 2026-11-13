@@ -121,6 +121,7 @@ app.get("/api/health", async (req, res) => {
 app.use("/api", lifecycleGate);
 app.use("/api/auth", authRoutes);
 app.use("/api/bots", authMiddleware, nodeContext, botRoutes);
+app.use("/api/customer-projects", authMiddleware, require("./routes/customerProjects"));
 app.use("/api/groups", authMiddleware, groupRoutes);
 app.use("/api/bulk", authMiddleware, bulkRoutes);
 app.use("/api/logs", logRoutes); // Auth handled per-route (SSE needs query-param token)
@@ -257,6 +258,8 @@ const startBackgroundServices = () => {
     require("./services/botMessages").start();
     // Webhooks: the shop server's webhooks from ArnTo-assistant, once a day.
     require("./services/webhookMessages").start();
+    // Customer projects: their bot's and customer's Discord names, once a day (04:00 VN).
+    require("./services/customerProjects").start();
 };
 
 /**
