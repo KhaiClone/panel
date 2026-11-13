@@ -56,7 +56,9 @@ const checkExpiry = async () => {
                     );
                 }
 
-                // 3. Remove record from DB
+                // 3. Remove record from DB — a customer project's channels,
+                // webhooks, keys and repo are written down first (never throws).
+                await require("./customerRetire").retire(bot, { reason: "expired" });
                 await db.findOneAndDelete("bots", { _id: bot._id });
 
                 // 4. Notify Discord

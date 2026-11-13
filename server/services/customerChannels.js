@@ -280,13 +280,26 @@ const createPrivateChannel = async (cat, { name, topic, reason }) => {
  * is not overwritten unless `replace` — the answer (409, details.taken) says
  * where the current one posts, so the owner can link that channel instead.
  * Anything created is removed again if a later step fails.
+ *
+ * `reuse` { kind: channelId }: a customer back with the same bot gets its old
+ * channel again (customerRetire.reusableFor) — only a new webhook is made in
+ * it, and a failure removes that webhook, never the old channel.
  * → { channels: patch for customer.channels, created: [kinds] }
  */
-const setUp = async (bot, { kinds, replace = false, baseName } = {}) => {
+const setUp = async (bot, { kinds, replace = false, baseName, reuse = {} } = {}) => {
     const client = needClient();
     const current = bot.customer?.channels || {};
     const todo = kindsOf(kinds).filter((k) => !current[k]?.channelId || current[k].missing);
     if (!todo.length) throw _err("These channels are already set up for this project", 409);
+    const old = {};
+    for (const kind of todo) {
+        if (!reuse[kind]) continue;
+        try {
+            old[kind] = await client.channels.fetch(reuse[kind], { force: true });
+        } catch (err) {
+            throw _err(`The old ${KINDS[kind].label} channel cannot be used (${discordCode(err) === 10003 ? "it was deleted" : err.message})`, 409);
+        }
+    }
 
     const envText = await readEnv(bot);
     if (!replace) {
@@ -306,24 +319,28 @@ const setUp = async (bot, { kinds, replace = false, baseName } = {}) => {
     }
 
     const cats = {};
-    for (const kind of todo) cats[kind] = await pickCategory(client, kind);
+    for (const kind of todo) if (!old[kind]) cats[kind] = await pickCategory(client, kind);
 
     const name = channelNameOf(bot, baseName);
     const topic = topicOf(bot);
     const reason = `Customer project ${bot.name} (bot-panel)`;
-    const made = []; // { kind, channel, webhook }
+    const made = []; // { kind, channel, webhook, reused }
     try {
         for (const kind of todo) {
-            const entry = { kind, channel: null, webhook: null };
+            const entry = { kind, channel: null, webhook: null, reused: !!old[kind] };
             made.push(entry);
-            entry.channel = await createPrivateChannel(cats[kind], { name, topic, reason });
+            entry.channel = old[kind] || (await createPrivateChannel(cats[kind], { name, topic, reason }));
             entry.webhook = await entry.channel.createWebhook({ name: KINDS[kind].webhookName, reason });
         }
         let text = envText;
         for (const m of made) text = setEnvKey(text, envKeyOf(bot, m.kind), m.webhook.url);
         await executor.fsWrite(bot, ".env", text);
     } catch (err) {
-        for (const m of made) if (m.channel) await m.channel.delete("Setting up the project's channels failed").catch(() => {});
+        for (const m of made) {
+            if (m.reused) {
+                if (m.webhook) await client.deleteWebhook(m.webhook.id).catch(() => {});
+            } else if (m.channel) await m.channel.delete("Setting up the project's channels failed").catch(() => {});
+        }
         if (err.status) throw err;
         throw _err(`Setting up the channels failed (${err.message}) — nothing was kept`, 502);
     }
@@ -336,11 +353,19 @@ const setUp = async (bot, { kinds, replace = false, baseName } = {}) => {
             guildId: m.channel.guild.id,
             categoryId: m.channel.parentId,
             name: m.channel.name,
-            createdAt: Date.now(),
+            ...(m.reused ? { reusedAt: Date.now() } : { createdAt: Date.now() }),
         };
     }
-    panelLog.add("owner", `Owner set up the ${todo.map((k) => KINDS[k].label).join(" + ")} channel${todo.length > 1 ? "s" : ""} of "${bot.name}" in ${made[0].channel.guild.name}`);
-    return { channels, created: todo };
+    const what = (list) => list.map((m) => KINDS[m.kind].label).join(" + ");
+    const fresh = made.filter((m) => !m.reused);
+    const again = made.filter((m) => m.reused);
+    panelLog.add(
+        "owner",
+        `Owner ${[fresh.length ? `set up the ${what(fresh)} channel${fresh.length > 1 ? "s" : ""}` : null, again.length ? `reused the old ${what(again)} channel${again.length > 1 ? "s" : ""}` : null]
+            .filter(Boolean)
+            .join(" and ")} of "${bot.name}" in ${made[0].channel.guild.name}`,
+    );
+    return { channels, created: todo, reused: again.map((m) => m.kind) };
 };
 
 // ── Link ─────────────────────────────────────────────────────────────────────

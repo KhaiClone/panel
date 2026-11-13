@@ -5,6 +5,7 @@ const discordBus = require("./discordBus");
 const lifecycle = require("./lifecycle");
 const panelLog = require("./panelLog");
 const customerChannels = require("./customerChannels");
+const customerRetire = require("./customerRetire");
 const { envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,6 +33,10 @@ const { envValue } = require("../utils/envText");
 //  Phase 2 (services/customerChannels.js): a log and a backup channel in Kho
 //  per project, their webhook URLs written to its .env; the daily sync keeps
 //  the channels named after the base name too.
+//
+//  Phase 3 (services/customerRetire.js): what a deleted / expired customer
+//  project leaves behind, on Bots → Retired; the same bot back gets its old
+//  channels offered again.
 //
 //  Some customer projects never expire — nothing here depends on expiresAt.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -359,6 +364,33 @@ const linkChannels = async (id, { kinds } = {}) => {
     return { bot: synced.bot, results: r.results, error: synced.error || null };
 };
 
+/**
+ * Phase 3: the channels this bot had before it was retired (a customer who
+ * came back), for the kinds this project does not have yet.
+ */
+const reusable = async (id) => {
+    const bot = await customerBot(id);
+    const current = bot.customer.channels || {};
+    const free = (k) => !current[k]?.channelId || current[k].missing;
+    return (await customerRetire.reusableFor(bot.customer.botUserId))
+        .map((r) => ({ ...r, channels: Object.fromEntries(Object.entries(r.channels).filter(([k]) => free(k))) }))
+        .filter((r) => Object.keys(r.channels).length);
+};
+
+/** Put those old channels back to use: a new webhook in each, renamed after the project. */
+const reuseChannels = async (id, { retiredId, replace } = {}) => {
+    const bot = await customerBot(id);
+    const offer = (await reusable(id)).find((r) => r.retiredId === retiredId);
+    if (!offer) throw _err("Those old channels are no longer there for this bot", 409);
+    const kinds = Object.keys(offer.channels);
+    const reuse = Object.fromEntries(kinds.map((k) => [k, offer.channels[k].channelId]));
+    const r = await customerChannels.setUp(bot, { kinds, replace: !!replace, baseName: bot.customer.baseName, reuse });
+    await save(bot._id, { channels: r.channels });
+    await customerRetire.markReused(retiredId, r.reused, bot.name);
+    const synced = await withSync(bot._id); // renames them after this project
+    return { bot: synced.bot, created: r.created, reused: r.reused, restartNeeded: true, error: synced.error || null };
+};
+
 /** Stop managing one channel. Nothing changes on Discord or in the .env. */
 const unlinkChannel = async (id, kind) => {
     const bot = await customerBot(id);
@@ -408,6 +440,8 @@ module.exports = {
     setUpChannels,
     linkChannels,
     unlinkChannel,
+    reusable,
+    reuseChannels,
     syncOne,
     syncAll,
     status,

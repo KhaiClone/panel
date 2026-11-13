@@ -28,6 +28,8 @@ export default function CustomerChannels({ bot, onChanged }) {
     const [confirmReplace, setConfirmReplace] = useState(false);
     const [results, setResults] = useState(null); // link results
     const [restart, setRestart] = useState(null); // null | "offer" | "running" | "done"
+    const [pending, setPending] = useState(null); // what ENV_TAKEN interrupted: { action: "setup" } | { action: "reuse", retiredId }
+    const [reusable, setReusable] = useState([]); // this bot's channels from when it was retired
 
     useEffect(() => {
         setKeys({ logKey: keyOf(KINDS[0]), backupKey: keyOf(KINDS[1]) });
@@ -36,6 +38,16 @@ export default function CustomerChannels({ bot, onChanged }) {
 
     const usable = (k) => channels[k]?.channelId && !channels[k].missing;
     const todo = KINDS.filter((k) => !usable(k.kind));
+    const todoKey = todo.map((k) => k.kind).join(",");
+
+    // A customer back with the same bot: offer its old channels before making new ones.
+    useEffect(() => {
+        if (!todoKey || !c.botUserId) {
+            setReusable([]);
+            return;
+        }
+        api.get(`/customer-projects/${bot._id}/reusable`).then((r) => setReusable(r.data)).catch(() => setReusable([]));
+    }, [bot._id, c.botUserId, todoKey]);
     const keysDirty = keys.logKey !== keyOf(KINDS[0]) || keys.backupKey !== keyOf(KINDS[1]);
 
     const go = async (name, fn) => {
@@ -54,11 +66,25 @@ export default function CustomerChannels({ bot, onChanged }) {
         }
     };
 
+    const reuseOld = (retiredId, replace = false) =>
+        go("reuse", async () => {
+            setConfirmReplace(false);
+            setPending({ action: "reuse", retiredId });
+            const { data } = await api.post(`/customer-projects/${bot._id}/channels/reuse`, { retiredId, replace }, { timeout: 60_000 });
+            setTaken(null);
+            setPending(null);
+            const names = data.reused.map((k) => `#${data.bot.customer.channels[k].name} (${k})`).join(" and ");
+            setMsg({ tone: "success", text: `Back in use: ${names}, renamed after this project, with new webhooks in the .env — restart the project so it uses them.` });
+            setRestart("offer");
+        });
+
     const setUp = (replace = false) =>
         go("setup", async () => {
             setConfirmReplace(false);
+            setPending({ action: "setup" });
             const { data } = await api.post(`/customer-projects/${bot._id}/channels`, { kinds: todo.map((k) => k.kind), replace }, { timeout: 60_000 });
             setTaken(null);
+            setPending(null);
             const made = data.created.map((k) => `#${data.bot.customer.channels[k].name} (${k})`).join(" and ");
             const written = data.created.map((k) => data.bot.customer.envKeys?.[k] || KINDS.find((x) => x.kind === k).def).join(" and ");
             setMsg({ tone: "success", text: `Created ${made}. ${written} ${data.created.length > 1 ? "are" : "is"} in the project's .env — restart the project so it uses ${data.created.length > 1 ? "them" : "it"}.` });
@@ -100,11 +126,11 @@ export default function CustomerChannels({ bot, onChanged }) {
         <div className="card">
             {confirmReplace && (
                 <ConfirmModal
-                    title="Make new channels and replace the .env values?"
-                    message={`${taken.map((t) => t.key).join(" and ")} in the project's .env will point to the new channels. The channels they point to now are left as they are.`}
-                    confirmText="Create and replace"
+                    title={pending?.action === "reuse" ? "Reuse the old channels and replace the .env values?" : "Make new channels and replace the .env values?"}
+                    message={`${taken.map((t) => t.key).join(" and ")} in the project's .env will point to ${pending?.action === "reuse" ? "the old channels" : "the new channels"}. The channels they point to now are left as they are.`}
+                    confirmText="Replace"
                     danger={false}
-                    onConfirm={() => setUp(true)}
+                    onConfirm={() => (pending?.action === "reuse" ? reuseOld(pending.retiredId, true) : setUp(true))}
                     onCancel={() => setConfirmReplace(false)}
                 />
             )}
@@ -149,13 +175,31 @@ export default function CustomerChannels({ bot, onChanged }) {
                             </ul>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                 <button type="button" className="btn-primary btn-sm" onClick={link} disabled={!!busy}>Link those channels</button>
-                                <button type="button" className="btn-ghost btn-sm" onClick={() => setConfirmReplace(true)} disabled={!!busy}>Create new ones instead</button>
+                                <button type="button" className="btn-ghost btn-sm" onClick={() => setConfirmReplace(true)} disabled={!!busy}>
+                                    {pending?.action === "reuse" ? "Reuse the old ones anyway" : "Create new ones instead"}
+                                </button>
                                 <button type="button" className="btn-ghost btn-sm" onClick={() => setTaken(null)} disabled={!!busy}>Cancel</button>
                             </div>
                         </div>
                     </Notice>
                 </div>
             )}
+
+            {!taken && reusable.map((r) => (
+                <div key={r.retiredId} style={{ marginBottom: 12 }}>
+                    <Notice tone="info">
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                                This bot had channels before — {Object.entries(r.channels).map(([k, ch]) => `#${ch.name} (${k})`).join(" and ")},
+                                kept since "{r.name}" was retired on {new Date(r.retiredAt).toLocaleDateString("en-GB")}. Reuse them to keep its history in one place.
+                            </span>
+                            <button type="button" className="btn-primary btn-sm" onClick={() => reuseOld(r.retiredId)} disabled={!!busy}>
+                                {busy === "reuse" ? "Reusing…" : "Reuse them"}
+                            </button>
+                        </div>
+                    </Notice>
+                </div>
+            ))}
 
             {results && (
                 <div style={{ marginBottom: 12 }}>

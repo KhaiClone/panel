@@ -11,6 +11,7 @@ const nodeService = require("../services/nodeService");
 const nodeReleases = require("../services/nodeReleases");
 const staleCopies = require("../services/staleCopies");
 const customerProjects = require("../services/customerProjects");
+const customerRetire = require("../services/customerRetire");
 const { createNotification } = require("./notifications");
 
 // ─── Restart rate limiter ───────────────────────────────────────────────────
@@ -778,6 +779,10 @@ router.delete("/:id", async (req, res, next) => {
         if (bot.source !== "local") {
             await executor.removeBotFiles(bot);
         }
+
+        // A customer project's channels, webhooks, keys and repo are written
+        // down before the record that knows them goes (never throws).
+        await customerRetire.retire(bot, { reason: "deleted" });
 
         // Remove from DB
         await db.findOneAndDelete("bots", { _id: req.params.id });

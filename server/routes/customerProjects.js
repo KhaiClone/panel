@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const customers = require("../services/customerProjects");
 const channels = require("../services/customerChannels");
+const retired = require("../services/customerRetire");
 
 // /api/customer-projects — owner only (mounted behind authMiddleware, like
 // /api/bots: the Bots pages are owner-only for good). A project is touched
@@ -36,6 +37,29 @@ router.put("/channel-settings", async (req, res, next) => {
         fail(res, next)(err);
     }
 });
+
+// ── Retired customer projects (phase 3, services/customerRetire.js) ──────────
+
+const retiredAction = (fn) => async (req, res, next) => {
+    try {
+        res.json(await fn(req));
+    } catch (err) {
+        fail(res, next)(err);
+    }
+};
+
+/** GET /retired — what deleted / expired customer projects left behind, newest first. */
+router.get("/retired", retiredAction(() => retired.list()));
+/** POST /retired/:rid/channels/:kind/delete — delete that Kho channel (the owner confirmed). */
+router.post("/retired/:rid/channels/:kind/delete", retiredAction((req) => retired.deleteChannel(req.params.rid, req.params.kind)));
+/** POST /retired/:rid/webhooks — try deleting the webhooks again. */
+router.post("/retired/:rid/webhooks", retiredAction((req) => retired.retryWebhooks(req.params.rid)));
+/** POST /retired/:rid/keys — try revoking the API keys again. */
+router.post("/retired/:rid/keys", retiredAction((req) => retired.retryKeys(req.params.rid)));
+/** POST /retired/:rid/repo — the owner dealt with the repo. */
+router.post("/retired/:rid/repo", retiredAction((req) => retired.markRepoHandled(req.params.rid)));
+/** DELETE /retired/:rid — forget the entry; nothing on Discord / GitHub changes. */
+router.delete("/retired/:rid", retiredAction((req) => retired.dismiss(req.params.rid)));
 
 /** POST /refresh — look every customer project up again now. */
 router.post("/refresh", async (req, res, next) => {
@@ -106,6 +130,12 @@ router.post("/:id/channels/link", async (req, res, next) => {
         fail(res, next)(err);
     }
 });
+
+/** GET /:id/reusable — old channels of this bot from when it was retired (a customer back). */
+router.get("/:id/reusable", retiredAction((req) => customers.reusable(req.params.id)));
+
+/** POST /:id/channels/reuse  { retiredId, replace? } — put those old channels back to use. */
+router.post("/:id/channels/reuse", retiredAction((req) => customers.reuseChannels(req.params.id, pick(req.body, ["retiredId", "replace"]))));
 
 /** DELETE /:id/channels/:kind — stop managing it; the channel and the .env stay. */
 router.delete("/:id/channels/:kind", async (req, res, next) => {

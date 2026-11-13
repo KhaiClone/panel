@@ -96,6 +96,8 @@ router.post("/:action", async (req, res, next) => {
                         if (bot.source !== "local") {
                             await executor.removeBotFiles(bot);
                         }
+                        // What a customer project leaves behind (never throws).
+                        await require("../services/customerRetire").retire(bot, { reason: "deleted" });
                         await db.findOneAndDelete("bots", { _id: botId });
                         return "Removed successfully";
                     }

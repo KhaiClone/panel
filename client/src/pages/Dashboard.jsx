@@ -8,16 +8,19 @@ import NodeFilter, { matchNode } from "../components/NodeFilter";
 import { EmptyState, Icon, PageHeader, SearchInput, StatCard } from "../components/ui";
 import GroupsPanel from "./bots/GroupsPanel";
 import TagsPanel from "./bots/TagsPanel";
+import RetiredPanel from "./bots/RetiredPanel";
+import api from "../api/client";
 import BulkBar from "./bots/BulkBar";
 
 // The Bots page also holds what used to be three pages of their own:
 // /groups and /tags are its Groups and Tags tabs (?view=groups, ?view=tags),
 // and /multi-manage is its select mode (?select=1).
-const VIEWS = ["bots", "groups", "tags"];
+const VIEWS = ["bots", "groups", "tags", "retired"];
 const DESCRIPTION = {
     bots: "Discord bots and services on every server, sorted by group.",
     groups: "Groups sort the Bots and Sites lists into sections.",
     tags: "Labels to put on bots and filter the list by.",
+    retired: "What deleted and expired customer projects left behind.",
 };
 const GRID = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 };
 
@@ -109,6 +112,11 @@ export default function Dashboard() {
     const [nodeFilter, setNodeFilter] = useState(searchParams.get("node") || "all");
     const [selectedTags, setSelectedTags] = useState([]);
     const [selected, setSelected]     = useState(() => new Set());
+    // Retired customer projects still waiting on something (the Retired tab's count).
+    const [retiredCount, setRetiredCount] = useState(null);
+    useEffect(() => {
+        api.get("/customer-projects/retired").then((r) => setRetiredCount(r.data.length)).catch(() => {});
+    }, []);
 
     // Only bots and services — websites live under /sites
     const bots = useMemo(() => allBots.filter(b => b.projectType !== "website"), [allBots]);
@@ -194,7 +202,7 @@ export default function Dashboard() {
             <button className="btn-primary" onClick={() => setShowNew(true)}><Icon name="plus" /> New group</button>
         ) : view === "tags" ? (
             <button className="btn-primary" onClick={() => setShowNew(true)}><Icon name="plus" /> New tag</button>
-        ) : (
+        ) : view === "retired" ? null : (
             <>
                 {!selecting && (
                     <button className="btn-ghost" onClick={() => setSelecting(true)} disabled={!bots.length} title="Pick several bots and start, stop, update or remove them at once">
@@ -220,6 +228,7 @@ export default function Dashboard() {
                     ["bots", "Bots", bots.length],
                     ["groups", "Groups", groups.length],
                     ["tags", "Tags", tags.length],
+                    ["retired", "Retired", retiredCount ?? ""],
                 ].map(([id, label, n]) => (
                     <button key={id} role="tab" aria-selected={view === id} className={`tab-item ${view === id ? "active" : ""}`} onClick={() => setView(id)}>
                         {label} <span style={{ color: "var(--text-dim)", marginLeft: 4 }}>{n}</span>
@@ -229,6 +238,7 @@ export default function Dashboard() {
 
             {view === "groups" && <GroupsPanel showNew={showNew} onNewClose={() => setShowNew(false)} />}
             {view === "tags" && <TagsPanel showNew={showNew} onNewClose={() => setShowNew(false)} />}
+            {view === "retired" && <RetiredPanel onCount={setRetiredCount} />}
 
             {view === "bots" && (
                 <>
