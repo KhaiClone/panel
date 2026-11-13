@@ -8,6 +8,7 @@ import ConfirmModal from "../../components/ConfirmModal";
 import { useData } from "../../context/DataContext";
 import { Icon, StatusBadge, StatusIcon } from "../../components/ui";
 import Section from "./Section";
+import CustomerChannelsSection from "./CustomerChannelsSection";
 
 // ── API keys: one per project calling /api/external ─────────────────────────
 
@@ -369,6 +370,9 @@ export default function IntegrationsTab() {
             </Section>
             <Section icon="database" title="Shared data & Discord bus" hint="Bots call the panel; the panel talks to them on Discord">
                 <SharedDataSection />
+            </Section>
+            <Section icon="message" title="Customer project channels" hint="Where the log and backup channels of customer projects are made">
+                <CustomerChannelsSection />
             </Section>
         </>
     );

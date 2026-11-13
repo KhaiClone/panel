@@ -520,6 +520,13 @@ const fetchUser = async (id) => {
     return { id: u.id, username: u.username, globalName: u.globalName || null, bot: !!u.bot };
 };
 
+/**
+ * The panel's discord.js client while the bus is up, else null. For the Kho
+ * channels of customer projects (services/customerChannels.js), which need
+ * more of Discord than a message: categories, channels, webhooks.
+ */
+const discordClient = () => (ready && client ? client : null);
+
 const recent = (limit = 30) =>
     configured() ? table().prepare("SELECT * FROM bus ORDER BY created_at DESC LIMIT ?").all(limit).map(rowToPublic) : [];
 
@@ -543,6 +550,7 @@ module.exports = {
     capabilities,
     userTag,
     fetchUser,
+    discordClient,
     onButton,
     post,
     edit,

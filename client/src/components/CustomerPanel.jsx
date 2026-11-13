@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../api/client";
 import { Field, Icon, Notice, Toggle } from "./ui";
+import CustomerChannels from "./CustomerChannels";
 
 // The project's "Customer" tab (server/services/customerProjects.js). Off by
 // default: personal and team projects are left alone. On, the panel looks the
@@ -134,6 +135,7 @@ export default function CustomerPanel({ bot, onChanged }) {
     const dirty = (botUserId || "") !== (c.botUserId || "") || tokenKey !== (c.envKeys?.token || "TOKEN");
 
     return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div className="card">
             <div style={HEADER}>
                 <div>
@@ -251,6 +253,8 @@ export default function CustomerPanel({ bot, onChanged }) {
                     </div>
                 </div>
             )}
+        </div>
+        {on && <CustomerChannels bot={bot} onChanged={onChanged} />}
         </div>
     );
 }

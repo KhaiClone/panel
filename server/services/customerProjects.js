@@ -4,6 +4,7 @@ const executor = require("./executor");
 const discordBus = require("./discordBus");
 const lifecycle = require("./lifecycle");
 const panelLog = require("./panelLog");
+const customerChannels = require("./customerChannels");
 const { envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +28,10 @@ const { envValue } = require("../utils/envText");
 //  `baseName` (customer-bot-id) is what the log/backup channels get called and
 //  what a new repo should be called. Repos are never renamed when a name
 //  changes (user, 2026-11-13) — the id at the end keeps everything findable.
+//
+//  Phase 2 (services/customerChannels.js): a log and a backup channel in Kho
+//  per project, their webhook URLs written to its .env; the daily sync keeps
+//  the channels named after the base name too.
 //
 //  Some customer projects never expire — nothing here depends on expiresAt.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,6 +222,17 @@ const syncOne = async (bot) => {
         }
     }
 
+    // Phase 2: the project's Kho channels follow the (possibly new) base name.
+    const merged = { ...c, ...patch };
+    const ch = await customerChannels.sync(bot, {
+        baseName: baseName({ ...merged, botID: bot.botID }),
+        projectName: merged.syncName && merged.botName ? merged.botName : bot.name,
+    });
+    if (!ch.skipped && ch.channels) {
+        patch.channels = ch.channels;
+        problems.push(...ch.problems);
+    }
+
     patch.checkedAt = Date.now();
     patch.lastError = problems.join(" · ") || null;
     const updated = await save(bot._id, patch);
@@ -294,7 +310,7 @@ const disable = async (id) => {
     return { bot: updated };
 };
 
-const update = async (id, { botUserId, syncName, tokenKey } = {}) => {
+const update = async (id, { botUserId, syncName, tokenKey, logKey, backupKey } = {}) => {
     const bot = await getBot(id);
     const c = bot.customer;
     if (!c?.enabled) throw _err("This is not a customer project", 409);
@@ -304,7 +320,11 @@ const update = async (id, { botUserId, syncName, tokenKey } = {}) => {
         if (patch.botUserId !== (c.botUserId || null)) Object.assign(patch, { botName: null, botUsername: null });
     }
     if (syncName !== undefined) patch.syncName = !!syncName;
-    if (tokenKey !== undefined) patch.envKeys = { ...(c.envKeys || {}), token: cleanKey(tokenKey) };
+    // .env key names: the bot token, and the webhook URLs of the Kho channels.
+    const keys = { token: tokenKey, log: logKey, backup: backupKey };
+    for (const [k, v] of Object.entries(keys)) {
+        if (v !== undefined) patch.envKeys = { ...(patch.envKeys || c.envKeys || {}), [k]: cleanKey(v) };
+    }
     await save(bot._id, patch);
     const newBot = "botUserId" in patch && patch.botUserId !== (c.botUserId || null);
     const syncTurnedOn = patch.syncName === true && !c.syncName;
@@ -313,6 +333,44 @@ const update = async (id, { botUserId, syncName, tokenKey } = {}) => {
 };
 
 const refresh = async (id) => withSync(id);
+
+// ── Kho channels (phase 2, services/customerChannels.js) ─────────────────────
+
+const customerBot = async (id) => {
+    const bot = await getBot(id);
+    if (!bot.customer?.enabled) throw _err("Turn this into a customer project first", 409);
+    return bot;
+};
+
+/** Make the log/backup channels + webhooks and write the URLs to the .env. */
+const setUpChannels = async (id, { kinds, replace } = {}) => {
+    const bot = await customerBot(id);
+    const r = await customerChannels.setUp(bot, { kinds, replace: !!replace, baseName: bot.customer.baseName });
+    await save(bot._id, { channels: r.channels });
+    return { bot: await getBot(bot._id), created: r.created, restartNeeded: true };
+};
+
+/** Adopt the channels the .env already posts to; they are renamed right away. */
+const linkChannels = async (id, { kinds } = {}) => {
+    const bot = await customerBot(id);
+    const r = await customerChannels.link(bot, { kinds });
+    await save(bot._id, { channels: r.channels });
+    const synced = r.results.some((x) => x.status === "linked") ? await withSync(bot._id) : { bot: await getBot(bot._id) };
+    return { bot: synced.bot, results: r.results, error: synced.error || null };
+};
+
+/** Stop managing one channel. Nothing changes on Discord or in the .env. */
+const unlinkChannel = async (id, kind) => {
+    const bot = await customerBot(id);
+    if (!customerChannels.KINDS[kind]) throw _err(`Unknown channel kind "${kind}"`);
+    const channels = { ...(bot.customer.channels || {}) };
+    if (!channels[kind]) return { bot };
+    const name = channels[kind].name;
+    delete channels[kind];
+    await save(bot._id, { channels });
+    panelLog.add("owner", `Owner unlinked #${name || kind} from "${bot.name}" (the channel itself is untouched)`);
+    return { bot: await getBot(bot._id) };
+};
 
 // ── Status & schedule ────────────────────────────────────────────────────────
 
@@ -347,6 +405,9 @@ module.exports = {
     disable,
     update,
     refresh,
+    setUpChannels,
+    linkChannels,
+    unlinkChannel,
     syncOne,
     syncAll,
     status,
