@@ -215,8 +215,13 @@ const retireAndDrop = async (bot, reason = "deleted") => {
         res = await call("PUT", "/api/customer-projects/github-settings", { org: ORG, token: "nope" });
         assert.strictEqual(res.status, 502);
         assert.match(res.body.error, /refused the token/);
-        res = await call("PUT", "/api/customer-projects/github-settings", { org: "bad name!" });
+        res = await call("PUT", "/api/customer-projects/github-settings", { org: "bad_name!" });
         assert.strictEqual(res.status, 400);
+        assert.match(res.body.error, /not a GitHub organization name/);
+        // The display name, as typed on the live panel the first time.
+        res = await call("PUT", "/api/customer-projects/github-settings", { org: "ArnTo Shop", token: GOOD });
+        assert.strictEqual(res.status, 400);
+        assert.match(res.body.error, /"ArnTo Shop" is the organization's display name/);
         assert.strictEqual((await call("GET", "/api/customer-projects/github-settings")).body.configured, false);
     });
     await check("a good org + token is saved encrypted and never comes back", async () => {
@@ -227,6 +232,11 @@ const retireAndDrop = async (bot, reason = "deleted") => {
         assert.ok(!JSON.stringify(store.get("customer_github_settings")).includes(GOOD), "encrypted at rest");
         const again = await call("PUT", "/api/customer-projects/github-settings", { org: ORG, token: "" });
         assert.strictEqual(again.status, 200, "an empty token keeps the stored one");
+        for (const link of [`https://github.com/${ORG}`, `github.com/${ORG}/`, `https://github.com/orgs/${ORG}/repositories`, `https://www.github.com/${ORG}?tab=repositories`]) {
+            const r = await call("PUT", "/api/customer-projects/github-settings", { org: link });
+            assert.strictEqual(r.status, 200, `${link}: ${JSON.stringify(r.body)}`);
+            assert.strictEqual(r.body.org, ORG);
+        }
         assert.ok(!logLines.join("\n").includes(GOOD));
     });
 

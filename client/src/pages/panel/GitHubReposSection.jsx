@@ -49,7 +49,11 @@ export default function GitHubReposSection() {
                 <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
                     <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>Organization</span>
-                        <input className="input mono" placeholder="my-customers" value={form.org} onChange={(e) => setForm({ ...form, org: e.target.value })} disabled={busy} />
+                        <input className="input mono" placeholder="my-org or https://github.com/my-org" value={form.org} onChange={(e) => setForm({ ...form, org: e.target.value })} disabled={busy} />
+                        <span style={DIM}>
+                            The name in the org's address — github.com/<b>name</b> — not the display name shown on its page (that one may have spaces).
+                            Pasting the org's link works too.
+                        </span>
                     </label>
                     <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>Token {data.hasToken && "(leave empty to keep the current one)"}</span>

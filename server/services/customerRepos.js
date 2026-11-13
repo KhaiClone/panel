@@ -87,14 +87,27 @@ const getSettings = async () => {
     return { org: s.org || "", hasToken: !!s.tokenEnc, configured: !!(s.org && s.tokenEnc), check: s.check || null };
 };
 
+/**
+ * The org's login from what the owner typed: the login itself, or its page
+ * pasted whole (https://github.com/<login>, github.com/orgs/<login>/…). The
+ * display name shown on GitHub ("ArnTo Shop") is not it — the first try on
+ * the live panel was exactly that (2026-11-13), so it gets its own answer.
+ */
+const orgLogin = (input) => {
+    let o = String(input || "").trim();
+    const url = /^(?:https?:\/\/)?(?:www\.)?github\.com\/(?:orgs\/)?([^/?#\s]+)/i.exec(o);
+    if (url) o = url[1];
+    if (!o || ORG_NAME.test(o)) return o;
+    if (/\s/.test(o)) {
+        throw _err(`"${o}" is the organization's display name — enter the name from its address instead (github.com/<name>, no spaces), or paste the org's link`);
+    }
+    throw _err(`"${o}" is not a GitHub organization name — enter the name from its address (github.com/<name>), or paste the org's link`);
+};
+
 /** { org?, token? } — an empty token keeps the stored one. Checked against GitHub before saving. */
 const setSettings = async ({ org, token } = {}) => {
     const next = { ...(await raw()) };
-    if (org !== undefined) {
-        const o = String(org).trim();
-        if (o && !ORG_NAME.test(o)) throw _err("That is not a GitHub organization name");
-        next.org = o;
-    }
+    if (org !== undefined) next.org = orgLogin(org);
     if (token !== undefined && String(token).trim()) next.tokenEnc = agentCrypto.encrypt(String(token).trim(), secret());
     if (next.org && next.tokenEnc) {
         const t = tokenOf(next);
