@@ -122,6 +122,8 @@ const retireNow = async (bot, { reason = "deleted" } = {}) => {
     try {
         const c = bot?.customer;
         if (!c?.enabled) return null;
+        // A few seconds from now the record is gone: their last project? then the customer role goes.
+        require("./customerRole").syncSoon();
         const channels = {};
         for (const k of KINDS) {
             const ch = c.channels?.[k];

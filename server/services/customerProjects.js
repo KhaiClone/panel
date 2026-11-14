@@ -7,6 +7,7 @@ const panelLog = require("./panelLog");
 const customerChannels = require("./customerChannels");
 const customerRetire = require("./customerRetire");
 const customerRepos = require("./customerRepos");
+const customerRole = require("./customerRole");
 const { envValue } = require("../utils/envText");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,6 +315,7 @@ const enable = async (id, { botUserId, syncName = true, tokenKey } = {}) => {
         ...(checked !== (prev.botUserId || null) ? { botName: null, botUsername: null } : {}),
     });
     panelLog.add("owner", `Owner marked "${bot.name}" as a customer project`);
+    customerRole.syncSoon(); // the customer gets the customer role
     return withSync(bot._id);
 };
 
@@ -323,6 +325,7 @@ const disable = async (id) => {
     // The rest of the block stays: turning it back on keeps the bot id.
     const updated = await save(bot._id, { enabled: false, disabledAt: Date.now() });
     panelLog.add("owner", `Owner stopped treating "${bot.name}" as a customer project`);
+    customerRole.syncSoon(); // their last one? then the customer role goes
     return { bot: updated };
 };
 

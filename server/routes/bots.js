@@ -658,6 +658,8 @@ router.put("/:id", async (req, res, next) => {
 
         if (expiresAt !== undefined && (!bot.expiresAt || new Date(expiresAt).getTime() !== bot.expiresAt)) {
             await createNotification(`Bot "${bot.name}" expiry was extended.`, "extend");
+            // Renewed (or cut short): the customer role follows at once, not at the next hourly pass.
+            if (bot.customer?.enabled) require("../services/customerRole").syncSoon();
         }
 
         // If maxMemory changed and the bot is running, apply the new limit live

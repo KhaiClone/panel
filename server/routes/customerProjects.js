@@ -4,6 +4,7 @@ const customers = require("../services/customerProjects");
 const channels = require("../services/customerChannels");
 const retired = require("../services/customerRetire");
 const repos = require("../services/customerRepos");
+const role = require("../services/customerRole");
 
 // /api/customer-projects — owner only (mounted behind authMiddleware, like
 // /api/bots: the Bots pages are owner-only for good). A project is touched
@@ -78,6 +79,19 @@ router.delete("/repos/:name", retiredAction((req) => repos.remove(req.params.nam
 router.post("/retired/:rid/repo/archive", retiredAction((req) => repos.archiveRetired(req.params.rid)));
 /** POST /retired/:rid/repo/delete  { confirm } — delete it instead. */
 router.post("/retired/:rid/repo/delete", retiredAction((req) => repos.deleteRetired(req.params.rid, req.body?.confirm)));
+
+// ── The customer role (services/customerRole.js) ─────────────────────────────
+
+/** GET /role — settings, last pass, customers and who was taken off by hand. */
+router.get("/role", retiredAction(() => role.view()));
+/** PUT /role  { enabled?, roleId? } */
+router.put("/role", retiredAction((req) => role.setSettings(pick(req.body, ["enabled", "roleId"]))));
+/** POST /role/sync — one pass now. */
+router.post("/role/sync", retiredAction(async () => ({ last: await role.syncNow(), view: await role.view() })));
+/** POST /role/keep-off  { userId } — take it off now and never give it back by itself. */
+router.post("/role/keep-off", retiredAction((req) => role.keepOff(req.body?.userId)));
+/** POST /role/allow  { userId } — back to normal. */
+router.post("/role/allow", retiredAction((req) => role.allow(req.body?.userId)));
 
 /** POST /refresh — look every customer project up again now. */
 router.post("/refresh", async (req, res, next) => {

@@ -260,6 +260,8 @@ const startBackgroundServices = () => {
     require("./services/webhookMessages").start();
     // Customer projects: their bot's and customer's Discord names, once a day (04:00 VN).
     require("./services/customerProjects").start();
+    // The customer role: everyone using the bot service has it, hourly.
+    require("./services/customerRole").start();
 };
 
 /**

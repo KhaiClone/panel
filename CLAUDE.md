@@ -343,6 +343,15 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Messages:** staff chỉ post trong server shop, kênh họ có View + Send; server map tải 1 lần/ngày +
   nút Reload (1 lần/10 phút cho mọi người); Sent giữ 3 ngày.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.
+- **Customer projects** (2026-11-13): mọi thứ cho project của khách (đồng bộ tên theo ID bot, kênh log/backup trong
+  Kho, danh sách dọn Bots → Retired, repo trong GitHub org ở Bots → Repos) chỉ chạy khi project được **bật Customer
+  project** — project cá nhân/nhóm không bao giờ bị đụng. **Repo GitHub không bao giờ bị đổi tên.** Có project khách
+  chạy vĩnh viễn: không logic nào được giả định có `expiresAt`. Xoá webhook + thu hồi API key ngay khi project bị xoá;
+  kênh, repo thì chủ tự bấm (không tự xoá).
+- **Customer role** (2026-11-14): role của khách đang dùng dịch vụ (ID ở file hạ tầng/settings) tự cấp cho buyer có
+  project khách đang chạy (cả website/service, cả project vĩnh viễn), tự gỡ khi hết hạn/xoá/tắt Customer. Chủ gỡ tay
+  (trên Discord hay nút trên panel) = **không bao giờ cấp lại**, kể cả khi mua mới, tới khi bấm Allow again. Người được
+  cấp tay mà không phải khách thì không đụng. Phần Discord do bot ArnTo-Shop làm qua bus `role.members` / `role.set`.
 - **WireGuard overlay:** để nguyên như hiện tại.
 
 ## 7. Kết thúc một task
