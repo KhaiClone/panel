@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
 const staffService = require("../services/staffService");
 const ownerAccess = require("../services/ownerAccess");
+const cliAccess = require("../services/cliAccess");
+const panelLog = require("../services/panelLog");
 
 /**
  * Who is calling, and may they?
@@ -12,6 +14,10 @@ const ownerAccess = require("../services/ownerAccess");
  *                                       every call
  *   staff  { kind: "staff", sub, sid }  a Discord login (services/staffService.js);
  *                                       sid must still be a live session row
+ * and one that is not a JWT:
+ *   bpc_…  a CLI access key (services/cliAccess.js), allowed on Discord: it IS
+ *          the owner (req.auth.kind "owner", with `cli` set) but needs no
+ *          device. Every write it makes goes to the panel log (auditCli).
  *
  * Deny by default: `authMiddleware` lets the OWNER through and nobody else.
  * Only the mounts that name a page with `pageAuth(page)` let staff in, and only
@@ -59,6 +65,8 @@ const unauthorized = (message, reason) => Object.assign(new Error(message), { st
 
 /** The owner's token on a device that is not approved: sign in again (and Allow it on Discord). */
 const DEVICE_NOT_APPROVED = "device_not_approved";
+/** A CLI key that is not (or no longer) on the list. */
+const CLI_KEY_INVALID = "cli_key_invalid";
 
 /** What ownerAccess.allowed() looks at: the browser's device key and where it is. */
 const ownerFrom = (req) => ({ ip: clientIp(req), device: ownerAccess.deviceOf(req) });
@@ -69,6 +77,12 @@ const ownerFrom = (req) => ({ ip: clientIp(req), device: ownerAccess.deviceOf(re
  */
 const identify = (token) => {
     if (!token) throw unauthorized("Access denied: no token provided");
+    if (cliAccess.isKey(token)) {
+        if (!cliAccess.isLoaded()) throw Object.assign(new Error("The panel is starting — try again in a moment"), { status: 503, code: "PANEL_STARTING" });
+        const k = cliAccess.verify(token);
+        if (!k) throw unauthorized("Access denied: this CLI key is unknown, revoked or expired — ask for a new one (panel-cli login)", CLI_KEY_INVALID);
+        return { kind: "owner", username: process.env.ADMIN_USERNAME || "owner", cli: { id: k.id, name: k.name, expiresAt: k.expiresAt } };
+    }
     let decoded;
     try {
         decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -95,6 +109,10 @@ const identify = (token) => {
 const authenticate = (req) => {
     const who = identify(tokenOf(req));
     if (who.kind !== "owner") return who;
+    if (who.cli) {
+        cliAccess.used(who.cli.id, clientIp(req));
+        return who;
+    }
     if (!ownerAccess.isLoaded()) throw Object.assign(new Error("The panel is starting — try again in a moment"), { status: 503, code: "PANEL_STARTING" });
     if (!ownerAccess.allowed(ownerFrom(req))) throw unauthorized("This device is not approved for the owner account — sign in again", DEVICE_NOT_APPROVED);
     return who;
@@ -104,6 +122,18 @@ const deny401 = (res, err) =>
     err.status === 503
         ? res.status(503).json({ error: err.message, code: err.code })
         : res.status(401).json({ error: err.message, code: AUTH_REQUIRED, ...(err.reason ? { reason: err.reason } : {}) });
+
+/**
+ * A CLI key's writes go to the panel log: the key acts with no one at a
+ * browser, so the owner reads afterwards what it changed. Reads are not
+ * logged (they would drown the log); the key's first use and every new IP are
+ * (services/cliAccess.js used()).
+ */
+const auditCli = (req, res, who) => {
+    if (!who.cli || READS.has(req.method)) return;
+    const action = `${req.method} ${req.originalUrl.split("?")[0]}`;
+    res.on("finish", () => panelLog.add("owner", `CLI **${who.cli.name}** · \`${action}\` → ${res.statusCode}`));
+};
 
 /** Owner only. */
 const authMiddleware = (req, res, next) => {
@@ -117,6 +147,7 @@ const authMiddleware = (req, res, next) => {
         return res.status(403).json({ error: "Only the panel owner can do this", code: FORBIDDEN });
     }
     req.auth = who;
+    auditCli(req, res, who);
     next();
 };
 
@@ -129,7 +160,10 @@ const pageAuth = (page) => (req, res, next) => {
         return deny401(res, err);
     }
     req.auth = who;
-    if (who.kind === "owner") return next();
+    if (who.kind === "owner") {
+        auditCli(req, res, who);
+        return next();
+    }
 
     if (!staffService.can(who.staff, page, req.method)) {
         const viewOnly = who.staff.perms[page] === "view";
@@ -160,16 +194,40 @@ const pageAuth = (page) => (req, res, next) => {
 const hasGrant = (auth, grant) => auth?.kind === "owner" || (auth?.kind === "staff" && staffService.has(auth.staff, grant));
 
 /**
- * For code that reads the token itself (terminal WebSocket, bot logs): is it
- * the owner's, on an approved device? `req` is required — without it, no.
+ * For code that reads the token itself (terminal WebSocket, bot logs): the
+ * owner — on an approved device, or with a CLI key — or null. `req` is
+ * required — without it, no.
  */
-const isOwnerToken = (token, req) => {
-    if (!req) return false;
+const ownerOf = (token, req) => {
+    if (!req) return null;
     try {
-        return identify(token).kind === "owner" && ownerAccess.isLoaded() && ownerAccess.allowed(ownerFrom(req));
+        const who = identify(token);
+        if (who.kind !== "owner") return null;
+        if (who.cli) {
+            cliAccess.used(who.cli.id, clientIp(req));
+            return who;
+        }
+        return ownerAccess.isLoaded() && ownerAccess.allowed(ownerFrom(req)) ? who : null;
     } catch {
-        return false;
+        return null;
     }
 };
 
-module.exports = { authMiddleware, pageAuth, hasGrant, identify, authenticate, isOwnerToken, tokenOf, clientIp, AUTH_REQUIRED, FORBIDDEN, DEVICE_NOT_APPROVED };
+/** ownerOf(), yes or no. */
+const isOwnerToken = (token, req) => !!ownerOf(token, req);
+
+module.exports = {
+    authMiddleware,
+    pageAuth,
+    hasGrant,
+    identify,
+    authenticate,
+    ownerOf,
+    isOwnerToken,
+    tokenOf,
+    clientIp,
+    AUTH_REQUIRED,
+    FORBIDDEN,
+    DEVICE_NOT_APPROVED,
+    CLI_KEY_INVALID,
+};

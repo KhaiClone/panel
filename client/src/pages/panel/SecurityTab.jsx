@@ -14,6 +14,7 @@ import api from "../../api/client";
 import ConfirmModal from "../../components/ConfirmModal";
 import { DataTable, EmptyState, Icon, Notice, StatusBadge } from "../../components/ui";
 import Section from "./Section";
+import CliKeys from "./CliKeys";
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
 const fmtDate = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }) : "—");
@@ -194,6 +195,8 @@ export default function SecurityTab() {
                 again. {limits.failLimit} wrong passwords from one IP make it wait 15 minutes. Locked out with Discord down? Add your IP to
                 ADMIN_ALLOWED_IPS in the panel&apos;s .env over SSH, then restart the panel.
             </p>
+
+            <CliKeys />
         </div>
     );
 }

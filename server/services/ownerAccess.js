@@ -500,6 +500,7 @@ module.exports = {
     remove,
     unblock,
     start,
+    approvalChannel,
     COOKIE,
     // for tests
     _ready: ready,

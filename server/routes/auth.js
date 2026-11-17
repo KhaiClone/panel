@@ -87,7 +87,7 @@ router.post("/login/pending", (req, res) => {
 /**
  * GET /api/auth/verify
  * Who the token belongs to:
- *   { valid, kind: "owner", username }
+ *   { valid, kind: "owner", username, cli? }   cli = { id, name, expiresAt } for a CLI key
  *   { valid, kind: "staff", username, userId, avatar, perms, expiresAt }
  * A 401 carries `reason` (why the session ended — or, for the owner, that the
  * device is not approved) for the login page.
@@ -100,7 +100,8 @@ router.get("/verify", (req, res) => {
         if (err.status === 503) return res.status(503).json({ error: err.message, code: err.code });
         return res.status(401).json({ valid: false, error: err.message, code: AUTH_REQUIRED, ...(err.reason ? { reason: err.reason } : {}) });
     }
-    if (who.kind === "owner") return res.json({ valid: true, kind: "owner", username: who.username });
+    // A CLI key (services/cliAccess.js) is the owner too; `cli` says which key.
+    if (who.kind === "owner") return res.json({ valid: true, kind: "owner", username: who.username, ...(who.cli ? { cli: who.cli } : {}) });
     const s = who.staff;
     res.json({
         valid: true,

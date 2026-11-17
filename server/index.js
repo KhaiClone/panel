@@ -190,6 +190,10 @@ app.use("/api/webhooks", pageAuth("webhooks"), require("./routes/webhooks"));
 app.use("/api/staff", authMiddleware, require("./routes/staff"));
 // The devices the owner account works on (services/ownerAccess.js).
 app.use("/api/owner-access", authMiddleware, require("./routes/ownerAccess"));
+// CLI access keys (services/cliAccess.js): asking is public — Allow / Deny is on
+// Discord — the list on Panel Settings → Security is owner only.
+app.use("/api/cli-access/login", require("./routes/cliAccess").login);
+app.use("/api/cli-access", authMiddleware, require("./routes/cliAccess").panel);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Serve React Build in Production
@@ -254,6 +258,8 @@ const startBackgroundServices = () => {
     require("./services/staffService").start();
     // Owner sign-in by device: expires waiting approvals, forgets devices unused for 30 days.
     require("./services/ownerAccess").start();
+    // CLI access keys: expires waiting requests and keys whose time ran out.
+    require("./services/cliAccess").start();
     // Messages: the server map (channels, roles) from ArnTo-assistant, once a day.
     require("./services/botMessages").start();
     // Webhooks: the shop server's webhooks from ArnTo-assistant, once a day.

@@ -41,7 +41,9 @@ người dùng nói rõ trong chat.
 12. **Không tự deploy.** Panel deploy = người dùng bấm **Rebuild & Restart** trên panel. Deploy qua SSH
     chỉ khi người dùng nói rõ. Máy đang chạy panel không có SSH từ đây.
 13. SSH vào VPS mặc định **chỉ đọc**. Không đổi UFW/firewall, DNS, cert, nginx, apt/sudo, pm2 của bot
-    khi chưa được đồng ý. Không bao giờ đăng nhập VPS bằng mật khẩu.
+    khi chưa được đồng ý. Không bao giờ đăng nhập VPS bằng mật khẩu. `scripts/panel-cli.js` (`exec`, và
+    `post/put/patch/delete`) tính như SSH: mặc định chỉ đọc. Không bao giờ in/đọc ra key trong
+    `~/.bot-panel/cli.json`.
 14. Thứ tự deploy: **agent trước panel** khi agent đổi. Bot gọi route panel mới → **panel trước bot**.
     Bot phải announce cap bus mới → bot trước khi tính năng panel dùng được. Ghi thứ tự trong báo cáo.
 15. **Không chạy server panel thật ở local** (`npm start`, `npm run dev:server`): `.env` local cũ còn
@@ -275,6 +277,14 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
   đó không xin lại được 24h. Xoá dữ liệu trình duyệt / ẩn danh / trình duyệt khác / move panel sang domain khác =
   thiết bị mới. `ADMIN_ALLOWED_IPS` (`.env`, IPv6 theo /64) = mọi thiết bị từ IP đó vào được = lối thoát khi
   Discord/bot chết. Request qua gateway agent không được tin `X-Real-IP`. Bot panel phải ở trong server log.
+- **CLI access key / panel-cli** (2026-11-17): Claude (hay CLI bất kỳ) vào panel không cần SSH key bằng
+  `scripts/panel-cli.js` (`login`, `nodes`, `bots`, `get/post…`, `exec --node|--bot -- <lệnh>`). Script tự sinh key,
+  panel chỉ lưu sha256; xin key qua **Discord Allow/Deny** (kênh duyệt owner, ping @everyone, mã trên Discord phải khớp
+  mã trong terminal), hạn chọn lúc bấm Allow: 7 / **30 (mặc định)** / 90 ngày / không hạn. Key **luôn Full** = owner
+  (mọi trang + shell mọi node qua Terminal WebSocket), không cần thiết bị đã duyệt; mọi thao tác ghi và mọi lệnh exec
+  vào panel log. Ai cũng gửi được yêu cầu (người dùng chấp nhận): 3 lần/IP/15 phút, tối đa 3 yêu cầu chờ, Deny chặn
+  IP 24h, công tắc "Accept new requests" + Revoke ở Panel Settings → Security. Key nằm ở `~/.bot-panel/cli.json` của
+  từng máy, không bao giờ commit/in ra.
 - **Backup:** `.env` đi kèm mỗi backup dạng plain text (đã chấp nhận rủi ro); rollback bằng link message.
 - **Panel log:** mọi thứ vào `DISCORD_PANEL_LOG_WEBHOOK` trừ cảnh báo hết hạn/gia hạn của khách.
 - **Lockfile** (2026-11-04): `package-lock.json` của root, `agent/`, `client/` được **commit** — mọi VPS cài đúng bộ
