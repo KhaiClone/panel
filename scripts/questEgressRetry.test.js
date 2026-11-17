@@ -94,9 +94,24 @@ class QuestAutocompleter {
     }
     async enrollSelected() {}
 }
+// The first call of a run (GET /users/@me): a test can make the next N of them get no
+// answer through the proxy, or the token dead — set after activate(), which calls it too.
+const TLS_DROP = "Could not reach Discord: Client network socket disconnected before secure TLS connection was established";
+const resolveFails = new Map(); // token → network failures still to give
+const deadTokens = new Set();
+const resolves = []; // { token, at } per call
 stub("services/questEngine", {
     QuestAutocompleter,
-    resolveDiscordAccount: async (token) => ({ ok: true, api: { token }, accountId: token, username: token }),
+    resolveDiscordAccount: async (token) => {
+        resolves.push({ token, at: now });
+        const left = resolveFails.get(token) || 0;
+        if (left > 0) {
+            resolveFails.set(token, left - 1);
+            return { ok: false, invalidToken: false, reason: TLS_DROP };
+        }
+        if (deadTokens.has(token)) return { ok: false, invalidToken: true, reason: "Discord did not accept the token (HTTP 401)" };
+        return { ok: true, api: { token }, accountId: token, username: token };
+    },
     isInvalidTokenError: (e) => !!e?.invalidToken,
     summarizeQuest: (q) => q,
     warmBuildNumber: () => {},
@@ -176,6 +191,67 @@ const test = async (name, fn) => {
         assert.strictEqual(runsOf("once-m").length, 1);
         assert.strictEqual(res.aborted, true);
     });
+
+    console.log("monthly pass — the first call gets no answer");
+
+    // What the pass prints, for these tests only.
+    const said = [];
+    const realWarn = console.warn;
+    const realError = console.error;
+    console.warn = (...a) => said.push(["warn", a.join(" ")]);
+    console.error = (...a) => said.push(["error", a.join(" ")]);
+    const resolvesOf = (token) => resolves.filter((r) => r.token === token);
+
+    await test("no answer once: runs again after the others, a minute later, on a fresh lease; nothing recorded", async () => {
+        for (const t of ["tls-once-m", "fine-2-m"]) await questMonthly.activate({ token: t, months: 1, ref: t });
+        resolveFails.set("tls-once-m", 1);
+        runs.length = releases.length = resolves.length = said.length = 0;
+        let res;
+        questMonthly.runBatch(undefined, { accountIds: ["tls-once-m", "fine-2-m"] }).then((r) => (res = r));
+        await runUntil(() => res);
+        assert.deepStrictEqual(resolves.map((r) => r.token), ["tls-once-m", "fine-2-m", "tls-once-m"]);
+        assert.ok(resolvesOf("tls-once-m")[1].at - resolvesOf("tls-once-m")[0].at >= 60_000);
+        assert.deepStrictEqual(releasesOf("tls-once-m"), [true, false]);
+        assert.strictEqual(runsOf("tls-once-m").length, 1, "the quests ran on the second go");
+        assert.deepStrictEqual(res.failed, []);
+        assert.strictEqual(res.processed, 2);
+        assert.ok(said.some(([k, t]) => k === "warn" && t.includes("[Monthly] tls-once-m: Could not reach Discord") && t.includes("again at the end of the pass")));
+        await settle();
+        assert.strictEqual(((await db.get("quest_monthly_outcome")) || {})["tls-once-m"] ?? null, null);
+    });
+
+    await test("no answer twice: an error with the reason, printed; not run a third time", async () => {
+        resolveFails.set("tls-once-m", 2);
+        runs.length = releases.length = resolves.length = said.length = 0;
+        let res;
+        questMonthly.runBatch(undefined, { accountIds: ["tls-once-m"] }).then((r) => (res = r));
+        await runUntil(() => res);
+        assert.strictEqual(resolvesOf("tls-once-m").length, 2);
+        assert.deepStrictEqual(releasesOf("tls-once-m"), [true, true]);
+        assert.strictEqual(runs.length, 0);
+        assert.strictEqual(res.failed.length, 1);
+        assert.strictEqual(res.failed[0].status, "error");
+        assert.strictEqual(res.failed[0].error, TLS_DROP);
+        assert.ok(said.some(([k, t]) => k === "error" && t === `[Monthly] tls-once-m error: ${TLS_DROP}`));
+        await settle();
+        assert.strictEqual((await db.get("quest_monthly_outcome"))["tls-once-m"].status, "error");
+    });
+
+    await test("a dead token is not run again: token_dead at once, the lease not marked failed", async () => {
+        deadTokens.add("fine-2-m");
+        runs.length = releases.length = resolves.length = 0;
+        let res;
+        questMonthly.runBatch(undefined, { accountIds: ["fine-2-m"] }).then((r) => (res = r));
+        await runUntil(() => res);
+        assert.strictEqual(resolvesOf("fine-2-m").length, 1);
+        assert.deepStrictEqual(releasesOf("fine-2-m"), [false]);
+        assert.strictEqual(res.failed.length, 1);
+        assert.strictEqual(res.failed[0].status, "token_dead");
+        deadTokens.delete("fine-2-m");
+    });
+
+    console.warn = realWarn;
+    console.error = realError;
 
     console.log("single order — the egress route dies");
 

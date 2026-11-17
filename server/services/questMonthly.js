@@ -348,8 +348,9 @@ const EGRESS_RETRY_DELAY_SEC = 60;
 
 /**
  * One subscriber: enroll everything, then complete every quest. `retry` in the result:
- * the egress route died mid-run (`egressDown`) and `canRetry` allowed one more go —
- * nothing is recorded as failed, the caller runs the account again.
+ * the egress route died — mid-run (`egressDown`), or on the very first call — and
+ * `canRetry` allowed one more go — nothing is recorded as failed, the caller runs the
+ * account again.
  * arnto-auto hears run_start (every quest about to run), quest_done, then run_end —
  * all with the pass's `runId`, so its order feed keeps one message per account per
  * pass, and the run again after an egress retry lands in the same message.
@@ -376,10 +377,22 @@ async function _runAccount(rec, abort, { canRetry = false, runId = null } = {}) 
         const resolved = await resolveDiscordAccount(token, lease.agent);
         if (!resolved.ok) {
             egressFailed = !resolved.invalidToken;
-            failure = resolved.invalidToken
-                ? { status: "token_dead", error: TOKEN_DEAD_TEXT }
-                : { status: "error", error: resolved.reason };
-            return { ok, completed, failure };
+            if (resolved.invalidToken) {
+                failure = { status: "token_dead", error: TOKEN_DEAD_TEXT };
+            } else if (canRetry) {
+                // The very first call never got an answer — the proxy dropped it
+                // (a rotating proxy mid-rotation: "Client network socket disconnected
+                // before secure TLS connection was established"). The same as a route
+                // that dies mid-run: a fresh IP and once more at the end of the pass.
+                // This used to be recorded as an error on the spot, silently, and
+                // the account lost the whole pass (foolluvlie, 15 + 17 Nov 2026).
+                retry = true;
+                console.warn(`[Monthly] ${rec.username}: ${resolved.reason} — running it again at the end of the pass`);
+            } else {
+                failure = { status: "error", error: resolved.reason };
+                console.error(`[Monthly] ${rec.username} error: ${resolved.reason}`);
+            }
+            return { ok, completed, failure, retry };
         }
         // The token works, so whatever the last pass hit no longer stands.
         await _setOutcome(rec.accountId, null);
