@@ -1,10 +1,11 @@
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const util = require("util");
 const fs = require("fs");
 const path = require("path");
 const nodeVersions = require("./nodeVersions");
 const { projectEnv } = require("../utils/projectEnv");
 const execAsync = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
 
 // The agent owns every git operation — the panel runs no git of its own, so
 // clone/pull/install work the same on every node.
@@ -86,6 +87,51 @@ const pullRepo = async (botPath) => {
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  A renamed repo (2026-11-17): the panel names the customers' repos after
+//  the customer and the bot and renames them when those change. GitHub
+//  redirects the old name, but only until a new repo takes it — and with
+//  names made of usernames, the next customer to pick that username would
+//  take it, and this checkout would pull THEIR code. So the panel points
+//  origin at the new name right after a rename.
+//
+//  Only the owner/name part changes: the URL keeps its form and host (an SSH
+//  host alias stays), and the panel names the old owner/name it expects —
+//  anything else in origin is refused rather than overwritten. execFile, no
+//  shell; the project's own env (utils/projectEnv.js) like every git command
+//  run inside a project.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OWNER_NAME = /^[\w.-]+\/[\w.-]+$/;
+const ORIGIN = /^(.*[:/])([\w.-]+\/[\w.-]+?)(\.git)?(\/?)$/;
+
+const gitIn = async (botPath, args) => {
+    const { stdout } = await execFileAsync("git", args, { cwd: botPath, env: projectEnv(), timeout: 15_000 });
+    return stdout.trim();
+};
+
+/** origin owner/name `from` → `to`. → { changed, url } */
+const setOrigin = async (botPath, from, to) => {
+    if (!OWNER_NAME.test(String(from || "")) || !OWNER_NAME.test(String(to || ""))) {
+        throw Object.assign(new Error("from and to must be owner/name"), { status: 400 });
+    }
+    let url;
+    try {
+        url = await gitIn(botPath, ["remote", "get-url", "origin"]);
+    } catch {
+        throw Object.assign(new Error("This checkout has no origin remote"), { status: 409 });
+    }
+    const m = ORIGIN.exec(url);
+    const now = m ? m[2].toLowerCase() : null;
+    if (now === to.toLowerCase()) return { changed: false, url };
+    if (now !== from.toLowerCase()) {
+        throw Object.assign(new Error(`origin is ${url}, not ${from} — left as it is`), { status: 409 });
+    }
+    const next = `${m[1]}${to}${m[3] || ""}${m[4]}`;
+    await gitIn(botPath, ["remote", "set-url", "origin", next]);
+    return { changed: true, url: next };
+};
+
 const cleanPackageFolder = (botPath, cmd) => {
     const cmdLower = cmd.toLowerCase().trim();
 
@@ -149,4 +195,4 @@ const installDeps = async (botPath, installCommand = undefined, nodeVersion = nu
     return stdout || stderr;
 };
 
-module.exports = { cloneRepo, pullRepo, installDeps, cleanPackageFolder, repoInfo, sshEnv, GITHUB_KNOWN_HOSTS };
+module.exports = { cloneRepo, pullRepo, setOrigin, installDeps, cleanPackageFolder, repoInfo, sshEnv, GITHUB_KNOWN_HOSTS };

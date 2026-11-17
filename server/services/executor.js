@@ -253,6 +253,21 @@ const pullRepo = async (bot) => {
     return data.output;
 };
 
+/**
+ * After its repo was renamed on GitHub: point the checkout's origin from
+ * owner/name `from` to `to` (agent 1.15.0+). The agent keeps the URL's form
+ * and refuses an origin that is not `from`. → { changed, url }
+ */
+const setGitRemote = async (bot, from, to) => {
+    try {
+        return await agentCall(bot, "post", "/git/remote", { data: { ...target(bot), from, to }, timeout: 30_000 });
+    } catch (err) {
+        // A route the agent does not have → a bare 404 without an `error` body.
+        if (err.agentStatus === 404) err.message += " — this node's agent is older than 1.15.0; update it (Update Agent)";
+        throw err;
+    }
+};
+
 /** origin URL + branch of the project's checkout (nulls when not a repo). */
 const gitInfo = async (bot) => {
     try {
@@ -546,6 +561,7 @@ module.exports = {
     pullRepo,
     installDeps,
     gitInfo,
+    setGitRemote,
     fsList,
     fsRead,
     fsWrite,

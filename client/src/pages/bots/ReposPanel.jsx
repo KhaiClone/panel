@@ -4,13 +4,18 @@ import api from "../../api/client";
 import ConfirmModal from "../../components/ConfirmModal";
 import TypeToConfirm from "../../components/TypeToConfirm";
 import { EmptyState, Icon, Notice, StatusBadge } from "../../components/ui";
+import NewRepoModal from "./NewRepoModal";
+import RepoNameModal from "./RepoNameModal";
 
 // Bots → Repos: the customers' GitHub org (server/services/customerRepos.js) —
 // every repo with the project that uses it, or why nothing does. Archive is
 // undone with Unarchive; Delete needs the name typed back and is refused while
-// a project uses the repo. The panel never renames a repo.
+// a project uses the repo. New repo makes one, named by the name template; the
+// weekly name check renames customer repos when the names change, and each
+// repo shows what the next check would call it (customerRepoNames.js).
 
 const fmtDate = (ts) => (ts ? new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
+const fmtWhen = (ts) => (ts ? new Date(ts).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
 const DIM = { fontSize: 12, color: "var(--text-dim)" };
 const STATE = {
     "in-use": { tone: "success", label: "In use" },
@@ -20,6 +25,7 @@ const STATE = {
 };
 const FILTERS = [
     ["attention", "Needs a decision", (r) => !r.archived && (r.state === "unused" || r.state === "retired")],
+    ["renames", "Renamed at the next check", (r) => !!r.naming?.next],
     ["in-use", "In use", (r) => r.state === "in-use" || r.state === "expired"],
     ["archived", "Archived", (r) => r.archived],
     ["all", "All", () => true],
@@ -34,6 +40,9 @@ export default function ReposPanel() {
     const [msg, setMsg] = useState(null);
     const [confirm, setConfirm] = useState(null); // archive / unarchive
     const [deleting, setDeleting] = useState(null); // repo being deleted
+    const [creating, setCreating] = useState(false);
+    const [naming, setNaming] = useState(null); // repo whose name is being set
+    const [showProblems, setShowProblems] = useState(false);
 
     const load = useCallback(async () => {
         setError("");
@@ -56,8 +65,8 @@ export default function ReposPanel() {
         setBusy(name);
         setMsg(null);
         try {
-            await call();
-            setMsg({ tone: "success", text: okText });
+            const res = await call();
+            setMsg({ tone: "success", text: typeof okText === "function" ? okText(res?.data) : okText });
             await load();
         } catch (err) {
             setMsg({ tone: "danger", text: err.response?.data?.error || "Something went wrong" });
@@ -105,6 +114,63 @@ export default function ReposPanel() {
                     onConfirm={(typed) => act(`delete-${deleting.name}`, () => api.delete(`/customer-projects/repos/${encodeURIComponent(deleting.name)}`, { data: { confirm: typed } }), `Deleted ${deleting.fullName}.`)}
                     onCancel={() => setDeleting(null)}
                 />
+            )}
+            {creating && (
+                <NewRepoModal
+                    onClose={() => setCreating(false)}
+                    onCreated={(r) => {
+                        setMsg({ tone: "success", text: `Made ${r.fullName}.` });
+                        load();
+                    }}
+                />
+            )}
+            {naming && (
+                <RepoNameModal
+                    repo={naming}
+                    template={data.naming?.template}
+                    onClose={() => setNaming(null)}
+                    onDone={(r) => {
+                        setNaming(null);
+                        setMsg(r.problems?.length
+                            ? { tone: "warning", text: `The repo is now ${r.name}, but: ${r.problems.join(" · ")}` }
+                            : { tone: "success", text: r.name === naming.name ? `${r.name} keeps its name.` : `Renamed ${naming.name} to ${r.name}.` });
+                        load();
+                    }}
+                />
+            )}
+
+            {data.naming && (
+                <div className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>Repo names</span>
+                        <span className="mono" style={{ fontSize: 13 }}>{data.naming.template}</span>
+                        <Link to="/panel-manage/integrations" style={{ fontSize: 12 }}>Change the template</Link>
+                        <span style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+                            <button type="button" className="btn-ghost btn-sm" disabled={!!busy || data.naming.running}
+                                onClick={() => act("check-names", () => api.post("/customer-projects/repos/check-names", null, { timeout: 600_000 }),
+                                    (r) => `Name check done: ${r?.renamed?.length || 0} renamed${r?.problems?.length ? `, ${r.problems.length} with a problem` : ""}.`)}>
+                                <Icon name="refresh" size={14} /> {busy === "check-names" ? "Checking…" : "Check names now"}
+                            </button>
+                            <button type="button" className="btn-primary btn-sm" disabled={!!busy} onClick={() => setCreating(true)}>
+                                <Icon name="plus" size={14} /> New repo
+                            </button>
+                        </span>
+                    </div>
+                    <span style={DIM}>
+                        Customer repos are checked every {data.naming.schedule.day} at {data.naming.schedule.at} (Vietnam time) and renamed when the
+                        customer's or the bot's name changed. A repo with a name of its own is left alone.
+                        {" "}Last check: {data.naming.lastCheck
+                            ? <>{fmtWhen(data.naming.lastCheck.at)} · {data.naming.lastCheck.renamed.length} renamed
+                                {data.naming.lastCheck.problems.length > 0 && <> · <button type="button" style={{ fontSize: 12, padding: 0, background: "none", border: "none", color: "var(--warning)", cursor: "pointer", textDecoration: "underline" }}
+                                    onClick={() => setShowProblems((v) => !v)}>{data.naming.lastCheck.problems.length} with a problem</button></>}</>
+                            : "not yet"}
+                    </span>
+                    {showProblems && data.naming.lastCheck?.problems?.length > 0 && (
+                        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-muted)", display: "flex", flexDirection: "column", gap: 2 }}>
+                            {data.naming.lastCheck.problems.map((p, i) => <li key={i}><span className="mono">{p.repo}</span>: {p.text}</li>)}
+                        </ul>
+                    )}
+                </div>
             )}
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -162,7 +228,15 @@ export default function ReposPanel() {
                                         <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
                                         {!r.private && <StatusBadge tone="neutral">Public</StatusBadge>}
                                         {r.archived && <StatusBadge tone="neutral">Archived</StatusBadge>}
+                                        {r.naming?.custom && <StatusBadge tone="neutral">Own name</StatusBadge>}
+                                        {r.naming?.next && <StatusBadge tone="info">Next check: <span className="mono">{r.naming.next}</span></StatusBadge>}
+                                        {r.naming?.pendingOrigins > 0 && (
+                                            <StatusBadge tone="warning" title="GitHub's redirect keeps it working; the next name check tries again">
+                                                {r.naming.pendingOrigins === 1 ? "1 checkout" : `${r.naming.pendingOrigins} checkouts`} still on the old name
+                                            </StatusBadge>
+                                        )}
                                     </span>
+                                    {r.naming?.problem && <span style={{ fontSize: 12, color: "var(--warning)" }}>{r.naming.problem}</span>}
                                     <span style={DIM}>
                                         {r.projects.length > 0 && <>Used by {r.projects.map((p, i) => <span key={p._id}>{i > 0 && ", "}<Link to={projectPath(p)}>{p.name}</Link></span>)} · </>}
                                         {r.retired && <>Retired project "{r.retired.name}" ({fmtDate(r.retired.retiredAt)}) · </>}
@@ -171,6 +245,9 @@ export default function ReposPanel() {
                                     </span>
                                 </div>
                                 <div style={{ display: "flex", gap: 8 }}>
+                                    <button type="button" className="btn-ghost btn-sm" disabled={!!busy || r.archived} title={r.archived ? "Unarchive it first" : undefined} onClick={() => setNaming(r)}>
+                                        <Icon name="pencil" size={14} /> Name
+                                    </button>
                                     <button type="button" className="btn-ghost btn-sm" disabled={!!busy} onClick={() => setConfirm({ repo: r, archived: !r.archived })}>
                                         <Icon name="archive" size={14} /> {r.archived ? "Unarchive" : "Archive"}
                                     </button>

@@ -355,9 +355,17 @@ thích — re-take là "hợp thức hoá" trạng thái hiện tại.
 - **Robux:** đã xoá hẳn khỏi ArnTo-Auto. **Message templates/Embeds:** đã gỡ khỏi panel và mọi bot.
 - **Customer projects** (2026-11-13): mọi thứ cho project của khách (đồng bộ tên theo ID bot, kênh log/backup trong
   Kho, danh sách dọn Bots → Retired, repo trong GitHub org ở Bots → Repos) chỉ chạy khi project được **bật Customer
-  project** — project cá nhân/nhóm không bao giờ bị đụng. **Repo GitHub không bao giờ bị đổi tên.** Có project khách
+  project** — project cá nhân/nhóm không bao giờ bị đụng. Có project khách
   chạy vĩnh viễn: không logic nào được giả định có `expiresAt`. Xoá webhook + thu hồi API key ngay khi project bị xoá;
   kênh, repo thì chủ tự bấm (không tự xoá).
+- **Tên repo khách** (2026-11-17, thay "repo không bao giờ bị đổi tên" của 2026-11-13): panel **tạo** repo khách (Bots →
+  Repos → New repo: repo **private, trống**, chủ tự push) và đặt tên theo **mẫu** — mặc định `{username}-{botname}`
+  (username Discord của khách + tên bot trên Discord), chủ sửa mẫu ở Panel Settings → Integrations. **Mỗi tuần** (thứ Hai
+  04:30 VN) **mọi repo khách** trong org được kiểm và **đổi tên** theo mẫu khi tên khách/bot đổi — kể cả repo cũ đặt tay.
+  Repo có **tên riêng** (chủ đặt) thì giữ nguyên mãi. Không đổi: repo không còn project nào dùng, repo archived, repo nhiều
+  project khách dùng chung. Đổi tên xong phải sửa `repoUrl` của project **và** origin của checkout trên node (agent ≥ 1.15.0,
+  `POST /git/remote`) — redirect cũ của GitHub chết khi repo khác lấy tên đó, checkout sẽ kéo code của khách khác. Tên
+  GitHub còn redirect = đã có người dùng (lấy `-2`). Kênh Kho vẫn theo `baseName` như cũ.
 - **Customer role** (2026-11-14): role của khách đang dùng dịch vụ (ID ở file hạ tầng/settings) tự cấp cho buyer có
   project khách đang chạy (cả website/service, cả project vĩnh viễn), tự gỡ khi hết hạn/xoá/tắt Customer. Chủ gỡ tay
   (trên Discord hay nút trên panel) = **không bao giờ cấp lại**, kể cả khi mua mới, tới khi bấm Allow again. Người được

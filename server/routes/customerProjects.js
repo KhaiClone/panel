@@ -4,6 +4,7 @@ const customers = require("../services/customerProjects");
 const channels = require("../services/customerChannels");
 const retired = require("../services/customerRetire");
 const repos = require("../services/customerRepos");
+const names = require("../services/customerRepoNames");
 const role = require("../services/customerRole");
 
 // /api/customer-projects — owner only (mounted behind authMiddleware, like
@@ -69,8 +70,20 @@ router.delete("/retired/:rid", retiredAction((req) => retired.dismiss(req.params
 router.get("/github-settings", retiredAction(() => repos.getSettings()));
 /** PUT /github-settings  { org?, token? } — checked against GitHub before it is saved. */
 router.put("/github-settings", retiredAction((req) => repos.setSettings(pick(req.body, ["org", "token"]))));
-/** GET /repos — the org's repos with who uses each, and customer projects whose repo is not there. */
-router.get("/repos", retiredAction(() => repos.overview()));
+/** GET /repos — the org's repos with who uses each and how each is named, and customer projects whose repo is not there. */
+router.get("/repos", retiredAction(() => names.overview()));
+/** POST /repos/preview  { buyerID, botUserId?, label?, name? } — the name New repo would give. */
+router.post("/repos/preview", retiredAction((req) => names.preview(pick(req.body, ["buyerID", "botUserId", "label", "name"]))));
+/** POST /repos  { buyerID, botUserId?, label?, name? } — New repo: an empty private repo in the org. */
+router.post("/repos", retiredAction((req) => names.create(pick(req.body, ["buyerID", "botUserId", "label", "name"]))));
+/** POST /repos/check-names — the weekly name check, now. */
+router.post("/repos/check-names", retiredAction(() => names.check({ who: "owner" })));
+/** PUT /repos/:name/name  { customName } — a name of its own, or null: back to the template. */
+router.put("/repos/:name/name", retiredAction((req) => names.setName(req.params.name, { customName: req.body?.customName ?? null })));
+/** GET /repo-naming — the name template, its fields, the schedule and the last check. */
+router.get("/repo-naming", retiredAction(() => names.getNaming()));
+/** PUT /repo-naming  { template } — empty → the default. */
+router.put("/repo-naming", retiredAction((req) => names.setNaming(pick(req.body, ["template"]))));
 /** POST /repos/:name/archive  { archived: true|false } */
 router.post("/repos/:name/archive", retiredAction((req) => repos.archive(req.params.name, req.body?.archived !== false)));
 /** DELETE /repos/:name  { confirm: "<the repo's name>" } — refused while a project uses it. */

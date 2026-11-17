@@ -7,6 +7,7 @@ const panelLog = require("./panelLog");
 const customerChannels = require("./customerChannels");
 const customerRetire = require("./customerRetire");
 const customerRepos = require("./customerRepos");
+const customerRepoNames = require("./customerRepoNames");
 const customerRole = require("./customerRole");
 const { envValue } = require("../utils/envText");
 
@@ -28,9 +29,9 @@ const { envValue } = require("../utils/envText");
 //  and with "Refresh". The project's panel name follows the bot's Discord name
 //  while `syncName` is on; naming the project by hand turns that off.
 //
-//  `baseName` (customer-bot-id) is what the log/backup channels get called and
-//  what a new repo should be called. Repos are never renamed when a name
-//  changes (user, 2026-11-13) — the id at the end keeps everything findable.
+//  `baseName` (customer-bot-id) is what the log/backup channels get called.
+//  Repos have their own names since 2026-11-17 — a template the owner sets,
+//  checked weekly (phase 5, services/customerRepoNames.js).
 //
 //  Phase 2 (services/customerChannels.js): a log and a backup channel in Kho
 //  per project, their webhook URLs written to its .env; the daily sync keeps
@@ -43,6 +44,10 @@ const { envValue } = require("../utils/envText");
 //  Phase 4 (services/customerRepos.js): the customers' repos in one GitHub
 //  org — Bots → Repos, archive / delete, and the repo description follows the
 //  project's name in the daily sync.
+//
+//  Phase 5 (services/customerRepoNames.js): New repo makes the customers'
+//  repos, named by a template ({username}-{botname}); a weekly check renames
+//  them when the names change.
 //
 //  Some customer projects never expire — nothing here depends on expiresAt.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,7 +248,7 @@ const syncOne = async (bot) => {
         patch.channels = ch.channels;
         problems.push(...ch.problems);
     }
-    // Phase 4: the repo's description follows the project's name (repos are never renamed).
+    // Phase 4: the repo's description follows the project's name (its name: phase 5, weekly).
     const repoProblem = await customerRepos.syncDescription(bot, {
         projectName: merged.syncName && merged.botName ? merged.botName : bot.name,
         buyerName: merged.buyerName,
@@ -438,6 +443,7 @@ const start = () => {
         { timezone: TIMEZONE },
     );
     console.log(`[Customers] Name sync scheduled — 04:00 ${TIMEZONE}`);
+    customerRepoNames.start(); // the weekly repo name check
 };
 
 module.exports = {

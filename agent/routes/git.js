@@ -49,6 +49,27 @@ router.post("/pull", async (req, res, next) => {
 });
 
 /**
+ * POST /git/remote
+ * body: { root, dir } | { absPath }, from: "owner/name", to: "owner/name"
+ * Points origin at a renamed repo (services/git.js setOrigin): only when it
+ * now points at `from`; the URL keeps its form and host alias.
+ */
+router.post("/remote", async (req, res, next) => {
+    try {
+        const { dir, absPath, from, to } = req.body;
+        if (!dir && !absPath) return res.status(400).json({ error: "dir or absPath is required" });
+
+        const botPath = resolveTarget(req.body);
+        if (!fs.existsSync(botPath)) return res.status(404).json({ error: "Directory not found" });
+
+        res.json(await git.setOrigin(botPath, from, to));
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
+/**
  * POST /git/install
  * body: { root, dir, installCommand, nodeVersion } | { absPath, installCommand, nodeVersion }
  * installCommand === null/"" skips the install (pre-built projects).

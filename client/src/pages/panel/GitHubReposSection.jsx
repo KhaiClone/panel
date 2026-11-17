@@ -40,8 +40,9 @@ export default function GitHubReposSection() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
                 Keep the customers' repos in one GitHub organization and the panel lists them on Bots → Repos — which project uses each, which
-                belong to retired projects, which nothing uses — with Archive and Delete. Personal repos stay on your own account and never show up.
-                The panel only touches repos in this org and never renames one.
+                belong to retired projects, which nothing uses — with Archive and Delete — and makes new ones there with New repo. Personal repos
+                stay on your own account and never show up. The panel only touches repos in this org; customer repos are named by the template
+                below and renamed by the weekly name check when the names change.
             </p>
             {error && <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>{error}</p>}
 
@@ -81,6 +82,81 @@ export default function GitHubReposSection() {
                     </button>
                 </div>
             )}
+            {data.configured && <RepoNaming />}
+        </div>
+    );
+}
+
+/**
+ * The name template of the customer repos (server/services/customerRepoNames.js):
+ * what New repo calls a repo and what the weekly check renames customer repos to.
+ */
+function RepoNaming() {
+    const [data, setData] = useState(null);
+    const [draft, setDraft] = useState(null); // the template while editing
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const [saved, setSaved] = useState(false);
+
+    useEffect(() => {
+        api.get("/customer-projects/repo-naming").then((r) => setData(r.data)).catch((err) => setError(err.response?.data?.error || "Failed to load"));
+    }, []);
+
+    const save = async (template) => {
+        setBusy(true);
+        setError("");
+        try {
+            const { data: r } = await api.put("/customer-projects/repo-naming", { template });
+            setData(r);
+            setDraft(null);
+            setSaved(true);
+        } catch (err) {
+            setError(err.response?.data?.error || "Save failed");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    if (!data) return error ? <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>{error}</p> : null;
+
+    return (
+        <div className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Repo names</span>
+                {draft === null && <span className="mono" style={{ fontSize: 13 }}>{data.template}</span>}
+                {draft === null && (
+                    <button className="btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => { setDraft(data.template); setSaved(false); }}>
+                        <Icon name="pencil" size={14} /> Change
+                    </button>
+                )}
+            </div>
+            {draft !== null && (
+                <>
+                    <input className="input mono" value={draft} onChange={(e) => setDraft(e.target.value)} disabled={busy} autoFocus />
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                        {draft !== data.defaultTemplate && (
+                            <button className="btn-ghost btn-sm" style={{ marginRight: "auto" }} onClick={() => setDraft(data.defaultTemplate)} disabled={busy}>
+                                Use the default ({data.defaultTemplate})
+                            </button>
+                        )}
+                        <button className="btn-ghost btn-sm" onClick={() => setDraft(null)} disabled={busy}>Cancel</button>
+                        <button className="btn-primary btn-sm" onClick={() => save(draft.trim())} disabled={busy || !draft.trim() || draft.trim() === data.template}>
+                            {busy ? "Saving…" : "Save"}
+                        </button>
+                    </div>
+                </>
+            )}
+            {error && <p style={{ fontSize: 12, color: "var(--danger)", margin: 0 }}>{error}</p>}
+            {saved && <p style={{ fontSize: 12, color: "var(--success)", margin: 0 }}>Saved. Customer repos follow at the next name check — Bots → Repos shows each new name before it happens.</p>}
+            <div style={{ ...DIM, display: "flex", flexDirection: "column", gap: 2 }}>
+                {Object.entries(data.fields).map(([k, text]) => (
+                    <span key={k}><span className="mono">{`{${k}}`}</span> — {text}{k === "botname" && " (no bot: the project's name)"}</span>
+                ))}
+                <span style={{ marginTop: 4 }}>
+                    Names are lowercased, Vietnamese marks dropped and spaces turned into "-". Around the fields, use only letters, digits, ".", "_"
+                    and "-". Checked every {data.schedule.day} at {data.schedule.at} (Vietnam time); a repo with a name of its own is never renamed.
+                </span>
+            </div>
         </div>
     );
 }

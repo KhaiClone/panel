@@ -18,10 +18,12 @@ const githubUrl = require("../utils/githubUrl");
 //
 //  The panel only ever touches repos IN that org. Archive (undone with
 //  Unarchive) and Delete are the owner's buttons — Delete needs the repo's name
-//  typed back and is refused while a project still uses the repo. Repos are
-//  never renamed (user, 2026-11-13); the one thing done by itself is the
-//  description, kept to the project's current name in the daily sync (who the
-//  customer is goes in only on a private repo).
+//  typed back and is refused while a project still uses the repo. The one
+//  thing done here by itself is the description, kept to the project's
+//  current name in the daily sync (who the customer is goes in only on a
+//  private repo). Repos were never renamed until 2026-11-17; now the panel
+//  makes new ones and names them after the customer and the bot, checked
+//  weekly — services/customerRepoNames.js.
 //
 //  A repo transferred into the org keeps working from its old URL (GitHub
 //  redirects), so "Update repo URL" only rewrites the project's record, in the
@@ -161,12 +163,14 @@ const repoOf = (bot) => {
 };
 
 /**
- * The org's repos, each with who uses it, and the customer projects whose repo
- * is not (or not yet, by its URL) in the org.
+ * The org as GitHub has it now: its repos (GitHub's objects), the projects
+ * using each (`users`: repo key → projects), customer projects whose repo is
+ * not in the org by URL, and the repos retired projects left (`retiredBy`).
+ * Shared by the Repos page and the repo names (services/customerRepoNames.js).
  */
-const overview = async () => {
+const collect = async () => {
     const s = await raw();
-    if (!s.org || !s.tokenEnc) return { configured: false, repos: [], notInOrg: [] };
+    if (!s.org || !s.tokenEnc) return { configured: false };
     const org = s.org;
     const [repos, bots, retired] = await Promise.all([listOrgRepos(org), db.find("bots"), customerRetire.entries()]);
     const byKey = new Map(repos.map((r) => [r.full_name.toLowerCase(), r]));
@@ -200,7 +204,13 @@ const overview = async () => {
         const p = githubUrl.parse(e.repo.url);
         if (p) retiredBy.set(githubUrl.key(p.owner, p.name), e);
     }
+    return { configured: true, org, repos, users, notInOrg, retiredBy };
+};
 
+/** The Repos page's list from collect(). */
+const overviewOf = (state) => {
+    if (!state.configured) return { configured: false, repos: [], notInOrg: [] };
+    const { org, repos, users, notInOrg, retiredBy } = state;
     const now = Date.now();
     const list = repos.map((r) => {
         const k = r.full_name.toLowerCase();
@@ -225,6 +235,12 @@ const overview = async () => {
     });
     return { configured: true, org, repos: list, notInOrg };
 };
+
+/**
+ * The org's repos, each with who uses it, and the customer projects whose repo
+ * is not (or not yet, by its URL) in the org.
+ */
+const overview = async () => overviewOf(await collect());
 
 /** A repo of the org by name, as GitHub has it now. Nothing outside the org is ever touched. */
 const orgRepo = async (name) => {
@@ -357,7 +373,12 @@ const syncDescription = async (bot, names) => {
 module.exports = {
     getSettings,
     setSettings,
+    collect,
+    overviewOf,
     overview,
+    gh,
+    resolve,
+    needOrg,
     archive,
     remove,
     archiveRetired,
