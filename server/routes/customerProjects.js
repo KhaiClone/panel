@@ -72,6 +72,8 @@ router.get("/github-settings", retiredAction(() => repos.getSettings()));
 router.put("/github-settings", retiredAction((req) => repos.setSettings(pick(req.body, ["org", "token"]))));
 /** GET /repos — the org's repos with who uses each and how each is named, and customer projects whose repo is not there. */
 router.get("/repos", retiredAction(() => names.overview()));
+/** GET /repos/choices — New project's "From the org": the org's repos to clone from, unused ones first. */
+router.get("/repos/choices", retiredAction(() => repos.choices()));
 /** POST /repos/preview  { buyerID, botUserId?, label?, name? } — the name New repo would give. */
 router.post("/repos/preview", retiredAction((req) => names.preview(pick(req.body, ["buyerID", "botUserId", "label", "name"]))));
 /** POST /repos  { buyerID, botUserId?, label?, name? } — New repo: an empty private repo in the org. */

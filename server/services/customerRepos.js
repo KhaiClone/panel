@@ -242,6 +242,41 @@ const overviewOf = (state) => {
  */
 const overview = async () => overviewOf(await collect());
 
+/**
+ * New project → "From the org": the org's repos to clone from, so the owner
+ * picks one instead of pasting its link (pasting stays, for repos elsewhere).
+ * The ones no project uses come first — a new project usually wants one of
+ * those — then the most recently pushed. Archived repos are left out. Who uses
+ * a repo is matched by URL only: no GitHub call per project, so the list is
+ * there as the form opens (the Repos page does the full matching).
+ */
+const choices = async () => {
+    const s = await raw();
+    if (!s.org || !s.tokenEnc) return { configured: false, repos: [] };
+    const [repos, bots] = await Promise.all([listOrgRepos(s.org), db.find("bots")]);
+    const users = new Map(); // repo key → projects
+    for (const b of bots) {
+        const p = repoOf(b);
+        if (p) users.set(p.key, [...(users.get(p.key) || []), { _id: b._id, name: b.name }]);
+    }
+    const list = repos
+        .filter((r) => !r.archived)
+        .map((r) => ({
+            name: r.name,
+            fullName: r.full_name,
+            url: r.html_url,
+            // What New repo hands out for Create Project; the agent clones it over SSH.
+            cloneUrl: r.clone_url || `https://github.com/${r.full_name}.git`,
+            defaultBranch: r.default_branch || "main",
+            private: !!r.private,
+            description: r.description || "",
+            pushedAt: Date.parse(r.pushed_at) || null,
+            projects: users.get(r.full_name.toLowerCase()) || [],
+        }))
+        .sort((a, b) => Math.sign(a.projects.length) - Math.sign(b.projects.length) || (b.pushedAt || 0) - (a.pushedAt || 0));
+    return { configured: true, org: s.org, repos: list };
+};
+
 /** A repo of the org by name, as GitHub has it now. Nothing outside the org is ever touched. */
 const orgRepo = async (name) => {
     const org = await needOrg();
@@ -376,6 +411,7 @@ module.exports = {
     collect,
     overviewOf,
     overview,
+    choices,
     gh,
     resolve,
     needOrg,

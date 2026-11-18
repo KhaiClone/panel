@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import api from "../api/client";
-import { Icon, Notice, Toggle } from "./ui";
+import { Icon, Notice, SearchInput, Toggle } from "./ui";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -44,6 +44,8 @@ const MEM_HINT = 'e.g. "300M", "1G" — leave blank for no limit';
 
 const SECTION = { padding: 16, background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, display: "flex", flexDirection: "column", gap: 16 };
 const SECTION_TITLE = { fontSize: 13, fontWeight: 600, color: "var(--text)", margin: 0 };
+const HINT = { fontSize: 12, color: "var(--text-muted)", margin: 0 };
+const ONE_LINE = { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -65,6 +67,76 @@ function TabBar({ value, onChange, options }) {
     );
 }
 
+/**
+ * "From the org": the customers' GitHub org's repos (GET
+ * /customer-projects/repos/choices — unused ones first, archived left out),
+ * searchable; a click picks one. `data`: null while loading, { error }, or
+ * { org, repos }.
+ */
+function OrgRepoPicker({ data, picked, onPick, onReload }) {
+    const [query, setQuery] = useState("");
+    if (!data) return <p style={HINT}>Loading the org's repos from GitHub…</p>;
+    if (data.error) {
+        return (
+            <Notice tone="danger">
+                {data.error}{" "}
+                <button type="button" className="btn-ghost btn-sm" onClick={onReload} style={{ marginLeft: 6 }}>Try again</button>
+            </Notice>
+        );
+    }
+
+    const q = query.trim().toLowerCase();
+    const shown = q
+        ? data.repos.filter((r) => r.name.toLowerCase().includes(q) || r.description.toLowerCase().includes(q) || r.projects.some((p) => p.name.toLowerCase().includes(q)))
+        : data.repos;
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+                <SearchInput value={query} onChange={setQuery} placeholder={`Search ${data.repos.length} repos in ${data.org}`} style={{ flex: 1 }} />
+                <button type="button" className="btn-ghost btn-icon" onClick={onReload} title="Load the list from GitHub again">
+                    <Icon name="refresh" size={14} />
+                </button>
+            </div>
+            <div role="listbox" aria-label={`Repos in ${data.org}`} style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8, background: "var(--bg-input)" }}>
+                {shown.map((r) => {
+                    const active = picked?.fullName === r.fullName;
+                    const users = r.projects.map((p) => p.name).join(", ");
+                    return (
+                        <button
+                            key={r.fullName} type="button" role="option" aria-selected={active}
+                            onClick={() => onPick(r)}
+                            style={{
+                                display: "flex", alignItems: "flex-start", gap: 10, width: "100%", padding: "8px 12px", textAlign: "left",
+                                background: active ? "var(--accent-dim)" : "transparent", color: "var(--text)",
+                                border: "none", borderBottom: "1px solid var(--border-light)", cursor: "pointer",
+                            }}
+                        >
+                            <Icon name={active ? "checkCircle" : r.private ? "lock" : "globe"} size={14} style={{ marginTop: 3, flexShrink: 0, color: active ? "var(--accent-hover)" : "var(--text-dim)" }} />
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                                <span className="mono" style={{ display: "block", fontSize: 13, fontWeight: 500, overflowWrap: "anywhere" }}>{r.name}</span>
+                                {r.description && <span style={{ ...ONE_LINE, fontSize: 12, color: "var(--text-dim)" }} title={r.description}>{r.description}</span>}
+                            </span>
+                            <span style={{ ...ONE_LINE, maxWidth: "40%", fontSize: 11, marginTop: 2, color: users ? "var(--text-muted)" : "var(--success)" }} title={users ? `Used by ${users}` : undefined}>
+                                {users ? `Used by ${users}` : "Not used"}
+                            </span>
+                        </button>
+                    );
+                })}
+                {!shown.length && (
+                    <p style={{ ...HINT, padding: 12 }}>
+                        {data.repos.length ? "No repo matches." : `${data.org} has no repos yet — make one in Bots → Repos → New repo.`}
+                    </p>
+                )}
+            </div>
+            <p style={{ ...HINT, color: "var(--text-dim)" }}>
+                {picked
+                    ? <>Clones <span className="mono">{picked.cloneUrl}</span> — branch set to its default, <span className="mono">{picked.defaultBranch}</span>.</>
+                    : "Repos no project uses come first. Archived repos are not listed."}
+            </p>
+        </div>
+    );
+}
+
 export default function CreateBotModal({ onClose, onCreated, defaultProjectType }) {
     const [form, setForm] = useState(() => ({
         ...defaultForm,
@@ -78,12 +150,36 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [createdNote, setCreatedNote] = useState("");
+    // Two ways to give the Git repository: pick it from the customers' org
+    // ("org"), or paste any URL ("url") — personal repos, other hosts, an SSH
+    // host alias. Each keeps its own value, so switching loses nothing.
+    const [repoMode, setRepoMode] = useState("org");
+    const [orgRepos, setOrgRepos] = useState(null); // null loading | { configured, org, repos } | { error }
+    const [picked, setPicked] = useState(null); // a repo of orgRepos.repos
+
+    const loadOrgRepos = useCallback(() => {
+        setOrgRepos(null);
+        api.get("/customer-projects/repos/choices", { timeout: 60_000 })
+            .then((r) => {
+                setOrgRepos(r.data);
+                // No org set up: pasting is the only way.
+                if (!r.data.configured) setRepoMode("url");
+            })
+            .catch((err) => setOrgRepos({ error: err.response?.data?.error || "Could not load the org's repos from GitHub" }));
+    }, []);
 
     useEffect(() => {
         api.get("/groups").then((r) => setGroups(r.data)).catch(() => {});
         api.get("/tags").then((r) => setAvailableTags(r.data)).catch(() => {});
         api.get("/nodes").then((r) => setNodes(r.data)).catch(() => {});
-    }, []);
+        loadOrgRepos();
+    }, [loadOrgRepos]);
+
+    const pickRepo = (r) => {
+        setPicked(r);
+        // The repo's own default branch — a "master" repo would not clone as "main".
+        setForm((f) => ({ ...f, branch: r.defaultBranch || "main" }));
+    };
 
     const set = (field) => (e) => {
         const val = e.target.type === "checkbox" ? e.target.checked : e.target.value;
@@ -100,6 +196,11 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
+        const fromOrg = form.source === "git" && repoMode === "org";
+        if (fromOrg && !picked) {
+            setError("Pick a repo from the org, or switch to Paste a URL.");
+            return;
+        }
         setLoading(true);
 
         try {
@@ -143,7 +244,7 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
             };
 
             const payload = form.source === "git"
-                ? { ...common, repoUrl: form.repoUrl, branch: form.branch || "main" }
+                ? { ...common, repoUrl: fromOrg ? picked.cloneUrl : form.repoUrl, branch: form.branch || "main" }
                 : { ...common, localPath: form.localPath };
 
             const { data } = await api.post(endpoint, payload);
@@ -316,9 +417,28 @@ export default function CreateBotModal({ onClose, onCreated, defaultProjectType 
                     {/* ── Git Fields ────────────────────────────────────── */}
                     {isGit && (
                         <div style={SECTION}>
-                            <div>
-                                <label className="label">Git repository URL *</label>
-                                <input className="input" placeholder="https://github.com/user/repo.git" value={form.repoUrl} onChange={set("repoUrl")} required={isGit} />
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                <label className="label" style={{ marginBottom: 0 }}>Git repository *</label>
+                                {orgRepos?.configured !== false && (
+                                    <TabBar
+                                        value={repoMode}
+                                        onChange={setRepoMode}
+                                        options={[
+                                            { key: "org", label: orgRepos?.org ? `From ${orgRepos.org}` : "From the org", icon: "users" },
+                                            { key: "url", label: "Paste a URL", icon: "paperclip" },
+                                        ]}
+                                    />
+                                )}
+                                {repoMode === "org" ? (
+                                    <OrgRepoPicker data={orgRepos} picked={picked} onPick={pickRepo} onReload={loadOrgRepos} />
+                                ) : (
+                                    <>
+                                        <input className="input" placeholder="https://github.com/user/repo.git" value={form.repoUrl} onChange={set("repoUrl")} required={isGit} />
+                                        {orgRepos?.configured === false && (
+                                            <p style={HINT}>To pick repos from the customers' GitHub org here, set it up in Panel Settings → Integrations.</p>
+                                        )}
+                                    </>
+                                )}
                             </div>
                             <div className="grid-1-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                                 <div>

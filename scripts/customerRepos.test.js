@@ -7,7 +7,9 @@
  * Unarchive, Delete with the name typed back and never while a project uses the repo (even
  * through an old URL). "Update repo URL" keeps the URL's form and SSH host alias. The token is
  * checked before it is saved and never comes back. The daily sync keeps a repo's description
- * to the project's name (who the customer is only on a private repo). GitHub is a local fake.
+ * to the project's name (who the customer is only on a private repo). New project's "From the
+ * org" picker lists the org's repos to clone from — unused first, archived left out — with the
+ * repo's clone URL and default branch. GitHub is a local fake.
  * Run:  node scripts/customerRepos.test.js
  */
 
@@ -71,7 +73,7 @@ const READONLY = ["test", "token", "readonly"].join("-");
 let repoId = 100;
 const repos = new Map(); // id → repo
 const addRepo = (owner, name, extra = {}) => {
-    const r = { id: ++repoId, name, full_name: `${owner}/${name}`, owner: { login: owner }, private: true, archived: false, description: null, pushed_at: "2026-10-01T00:00:00Z", html_url: `https://github.com/${owner}/${name}`, ...extra };
+    const r = { id: ++repoId, name, full_name: `${owner}/${name}`, owner: { login: owner }, private: true, archived: false, description: null, pushed_at: "2026-10-01T00:00:00Z", html_url: `https://github.com/${owner}/${name}`, clone_url: `https://github.com/${owner}/${name}.git`, default_branch: "main", ...extra };
     repos.set(r.id, r);
     return r;
 };
@@ -126,7 +128,7 @@ const LOFI = addRepo(ORG, "lofi");
 const TICKET = addRepo(ORG, "ticket");
 moved.set("me/ticket", TICKET.id); // transferred from the owner's account
 const OLDSHOP = addRepo(ORG, "old-shop");
-const JUNK = addRepo(ORG, "junk", { private: false });
+const JUNK = addRepo(ORG, "junk", { private: false, default_branch: "master" });
 addRepo(ORG, "archived-thing", { archived: true });
 for (let i = 0; i < 101; i++) addRepo(ORG, `zz-filler-${String(i).padStart(3, "0")}`); // a second page
 addRepo("me", "personal");
@@ -209,6 +211,7 @@ const retireAndDrop = async (bot, reason = "deleted") => {
     console.log("settings");
     await check("not set up → the Repos page says so; an unknown org or a bad token is not saved", async () => {
         assert.deepStrictEqual((await call("GET", "/api/customer-projects/repos")).body, { configured: false, repos: [], notInOrg: [] });
+        assert.deepStrictEqual((await call("GET", "/api/customer-projects/repos/choices")).body, { configured: false, repos: [] }, "New project: pasting only");
         let res = await call("PUT", "/api/customer-projects/github-settings", { org: "nobody-here", token: GOOD });
         assert.strictEqual(res.status, 400);
         assert.match(res.body.error, /no organization "nobody-here"/);
@@ -267,6 +270,27 @@ const retireAndDrop = async (bot, reason = "deleted") => {
         assert.deepStrictEqual([missing.Ticket.state, missing.Ticket.movedTo], ["moved", `${ORG}/ticket`]);
         assert.strictEqual(missing["Still mine"].state, "unknown");
         assert.strictEqual(missing.Personal, undefined, "personal projects are not this page's business");
+    });
+    await check("New project → From the org: unused repos first (newest push first), archived left out, users by URL", async () => {
+        TICKET.pushed_at = "2026-11-01T00:00:00Z";
+        const before = calls.length;
+        const res = await call("GET", "/api/customer-projects/repos/choices");
+        assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+        assert.strictEqual(res.body.org, ORG);
+        const names = res.body.repos.map((r) => r.name);
+        assert.strictEqual(names.length, 4 + 101, "both pages read; the archived repo left out");
+        assert.ok(!names.includes("archived-thing") && !names.includes("personal"));
+        assert.strictEqual(names[0], "ticket", "unused + pushed last → first (its project still uses the old URL)");
+        assert.strictEqual(names[names.length - 1], "lofi", "in use → last");
+        const by = Object.fromEntries(res.body.repos.map((r) => [r.name, r]));
+        assert.deepStrictEqual(by.lofi.projects, [{ _id: lofiP._id, name: "Lofi" }]);
+        assert.deepStrictEqual(by["old-shop"].projects, [], "its project was retired");
+        assert.deepStrictEqual(
+            [by.junk.cloneUrl, by.junk.defaultBranch, by.junk.private, by.junk.fullName],
+            [`https://github.com/${ORG}/junk.git`, "master", false, `${ORG}/junk`],
+        );
+        assert.ok(!calls.slice(before).some((c) => c.startsWith("GET /repos/")), "no GitHub call per project");
+        assert.ok(!JSON.stringify(res.body).includes(GOOD));
     });
     await check("Update repo URL rewrites the moved project only, keeping its SSH alias", async () => {
         let res = await call("POST", `/api/customer-projects/${ticketP._id}/repo/update-url`);
