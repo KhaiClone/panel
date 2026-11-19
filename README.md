@@ -399,7 +399,10 @@ each step (the modal shows the same):
 
 **Which account.** The agent runs as the user who typed `sudo`: the repo goes in
 `~/panel`, projects in `~/bots` and `~/sites`, and the agent and Lavalink run in
-that user's PM2 (`pm2 ls` as that user), with a `pm2-<user>` boot service. The
+that user's PM2 (`pm2 ls` as that user), with a `pm2-<user>` boot service. That
+service gets `OOMPolicy=continue` (a drop-in, `pm2-<user>.service.d/oom-policy.conf`):
+with systemd's default, the kernel killing one process when memory runs out
+stops the whole service and every app on the node restarts. The
 agent runs ufw, wg, nginx and certbot through `sudo` with no one there to type a
 password, so the script adds `/etc/sudoers.d/bot-panel-agent-<user>` for exactly
 those commands. That list includes cp/mv/bash, so it is root-equivalent for that

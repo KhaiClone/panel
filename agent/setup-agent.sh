@@ -27,7 +27,8 @@
 #       panel's own commit when it says which
 #    4. Generates a random AGENT_API_KEY and writes agent/.env
 #    5. Firewall: SSH and HTTP(S) from anywhere, agent port ONLY from the panel IP
-#    6. Starts the agent under that user's PM2 and enables boot persistence
+#    6. Starts the agent under that user's PM2 and enables boot persistence,
+#       with OOMPolicy=continue so one OOM kill does not restart every app
 #    7. (one command only) Registers with the panel and prints what it set up
 #
 #  agent/uninstall-agent.sh undoes all of it; what it needs to know about the
@@ -271,6 +272,26 @@ if [ -f "/etc/systemd/system/pm2-$RUN_USER.service" ]; then
     echo "[setup] pm2-$RUN_USER.service already exists — kept as it is"
 else
     pm2 startup systemd -u "$RUN_USER" --hp "$RUN_HOME" || echo "[setup] WARNING: pm2 startup failed — the agent will not start on boot"
+fi
+# A unit made by `pm2 startup` has systemd's default OOMPolicy=stop: when the
+# kernel OOM-kills ANY process in it — usually spotify-tokener's Chrome, whose
+# children ask to be killed first — systemd stops the whole unit and Restart=
+# brings pm2 back, so the agent, Lavalink and every bot on the node restart,
+# again and again while memory stays short (VPS dio 2, 2026-10-24/25: 4× each
+# evening). With `continue` only the killed process goes and pm2 restarts that
+# one. A drop-in, so the unit pm2 wrote stays as it is — also for a unit that
+# was already there. The same file the live nodes got by hand on 2026-11-20.
+OOM_DROPIN="/etc/systemd/system/pm2-$RUN_USER.service.d/oom-policy.conf"
+if [ -f "/etc/systemd/system/pm2-$RUN_USER.service" ] && [ ! -f "$OOM_DROPIN" ]; then
+    if mkdir -p "$(dirname "$OOM_DROPIN")" && printf '%s\n' \
+        "# bot-panel agent (setup-agent.sh): an OOM kill of one process must not restart every app." \
+        "# Removed with the unit by agent/uninstall-agent.sh." \
+        "[Service]" \
+        "OOMPolicy=continue" > "$OOM_DROPIN" && systemctl daemon-reload; then
+        echo "[setup] pm2-$RUN_USER.service: OOMPolicy=continue ($OOM_DROPIN)"
+    else
+        echo "[setup] WARNING: could not set OOMPolicy=continue — one OOM kill will restart every app in pm2-$RUN_USER"
+    fi
 fi
 
 # 8. Register with the panel (one-command setup) ──────────────────────────────

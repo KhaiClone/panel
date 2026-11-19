@@ -13,7 +13,7 @@
 #    - panel-agent, lavalink and (when the agent started it) spotify-tokener
 #      from that user's PM2, and pm2-logrotate when
 #      the agent installed it; that user's PM2 itself and its boot service
-#      when nothing else is left in it
+#      (with the setup's OOMPolicy drop-in) when nothing else is left in it
 #    - wg0, if /etc/wireguard/wg0.conf was written by bot-panel
 #    - the UFW rules for the agent port and WireGuard (51820/udp), and every
 #      rule the panel added for another node ("bot-panel: panel access")
@@ -297,6 +297,15 @@ if command -v pm2 >/dev/null 2>&1; then
     if [ "$(as_user pm2 jlist 2>/dev/null)" = "[]" ]; then
         if [ -f "/etc/systemd/system/pm2-$TARGET_USER.service" ]; then
             pm2 unstartup systemd -u "$TARGET_USER" --hp "$H" >/dev/null 2>&1 && say "PM2: boot service pm2-$TARGET_USER removed"
+        fi
+        # setup-agent.sh's OOMPolicy drop-in, once its unit is gone — only ours
+        # (it starts with "# bot-panel"), and the folder only when that empties it.
+        DROPIN_DIR="/etc/systemd/system/pm2-$TARGET_USER.service.d"
+        if [ ! -f "/etc/systemd/system/pm2-$TARGET_USER.service" ] && grep -qs "^# bot-panel" "$DROPIN_DIR/oom-policy.conf"; then
+            rm -f "$DROPIN_DIR/oom-policy.conf"
+            rmdir "$DROPIN_DIR" 2>/dev/null || true
+            systemctl daemon-reload >/dev/null 2>&1 || true
+            say "PM2: OOMPolicy drop-in of pm2-$TARGET_USER removed"
         fi
         as_user pm2 kill >/dev/null 2>&1
         rm -rf "$H/.pm2" && say "PM2: nothing else ran for $TARGET_USER — removed $H/.pm2"
