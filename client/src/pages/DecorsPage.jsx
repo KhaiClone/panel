@@ -5,6 +5,7 @@ import { usePageAccess } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 import DecorPrices from "../components/DecorPrices";
 import DecorPreview from "../components/decor/DecorPreview";
+import DecorExportModal from "../components/decor/DecorExportModal";
 import { EmptyState, Icon, Modal, Notice, PageHeader, SearchInput } from "../components/ui";
 import { money } from "../utils/format";
 import "./DecorsPage.css";
@@ -444,6 +445,7 @@ export default function DecorsPage() {
     const [saving, setSaving] = useState(() => new Set());
     const [confirm, setConfirm] = useState(null);
     const [importing, setImporting] = useState(false);
+    const [exporting, setExporting] = useState(null); // a section: { key, cat, items }
     const [toast, setToast] = useState(null); // { ok, text }
 
     const notify = useCallback((ok, text) => {
@@ -701,6 +703,10 @@ export default function DecorsPage() {
                                             const n = items.filter((d) => sells(d, w)).length;
                                             return <span key={w.key} style={{ color: n === items.length ? "var(--text-dim)" : "var(--warning)" }}>· {w.short} {n}/{items.length}</span>;
                                         })}
+                                        <span style={{ flex: 1 }} />
+                                        <button type="button" className="btn-ghost btn-sm" onClick={() => setExporting({ key, cat, items })} title="A sharp picture of this theme, like the decor site — to post on Discord">
+                                            <Icon name="image" size={12} /> Export image
+                                        </button>
                                         {canEdit && <BulkSelect items={items} label="Bulk for this section…" onRun={runBulk} />}
                                     </div>
                                     <div className="dc-grid">{items.map(card)}</div>
@@ -728,6 +734,7 @@ export default function DecorsPage() {
                 />
             )}
             {importing && <ImportModal onClose={() => setImporting(false)} onImported={fetchDecors} />}
+            {exporting && <DecorExportModal section={exporting} saleOf={saleState} onClose={() => setExporting(null)} />}
             {confirm && (
                 <ConfirmModal
                     title={confirm.title}

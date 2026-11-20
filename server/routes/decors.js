@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const decorService = require("../services/decorService");
+const decorImageProxy = require("../services/decorImageProxy");
 
 // Mounted behind authMiddleware (see index.js). The data is shared data owned by
 // ArnTo-assistant and kept on the panel (services/decorService.js).
@@ -22,6 +23,28 @@ router.get("/categories", async (req, res, next) => {
     try {
         res.json(await decorService.listCategories());
     } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /api/decors/image?url=… — one decor picture from Discord's CDN, for the
+ * page's "Export image": the CDN sends no CORS header, and a canvas that draws a
+ * cross-origin picture cannot be saved (services/decorImageProxy.js).
+ */
+router.get("/image", async (req, res, next) => {
+    try {
+        const { type, body } = await decorImageProxy.fetchImage(req.query.url);
+        res.set({
+            "Content-Type": type,
+            "Cache-Control": "private, max-age=86400",
+            // Never a document: opened directly, it cannot run anything.
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        });
+        res.send(body);
+    } catch (err) {
+        // Answered here, not by errorHandler: a missing picture is not worth a panel-log line.
+        if (err.status) return res.status(err.status).json({ error: err.message });
         next(err);
     }
 });
