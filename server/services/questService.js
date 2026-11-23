@@ -193,10 +193,24 @@ async function _updateRec(accountId, patch) {
     );
     return rec;
 }
+/**
+ * A dead token is told to the buyer once (`tokenDeadToldAt`): a later "Check token"
+ * on the same dead token stays on the panel. startAccount clears the mark — the run
+ * only starts once the token resolved, so a token that dies after that is news again.
+ * True when arnto-auto was told this time.
+ */
 async function _setStatus(accountId, status, extra = {}, { notify = true } = {}) {
-    await _updateRec(accountId, { status, ...extra });
-    _publish(accountId, { type: "status", status, ...extra }, { webhook: notify });
+    const patch = { status, ...extra };
+    let tell = notify;
+    if (status === "token_dead" && notify) {
+        tell = !(await _getRec(accountId))?.tokenDeadToldAt;
+        const hook = webhooks.get(accountId);
+        if (tell && (hook?.url || hook?.botId)) patch.tokenDeadToldAt = Date.now();
+    }
+    await _updateRec(accountId, patch);
+    _publish(accountId, { type: "status", status, ...extra }, { webhook: tell });
     if (status === "done") await _closeOrders(await _getRec(accountId), "completed");
+    return tell;
 }
 
 // ── The shop's books (autoShopOrders) ────────────────────────────────────────────
@@ -384,6 +398,7 @@ async function startAccount({
         status: "running",
         completedCount: existing?.completedCount ?? 0,
         error: null,
+        tokenDeadToldAt: null, // the token resolved: a death from here on is told again
         addedAt: existing?.addedAt ?? Date.now(),
         updatedAt: Date.now(),
         // Each new run restarts the one-week clock; nothing survives past it.
@@ -478,7 +493,8 @@ async function tokenVerdict(token) {
  * Check a single-quest account's token. A dead token is recorded the way the run loop
  * records one — the loop stops, status token_dead — and `notify` decides whether
  * arnto-auto hears it (it DMs the buyer to send a new token and pauses the order's
- * feed message). Off, only the panel knows. A finished run is only reported: its order
+ * feed message) — not when the buyer already heard about this dead token (_setStatus).
+ * Off, only the panel knows. A finished run is only reported: its order
  * is done and nothing would use the token again. A token that works changes nothing.
  * Returns { accountId, username, plan, state, reason, status, notified, note }.
  */
@@ -517,13 +533,15 @@ async function checkToken(accountId, { notify = false } = {}) {
     // A running loop would hit the same wall on its next request; stop it now (it
     // exits without writing, like a Stop) and return its lease.
     _stopLoop(accountId);
-    await _setStatus(accountId, "token_dead", { error: `Token check: ${verdict.reason}` }, { notify: tell });
+    const told = await _setStatus(accountId, "token_dead", { error: `Token check: ${verdict.reason}` }, { notify: tell });
     out.status = "token_dead";
-    out.notified = tell;
+    out.notified = tell && told;
     if (notify && !tell) {
         out.note = verdict.unreadable
             ? "The panel cannot read its own copy of the token — not the buyer's to fix, so they are not told."
             : "No buyer is linked to this account — nobody to tell.";
+    } else if (tell && !told) {
+        out.note = "The buyer was already told about this dead token — not told again.";
     }
     return out;
 }

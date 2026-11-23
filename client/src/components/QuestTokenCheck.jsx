@@ -99,8 +99,9 @@ export default function QuestTokenCheck({ accounts, onClose, onChanged }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Tell the buyer when a token is dead</p>
                     <p style={{ margin: "2px 0 0", fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                        On: ArnTo-Auto DMs the buyer to send a new token. Off: only the panel records it. Finished
-                        single orders and expired plans are never told.
+                        On: ArnTo-Auto DMs the buyer to send a new token — once per dead token, so a buyer already
+                        told is not told again. Off: only the panel records it. Finished single orders and expired
+                        plans are never told.
                     </p>
                 </div>
                 <Toggle checked={notify} disabled={running} onChange={setNotify} title="Tell the buyer when a token is dead" />

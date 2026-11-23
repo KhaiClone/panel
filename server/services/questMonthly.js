@@ -17,6 +17,7 @@
  * LAST ERROR — key `quest_monthly_outcome`: { [accountId]: { status, error, at } } for
  * the accounts whose last pass failed (status "token_dead" | "error"). /quests shows
  * it until a pass gets through or the plan is activated again with a working token.
+ * A dead token is told to the buyer once (key `quest_monthly_told`, see _told).
  */
 
 const crypto = require("crypto");
@@ -106,6 +107,38 @@ function _setOutcome(accountId, outcome) {
     return _outcomeChain;
 }
 
+// ── Dead token: the buyer is told once ───────────────────────────────────────────
+// A dead token used to DM the buyer on every pass (twice a week) until they sent a
+// new one. Key `quest_monthly_told`: { [accountId]: at } — the buyer heard about the
+// dead token; later passes, scans and checks keep it on /quests only. Kept apart from
+// the last error: a pass whose first call works clears that error, but a token that
+// then dies mid-pass (a 403 on the quest calls) would be told again every pass. The
+// mark goes only once the token is shown to work — a new token (activate), a pass
+// that gets through, a check that passes — so a token that dies after that is news.
+const TOLD_KEY = "quest_monthly_told";
+
+/**
+ * `mark` true: resolves true when the buyer had not been told yet (tell them now).
+ * `mark` false: forget it. Same one-write-at-a-time chain as the last error. A mark
+ * that cannot be saved still tells: hearing twice beats never hearing.
+ */
+function _told(accountId, mark) {
+    let first = false;
+    _outcomeChain = _outcomeChain
+        .then(async () => {
+            const map = (await db.get(TOLD_KEY)) || {};
+            if (mark) {
+                if (map[accountId]) return;
+                first = true;
+                map[accountId] = Date.now();
+            } else if (map[accountId]) delete map[accountId];
+            else return;
+            await db.set(TOLD_KEY, map);
+        })
+        .catch((e) => console.warn(`[Monthly] token told ${accountId}: ${e.message}`));
+    return _outcomeChain.then(() => first);
+}
+
 function _webhook(rec, event) {
     if (!rec.webhookUrl && !rec.webhookBotId) return;
     // Address and x-api-key follow the project that registered it (callbackService).
@@ -175,6 +208,7 @@ async function activate({ token, months = 1, ref, webhookUrl, webhookBotId = nul
     else await db.create(MODEL, rec);
     // The token just resolved, so an old token error no longer applies.
     await _setOutcome(accountId, null);
+    await _told(accountId, false);
     if (order || (untilMs === null && m > 0)) {
         const { autoQuest } = await pricingStore.getPricing();
         await shopOrders.open({
@@ -216,6 +250,7 @@ async function list() {
 async function remove(accountId) {
     await db.findOneAndDelete(MODEL, { accountId });
     await _setOutcome(accountId, null);
+    await _told(accountId, false);
     return true;
 }
 
@@ -233,6 +268,7 @@ async function purgeExpired() {
         try {
             await db.findOneAndDelete(MODEL, { accountId: rec.accountId });
             await _setOutcome(rec.accountId, null);
+            await _told(rec.accountId, false);
             questService.clearLive(rec.accountId);
             questService.emitExternalEvent(rec.accountId, { type: "removed" });
             _webhook(rec, { type: "removed", reason: "monthly_expired" });
@@ -276,21 +312,26 @@ async function _gap(sec, abort) {
 
 /**
  * Keep an account's failure on /quests: stored, shown live, and a dead token is told
- * to arnto-auto (`notify` false when it is the panel's fault, not the buyer's).
+ * to arnto-auto (`notify` false when it is the panel's fault, not the buyer's) — once
+ * per dead token (_told). True when arnto-auto was told this time.
  */
 async function _fail(rec, failure, { notify = true } = {}) {
     await _setOutcome(rec.accountId, failure);
     questService.emitExternalEvent(rec.accountId, { type: "status", ...failure });
-    if (notify && failure.status === "token_dead") _webhook(rec, { type: "status", status: "token_dead" });
+    const canTell = notify && failure.status === "token_dead" && !!(rec.webhookUrl || rec.webhookBotId);
+    const tell = canTell && (await _told(rec.accountId, true));
+    if (tell) _webhook(rec, { type: "status", status: "token_dead" });
+    return tell;
 }
 
 /**
  * The "Check token" action on /quests for a subscriber — questService.tokenVerdict
  * (one GET /users/@me, no lease). A dead token on an active plan is kept like a pass
  * keeps one (_fail → the badge on /quests) and `notify` decides whether arnto-auto is
- * told (it DMs the buyer to send a new token). An expired plan is only reported. A
- * token that works clears an earlier token error, as a pass that gets through does;
- * any other stored error stays. Same result shape as questService.checkToken.
+ * told (it DMs the buyer to send a new token) — not when the buyer already heard about
+ * this dead token. An expired plan is only reported. A token that works clears an
+ * earlier token error, as a pass that gets through does; any other stored error stays.
+ * Same result shape as questService.checkToken.
  */
 async function checkToken(accountId, { notify = false } = {}) {
     const rec = await db.findOne(MODEL, { accountId });
@@ -318,6 +359,7 @@ async function checkToken(accountId, { notify = false } = {}) {
             if (!busy) out.status = active ? "monthly" : "expired";
             out.note = "The token works again — the earlier token error is cleared.";
         }
+        await _told(accountId, false);
         return out;
     }
     if (verdict.state === "unknown") {
@@ -331,13 +373,15 @@ async function checkToken(accountId, { notify = false } = {}) {
 
     const canTell = !!((rec.webhookUrl || rec.webhookBotId) && rec.ref);
     const tell = notify && canTell && !verdict.unreadable;
-    await _fail(rec, { status: "token_dead", error: `Token check: ${verdict.reason}` }, { notify: tell });
+    const told = await _fail(rec, { status: "token_dead", error: `Token check: ${verdict.reason}` }, { notify: tell });
     if (!busy) out.status = "token_dead";
-    out.notified = tell;
+    out.notified = told;
     if (notify && !tell) {
         out.note = verdict.unreadable
             ? "The panel cannot read its own copy of the token — not the buyer's to fix, so they are not told."
             : "No buyer is linked to this plan — nobody to tell.";
+    } else if (tell && !told) {
+        out.note = "The buyer was already told about this dead token — not told again.";
     }
     return out;
 }
@@ -486,6 +530,8 @@ async function _runAccount(rec, abort, { canRetry = false, runId = null } = {}) 
         // this account's pass is over, finished or stopped.
         if (failure) await _fail(rec, failure);
         else if (started) questService.emitExternalEvent(rec.accountId, { type: "status", status: "monthly", error: null });
+        // The pass got through: the token works, so a death after this is told again.
+        if (ok) await _told(rec.accountId, false);
         // The pass is over for this account. Not when it will run again (retry: same
         // runId), was stopped (the next pass starts a new message), or the token died
         // (token_dead says so already).
