@@ -57,6 +57,8 @@ const accounts = {
 const invalid = () =>
     Object.assign(new Error("The token is invalid or dead"), { status: 400, invalidToken: true, vi: "Token không hợp lệ hoặc đã chết" });
 const down = () => Object.assign(new Error("Discord returned HTTP 500"), { status: 502, vi: "Discord trả HTTP 500" });
+// How many times the badge progress / profile was read — "Check token" must not read either.
+const reads = { self: 0, house: 0 };
 stub("services/badgeReader", {
     checkNitro: async (token) => {
         if (token === "down") throw down();
@@ -65,6 +67,7 @@ stub("services/badgeReader", {
         return { userId: a.userId, username: a.username, hasNitro: a.hasNitro, premiumType: a.hasNitro ? 2 : 0, locale: "vi" };
     },
     readSelf: async (token, userId) => {
+        reads.self++;
         const a = accounts[token];
         if (!a.values) throw Object.assign(new Error("Reading the badges failed (HTTP 500)"), { status: 502, vi: "Đọc badge thất bại (HTTP 500)" });
         const badges = {};
@@ -73,7 +76,10 @@ stub("services/badgeReader", {
         }
         return { userId, source: a.empty ? "empty" : "self", badges };
     },
-    readHypeSquadHouse: async (token) => accounts[token].house,
+    readHypeSquadHouse: async (token) => {
+        reads.house++;
+        return accounts[token].house;
+    },
     readPlayedApplicationIds: async () => [],
 });
 
@@ -165,13 +171,43 @@ const test = async (name, fn) => {
 
     await test("staff cannot check or create (owner only)", async () => {
         as = { kind: "staff", staff: { userId: "9", perms: { badges: "edit" } } };
-        assert.strictEqual((await call("POST", "/manual/check", { token: "nitro" })).status, 403);
+        assert.strictEqual((await call("POST", "/manual/check-token", { token: "nitro" })).status, 403);
+        assert.strictEqual((await call("POST", "/manual/check-badges", { token: "nitro" })).status, 403);
         assert.strictEqual((await call("POST", "/manual", { token: "nitro", badgeKey: "game_time", tierKey: "serious" })).status, 403);
         as = { kind: "owner", username: "admin" };
     });
 
-    await test("check: catalog without unsupported badges, overshoot, no Nitro needed, why progress is unreadable", async () => {
-        const { status, body } = await call("POST", "/manual/check", { token: "nonitro" });
+    await test("both checks ask for a token first", async () => {
+        for (const p of ["/manual/check-token", "/manual/check-badges"]) {
+            const { status, body } = await call("POST", p, { token: "   " });
+            assert.strictEqual(status, 400);
+            assert.strictEqual(body.error, "Paste the account's token");
+        }
+    });
+
+    await test("Check token: only whether the token works — no badge or profile read", async () => {
+        const before = { ...reads };
+        const { status, body } = await call("POST", "/manual/check-token", { token: "  nonitro  " });
+        assert.strictEqual(status, 200);
+        assert.deepStrictEqual(body, { accountId: "1", username: "free", hasNitro: false, premiumType: 0 });
+        // An account whose progress Discord will not show still has a working token.
+        const closed = await call("POST", "/manual/check-token", { token: "closed" });
+        assert.strictEqual(closed.status, 200);
+        assert.strictEqual(closed.body.username, "closed");
+        assert.strictEqual(closed.body.values, undefined);
+        assert.deepStrictEqual(reads, before, "Check token read the badges");
+        const dead = await call("POST", "/manual/check-token", { token: "nope" });
+        assert.strictEqual(dead.status, 400);
+        assert.strictEqual(dead.body.error, "The token is invalid or dead");
+        const broken = await call("POST", "/manual/check-token", { token: "down" });
+        assert.strictEqual(broken.status, 502);
+        assert.strictEqual(broken.body.error, "Discord returned HTTP 500");
+    });
+
+    await test("Check badges: catalog without unsupported badges, overshoot, no Nitro needed, why progress is unreadable", async () => {
+        const before = { ...reads };
+        const { status, body } = await call("POST", "/manual/check-badges", { token: "nonitro" });
+        assert.ok(reads.self > before.self && reads.house > before.house, "Check badges reads progress and house");
         assert.strictEqual(status, 200);
         assert.deepStrictEqual(body.catalog.map((b) => b.key), ["game_time", "game_variety", "hypesquad"]);
         assert.strictEqual(body.overshoot, 1.1);
@@ -179,16 +215,16 @@ const test = async (name, fn) => {
         assert.strictEqual(body.tieredAvailable, true);
         assert.strictEqual(body.tieredCode, null);
         assert.strictEqual(body.values.game_time.value, 3);
-        const closed = await call("POST", "/manual/check", { token: "closed" });
+        const closed = await call("POST", "/manual/check-badges", { token: "closed" });
         assert.strictEqual(closed.body.tieredAvailable, false);
         assert.strictEqual(closed.body.tieredCode, "unreadable");
-        const ok = await call("POST", "/manual/check", { token: "nitro" });
+        const ok = await call("POST", "/manual/check-badges", { token: "nitro" });
         assert.strictEqual(ok.body.values.game_time.value, 10);
         assert.strictEqual(ok.body.tieredCode, null);
     });
 
     await test("a dead token says so in English", async () => {
-        const { status, body } = await call("POST", "/manual/check", { token: "nope" });
+        const { status, body } = await call("POST", "/manual/check-badges", { token: "nope" });
         assert.strictEqual(status, 400);
         assert.strictEqual(body.error, "The token is invalid or dead");
     });
@@ -368,7 +404,7 @@ const test = async (name, fn) => {
     });
 
     await test("the same failures read English on the panel", async () => {
-        const broken = await call("POST", "/manual/check", { token: "down" });
+        const broken = await call("POST", "/manual/check-badges", { token: "down" });
         assert.strictEqual(broken.status, 502);
         assert.strictEqual(broken.body.error, "Discord returned HTTP 500");
     });

@@ -38,18 +38,25 @@ router.get("/", async (req, res, next) => {
     }
 });
 
-/** POST /api/badges/manual/check { token } — tình trạng tài khoản + catalog cho form thêm tay */
-router.post("/manual/check", ownerOnly, async (req, res, next) => {
+// Hai nút của form thêm tay: check-token chỉ hỏi token còn sống không (không đọc
+// badge), check-badges đọc tiến độ để chọn mốc.
+const manualCheck = (fn) => async (req, res, next) => {
     try {
         if (!String(req.body?.token ?? "").trim()) {
             return res.status(400).json({ error: "Paste the account's token" });
         }
-        res.json(await badgeService.checkManual({ token: req.body.token }));
+        res.json(await fn({ token: req.body.token }));
     } catch (err) {
         if (err.status) return fail(res, err);
         next(err);
     }
-});
+};
+
+/** POST /api/badges/manual/check-token { token } — token còn sống không + tài khoản nào */
+router.post("/manual/check-token", ownerOnly, manualCheck(badgeService.checkManualToken));
+
+/** POST /api/badges/manual/check-badges { token } — tiến độ badge + catalog cho form thêm tay */
+router.post("/manual/check-badges", ownerOnly, manualCheck(badgeService.checkManualBadges));
 
 /** POST /api/badges/manual { token, badgeKey, tierKey, currentValue?, note? } — đơn miễn phí */
 router.post("/manual", ownerOnly, async (req, res, next) => {

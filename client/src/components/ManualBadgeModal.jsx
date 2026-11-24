@@ -8,6 +8,10 @@ import { fmtNum } from "../utils/format";
 // paid one: read the progress, plan, send. An account whose progress Discord
 // will not answer with (an HTTP error…) can still be sent to: the owner types its
 // current value, and a wrong number means sending too much or too little.
+//
+// Two separate checks (user, 2026-11-24): "Check token" only asks Discord whether
+// the token works (POST /badges/manual/check-token, no badge read); "Check badges"
+// reads the progress (POST /badges/manual/check-badges) and opens the order form.
 
 const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
 const HOUSES = { 1: "Bravery", 2: "Brilliance", 3: "Balance" };
@@ -58,8 +62,9 @@ function AccountSummary({ account }) {
 
 export default function ManualBadgeModal({ onClose, onCreated }) {
     const [token, setToken] = useState("");
-    const [account, setAccount] = useState(null);
-    const [checking, setChecking] = useState(false);
+    const [tokenInfo, setTokenInfo] = useState(null); // answer of "Check token"
+    const [account, setAccount] = useState(null); // answer of "Check badges"
+    const [checking, setChecking] = useState(null); // "token" | "badges" | null
     const [badgeKey, setBadgeKey] = useState("");
     const [tierKey, setTierKey] = useState("");
     const [currentValue, setCurrentValue] = useState("");
@@ -103,21 +108,26 @@ export default function ManualBadgeModal({ onClose, onCreated }) {
         setTierKey(first?.key || "");
     };
 
-    const check = async (e) => {
-        e?.preventDefault();
-        if (!token.trim()) return;
-        setChecking(true);
+    const check = async (what) => {
+        if (!token.trim() || checking) return;
+        setChecking(what);
         setError("");
+        setTokenInfo(null);
         setAccount(null);
         setBadgeKey("");
         setTierKey("");
         try {
-            const { data } = await api.post("/badges/manual/check", { token: token.trim() }, { timeout: 60_000 });
-            setAccount(data);
+            if (what === "token") {
+                const { data } = await api.post("/badges/manual/check-token", { token: token.trim() }, { timeout: 30_000 });
+                setTokenInfo(data);
+            } else {
+                const { data } = await api.post("/badges/manual/check-badges", { token: token.trim() }, { timeout: 60_000 });
+                setAccount(data);
+            }
         } catch (err) {
-            setError(errMsg(err, "Could not check the token"));
+            setError(errMsg(err, what === "token" ? "Could not check the token" : "Could not check the badges"));
         } finally {
-            setChecking(false);
+            setChecking(null);
         }
     };
 
@@ -143,6 +153,7 @@ export default function ManualBadgeModal({ onClose, onCreated }) {
 
     const again = () => {
         setToken("");
+        setTokenInfo(null);
         setAccount(null);
         setBadgeKey("");
         setTierKey("");
@@ -180,29 +191,57 @@ export default function ManualBadgeModal({ onClose, onCreated }) {
                     A free order, outside ArnTo-Auto: no payment and no message to anyone. It runs like a paid order — any tier, even ones not on sale.
                 </p>
 
-                {/* Not a <Field>: the Check button must not sit inside a <label>. */}
-                <form onSubmit={check} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {/* Not a <Field>: the check buttons must not sit inside a <label>. Enter = Check token. */}
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        check("token");
+                    }}
+                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                >
                     <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-muted)" }}>Account token</span>
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <input
                             className="input mono"
                             type="password"
                             autoComplete="off"
                             autoFocus
                             aria-label="Account token"
-                            style={{ flex: 1, minWidth: 0 }}
+                            style={{ flex: "1 1 200px", minWidth: 0 }}
                             value={token}
                             onChange={(e) => {
                                 setToken(e.target.value);
+                                setTokenInfo(null);
                                 setAccount(null);
                             }}
                         />
-                        <button type="submit" className="btn-ghost" disabled={checking || !token.trim()}>
-                            {checking ? "Checking…" : "Check"}
+                        <button type="submit" className="btn-ghost" disabled={Boolean(checking) || !token.trim()}>
+                            {checking === "token" ? "Checking…" : "Check token"}
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-ghost"
+                            disabled={Boolean(checking) || !token.trim()}
+                            onClick={() => check("badges")}
+                        >
+                            {checking === "badges" ? "Reading…" : "Check badges"}
                         </button>
                     </div>
-                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>Stored encrypted with the order, like a customer's.</span>
+                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                        Check token only asks Discord whether the token works. Check badges reads the account&apos;s progress to pick a tier. The
+                        token is stored encrypted with the order, like a customer&apos;s.
+                    </span>
                 </form>
+
+                {tokenInfo && !account && (
+                    <Notice tone="success">
+                        The token works — <b>{tokenInfo.username}</b>{" "}
+                        <span className="mono" style={{ fontSize: 11 }}>
+                            ({tokenInfo.accountId})
+                        </span>{" "}
+                        · {tokenInfo.hasNitro ? "Nitro" : "no Nitro"}. Check badges to read its progress and pick a tier.
+                    </Notice>
+                )}
 
                 {account && (
                     <form onSubmit={create} style={{ display: "flex", flexDirection: "column", gap: 14 }}>

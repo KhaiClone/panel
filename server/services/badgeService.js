@@ -439,8 +439,18 @@ function _manualCatalog() {
         }));
 }
 
-/** Tình trạng tài khoản cho form thêm tay — như check(), kèm catalog và overshoot. */
-async function checkManual({ token }) {
+// Form thêm tay có hai nút riêng (người dùng, 2026-11-24): "Check token" chỉ hỏi
+// token còn sống không — một lời gọi /users/@me, không đụng tới badge; "Check
+// badges" mới đọc tiến độ + nhà HypeSquad để chọn mốc.
+
+/** Nút "Check token": token còn sống không + tài khoản nào. Không đọc badge. */
+async function checkManualToken({ token }) {
+    const me = await badgeReader.checkNitro(String(token).trim());
+    return { accountId: me.userId, username: me.username, hasNitro: me.hasNitro, premiumType: me.premiumType };
+}
+
+/** Nút "Check badges": tình trạng tài khoản cho form thêm tay — như check(), kèm catalog và overshoot. */
+async function checkManualBadges({ token }) {
     const [account, pricing] = await Promise.all([
         check({ token: String(token).trim() }),
         pricingStore.getPricing(),
@@ -1247,7 +1257,8 @@ module.exports = {
     check,
     quote,
     createOrder,
-    checkManual,
+    checkManualToken,
+    checkManualBadges,
     createManualOrder,
     processOrder,
     resolveManual,
