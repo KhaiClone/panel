@@ -183,6 +183,15 @@ const call = (port, { method = "GET", path: p = "/", headers = {}, body } = {}) 
         assert.ok(out.includes("return 302 https://panel.example.com$request_uri;"));
     });
 
+    await test("the proxied panel takes uploads past nginx's 1 MB default (Messages / Webhooks files)", () => {
+        for (const certs of [new Set(), new Set(["panel.example.com"])]) {
+            const out = buildPanelSites(sites, { certs, options: true, dhparam: true });
+            // once per proxied server block: port 80 without a certificate, 443 with one
+            assert.strictEqual((out.match(/client_max_body_size 30m;/g) || []).length, 1);
+            assert.ok(/location \/ \{\s+client_max_body_size 30m;\s+proxy_pass http:\/\/127\.0\.0\.1:1975;/.test(out));
+        }
+    });
+
     await test("with a certificate → 80 redirects to https inside a location, 443 serves it", () => {
         const out = buildPanelSites(sites, { certs: new Set(["panel.example.com"]), options: true, dhparam: false });
         assert.strictEqual((out.match(/listen 443 ssl;/g) || []).length, 1);

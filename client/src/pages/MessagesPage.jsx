@@ -31,7 +31,11 @@ const STORE = "messages.compose.v1";
 const SLOW = { timeout: 45_000 }; // the bus answers within 30 s, or the server says so
 const UPLOAD = { timeout: 120_000 };
 const MAX_BYTES = 25 * 1024 * 1024; // uploaded files together (services/botMessages.js)
-const errMsg = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
+// A 413 with no `error` is nginx in front of the panel refusing the body (it held
+// everything over 1 MB until 2026-11-24, agent services/nginx.js PANEL_BODY_MAX) —
+// axios alone only says "Request failed with status code 413".
+const TOO_BIG = "The panel's web server refused the upload as too big (HTTP 413) — send smaller files.";
+const errMsg = (err, fallback) => err?.response?.data?.error || (err?.response?.status === 413 ? TOO_BIG : null) || err?.message || fallback;
 const ago = (ts) => {
     const min = Math.max(0, Math.round((Date.now() - ts) / 60_000));
     if (min < 1) return "just now";

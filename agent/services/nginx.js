@@ -326,13 +326,20 @@ const rootFileExists = async (file) => {
 
 const hasCert = (domain) => rootFileExists(`${LE_LIVE}/${domain}/fullchain.pem`);
 
+// nginx's own default is 1 MB: until 2026-11-24 every Messages / Webhooks send
+// with a file over that died here with a bare HTML 413 before reaching the panel,
+// which takes up to 25 MB of files per message (botMessages / webhookMessages
+// FILES_BYTES). 30 MB = those files + the multipart framing + the JSON payload.
+const PANEL_BODY_MAX = "30m";
+
 /**
  * Render panel-self.conf. sites: [{ domain, mode: "proxy", port } | { domain, mode: "redirect", to }]
  * ctx: { certs: Set<domain>, options: bool, dhparam: bool } — what exists on disk.
  * Pure, so it is tested without nginx.
  */
 const buildPanelSites = (sites, ctx) => {
-    const proxy = (port) => `        proxy_pass http://127.0.0.1:${port};
+    const proxy = (port) => `        client_max_body_size ${PANEL_BODY_MAX};
+        proxy_pass http://127.0.0.1:${port};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
