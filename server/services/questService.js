@@ -546,6 +546,66 @@ async function checkToken(accountId, { notify = false } = {}) {
     return out;
 }
 
+// ── Update token (the "Update token" action on /quests) ──────────────────────────
+/**
+ * Resolve a replacement token the admin pasted for a stored account. It must log into
+ * that same Discord account: a token of another account would run that account's
+ * quests on this one's order (and put its name in the buyer's feed). One GET
+ * /users/@me through the token's usual egress, no lease. Throws 400 (another
+ * account), 401 (Discord refused it) or 502 (no answer).
+ */
+async function resolveReplacement(accountId, token) {
+    const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
+    if (!resolved.ok) throw _httpError(resolved.reason, resolved.invalidToken ? 401 : 502);
+    if (String(resolved.accountId) !== String(accountId)) {
+        throw _httpError(
+            `This token logs into another account — ${resolved.username} (${resolved.accountId}), not ${accountId}.`,
+            400,
+        );
+    }
+    return resolved;
+}
+
+/**
+ * Put a new token on a single order (`resolved` from resolveReplacement). The token is
+ * stored first, so it is kept even when the run cannot start right now. A run that is
+ * going (or waits for the resume) restarts on it — left alone, it would hit the old
+ * token's death and ask the buyer for a token the admin already gave — and one the dead
+ * token stopped runs again: the same order going on, as when the buyer sends a fresh
+ * token through ArnTo-Auto (a resume: no new shop order). Stopped by hand, finished or
+ * failed for another reason: only the token changes, Run again uses it.
+ * Null when this account has no single order. Returns { plan, status, restarted, note }.
+ */
+async function replaceToken(accountId, token, resolved) {
+    const rec = await _getRec(accountId);
+    if (!rec || _isExpired(rec)) return null;
+    // The buyer heard about the old token; a death of this one is news again.
+    await _updateRec(accountId, { ..._encrypt(token), username: resolved.username, tokenDeadToldAt: null });
+    const hook = webhooks.get(accountId);
+    if (hook) hook.username = resolved.username;
+
+    const out = { plan: "single", status: _publicRec(rec).status, restarted: false, note: null };
+    if (rec.status !== "running" && rec.status !== "token_dead") {
+        out.note = rec.status === "done" ? "The run had already finished — the token is kept for Run again." : "Run again starts it on the new token.";
+        return out;
+    }
+    try {
+        const acc = await startAccount({ token, mode: rec.mode, selectedQuestIds: rec.selectedQuestIds ?? [], resume: true });
+        out.status = acc.status;
+        out.restarted = true;
+        out.note =
+            acc.status === "paused"
+                ? "Auto Quest is paused — the run goes on with the new token on the resume."
+                : rec.status === "token_dead"
+                  ? "The run goes on with the new token."
+                  : "The run restarted on the new token.";
+    } catch (err) {
+        // Discord answered a moment ago, so this is the route or Discord flaking.
+        out.note = `The token is saved, but the run did not start: ${err.message} — use Run again.`;
+    }
+    return out;
+}
+
 // ── Retention sweep ──────────────────────────────────────────────────────────────
 /**
  * Erase every single-quest account whose week is up: stops its run, deletes the DB
@@ -838,6 +898,8 @@ module.exports = {
     removeAccount,
     checkToken,
     tokenVerdict,
+    resolveReplacement,
+    replaceToken,
     restore,
     suspendAll,
     runningCount,

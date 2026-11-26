@@ -241,6 +241,36 @@ router.post("/:accountId/check-token", async (req, res, next) => {
     }
 });
 
+/**
+ * POST /api/quests/:accountId/token { token } — replace the stored token by hand (the
+ * buyer sent a new one to staff, or the admin logged in again). The token must log
+ * into this same account. It goes on every record of the account — its single order
+ * AND its monthly plan: one Discord account, one working token, and the account page
+ * only shows one of the two. A single order the dead token stopped runs again
+ * (questService.replaceToken); a plan uses it from its next pass. Nobody is messaged.
+ * Answers { accountId, username, updated: [{ plan, status, restarted, note }] }.
+ */
+router.post("/:accountId/token", async (req, res, next) => {
+    try {
+        const { accountId } = req.params;
+        const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+        if (!token) return res.status(400).json({ error: "Missing token." });
+        const hasSingle = !!(await questService.getAccount(accountId));
+        const hasMonthly = (await questMonthly.list()).some((m) => m.accountId === accountId);
+        if (!hasSingle && !hasMonthly) return res.status(404).json({ error: "Account not found." });
+
+        const resolved = await questService.resolveReplacement(accountId, token);
+        const updated = [
+            await questService.replaceToken(accountId, token, resolved),
+            await questMonthly.replaceToken(accountId, token, resolved),
+        ].filter(Boolean);
+        res.json({ accountId, username: resolved.username, updated });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
+        next(err);
+    }
+});
+
 /** DELETE /api/quests/:accountId — stop + delete the account (per-quest AND/OR monthly) */
 router.delete("/:accountId", async (req, res, next) => {
     try {

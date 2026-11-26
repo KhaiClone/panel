@@ -386,6 +386,41 @@ async function checkToken(accountId, { notify = false } = {}) {
     return out;
 }
 
+/**
+ * The "Update token" action on /quests for a subscriber (`resolved` from
+ * questService.resolveReplacement — the token logs into this account). What the buyer
+ * re-entering a token through ArnTo-Auto does (activate with no months), without the
+ * end date or the shop's books moving. A token error the plan was showing is cleared,
+ * the buyer counts as not told; any other stored error stays, as after a check that
+ * passes. Nothing runs now: the next pass (or Run now) uses it. Null when this
+ * account has no plan. Same result shape as questService.replaceToken.
+ */
+async function replaceToken(accountId, token, resolved) {
+    const rec = await db.findOne(MODEL, { accountId });
+    if (!rec || _isPurgeable(rec)) return null;
+    await db.findOneAndUpdate(MODEL, { accountId }, { ..._encrypt(token), username: resolved.username, updatedAt: Date.now() });
+    await _outcomeChain;
+    let last = ((await db.get(OUTCOME_KEY)) || {})[accountId] ?? null;
+    const busy = isRunning(accountId);
+    const active = _isActive(rec);
+    if (last?.status === "token_dead") {
+        await _setOutcome(accountId, null);
+        last = null;
+        if (!busy) questService.emitExternalEvent(accountId, { type: "status", status: active ? "monthly" : "expired", error: null });
+    }
+    await _told(accountId, false);
+    return {
+        plan: "monthly",
+        status: busy ? "running" : last && active ? last.status : active ? "monthly" : "expired",
+        restarted: false,
+        note: busy
+            ? "A pass is working on this account right now with the old token — the next pass uses the new one."
+            : active
+              ? "The next pass uses it — Run now runs it straight away."
+              : "The plan has expired — the token is kept in case it is renewed.",
+    };
+}
+
 // Seconds before an account whose egress route died runs again (end of the pass),
 // so a rotating proxy has a moment to come back on its fresh IP.
 const EGRESS_RETRY_DELAY_SEC = 60;
@@ -546,6 +581,12 @@ async function _runAccount(rec, abort, { canRetry = false, runId = null } = {}) 
  * One pass over the active subscribers (or just `accountIds`), `concurrency` accounts
  * at a time. `progress` is filled in as it goes, for the status on /quests.
  */
+// A pass or scan works from the list it took at its start and can take hours: an
+// account is read again at its turn, so a token replaced meanwhile (Update token on
+// /quests, or the buyer through ArnTo-Auto) is the one it runs on. Removed meanwhile:
+// the listed copy, as before.
+const _fresh = async (rec) => (await db.findOne(MODEL, { accountId: rec.accountId })) || rec;
+
 async function runBatch(abort = { stopped: false }, { accountIds = null, progress = {} } = {}) {
     const settings = await questSettings.get();
     let accts = await listActive();
@@ -560,9 +601,9 @@ async function runBatch(abort = { stopped: false }, { accountIds = null, progres
     const worker = async () => {
         while (!abort.stopped && next < queue.length) {
             const item = queue[next++];
-            const { rec } = item;
             if (item.notBefore > Date.now()) await _gap((item.notBefore - Date.now()) / 1000, abort);
             if (abort.stopped) break;
+            const rec = await _fresh(item.rec);
             const r = await _runAccount(rec, abort, { canRetry: !item.retried, runId });
             progress.completed += r.completed;
             if (r.retry) {
@@ -598,8 +639,9 @@ async function runEnrollScan(abort = { stopped: false }, { progress = {} } = {})
         await _fail(rec, failure, { notify: false });
         progress.failed.push({ accountId: rec.accountId, username: rec.username, ...failure });
     };
-    for (const rec of accts) {
+    for (const listed of accts) {
         if (abort.stopped) break;
+        const rec = await _fresh(listed);
         const token = _decrypt(rec);
         progress.done++;
         if (!token) {
@@ -891,6 +933,7 @@ module.exports = {
     list,
     remove,
     checkToken,
+    replaceToken,
     listActive,
     isRunning,
     runBatch,
