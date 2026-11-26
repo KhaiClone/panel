@@ -6,7 +6,10 @@
  * answer from Discord changes nothing. It goes on the single order AND the monthly plan
  * of the account. A single order the dead token stopped runs again (a resume: no new
  * shop order), a running one restarts on it, a stopped / finished one only stores it;
- * paused, it waits for the resume. A plan keeps its end date, its token error is
+ * paused, it waits for the resume. A route that gives no answer (the rotating proxy
+ * mid-switch) is asked around once: the check tries one other route of the pool, and
+ * a restart whose own lease is silent gets one more go a minute later.
+ * A plan keeps its end date, its token error is
  * cleared, another error stays. Nobody is told. A monthly pass reads each account
  * again at its turn, so a token replaced after the pass listed it is the one it uses.
  * Discord, the proxy pool and the callbacks are stubbed.
@@ -87,6 +90,9 @@ stub("services/questEngine", {
     },
     resolveDiscordAccount: async (token, agent) => {
         resolveCalls.push({ token, agent });
+        // A route that gives no answer, whatever the token (a rotating proxy mid-switch).
+        if (agent?.route && downVia.has(agent.route))
+            return { ok: false, invalidToken: false, reason: "Could not reach Discord: Proxy connection ended before receiving CONNECT response", reasonVi: "x" };
         const how = discord.get(token) ?? "ok";
         if (how === "dead") return { ok: false, invalidToken: true, reason: "Discord did not accept the token (HTTP 401)", reasonVi: "x" };
         if (how === "down") return { ok: false, invalidToken: false, reason: "Could not reach Discord: timeout", reasonVi: "x" };
@@ -104,15 +110,32 @@ stub("services/questEngine", {
         getTaskType: () => "WATCH_VIDEO",
     },
 });
+// The pool: the token's own route first (sticky), then the others. A run's lease goes
+// out on LEASE. `downVia` holds the routes that give no answer right now.
 let acquired = 0;
-const AGENT = { egress: "sticky" };
+const AGENT = { egress: "sticky", route: "rot" };
+const LEASE = { egress: "lease", route: "lease" };
+const ROUTES = [
+    { id: "rot", label: "proxy.vn", agent: AGENT },
+    { id: "node", label: "VPS node", agent: { egress: "node", route: "node" } },
+];
+const downVia = new Set();
 stub("services/proxyPool", {
     acquire: async () => {
         acquired++;
-        return { agent: null, release: () => {} };
+        return { agent: LEASE, release: () => {} };
     },
     agentForKey: async () => AGENT,
+    routeForKey: async (key, { exclude = [] } = {}) => ROUTES.find((r) => !exclude.includes(r.id)) ?? null,
 });
+// The 60 s "one more go" timers are kept to be fired by hand; the rest run for real.
+const realSetTimeout = setTimeout;
+const later = [];
+global.setTimeout = (fn, ms, ...args) => {
+    if (ms !== 60_000) return realSetTimeout(fn, ms, ...args);
+    later.push(fn);
+    return { unref() {}, ref() {} };
+};
 const webhooks = [];
 stub("services/callbackService", { send: (url, botId, event, busCmd) => webhooks.push({ ...event, busCmd }) });
 stub("services/lifecycle", { guard: (fn) => fn, isActive: () => true });
@@ -287,7 +310,7 @@ const test = async (name, fn) => {
         assert.match(u.note, /restarted/);
         await tick();
         assert.strictEqual(questService.runningCount(), loops);
-        assert.ok(resolveCalls.some((c) => c.token === "c1new" && c.agent === null), "the restart resolves through its lease");
+        assert.ok(resolveCalls.some((c) => c.token === "c1new" && c.agent === LEASE), "the restart resolves through its lease");
         await questService.stopAccount("id-c1");
     });
 
@@ -318,6 +341,68 @@ const test = async (name, fn) => {
         assert.strictEqual((await single("id-e1")).running, true, "the resume runs it");
         assert.ok(resolveCalls.filter((c) => c.token === "e1new").length >= 2, "on the new token");
         await questService.stopAccount("id-e1");
+    });
+
+    console.log("a route that gives no answer (rotating proxy mid-switch)");
+
+    await test("the token's own route gives no answer: asked once more through another route", async () => {
+        await questService.startAccount({ token: "g1", mode: "all", webhookBotId: "auto", ref: "buyerG" });
+        await questService.stopAccount("id-g1");
+        accountOf.set("g1new", "id-g1");
+        downVia.add("rot");
+        const from = resolveCalls.length;
+        const res = await update("id-g1", "g1new");
+        downVia.clear();
+        assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+        assert.deepStrictEqual(
+            resolveCalls.slice(from).map((c) => c.agent.route),
+            ["rot", "node"],
+            "own route, then one other — never out directly",
+        );
+        assert.ok(await holds(questService, "id-g1", "g1new"));
+    });
+
+    await test("every route silent: 502 with Discord's reason, nothing stored", async () => {
+        accountOf.set("g1other", "id-g1");
+        downVia.add("rot");
+        downVia.add("node");
+        const from = resolveCalls.length;
+        const res = await update("id-g1", "g1other");
+        downVia.clear();
+        assert.strictEqual(res.status, 502);
+        assert.match(res.body.error, /Proxy connection ended before receiving CONNECT response/);
+        assert.strictEqual(resolveCalls.length - from, 2, "two looks, no more");
+        assert.ok(await holds(questService, "id-g1", "g1new"));
+    });
+
+    await test("the run's own route silent right after the check: running, one more go in a minute", async () => {
+        await questService.startAccount({ token: "h1", mode: "all", webhookBotId: "auto", ref: "buyerH" });
+        await tick();
+        discord.set("h1", "dead");
+        await questService.checkToken("id-h1", { notify: true });
+        assert.strictEqual((await single("id-h1")).status, "token_dead");
+        const told = deadEvents("id-h1").length;
+        later.length = 0;
+
+        accountOf.set("h1new", "id-h1");
+        downVia.add("lease");
+        const res = await update("id-h1", "h1new");
+        assert.strictEqual(res.status, 200);
+        const u = res.body.updated[0];
+        assert.deepStrictEqual({ status: u.status, restarted: u.restarted }, { status: "running", restarted: true });
+        assert.match(u.note, /tries again in a minute/);
+        const waiting = await single("id-h1");
+        assert.deepStrictEqual({ status: waiting.status, running: waiting.running, error: waiting.error }, { status: "running", running: false, error: null });
+        assert.strictEqual(later.length, 1, "one go scheduled");
+
+        downVia.clear();
+        await later.shift()();
+        await tick();
+        const after = await single("id-h1");
+        assert.deepStrictEqual({ status: after.status, running: after.running }, { status: "running", running: true });
+        assert.ok(await holds(questService, "id-h1", "h1new"));
+        assert.strictEqual(deadEvents("id-h1").length, told, "the buyer is not told again");
+        await questService.stopAccount("id-h1");
     });
 
     console.log("monthly plans");

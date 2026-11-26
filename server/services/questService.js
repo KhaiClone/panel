@@ -548,6 +548,25 @@ async function checkToken(accountId, { notify = false } = {}) {
 
 // ── Update token (the "Update token" action on /quests) ──────────────────────────
 /**
+ * One GET /users/@me for a token pasted by hand: through the token's own route first,
+ * and when that gives no answer, once through another route of the pool. The pool's
+ * rotating proxy changes IP every minute or two while nothing leases it, and a check
+ * holds no lease: one that landed in the switch got "Proxy connection ended before
+ * receiving CONNECT response" instead of a verdict (Update token, 2026-11-26). One
+ * other IP for one call costs nothing; the run itself still goes out on the token's
+ * own route. Never falls back to going out directly.
+ */
+async function _lookWithFallback(token) {
+    const first = await proxyPool.routeForKey(token);
+    const resolved = await resolveDiscordAccount(token, first?.agent ?? null);
+    if (resolved.ok || resolved.invalidToken || !first) return resolved;
+    const other = await proxyPool.routeForKey(token, { exclude: [first.id] });
+    if (!other) return resolved;
+    console.warn(`[Quest] Token check: no answer through "${first.label}" (${resolved.reason}) — asking through "${other.label}".`);
+    return resolveDiscordAccount(token, other.agent);
+}
+
+/**
  * Resolve a replacement token the admin pasted for a stored account. It must log into
  * that same Discord account: a token of another account would run that account's
  * quests on this one's order (and put its name in the buyer's feed). One GET
@@ -555,7 +574,7 @@ async function checkToken(accountId, { notify = false } = {}) {
  * account), 401 (Discord refused it) or 502 (no answer).
  */
 async function resolveReplacement(accountId, token) {
-    const resolved = await resolveDiscordAccount(token, await proxyPool.agentForKey(token));
+    const resolved = await _lookWithFallback(token);
     if (!resolved.ok) throw _httpError(resolved.reason, resolved.invalidToken ? 401 : 502);
     if (String(resolved.accountId) !== String(accountId)) {
         throw _httpError(
@@ -589,19 +608,36 @@ async function replaceToken(accountId, token, resolved) {
         out.note = rec.status === "done" ? "The run had already finished — the token is kept for Run again." : "Run again starts it on the new token.";
         return out;
     }
+    const PAUSED = "Auto Quest is paused — the run goes on with the new token on the resume.";
     try {
         const acc = await startAccount({ token, mode: rec.mode, selectedQuestIds: rec.selectedQuestIds ?? [], resume: true });
         out.status = acc.status;
         out.restarted = true;
         out.note =
             acc.status === "paused"
-                ? "Auto Quest is paused — the run goes on with the new token on the resume."
+                ? PAUSED
                 : rec.status === "token_dead"
                   ? "The run goes on with the new token."
                   : "The run restarted on the new token.";
     } catch (err) {
-        // Discord answered a moment ago, so this is the route or Discord flaking.
-        out.note = `The token is saved, but the run did not start: ${err.message} — use Run again.`;
+        if (err.status !== 502) {
+            out.note = `The token is saved, but the run did not start: ${err.message} — use Run again.`;
+            return out;
+        }
+        // The check got an answer a moment ago; the run's own route (the token's sticky
+        // IP, leased) did not — the rotating proxy changing IP. As when a run's route
+        // dies: the record says "running" and gets one more go in a minute (a restart or
+        // a resume meanwhile picks it up). A loop still on the old token stops now.
+        _stopLoop(accountId);
+        await _updateRec(accountId, { retentionExpiresAt: Date.now() + RETENTION_MS });
+        await _setStatus(accountId, "running", { error: null }, { notify: false });
+        _retryLater(accountId, resolved.username);
+        out.status = _publicRec(await _getRec(accountId)).status;
+        out.restarted = true;
+        out.note =
+            out.status === "paused"
+                ? PAUSED
+                : `The token is saved. The run got no answer from Discord just now (${err.message}) — it tries again in a minute.`;
     }
     return out;
 }
@@ -691,6 +727,14 @@ async function _retryAfterEgressDown(accountId) {
     if (!rec || rec.status !== "running" || running.has(accountId)) return;
     if ((await questSettings.get()).paused) return;
     await _resume(rec, 2);
+}
+
+/** That second go, EGRESS_RETRY_DELAY_SEC from now. */
+function _retryLater(accountId, label) {
+    const retry = lifecycle.guard(() =>
+        _retryAfterEgressDown(accountId).catch((e) => console.warn(`[Quest] ${label} retry error: ${e.message}`)),
+    );
+    setTimeout(retry, EGRESS_RETRY_DELAY_SEC * 1000).unref?.();
 }
 
 /**
@@ -827,12 +871,7 @@ async function _runLoop(accountId, completer, abort, record, attempt = 1) {
             // one more go. The record stays "running", so a restart meanwhile resumes it.
             _releaseLease(accountId, { failed: true });
             console.warn(`[Quest] ${record.username}: ${err.message} — running it again in ${EGRESS_RETRY_DELAY_SEC}s`);
-            const retry = lifecycle.guard(() =>
-                _retryAfterEgressDown(accountId).catch((e) =>
-                    console.warn(`[Quest] ${record.username} retry error: ${e.message}`),
-                ),
-            );
-            setTimeout(retry, EGRESS_RETRY_DELAY_SEC * 1000).unref?.();
+            _retryLater(accountId, record.username);
         } else if (!err?.egressDown && isInvalidTokenError(err)) {
             _releaseLease(accountId);
             await _setStatus(accountId, "token_dead", {

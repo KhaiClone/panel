@@ -300,10 +300,22 @@ async function acquire(key, { feature = "quest", exclude = [] } = {}) {
  * Returns null when no egress is configured (caller egresses directly).
  */
 async function agentForKey(key, { feature = "quest" } = {}) {
-    const tiers = await _tiers(feature);
+    return (await routeForKey(key, { feature }))?.agent ?? null;
+}
+
+/**
+ * agentForKey with the route named: { id, label, agent }, or null when there is none.
+ * `exclude` skips entries by id and falls through to the next tier, as in acquire() —
+ * for a one-shot check asking again after a route gave no answer. Null then means
+ * nothing else to try, never "go out directly".
+ */
+async function routeForKey(key, { feature = "quest", exclude = [] } = {}) {
+    const skip = new Set(exclude);
+    const tiers = (await _tiers(feature)).map((t) => t.filter((e) => !skip.has(e.id)));
     const pool = tiers.find((t) => t.length);
     if (!pool) return null;
-    return pool[_hash(String(key)) % pool.length].build();
+    const entry = pool[_hash(String(key)) % pool.length];
+    return { id: entry.id, label: entry.label, agent: entry.build() };
 }
 
 /** Kept for callers that only want to know which node a key maps to. */
@@ -322,5 +334,6 @@ module.exports = {
     pickProxyNode,
     acquire,
     agentForKey,
+    routeForKey,
     isBusy,
 };
